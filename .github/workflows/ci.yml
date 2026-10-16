@@ -1,0 +1,26 @@
+name: CI
+on:
+  push:
+  pull_request:
+jobs:
+  test:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Swift tests
+        run: swift test
+      - name: Root script tests
+        run: scripts/test-root.sh
+      - name: App string catalog coverage
+        run: scripts/check-l10n.sh
+      - name: DMG build (packaging + xcstringstool)
+        run: scripts/build-dmg.sh
+      - name: Bash syntax check
+        run: |
+          for f in Resources/root/mvpn Resources/root/ovpn-dns scripts/*.sh; do
+            bash -n "$f"
+          done

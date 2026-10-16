@@ -1,0 +1,697 @@
+#!/bin/bash
+# MacVPN root dispatcher.
+# Telepítve: /usr/local/libexec/macvpn/mvpn (root:wheel 755), hívás: sudo -n (lásd /etc/sudoers.d/macvpn).
+#
+#   mvpn up     <openvpn|wireguard|strongswan> <id> [--debug] [--dry-run]   (secrets a stdin-en: kulcs=érték)
+#   mvpn down   <openvpn|wireguard|strongswan> <id> [--dry-run]
+#   mvpn status
+#   mvpn version
+# Bármelyik mellé: --lang <en|hu> (az üzenetek nyelve; hiányzó vagy ismeretlen érték: en).
+#
+# A config-validálás szabályainak egyetlen forrása a Sources/MacVPNCore/Validators.swift; ezt a
+# root tulajdonú mvpn-validate bináris futtatja. Ez a script nem tartalmaz saját validálási szabályt.
+#
+# bash 3.2 kompatibilis (/bin/bash). Nincs `set -u` (bash 3.2-ben üres tömböknél hibát ad).
+# Nem rootként csak tesztmódban fut: ilyenkor az útvonalak env változóval felülírhatók, `up` és `down`
+# csak `--dry-run` mellett engedett (kivétel: `down` MVPN_TEST_ALLOW_DOWN=1 mellett, a takarítási logika teszteléséhez;
+# `up` MVPN_TEST_ALLOW_UP=1 és egy hamis brew könyvtár (MVPN_BREW) mellett, a hibakezelés teszteléséhez;
+# nem rootként ez csak a felhasználó saját folyamataira hathat).
+
+umask 077
+export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+MVPN_VERSION="2"
+LIBEXEC="/usr/local/libexec/macvpn"
+RUN_BASE="/var/run/macvpn"
+LOG_BASE="/var/log/macvpn"
+TARGET_USER="$SUDO_USER"
+SRC_BASE=""
+TEST_MODE=0
+LOCK_TRIES=90   # 90 × 0,5 mp = 45 mp várakozás a zárra
+WG_RUN="/var/run/wireguard"   # a wg-quick itt tárolja az interfész → utun hozzárendelést
+LOG_MAX=5242880               # 5 MB fölött up-nál a napló forog (egy .1 példány marad)
+SRC_MAX=1048576               # a forrás config legfeljebb 1 MB
+
+if [ "$(id -u)" != "0" ]; then
+  TEST_MODE=1
+  TARGET_USER="$(id -un)"
+  RUN_BASE="${MVPN_RUN_BASE:-$RUN_BASE}"
+  LOG_BASE="${MVPN_LOG_BASE:-$LOG_BASE}"
+  LIBEXEC="${MVPN_LIBEXEC:-$LIBEXEC}"
+  SRC_BASE="${MVPN_SRC_BASE:-}"
+  WG_RUN="${MVPN_WG_RUN:-$WG_RUN}"
+  [[ "$MVPN_LOCK_TRIES" =~ ^[0-9]+$ ]] && LOCK_TRIES="$MVPN_LOCK_TRIES"
+  [[ "$MVPN_LOG_MAX" =~ ^[0-9]+$ ]] && LOG_MAX="$MVPN_LOG_MAX"
+fi
+
+# A hívó pipe-jai: a stdin-t a read_secrets olvassa végig (up), utána minden háttérfolyamat
+# </dev/null >>LOG kap (run_direct), így a sudo hívás garantáltan visszatér.
+DEBUG=0
+DRY_RUN=0
+MVPN_LANG=en
+ARGS=()
+EXPECT_LANG=0
+for a in "$@"; do
+  if [ "$EXPECT_LANG" = 1 ]; then MVPN_LANG="$a"; EXPECT_LANG=0; continue; fi
+  case "$a" in
+    --debug) DEBUG=1 ;;
+    --dry-run) DRY_RUN=1 ;;
+    --lang) EXPECT_LANG=1 ;;
+    --lang=*) MVPN_LANG="${a#--lang=}" ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+# Az üzenetek nyelve: az app adja át (--lang), mert a sudo nem viszi át a felhasználó locale-ját. Ismeretlen: angol.
+case "$MVPN_LANG" in hu) ;; *) MVPN_LANG=en ;; esac
+CMD="${ARGS[0]}"
+KIND="${ARGS[1]}"
+ID="${ARGS[2]}"
+LOG=""
+RUN=""
+S_USER=""; S_PASS=""; S_PSK=""
+
+# ---------- üzenetek ----------
+# msg "<angol>" "<magyar>": a --lang szerinti változatot írja ki (sorvége nélkül). Az angol a forrás és a tartalék.
+msg() { if [ "$MVPN_LANG" = hu ]; then printf '%s' "$2"; else printf '%s' "$1"; fi; }
+
+# ---------- napló ----------
+log_line() { [ -n "$LOG" ] && printf '%s\n' "$*" >>"$LOG"; return 0; }
+log_step() { log_line "▶ [mvpn] $*"; }
+log_cmd()  { log_line "\$ $*"; }
+die() {
+  log_line "✗ $*"
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+# Literális (nem regex) csere: a jelszó és a PSK → ***. Az értékek csak ennek az egy awk-nak a környezetébe
+# kerülnek parancs-prefixként (ENVIRON, nem -v, nem argv): nincs export, így a démonok nem öröklik őket,
+# és a folyamatlistában sem látszanak.
+mask() {
+  MVPN_MASK_1="$S_PASS" MVPN_MASK_2="$S_PSK" awk 'BEGIN { n = 0; for (i = 1; i <= 2; i++) { v = ENVIRON["MVPN_MASK_" i]; if (length(v) >= 3) s[++n] = v } }
+       { line = $0
+         for (i = 1; i <= n; i++) {
+           out = ""
+           while ((p = index(line, s[i])) > 0) { out = out substr(line, 1, p - 1) "***"; line = substr(line, p + length(s[i])) }
+           line = out line
+         }
+         print line; fflush() }'
+}
+
+# Parancs futtatása: naplózza a parancssort, kimenete maszkolva a naplóba megy.
+run_logged() {
+  log_cmd "$*"
+  if [ "$DRY_RUN" = 1 ]; then echo "DRY: $*"; return 0; fi
+  "$@" 2>&1 | mask >>"$LOG"
+  return "${PIPESTATUS[0]}"
+}
+
+# Háttérben maradó gyermekfolyamatot indító parancsokhoz (openvpn --daemon, wg-quick/wireguard-go, charon):
+# stdin /dev/null, kimenet a naplóba, így a hívó (app) pipe-jait nem örökli senki, és a sudo hívás visszatér.
+# Ezek kimenete nem tartalmaz titkot.
+#   run_direct <parancs…>        → előtérben fut, a kilépési kódját adja vissza
+#   run_direct --bg <parancs…>   → háttérben indul (pl. charon, ami nem démonizál magától)
+run_direct() {
+  local bg=0
+  [ "$1" = "--bg" ] && { bg=1; shift; }
+  if [ "$bg" = 1 ]; then log_cmd "$* &"; else log_cmd "$*"; fi
+  if [ "$DRY_RUN" = 1 ]; then echo "DRY: $*"; return 0; fi
+  if [ "$bg" = 1 ]; then
+    "$@" </dev/null >>"$LOG" 2>&1 &
+    return 0
+  fi
+  "$@" </dev/null >>"$LOG" 2>&1
+}
+
+# ---------- környezet ----------
+BREW=""
+for p in /opt/homebrew /usr/local; do
+  if [ -x "$p/bin/brew" ]; then BREW="$p"; break; fi
+done
+# Tesztmódban a hamis eszközök könyvtára (a valódi brew eszközöket a teszt soha nem futtatja).
+[ "$TEST_MODE" = 1 ] && [ -n "$MVPN_BREW" ] && BREW="$MVPN_BREW"
+
+find_tool() {
+  local t="$1" c
+  for c in "$BREW/bin/$t" "$BREW/sbin/$t"; do
+    [ -n "$BREW" ] && [ -x "$c" ] && { echo "$c"; return 0; }
+  done
+  [ "$DRY_RUN" = 1 ] && { echo "/opt/homebrew/bin/$t"; return 0; }
+  return 1
+}
+
+find_charon() {
+  local c
+  for c in "$BREW/opt/strongswan/libexec/ipsec/charon" "$BREW/opt/strongswan/libexec/charon"; do
+    [ -n "$BREW" ] && [ -x "$c" ] && { echo "$c"; return 0; }
+  done
+  [ "$DRY_RUN" = 1 ] && { echo "/opt/homebrew/opt/strongswan/libexec/ipsec/charon"; return 0; }
+  return 1
+}
+
+validate_id() {
+  [[ "$1" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || die "$(msg "Invalid ID" "Érvénytelen azonosító")"
+}
+
+validate_kind() {
+  case "$1" in openvpn|wireguard|strongswan) ;; *) die "$(msg "Unknown type: $1" "Ismeretlen típus: $1")" ;; esac
+}
+
+resolve_src_base() {
+  [ -n "$SRC_BASE" ] && return 0
+  [[ "$TARGET_USER" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || die "$(msg "Invalid user" "Érvénytelen felhasználó")"
+  local home
+  home=$(dscl . -read "/Users/$TARGET_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+  [ -n "$home" ] || die "$(msg "The user's home directory was not found" "Nem található a felhasználó home könyvtára")"
+  SRC_BASE="$home/Library/Application Support/MacVPN/connections"
+}
+
+# A napló könyvtára root tulajdonú (755), a felhasználó nem tud bele symlinket tenni; a symlink-ellenőrzések
+# ennek ellenére maradnak (régi telepítés, kézi beavatkozás ellen). A mozgatás és a jogosultság-állítás
+# soha nem követ symlinket (rm -f a cél előtt, chown/chmod -h).
+rotate_log() {
+  local size
+  [ -f "$LOG" ] && [ ! -L "$LOG" ] || return 0
+  size=$(stat -f %z "$LOG" 2>/dev/null) || return 0
+  [ "$size" -gt "$LOG_MAX" ] || return 0
+  rm -rf "$LOG.1"
+  mv -f "$LOG" "$LOG.1" || return 0
+  if [ "$TEST_MODE" = 0 ]; then chown -h "$TARGET_USER" "$LOG.1"; fi
+  chmod -h 600 "$LOG.1"
+}
+
+open_log() {
+  mkdir -p "$LOG_BASE" && chmod 755 "$LOG_BASE"
+  LOG="$LOG_BASE/$ID.log"
+  [ -L "$LOG" ] && rm -f "$LOG"
+  [ "$CMD" = up ] && rotate_log
+  touch "$LOG"
+  if [ "$TEST_MODE" = 0 ]; then chown "$TARGET_USER" "$LOG"; fi
+  chmod 600 "$LOG"
+}
+
+read_secrets() {
+  [ -t 0 ] && return 0
+  local line
+  while IFS= read -r line; do
+    case "$line" in
+      username=*) S_USER="${line#username=}" ;;
+      password=*) S_PASS="${line#password=}" ;;
+      psk=*)      S_PSK="${line#psk=}" ;;
+    esac
+  done
+}
+
+# Config másolása root tulajdonú futási könyvtárba; ezután csak a másolatot használjuk.
+# A forrást a felhasználó jogaival olvassuk (sudo -u … cat), a célt a shell rootként nyitja meg: így egy
+# symlink/hardlink-csere (TOCTOU) legfeljebb olyan fájlt hozhat be, amit a felhasználó amúgy is olvashat.
+# A symlink-, tulajdonos- és linkszám-ellenőrzés mélységi védelemként marad. Root alól a sudo -u nem kér
+# jelszót és sudoers szabály sem kell hozzá (root mindenkiként futtathat).
+# Dry-run alatt hívásonként külön (mktemp -d <id>.dryrun.XXXXXX) könyvtár, így egy élő kapcsolat futási
+# könyvtárához nem nyúl; kilépéskor törlődik.
+prepare_run() {
+  local src="$SRC_BASE/$ID/config" uid owner rc size
+  [[ "$TARGET_USER" =~ ^[A-Za-z_][A-Za-z0-9_.-]*$ ]] || die "$(msg "Invalid user" "Érvénytelen felhasználó")"
+  [ -L "$SRC_BASE/$ID" ] && die "$(msg "The connection directory must not be a symlink" "A kapcsolat könyvtára nem lehet symlink")"
+  [ -L "$src" ] && die "$(msg "The config must not be a symlink" "A config nem lehet symlink")"
+  [ -f "$src" ] || die "$(msg "Config not found" "A config nem található")"
+  # A config a felhasználóé legyen és ne legyen hardlink (pl. egy root fájlra mutató link ellen).
+  uid=$(id -u "$TARGET_USER" 2>/dev/null) || die "$(msg "Unknown user" "Ismeretlen felhasználó")"
+  owner=$(stat -f '%u %l' "$src") || die "$(msg "Cannot read the config" "A config nem olvasható")"
+  [ "$owner" = "$uid 1" ] || die "$(msg "The owner or link count of the config is wrong" "A config tulajdonosa vagy linkszáma nem megfelelő")"
+  mkdir -p "$RUN_BASE" && chmod 700 "$RUN_BASE"
+  if [ "$DRY_RUN" = 1 ]; then
+    RUN=$(mktemp -d "$RUN_BASE/$ID.dryrun.XXXXXX") || die "$(msg "Cannot create the dry-run directory" "Nem hozható létre dry-run könyvtár")"
+  else
+    RUN="$RUN_BASE/$ID"
+    rm -rf "$RUN"
+    mkdir -m 700 "$RUN" || die "$(msg "Cannot create: $RUN" "Nem hozható létre: $RUN")"
+  fi
+  if [ "$TEST_MODE" = 1 ]; then
+    /bin/cat -- "$src" </dev/null | head -c "$((SRC_MAX + 1))" >"$RUN/config"
+  else
+    /usr/bin/sudo -n -u "$TARGET_USER" /bin/cat -- "$src" </dev/null | head -c "$((SRC_MAX + 1))" >"$RUN/config"
+  fi
+  rc=${PIPESTATUS[0]}
+  [ -L "$RUN/config" ] && { rm -rf "$RUN"; die "$(msg "The config must not be a symlink" "A config nem lehet symlink")"; }
+  [ -f "$RUN/config" ] || { rm -rf "$RUN"; die "$(msg "The config is not a regular file" "A config nem szabályos fájl")"; }
+  size=$(stat -f %z "$RUN/config")
+  [ "$size" -le "$SRC_MAX" ] || { rm -rf "$RUN"; die "$(msg "The config is too large (1 MB at most)" "A config túl nagy (legfeljebb 1 MB)")"; }
+  [ "$rc" = 0 ] || { rm -rf "$RUN"; die "$(msg "Copying the config failed" "A config másolása sikertelen")"; }
+  printf '%s\n' "$KIND" >"$RUN/kind"
+  printf '%s\n' "$MVPN_LANG" >"$RUN/lang"   # az ovpn-dns hook ebből tudja a nyelvet
+  date +%s >"$RUN/started"
+  log_step "$(msg "config copied: $RUN/config" "config másolva: $RUN/config")"
+}
+
+# ---------- validálás ----------
+# A szabályok egyetlen forrása a Swift validátor (Sources/MacVPNCore/Validators.swift),
+# amit a root tulajdonú mvpn-validate bináris futtat. Nincs külön bash/awk tükör.
+VALIDATOR="$LIBEXEC/mvpn-validate"
+[ "$TEST_MODE" = 1 ] && VALIDATOR="${MVPN_VALIDATOR:-$VALIDATOR}"
+
+validate_config() {
+  local out l
+  [ -x "$VALIDATOR" ] || { rm -rf "$RUN"; die "$(msg "Validator not found: $VALIDATOR" "A validátor nem található: $VALIDATOR")"; }
+  out=$("$VALIDATOR" --lang "$MVPN_LANG" "$KIND" "$RUN/config" </dev/null) || {
+    while IFS= read -r l; do log_line "✗ $l"; done <<<"$out"
+    rm -rf "$RUN"
+    printf '%s\n%s\n' "$(msg "Invalid config:" "Érvénytelen config:")" "$out" >&2
+    exit 1
+  }
+  log_step "$(msg "config is valid" "config érvényes")"
+}
+
+# Első connection és első child neve, két sorban.
+swan_names() { "$VALIDATOR" --lang "$MVPN_LANG" --swan-names "$1" </dev/null; }
+
+# ---------- kapcsolatonkénti zár ----------
+# Az up és a down ugyanarra az id-re soha nem fut párhuzamosan (mkdir atomikus).
+# A down megvárja a futó up-ot (legfeljebb 45 mp), így nem futhat le üresen, mielőtt az up létrehozza a futási könyvtárat.
+# A zár könyvtárában a tulajdonos pid-je van. Elárvult (SIGKILL, összeomlás) a zár, ha:
+#   - a pid nem él, vagy
+#   - nincs pid fájl és a zár 60 mp-nél régebbi (a mkdir és a pid írása közti rés miatt nem azonnal), vagy
+#   - a zár 10 percnél régebbi (pid-újrahasznosítás ellen; egyetlen művelet sem tart ennyi ideig).
+# Az elárvult zár eltávolítását egy második zár (.reap) sorosítja, és alatta újra ellenőrizzük, így két
+# várakozó nem törölheti egymás frissen megszerzett zárát.
+LOCK=""
+LOCK_HELD=0
+
+lock_age() { echo $(( $(date +%s) - $(stat -f %m "$1" 2>/dev/null || date +%s) )); }
+
+lock_is_stale() {
+  local pid age
+  [ -d "$LOCK" ] || return 1
+  age=$(lock_age "$LOCK")
+  [ "$age" -gt 600 ] && return 0
+  pid=$(cat "$LOCK/pid" 2>/dev/null)
+  if [[ "$pid" =~ ^[0-9]+$ ]]; then
+    kill -0 "$pid" 2>/dev/null && return 1
+    # EPERM: a folyamat él, csak nem a miénk (tesztmódban fordulhat elő).
+    ps -p "$pid" >/dev/null 2>&1 && return 1
+    return 0
+  fi
+  [ "$age" -gt 60 ]
+}
+
+reap_stale_lock() {
+  local reap="$LOCK.reap"
+  if ! mkdir "$reap" 2>/dev/null; then
+    [ "$(lock_age "$reap")" -gt 60 ] && rm -rf "$reap"
+    return 0
+  fi
+  if lock_is_stale; then
+    log_step "$(msg "stale lock removed" "elárvult zár eltávolítva") (pid: $(cat "$LOCK/pid" 2>/dev/null || echo '-'))"
+    rm -rf "$LOCK"
+  fi
+  rmdir "$reap" 2>/dev/null
+  return 0
+}
+
+acquire_lock() {
+  [ "$DRY_RUN" = 1 ] && [ "$TEST_MODE" = 0 ] && return 0
+  mkdir -p "$RUN_BASE" && chmod 700 "$RUN_BASE"
+  LOCK="$RUN_BASE/.$ID.lock"
+  local i
+  for i in $(seq 1 "$LOCK_TRIES"); do
+    if mkdir "$LOCK" 2>/dev/null; then
+      LOCK_HELD=1
+      printf '%s\n' "$$" >"$LOCK/pid"
+      return 0
+    fi
+    lock_is_stale && { reap_stale_lock; continue; }
+    sleep 0.5
+  done
+  die "$(msg "Another operation is already running on this connection (lock: $LOCK)" "A kapcsolaton már fut egy művelet (zár: $LOCK)")"
+}
+
+release_lock() {
+  [ "$LOCK_HELD" = 1 ] || return 0
+  [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] && rm -rf "$LOCK"
+  LOCK_HELD=0
+}
+
+# 1, ha az up végigért (a kapcsolat felépült); addig minden kilépés takarítással jár.
+UP_DONE=0
+
+# Sikertelen vagy megszakított up (die, nem nulla up_<típus>, hiányzó eszköz, SIGTERM) a prepare_run után:
+# a félig felépült kapcsolatot lebontjuk (alhéjban, hogy egy die ne szakítsa meg), a DNS-t visszaállítjuk,
+# a futási könyvtárat töröljük. Nem maradhat futási könyvtár, ami egy nem élő kapcsolatot mutatna.
+cleanup_failed_up() {
+  [ "$CMD" = up ] && [ "$UP_DONE" = 0 ] && [ "$DRY_RUN" = 0 ] || return 0
+  [ -n "$RUN" ] && [ "$RUN" = "$RUN_BASE/$ID" ] && [ -d "$RUN" ] && [ ! -L "$RUN" ] || return 0
+  log_step "$(msg "cleaning up after the failed connection attempt" "takarítás a sikertelen kapcsolódás után")"
+  ( "down_$KIND" ) >/dev/null 2>&1
+  [ -f "$RUN/dns-backup" ] && script_type=down "$LIBEXEC/ovpn-dns" "$RUN" "$LOG" </dev/null >/dev/null 2>&1
+  rm -rf "$RUN"
+}
+
+on_exit() {
+  local rc=$?
+  cleanup_failed_up
+  case "$RUN" in "$RUN_BASE/$ID.dryrun."*) [ "$DRY_RUN" = 1 ] && rm -rf "$RUN" ;; esac
+  release_lock
+  exit "$rc"
+}
+
+# A sudo SIGTERM-et továbbít (a SIGKILL-t nem): 143-mal lépünk ki, a takarítást az on_exit végzi
+# (up közben a félig felépült kapcsolat lebontása). down közben a futási könyvtár megmarad,
+# így egy újabb down még meg tudja találni a folyamatokat.
+on_term() {
+  log_line "✗ $(msg "interrupted (SIGTERM)" "megszakítva (SIGTERM)")"
+  exit 143
+}
+
+# ---------- debug pillanatkép ----------
+server_of() {
+  case "$KIND" in
+    openvpn)    awk 'tolower($1) == "remote" { print $2; exit }' "$RUN/config" ;;
+    wireguard)  awk -F= 'tolower($1) ~ /^[ \t]*endpoint[ \t]*$/ { gsub(/[ \t]/, "", $2); sub(/:[0-9]+$/, "", $2); print $2; exit }' "$RUN/config" ;;
+    strongswan) awk -F= '$1 ~ /remote_addrs/ { gsub(/[ \t]/, "", $2); split($2, a, ","); print a[1]; exit }' "$RUN/config" ;;
+  esac
+}
+
+snapshot() {
+  [ "$DEBUG" = 1 ] || return 0
+  log_step "$(msg "diagnostics" "diagnosztika") ($1)"
+  local server
+  server=$(server_of)
+  [ -n "$server" ] && [[ "$server" =~ ^[A-Za-z0-9.:-]+$ ]] && run_logged dscacheutil -q host -a name "$server"
+  run_logged netstat -rn -f inet
+  log_cmd "scutil --dns | head -40"
+  [ "$DRY_RUN" = 1 ] || scutil --dns 2>&1 | head -40 >>"$LOG"
+  run_logged ifconfig -l
+}
+
+# ---------- típusonkénti up/down (Task 16–18) ----------
+
+up_openvpn() {
+  local ovpn verb=3 offset i
+  ovpn=$(find_tool openvpn) || die "$(msg "openvpn not found (brew install openvpn)" "Az openvpn nem található (brew install openvpn)")"
+  [ "$DEBUG" = 1 ] && verb=5
+  local args=(--config "$RUN/config"
+              --script-security 2
+              --up "$LIBEXEC/ovpn-dns $RUN $LOG" --down "$LIBEXEC/ovpn-dns $RUN $LOG"
+              --writepid "$RUN/pid" --log-append "$LOG" --daemon "mvpn-$ID" --verb "$verb")
+  # A jelszófájl a down-ig megmarad (root, 600, a 700-as futási könyvtárban): újracsatlakozáskor
+  # (ping-restart, hálózatváltás) az OpenVPN újraolvassa. Egy config-beli auth-nocache mellett az OpenVPN a
+  # memóriából törli a jelszót, ezért a fájlnak kell meglennie. A down (cleanup_openvpn) és minden sikertelen up törli.
+  if [ -n "$S_USER$S_PASS" ]; then
+    printf '%s\n%s\n' "$S_USER" "$S_PASS" >"$RUN/auth"
+    chmod 600 "$RUN/auth"
+    args+=(--auth-user-pass "$RUN/auth")
+  fi
+  offset=$(stat -f %z "$LOG")
+  run_direct "$ovpn" "${args[@]}" || fail_openvpn "$(msg "Starting openvpn failed" "Az openvpn indítása sikertelen")"
+  [ "$DRY_RUN" = 1 ] && return 0
+  for i in $(seq 1 30); do
+    sleep 1
+    if tail -c +"$((offset + 1))" "$LOG" | grep -q "Initialization Sequence Completed"; then
+      return 0
+    fi
+    if tail -c +"$((offset + 1))" "$LOG" | grep -q "AUTH_FAILED"; then
+      fail_openvpn "$(msg "Authentication failed (AUTH_FAILED)" "Hitelesítési hiba (AUTH_FAILED)")"
+    fi
+    if [ -f "$RUN/pid" ] && ! ovpn_alive "$(cat "$RUN/pid" 2>/dev/null)"; then
+      fail_openvpn "$(msg "openvpn exited:" "Az openvpn kilépett:") $(tail -c +"$((offset + 1))" "$LOG" | grep -v '^\$' | tail -1)"
+    fi
+  done
+  fail_openvpn "$(msg "Timed out: the connection was not established within 30 s" "Időtúllépés: 30 mp alatt nem épült fel a kapcsolat")"
+}
+
+# Sikertelen up: folyamat leállítása, DNS visszaállítása, futási könyvtár törlése, kilépés.
+fail_openvpn() {
+  cleanup_openvpn
+  [ "$DRY_RUN" = 1 ] || rm -rf "$RUN"
+  die "$1"
+}
+
+# Él-e még az openvpn folyamat? A pid-et csak akkor tekintjük a miénknek, ha a folyamat neve openvpn
+# (pid-újrahasznosítás esetén így nem lövünk le egy idegen folyamatot).
+ovpn_alive() {
+  [[ "$1" =~ ^[0-9]+$ ]] || return 1
+  ps -p "$1" -o stat=,comm= 2>/dev/null | awk '$1 !~ /^Z/ && $NF ~ /openvpn$/ { f = 1 } END { exit !f }'
+}
+
+# 0: nem maradt futó openvpn; 1: a folyamat a leállítás után is él.
+cleanup_openvpn() {
+  [ "$DRY_RUN" = 1 ] && return 0
+  local pid i rc=0
+  pid=$(cat "$RUN/pid" 2>/dev/null)
+  if ovpn_alive "$pid"; then
+    log_cmd "kill $pid"
+    kill "$pid" 2>/dev/null
+    for i in $(seq 1 10); do ovpn_alive "$pid" || break; sleep 1; done
+    ovpn_alive "$pid" && { log_cmd "kill -9 $pid"; kill -9 "$pid" 2>/dev/null; sleep 1; }
+    ovpn_alive "$pid" && rc=1
+  fi
+  # Ha a down hook nem futott le (pl. kill -9), a DNS-t itt állítjuk vissza.
+  [ -f "$RUN/dns-backup" ] && script_type=down "$LIBEXEC/ovpn-dns" "$RUN" "$LOG" </dev/null
+  rm -f "$RUN/auth"
+  return "$rc"
+}
+
+down_openvpn() {
+  [ -d "$RUN" ] || { log_step "$(msg "no running connection" "nincs futó kapcsolat")"; return 0; }
+  cleanup_openvpn
+}
+
+wg_iface() { printf 'mv%s\n' "$(printf '%s' "$ID" | tr -d '-' | cut -c1-8 | tr 'A-F' 'a-f')"; }
+
+up_wireguard() {
+  local wgq bash4 iface
+  wgq=$(find_tool wg-quick) || die "$(msg "wg-quick not found (brew install wireguard-tools)" "A wg-quick nem található (brew install wireguard-tools)")"
+  bash4=$(find_tool bash) || die "$(msg "bash 4+ not found (brew install bash)" "A bash 4+ nem található (brew install bash)")"
+  find_tool wireguard-go >/dev/null || die "$(msg "wireguard-go not found (brew install wireguard-tools)" "A wireguard-go nem található (brew install wireguard-tools)")"
+  iface=$(wg_iface)
+  cp "$RUN/config" "$RUN/$iface.conf"
+  printf '%s\n' "$iface" >"$RUN/iface"
+  # A wg-quick a PATH-ból hívja a wg-t és a wireguard-go-t, ezért a brew bin kell. A rendszerkönyvtárak elöl vannak.
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$BREW/bin:$BREW/sbin"
+  [ "$DEBUG" = 1 ] && export LOG_LEVEL=debug
+  run_direct "$bash4" "$wgq" up "$RUN/$iface.conf" || { [ "$DRY_RUN" = 1 ] || rm -rf "$RUN"; die "$(msg "wg-quick up failed (details in the log)" "A wg-quick up sikertelen (részletek a naplóban)")"; }
+  [ "$DEBUG" = 1 ] && run_logged "$(find_tool wg)" show "$iface"
+  return 0
+}
+
+down_wireguard() {
+  [ -d "$RUN" ] || { log_step "$(msg "no running connection" "nincs futó kapcsolat")"; return 0; }
+  local wgq bash4 iface
+  wgq=$(find_tool wg-quick) || die "$(msg "wg-quick not found" "A wg-quick nem található")"
+  bash4=$(find_tool bash) || die "$(msg "bash 4+ not found" "A bash 4+ nem található")"
+  iface=$(cat "$RUN/iface" 2>/dev/null || wg_iface)
+  [[ "$iface" =~ ^mv[0-9a-f]{8}$ ]] || iface=$(wg_iface)
+  export PATH="/usr/bin:/bin:/usr/sbin:/sbin:$BREW/bin:$BREW/sbin"
+  run_direct "$bash4" "$wgq" down "$RUN/$iface.conf"
+}
+
+swan_escape() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'; }
+
+up_strongswan() {
+  local swanctl charon names conn child lvl=1 i
+  swanctl=$(find_tool swanctl) || die "$(msg "swanctl not found (brew install strongswan)" "A swanctl nem található (brew install strongswan)")"
+  charon=$(find_charon) || die "$(msg "charon not found (brew install strongswan)" "A charon nem található (brew install strongswan)")"
+  names=$(swan_names "$RUN/config")
+  conn=$(printf '%s\n' "$names" | sed -n 1p)
+  child=$(printf '%s\n' "$names" | sed -n 2p)
+  [[ "$conn" =~ ^[A-Za-z0-9_.-]+$ ]] || die "$(msg "No connection name found" "Nem található connection név")"
+  [[ "$child" =~ ^[A-Za-z0-9_.-]+$ ]] || die "$(msg "No child name found" "Nem található child név")"
+  printf '%s\n' "$conn" >"$RUN/conn"
+  if [ -n "$S_PSK$S_PASS" ]; then
+    {
+      echo "secrets {"
+      [ -n "$S_PSK" ] && printf '  ike-macvpn {\n    secret = "%s"\n  }\n' "$(swan_escape "$S_PSK")"
+      [ -n "$S_PASS" ] && printf '  eap-macvpn {\n    id = "%s"\n    secret = "%s"\n  }\n' "$(swan_escape "$S_USER")" "$(swan_escape "$S_PASS")"
+      echo "}"
+    } >>"$RUN/config"
+    log_step "$(msg "secrets block added (masked)" "secrets blokk hozzáadva (maszkolva)")"
+  fi
+  # A charon nem démonizál: háttérben indítjuk, a hívó pipe-jai nélkül (run_direct --bg).
+  if [ "$DRY_RUN" = 1 ] || ! pgrep -x charon >/dev/null; then
+    run_direct --bg "$charon"
+    if [ "$DRY_RUN" = 0 ]; then
+      for i in $(seq 1 10); do "$swanctl" --stats </dev/null >/dev/null 2>&1 && break; sleep 0.5; done
+    fi
+  fi
+  run_logged "$swanctl" --load-all --file "$RUN/config" || { [ "$DRY_RUN" = 1 ] || rm -rf "$RUN"; die "$(msg "swanctl --load-all failed" "A swanctl --load-all sikertelen")"; }
+  [ "$DEBUG" = 1 ] && lvl=2
+  run_logged "$swanctl" --initiate --child "$child" --timeout 30 --loglevel "$lvl" || {
+    run_logged "$swanctl" --terminate --ike "$conn" --timeout 5
+    [ "$DRY_RUN" = 1 ] || rm -rf "$RUN"
+    die "$(msg "IKE negotiation failed (details in the log)" "Az IKE egyeztetés sikertelen (részletek a naplóban)")"
+  }
+}
+
+down_strongswan() {
+  [ -d "$RUN" ] || { log_step "$(msg "no running connection" "nincs futó kapcsolat")"; return 0; }
+  local swanctl conn others
+  swanctl=$(find_tool swanctl) || die "$(msg "swanctl not found" "A swanctl nem található")"
+  conn=$(cat "$RUN/conn" 2>/dev/null)
+  [[ "$conn" =~ ^[A-Za-z0-9_.-]+$ ]] && run_logged "$swanctl" --terminate --ike "$conn" --timeout 10
+  # A charon-t csak akkor állítjuk le, ha más strongSwan kapcsolat nem fut.
+  others=$(grep -lx strongswan "$RUN_BASE"/*/kind 2>/dev/null | grep -v "^$RUN/" | wc -l | tr -d ' ')
+  if [ "$others" = 0 ] && [ "$DRY_RUN" = 0 ]; then
+    log_cmd "pkill -x charon"
+    pkill -x charon
+  fi
+  return 0
+}
+
+# ---------- status (Task 19) ----------
+
+json_str() { if [ -n "$1" ]; then printf '"%s"' "$1"; else printf 'null'; fi; }
+
+status_one() { # $1 = run dir → "state iface ip"
+  local d="$1" kind state="failed" iface="" ip="" pid conn real sw sas
+  kind=$(cat "$d/kind")
+  case "$kind" in
+    openvpn)
+      pid=$(cat "$d/pid" 2>/dev/null)
+      if ovpn_alive "$pid"; then
+        if [ -f "$d/iface" ]; then state="connected"; else state="connecting"; fi
+      fi
+      iface=$(cat "$d/iface" 2>/dev/null); ip=$(cat "$d/ip" 2>/dev/null)
+      ;;
+    wireguard)
+      iface=$(cat "$d/iface" 2>/dev/null)
+      [[ "$iface" =~ ^mv[0-9a-f]{8}$ ]] || iface=""
+      [ -n "$iface" ] && real=$(cat "$WG_RUN/$iface.name" 2>/dev/null)
+      if [[ "$real" =~ ^utun[0-9]+$ ]] && ifconfig "$real" >/dev/null 2>&1; then
+        state="connected"
+        ip=$(ifconfig "$real" | awk '/inet /{ print $2; exit }')
+        iface="$real"
+      fi
+      ;;
+    strongswan)
+      conn=$(cat "$d/conn" 2>/dev/null)
+      sw=$(find_tool swanctl)
+      if [ -n "$sw" ] && [[ "$conn" =~ ^[A-Za-z0-9_.-]+$ ]]; then
+        sas=$("$sw" --list-sas --ike "$conn" </dev/null 2>/dev/null)
+        case "$sas" in
+          *ESTABLISHED*) state="connected" ;;
+          *CONNECTING*)  state="connecting" ;;
+        esac
+      fi
+      ;;
+  esac
+  [[ "$iface" =~ ^[A-Za-z0-9]*$ ]] || iface=""
+  [[ "$ip" =~ ^[0-9A-Fa-f:.]*$ ]] || ip=""
+  printf '%s %s %s\n' "$state" "${iface:--}" "${ip:--}"
+}
+
+status_all() {
+  local d id sep="" kind since state iface ip
+  printf '['
+  for d in "$RUN_BASE"/*/; do
+    d="${d%/}"
+    [ -f "$d/kind" ] || continue
+    id=$(basename "$d")
+    [[ "$id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || continue
+    kind=$(cat "$d/kind")
+    case "$kind" in openvpn|wireguard|strongswan) ;; *) continue ;; esac
+    since=$(cat "$d/started" 2>/dev/null)
+    [[ "$since" =~ ^[0-9]+$ ]] || since=""
+    read -r state iface ip <<<"$(status_one "$d")"
+    [ "$iface" = "-" ] && iface=""
+    [ "$ip" = "-" ] && ip=""
+    printf '%s{"id":"%s","kind":"%s","state":"%s","iface":%s,"ip":%s,"since":%s}' \
+      "$sep" "$id" "$kind" "$state" "$(json_str "$iface")" "$(json_str "$ip")" "${since:-null}"
+    sep=","
+  done
+  printf ']\n'
+}
+
+# ---------- down ----------
+# A típust a futási könyvtár kind fájlja adja (allowlist), nem a parancssor: egy rossz típusú down így nem
+# hagy futva egy kapcsolatot. Eltérésnél csak naplózunk. A futási könyvtár csak akkor törlődik, ha a bontás
+# sikerült, vagy már nem fut követett folyamat; különben megmarad (egy újabb down még megtalálja), és hiba a kilépés.
+tracked_alive() {
+  local state rest
+  read -r state rest <<<"$(status_one "$RUN")"
+  [ "$state" != failed ]
+}
+
+do_down() {
+  local k rc
+  RUN="$RUN_BASE/$ID"
+  if [ ! -d "$RUN" ] || [ -L "$RUN" ]; then
+    log_step "$(msg "no running connection" "nincs futó kapcsolat")"
+    log_step "$(msg "connection closed" "kapcsolat bontva")"
+    return 0
+  fi
+  k=$(cat "$RUN/kind" 2>/dev/null)
+  case "$k" in
+    openvpn|wireguard|strongswan) ;;
+    *)
+      # A kind a config másolása után, bármely folyamat indítása előtt íródik: nélküle nincs mit leállítani.
+      log_step "$(msg "no valid type in the run directory, cleanup only" "a futási könyvtárban nincs érvényes típus, csak takarítás")"
+      [ "$DRY_RUN" = 1 ] || rm -rf "$RUN"
+      return 0
+      ;;
+  esac
+  [ "$k" = "$KIND" ] || log_step "$(msg "kind mismatch: command line $KIND, running connection $k – closing the running kind" "típuseltérés: a parancssor $KIND, a futó kapcsolat $k – a futó típust bontjuk")"
+  KIND="$k"
+  # Alhéjban, hogy egy die (pl. hiányzó eszköz) ne szakítsa meg a takarítás eldöntését.
+  ( "down_$k" )
+  rc=$?
+  [ "$DRY_RUN" = 1 ] && { log_step "$(msg "connection closed" "kapcsolat bontva")"; return 0; }
+  if [ "$rc" = 0 ] || ! tracked_alive; then
+    rm -rf "$RUN"
+    log_step "$(msg "connection closed" "kapcsolat bontva")"
+    return 0
+  fi
+  die "$(msg "Disconnect failed, the connection is still running (the run directory is kept)" "A bontás sikertelen, a kapcsolat még fut (a futási könyvtár megmarad)")"
+}
+
+# ---------- belépési pont ----------
+case "$CMD" in
+  version)
+    echo "$MVPN_VERSION"
+    ;;
+  status)
+    status_all
+    ;;
+  up|down)
+    validate_kind "$KIND"
+    validate_id "$ID"
+    if [ "$TEST_MODE" = 1 ] && [ "$DRY_RUN" = 0 ]; then
+      # Tesztmódban (nem root) a valódi down/up ág csak kifejezett kérésre fut; rootként semmit nem tud.
+      # Az up csak hamis brew könyvtárral (MVPN_BREW) engedett, így valódi VPN eszköz nem indul.
+      { [ "$CMD" = down ] && [ "$MVPN_TEST_ALLOW_DOWN" = 1 ]; } ||
+        { [ "$CMD" = up ] && [ "$MVPN_TEST_ALLOW_UP" = 1 ] && [ -n "$MVPN_BREW" ]; } || die "$(msg "Root privileges required (or --dry-run)" "Root jog szükséges (vagy --dry-run)")"
+    fi
+    trap on_exit EXIT
+    trap on_term TERM
+    open_log
+    acquire_lock
+    if [ "$CMD" = up ]; then
+      resolve_src_base
+      read_secrets
+      log_line "═══ $(date '+%Y-%m-%d %H:%M:%S') up $KIND $ID$([ "$DEBUG" = 1 ] && echo ' (debug)') ═══"
+      # Ha ugyanerre az id-re maradt futási könyvtár (pl. le nem bontott kapcsolat), előbb bontsuk le,
+      # különben a prepare_run törölné a pid/iface fájlokat, és a futó folyamat árván maradna.
+      # Összeomlott openvpn (halott pid) esetén a do_down → cleanup_openvpn a dns-backup-ból visszaállítja a DNS-t.
+      if [ "$DRY_RUN" = 0 ] && [ -d "$RUN_BASE/$ID" ]; then
+        log_step "$(msg "closing the previous run" "korábbi futás lebontása")"
+        ( do_down ) || die "$(msg "Cannot close the previous connection" "A korábbi kapcsolat nem bontható le")"
+      fi
+      prepare_run
+      validate_config
+      snapshot "$(msg "before" "előtte")"
+      "up_$KIND" || die "$(msg "Establishing the connection failed" "A kapcsolat felépítése sikertelen")"
+      UP_DONE=1
+      snapshot "$(msg "after" "utána")"
+      log_step "$(msg "connection established" "kapcsolat felépült")"
+    else
+      log_line "═══ $(date '+%Y-%m-%d %H:%M:%S') down $KIND $ID ═══"
+      do_down
+    fi
+    ;;
+  __mask)
+    [ "$TEST_MODE" = 1 ] || die "$(msg "Test mode only" "Csak tesztmódban")"
+    S_PASS="$MVPN_MASK_1"; S_PSK="$MVPN_MASK_2"
+    mask
+    ;;
+  *)
+    die "$(msg "Usage: mvpn up|down <openvpn|wireguard|strongswan> <id> [--debug] [--dry-run] [--lang en|hu] | status | version" "Használat: mvpn up|down <openvpn|wireguard|strongswan> <id> [--debug] [--dry-run] [--lang en|hu] | status | version")"
+    ;;
+esac

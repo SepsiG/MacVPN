@@ -1,0 +1,1286 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "%@ · Missing tool" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Hiányzó eszköz"
+          }
+        }
+      }
+    },
+    "%@ · system VPN (not created by MacVPN)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · rendszer VPN (nem a MacVPN hozta létre)"
+          }
+        }
+      }
+    },
+    "%@-log.txt" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-naplo.txt"
+          }
+        }
+      }
+    },
+    "%@: connection failed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: sikertelen csatlakozás"
+          }
+        }
+      }
+    },
+    "%@: the connection dropped" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: a kapcsolat megszakadt"
+          }
+        }
+      }
+    },
+    "Account name" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fióknév"
+          }
+        }
+      }
+    },
+    "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak."
+          }
+        }
+      }
+    },
+    "All tools are installed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minden eszköz megvan"
+          }
+        }
+      }
+    },
+    "Also delete user data (connections and Keychain passwords)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A felhasználói adatok törlése is (kapcsolatok és Keychain jelszavak)"
+          }
+        }
+      }
+    },
+    "Asks for the admin password once: installs the scripts in /usr/local/libexec/macvpn and the /etc/sudoers.d/macvpn rule." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egyszer kéri az admin jelszót: telepíti a /usr/local/libexec/macvpn scripteket és a /etc/sudoers.d/macvpn szabályt."
+          }
+        }
+      }
+    },
+    "Authentication (stored in the Keychain)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hitelesítés (Keychainben tárolva)"
+          }
+        }
+      }
+    },
+    "Authorize" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Engedélyezés"
+          }
+        }
+      }
+    },
+    "brew error (%d)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "brew hiba (%d)"
+          }
+        }
+      }
+    },
+    "Cancel" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mégse"
+          }
+        }
+      }
+    },
+    "Cannot read the file" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A fájl nem olvasható"
+          }
+        }
+      }
+    },
+    "Check Again" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Újraellenőrzés"
+          }
+        }
+      }
+    },
+    "Check for Updates Automatically" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítések automatikus keresése"
+          }
+        }
+      }
+    },
+    "Check for Updates Now" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítések keresése most"
+          }
+        }
+      }
+    },
+    "Checking for Updates…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítések keresése…"
+          }
+        }
+      }
+    },
+    "Checking the install location…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Célhely ellenőrzése…"
+          }
+        }
+      }
+    },
+    "Click to see the log." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kattints a naplóért."
+          }
+        }
+      }
+    },
+    "Close" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bezárás"
+          }
+        }
+      }
+    },
+    "Connect" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csatlakozás"
+          }
+        }
+      }
+    },
+    "Connect in Debug Mode" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csatlakozás debug módban"
+          }
+        }
+      }
+    },
+    "Connections" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapcsolatok"
+          }
+        }
+      }
+    },
+    "Copy" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Másolás"
+          }
+        }
+      }
+    },
+    "Delete" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Törlés"
+          }
+        }
+      }
+    },
+    "Delete %@?" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Törlöd: %@?"
+          }
+        }
+      }
+    },
+    "Discard" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elvetés"
+          }
+        }
+      }
+    },
+    "Disconnect" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bontás"
+          }
+        }
+      }
+    },
+    "Disconnect and Quit" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leállítás és kilépés"
+          }
+        }
+      }
+    },
+    "Disconnect them before quitting?" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Leállítsam őket kilépés előtt?"
+          }
+        }
+      }
+    },
+    "Done." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kész."
+          }
+        }
+      }
+    },
+    "Done. Go back to MacVPN and click Check Again." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kész. Térj vissza a MacVPN-hez és nyomd meg az Újraellenőrzés gombot."
+          }
+        }
+      }
+    },
+    "Download and Install" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letöltés és telepítés"
+          }
+        }
+      }
+    },
+    "Downloading…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Letöltés…"
+          }
+        }
+      }
+    },
+    "Export" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportálás"
+          }
+        }
+      }
+    },
+    "Export… (without passwords)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportálás… (jelszavak nélkül)"
+          }
+        }
+      }
+    },
+    "Follow" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Követés"
+          }
+        }
+      }
+    },
+    "Group name" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csoportnév (group name)"
+          }
+        }
+      }
+    },
+    "Help" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Súgó"
+          }
+        }
+      }
+    },
+    "Homebrew" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew"
+          }
+        }
+      }
+    },
+    "Import Error" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import hiba"
+          }
+        }
+      }
+    },
+    "Import from File…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Import fájlból…"
+          }
+        }
+      }
+    },
+    "Install" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telepítés"
+          }
+        }
+      }
+    },
+    "Installed (version %@)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telepítve (verzió %@)"
+          }
+        }
+      }
+    },
+    "Installed version: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telepített verzió: %@"
+          }
+        }
+      }
+    },
+    "Installing Homebrew (with the official installer)…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Homebrew telepítése (a hivatalos telepítővel)…"
+          }
+        }
+      }
+    },
+    "Installing…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telepítés…"
+          }
+        }
+      }
+    },
+    "Install…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telepítés…"
+          }
+        }
+      }
+    },
+    "L2TP and Cisco IPsec work without these." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L2TP és Cisco IPsec ezek nélkül is működik."
+          }
+        }
+      }
+    },
+    "Later" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Később"
+          }
+        }
+      }
+    },
+    "Log" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Napló"
+          }
+        }
+      }
+    },
+    "log collection stopped" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "naplógyűjtés leállítva"
+          }
+        }
+      }
+    },
+    "log stream did not start: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "log stream nem indult: %@"
+          }
+        }
+      }
+    },
+    "log stream stopped" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "log stream leállt"
+          }
+        }
+      }
+    },
+    "MacVPN has been uninstalled" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A MacVPN eltávolítva"
+          }
+        }
+      }
+    },
+    "MacVPN is up to date" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A MacVPN naprakész"
+          }
+        }
+      }
+    },
+    "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, bash). You can install the missing ones here." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, bash). A hiányzókat innen telepítheted."
+          }
+        }
+      }
+    },
+    "Manage Connections…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kapcsolatok kezelése…"
+          }
+        }
+      }
+    },
+    "Missing: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiányzik: %@"
+          }
+        }
+      }
+    },
+    "Mounting the disk image…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lemezkép csatolása…"
+          }
+        }
+      }
+    },
+    "My Connections" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saját kapcsolatok"
+          }
+        }
+      }
+    },
+    "Name" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Név"
+          }
+        }
+      }
+    },
+    "Native connections only have a log when connected in debug mode." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Natív kapcsolatnál csak debug csatlakozáskor van napló."
+          }
+        }
+      }
+    },
+    "native debug" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "natív debug"
+          }
+        }
+      }
+    },
+    "New" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új"
+          }
+        }
+      }
+    },
+    "New %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új %@"
+          }
+        }
+      }
+    },
+    "New Connection / Import…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új kapcsolat / Import…"
+          }
+        }
+      }
+    },
+    "No connections yet" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Még nincs kapcsolat"
+          }
+        }
+      }
+    },
+    "No update available" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs elérhető frissítés"
+          }
+        }
+      }
+    },
+    "Not installed. The installer runs in Terminal and asks for an administrator password." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs telepítve. A telepítő Terminálban fut és rendszergazdai jelszót kér."
+          }
+        }
+      }
+    },
+    "OK" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OK"
+          }
+        }
+      }
+    },
+    "Open System Status" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendszerállapot megnyitása"
+          }
+        }
+      }
+    },
+    "Open the Release on GitHub" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kiadás megnyitása a GitHubon"
+          }
+        }
+      }
+    },
+    "Option-click a switch: debug mode" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Option+kattintás a kapcsolón: debug mód"
+          }
+        }
+      }
+    },
+    "Or drop an .ovpn / .conf file here." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vagy húzz ide egy .ovpn / .conf fájlt."
+          }
+        }
+      }
+    },
+    "Password" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jelszó"
+          }
+        }
+      }
+    },
+    "Passwords and the PSK are not included in the export." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A jelszavak és a PSK nem kerülnek az exportba."
+          }
+        }
+      }
+    },
+    "Permissions (root scripts + sudoers)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jogosultság (root scriptek + sudoers)"
+          }
+        }
+      }
+    },
+    "Pre-shared key (PSK)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pre-shared key (PSK)"
+          }
+        }
+      }
+    },
+    "Preparing the installation…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Telepítés előkészítése…"
+          }
+        }
+      }
+    },
+    "Profile opened, approve it in System Settings." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Profil megnyitva, hagyd jóvá a Rendszerbeállításokban."
+          }
+        }
+      }
+    },
+    "Quit MacVPN" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilépés"
+          }
+        }
+      }
+    },
+    "Quit, Keep Them Running" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilépés, fussanak tovább"
+          }
+        }
+      }
+    },
+    "Quitting and restarting…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kilépés és újraindítás…"
+          }
+        }
+      }
+    },
+    "Removes the root scripts, the sudoers rule and the logs; optionally your connections too." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is."
+          }
+        }
+      }
+    },
+    "Save" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentés"
+          }
+        }
+      }
+    },
+    "Save and Install Profile" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentés és profil telepítése"
+          }
+        }
+      }
+    },
+    "Saved: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentve: %@"
+          }
+        }
+      }
+    },
+    "Save…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentés…"
+          }
+        }
+      }
+    },
+    "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentéskor egy konfigurációs profil készül és megnyílik. A Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt kell jóváhagyni. Módosítás után ismét jóvá kell hagyni."
+          }
+        }
+      }
+    },
+    "Saving failed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mentés nem sikerült"
+          }
+        }
+      }
+    },
+    "Search" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Keresés"
+          }
+        }
+      }
+    },
+    "Select a Connection" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Válassz kapcsolatot"
+          }
+        }
+      }
+    },
+    "Send all traffic over VPN" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Minden forgalom a VPN-en keresztül"
+          }
+        }
+      }
+    },
+    "Server" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szerver"
+          }
+        }
+      }
+    },
+    "Server and account name are required" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A szerver és a fióknév kötelező"
+          }
+        }
+      }
+    },
+    "Settings" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beállítások"
+          }
+        }
+      }
+    },
+    "System Status" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendszerállapot"
+          }
+        }
+      }
+    },
+    "System VPNs" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendszer VPN-ek"
+          }
+        }
+      }
+    },
+    "The config and the saved passwords will be deleted." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A config és a mentett jelszavak törlődnek."
+          }
+        }
+      }
+    },
+    "The edited settings have not been saved yet." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A szerkesztett beállítások még nincsenek mentve."
+          }
+        }
+      }
+    },
+    "The editor is no longer available" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A szerkesztő már nem elérhető"
+          }
+        }
+      }
+    },
+    "The installed version (%@) is the latest." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A telepített verzió (%@) a legfrissebb."
+          }
+        }
+      }
+    },
+    "The root scripts were not found in the app" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A root scriptek nem találhatók az alkalmazásban"
+          }
+        }
+      }
+    },
+    "The SHA-256 checksum of the downloaded disk image is checked against the release's .sha256 file. The app restarts after the installation." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A letöltött lemezkép SHA-256 ellenőrzőösszege a kiadás .sha256 fájljával egyezik meg. Telepítés után az app újraindul."
+          }
+        }
+      }
+    },
+    "The update check failed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A frissítés-ellenőrzés nem sikerült"
+          }
+        }
+      }
+    },
+    "There are active VPN connections" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aktív VPN kapcsolatok vannak"
+          }
+        }
+      }
+    },
+    "This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Rendszerbeállításokban vagy a saját alkalmazásában vannak."
+          }
+        }
+      }
+    },
+    "Uninstall" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eltávolítás"
+          }
+        }
+      }
+    },
+    "Uninstall failed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az eltávolítás nem sikerült"
+          }
+        }
+      }
+    },
+    "Uninstall MacVPN" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacVPN eltávolítása"
+          }
+        }
+      }
+    },
+    "Uninstall MacVPN…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacVPN eltávolítása…"
+          }
+        }
+      }
+    },
+    "Unknown error" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ismeretlen hiba"
+          }
+        }
+      }
+    },
+    "Unsaved Changes" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem mentett változások"
+          }
+        }
+      }
+    },
+    "Unsaved changes" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem mentett változások"
+          }
+        }
+      }
+    },
+    "Update" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítés"
+          }
+        }
+      }
+    },
+    "Update available: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítés elérhető: %@"
+          }
+        }
+      }
+    },
+    "Update required (%@ → %@). Asks for the admin password once." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Frissítés szükséges (%1$@ → %2$@). Egyszer kéri az admin jelszót."
+          }
+        }
+      }
+    },
+    "Username" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Felhasználónév"
+          }
+        }
+      }
+    },
+    "Verifying the app…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az alkalmazás ellenőrzése…"
+          }
+        }
+      }
+    },
+    "VPN tools" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "VPN eszközök"
+          }
+        }
+      }
+    },
+    "Warning" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Figyelem"
+          }
+        }
+      }
+    },
+    "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan)." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan)."
+          }
+        }
+      }
+    },
+    "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az L2TP / Cisco profilokat a Rendszerbeállítások → Általános → Eszközkezelés alatt távolíthatod el."
+          }
+        }
+      }
+    },
+    "You have to remove the installed profile yourself in the Profiles pane that opens." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A telepített profilt a megnyíló Profilok panelen neked kell eltávolítanod."
+          }
+        }
+      }
+    },
+    "~/Library/Application Support/MacVPN and the MacVPN Keychain items" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "~/Library/Application Support/MacVPN és a MacVPN Keychain-bejegyzései"
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

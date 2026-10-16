@@ -1,0 +1,43 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+permissions:
+  contents: write
+jobs:
+  dmg:
+    runs-on: macos-15
+    steps:
+      - name: Tag ellenőrzése
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid tag: $GITHUB_REF_NAME"; exit 1; }
+      - uses: actions/checkout@v4
+      - name: Toolchain versions
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Verzió a tagből
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $V" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $V" Resources/Info.plist
+          # Az app innen keresi a frissítéseket (GitHub Releases).
+          /usr/libexec/PlistBuddy -c "Set :MacVPNUpdateRepo $GITHUB_REPOSITORY" Resources/Info.plist
+      - name: Tesztek
+        run: swift test && scripts/test-root.sh
+      - name: DMG
+        run: scripts/build-dmg.sh
+      - name: SHA-256
+        run: |
+          cd dist
+          for f in MacVPN-*.dmg; do
+            shasum -a 256 "$f" > "$f.sha256"
+          done
+          cat MacVPN-*.dmg.sha256
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256 \
+            --title "MacVPN $GITHUB_REF_NAME" \
+            --notes "Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway."
