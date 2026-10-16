@@ -13,6 +13,8 @@ jobs:
           swift --version
       - name: Swift tests
         run: swift test
+      - name: Swift tests (release, optimized)
+        run: swift test -c release -Xswiftc -enable-testing
       - name: Root script tests
         run: scripts/test-root.sh
       - name: App string catalog coverage

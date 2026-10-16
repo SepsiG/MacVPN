@@ -43,13 +43,18 @@ public enum RootInstaller {
                                          in base: URL = FileManager.default.temporaryDirectory) throws -> URL {
         let template = base.appendingPathComponent("\(prefix).XXXXXX").path
         var buffer = Array(template.utf8CString)
-        guard let result = mkdtemp(&buffer) else {
-            throw InstallError(message: L10n.tr("Cannot create a temporary directory"))
+        // A mkdtemp visszatérési pointere csak a hívás alatt érvényes (inout-to-pointer),
+        // ezért az elkészült útvonalat magából a bufferből olvassuk ki.
+        let ok = buffer.withUnsafeMutableBufferPointer { mkdtemp($0.baseAddress!) != nil }
+        guard ok else {
+            let reason = String(cString: strerror(errno))
+            throw InstallError(message: L10n.tr("Cannot create a temporary directory") + " (\(template): \(reason))")
         }
-        let path = String(cString: result)
+        let path = buffer.withUnsafeBufferPointer { String(cString: $0.baseAddress!) }
         guard chmod(path, 0o700) == 0 else {
+            let reason = String(cString: strerror(errno))
             try? FileManager.default.removeItem(atPath: path)
-            throw InstallError(message: L10n.tr("Cannot set the permissions of the temporary directory"))
+            throw InstallError(message: L10n.tr("Cannot set the permissions of the temporary directory") + " (\(path): \(reason))")
         }
         return URL(fileURLWithPath: path, isDirectory: true)
     }
