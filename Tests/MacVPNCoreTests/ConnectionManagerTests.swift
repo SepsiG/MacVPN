@@ -9,6 +9,7 @@ final class ConnectionManagerTests: XCTestCase {
     var store: ConnectionStore!
     var mock: MockCommandRunner!
     var secrets: InMemorySecretStore!
+    var driver: MockNativeDriver!
 
     // A magyar üzeneteket és a `--lang hu` parancssort ellenőrzi: a nyelv rögzítve, nem a gép locale-ja dönt.
     override func setUp() async throws {
@@ -17,6 +18,7 @@ final class ConnectionManagerTests: XCTestCase {
         store = ConnectionStore(baseURL: base)
         mock = MockCommandRunner()
         secrets = InMemorySecretStore()
+        driver = MockNativeDriver()
     }
 
     override func tearDown() async throws {
@@ -26,7 +28,7 @@ final class ConnectionManagerTests: XCTestCase {
 
     func makeManager() -> ConnectionManager {
         let m = ConnectionManager(store: store, secrets: secrets,
-                                  mvpn: MvpnClient(runner: mock), native: NativeVPNController(runner: mock))
+                                  mvpn: MvpnClient(runner: mock), native: NativeVPNController(runner: mock, driver: driver))
         m.reload()
         return m
     }
@@ -295,7 +297,7 @@ final class ConnectionManagerTests: XCTestCase {
         let m = makeManager()
         await m.refresh()
         let s = try XCTUnwrap(m.systemServices.first)
-        mock.responses["/usr/sbin/scutil --nc start \(sysID)"] = CommandResult(exitCode: 1, stderr: "nem indul")
+        driver.startError = MvpnError.failed("nem indul")
         await m.connectSystem(s)
         XCTAssertEqual(m.state(for: sysID), .failed("nem indul"))
         await m.refresh()
@@ -375,7 +377,7 @@ final class ConnectionManagerTests: XCTestCase {
         clock += 46
         await m.refresh()
         XCTAssertEqual(m.state(for: c.id.uuidString), .failed("Időtúllépés"))
-        XCTAssertTrue(mock.calls.contains { $0.commandLine == "/usr/sbin/scutil --nc stop \(svcID)" })
+        XCTAssertEqual(driver.stops, [svcID])
     }
 
     func testEventsAreEmittedAfterStateIsPublished() async throws {
@@ -387,5 +389,178 @@ final class ConnectionManagerTests: XCTestCase {
         mock.responses[listCmd] = list("Disconnected")
         await m.refresh()
         XCTAssertEqual(seen, .disconnected)
+    }
+
+    // MARK: - In-process native start: secrets
+
+    func testManagedNativeConnectPassesSecretsToDriver() async throws {
+        let (m, c) = try nativeManager()
+        secrets.set("bob", for: c.id, field: .username)
+        secrets.set("pw", for: c.id, field: .password)
+        secrets.set("k", for: c.id, field: .psk)
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts, [.init(serviceID: svcID, options: [
+            "IPSec": ["SharedSecret": "k"],
+            "PPP": ["AuthName": "bob", "AuthPassword": "pw"],
+        ] as NSDictionary, linger: true)])
+        XCTAssertFalse(mock.calls.contains { $0.arguments.contains("start") }, "no scutil --nc start")
+        XCTAssertEqual(m.state(for: c.id.uuidString), .connecting)
+    }
+
+    func testManagedCiscoConnectPassesXAuth() async throws {
+        let c = Connection(name: "Partner", kind: .cisco, nativeServiceName: "Partner")
+        try store.save(c, config: nil)
+        mock.responses[listCmd] = CommandResult(stdout: "  (Disconnected)     \(svcID) IPSec              \"Partner\"    [IPSec]\n")
+        secrets.set("bob", for: c.id, field: .username)
+        secrets.set("k", for: c.id, field: .psk)
+        let m = makeManager()
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts.first?.options,
+                       ["IPSec": ["SharedSecret": "k", "XAuthName": "bob"]] as NSDictionary)
+    }
+
+    func testManagedNativeConnectWithoutSecretsUsesStoredConfig() async throws {
+        let (m, c) = try nativeManager()
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts, [.init(serviceID: svcID, options: nil, linger: true)])
+    }
+
+    func testManagedNativeDriverFailure() async throws {
+        let (m, c) = try nativeManager()
+        driver.startError = NativeDriverError.start("No service")
+        var events: [ConnectionEvent] = []
+        m.onEvent = { events.append($0) }
+        await m.connect(c, debug: false)
+        let reason = "A VPN szolgáltatás nem indítható: No service"
+        XCTAssertEqual(m.state(for: c.id.uuidString), .failed(reason))
+        XCTAssertEqual(events, [.failed(connectionID: c.id.uuidString, name: "Office L2TP", reason: reason)])
+    }
+
+    func systemManager() async throws -> (ConnectionManager, SystemVPNService) {
+        mock.responses[listCmd] = list("Disconnected")
+        let m = makeManager()
+        await m.refresh()
+        return (m, try XCTUnwrap(m.systemServices.first))
+    }
+
+    func testSystemConnectPassesStoredSecrets() async throws {
+        let (m, s) = try await systemManager()
+        let id = try XCTUnwrap(UUID(uuidString: svcID))
+        secrets.set("k", for: id, field: .psk)
+        secrets.set("pw", for: id, field: .password)
+        await m.connectSystem(s)
+        XCTAssertEqual(driver.starts, [.init(serviceID: svcID, options: [
+            "IPSec": ["SharedSecret": "k"], "PPP": ["AuthPassword": "pw"],
+        ] as NSDictionary, linger: true)])
+        XCTAssertEqual(m.state(for: svcID), .connecting)
+    }
+
+    func testSystemConnectWithoutSecretsPassesNoOptions() async throws {
+        let (m, s) = try await systemManager()
+        await m.connectSystem(s)
+        XCTAssertEqual(driver.starts, [.init(serviceID: svcID, options: nil, linger: true)])
+    }
+
+    func testSystemConnectIgnoresSecretsForUnsupportedType() async throws {
+        let wgID = "052ED352-624D-4F75-BD84-D3E278CFD84F"
+        mock.responses[listCmd] = CommandResult(stdout: "* (Disconnected)   \(wgID) VPN (com.wireguard.macos) \"Home\"   [VPN:com.wireguard.macos]\n")
+        let m = makeManager()
+        await m.refresh()
+        let s = try XCTUnwrap(m.systemServices.first)
+        secrets.set("k", for: try XCTUnwrap(UUID(uuidString: wgID)), field: .psk)
+        await m.connectSystem(s)
+        XCTAssertEqual(driver.starts.map(\.options), [nil])
+    }
+
+    static let pskHint = "A kapcsolat nem jött létre. Ha ez egy L2TP/IPsec VPN, add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → Office L2TP."
+    static let systemGeneric = "A kapcsolat nem jött létre."
+
+    func testSystemConnectingThenDisconnectedFailsWithPSKHint() async throws {
+        let (m, s) = try await systemManager()
+        var events: [ConnectionEvent] = []
+        m.onEvent = { events.append($0) }
+        await m.connectSystem(s)
+        mock.responses[listCmd] = list("Connecting")
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .connecting)
+        mock.responses[listCmd] = list("Disconnected")
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed(Self.pskHint))
+        XCTAssertEqual(events, [.failed(connectionID: svcID, name: "Office L2TP", reason: Self.pskHint)])
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed(Self.pskHint), "sticky")
+    }
+
+    func testSystemFailureWithStoredPSKUsesGenericReason() async throws {
+        let (m, s) = try await systemManager()
+        secrets.set("k", for: try XCTUnwrap(UUID(uuidString: svcID)), field: .psk)
+        await m.connectSystem(s)
+        mock.responses[listCmd] = list("Connecting")
+        await m.refresh()
+        mock.responses[listCmd] = list("Disconnected")
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed(Self.systemGeneric))
+    }
+
+    func testSystemPSKHintIsEnglishToo() async throws {
+        AppLanguage.override = .en
+        let (m, s) = try await systemManager()
+        await m.connectSystem(s)
+        mock.responses[listCmd] = list("Connecting")
+        await m.refresh()
+        mock.responses[listCmd] = list("Disconnected")
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed(
+            "The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → Office L2TP."))
+    }
+
+    func testSystemNeverConnectingFailsAfterGrace() async throws {
+        let (m, s) = try await systemManager()
+        var clock = Date(timeIntervalSince1970: 1000)
+        m.now = { clock }
+        await m.connectSystem(s)
+        clock += 3
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .connecting, "5 mp-en belül még nem hiba")
+        clock += 3
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed(Self.pskHint))
+    }
+
+    func testSystemStuckConnectingTimesOutAndStops() async throws {
+        let (m, s) = try await systemManager()
+        var clock = Date(timeIntervalSince1970: 1000)
+        m.now = { clock }
+        await m.connectSystem(s)
+        mock.responses[listCmd] = list("Connecting")
+        await m.refresh()
+        clock += 46
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed("Időtúllépés"))
+        XCTAssertEqual(driver.stops, [svcID])
+    }
+
+    func testSystemTimeoutWorksWithoutList() async throws {
+        let (m, s) = try await systemManager()
+        var clock = Date(timeIntervalSince1970: 1000)
+        m.now = { clock }
+        await m.connectSystem(s)
+        mock.responses[listCmd] = CommandResult(exitCode: 1, stderr: "scutil hiba")
+        clock += 46
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .failed("Időtúllépés"))
+        XCTAssertEqual(driver.stops, [svcID])
+    }
+
+    func testSystemConnectSuccessThenDisconnect() async throws {
+        let (m, s) = try await systemManager()
+        await m.connectSystem(s)
+        mock.responses[listCmd] = list("Connected")
+        await m.refresh()
+        XCTAssertEqual(m.state(for: svcID), .connected(ip: nil, since: nil))
+        mock.responses[listCmd] = list("Disconnected")
+        await m.disconnectSystem(s)
+        XCTAssertEqual(m.state(for: svcID), .disconnected)
+        XCTAssertEqual(driver.stops, [svcID])
     }
 }

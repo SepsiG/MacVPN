@@ -52,7 +52,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         self.runner = runner
         self.updates = UpdateController(runner: runner)
         self.manager = ConnectionManager(store: store, secrets: secrets,
-                                         mvpn: mvpn, native: NativeVPNController(runner: quickRunner))
+                                         mvpn: mvpn, native: NativeVPNController(runner: quickRunner, driver: SystemConfigurationDriver()))
         super.init()
         manager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         brew.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
@@ -253,7 +253,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             if let message = save() { failures.append((id, message)) } else { setUnsaved(id, dirty: false) }
         }
         guard let first = failures.first else { return true }
-        let names = Dictionary(uniqueKeysWithValues: manager.connections.map { ($0.id, $0.name) })
+        var names = Dictionary(uniqueKeysWithValues: manager.connections.map { ($0.id, $0.name) })
+        for s in manager.systemServices { if let id = s.secretID { names[id] = s.name } }
         let alert = NSAlert()
         alert.messageText = String(localized: "Saving failed")
         alert.informativeText = failures.map { "\(names[$0.id] ?? $0.id.uuidString): \($0.message)" }
@@ -433,6 +434,22 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         secrets.set(s.username ?? "", for: id, field: .username)
         secrets.set(s.password ?? "", for: id, field: .password)
         secrets.set(s.psk ?? "", for: id, field: .psk)
+    }
+
+    /// A rendszer VPN-hez a MacVPN kulcskarikájában tárolt PSK / jelszó (csak L2TP / Cisco IPsec, UUID azonosítóval).
+    /// Üres mező törli a bejegyzést. False: nem menthető (más típus, vagy nem UUID az azonosító).
+    @discardableResult
+    func saveSystemSecrets(_ s: SystemVPNService, psk: String, password: String) -> Bool {
+        guard s.supportsStoredSecrets, let id = s.secretID else { return false }
+        secrets.set(psk, for: id, field: .psk)
+        secrets.set(password, for: id, field: .password)
+        return true
+    }
+
+    func forgetSystemSecrets(_ s: SystemVPNService) {
+        guard let id = s.secretID else { return }
+        secrets.deleteAll(for: id)
+        setUnsaved(id, dirty: false)
     }
 
     func delete(_ c: Connection) {

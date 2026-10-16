@@ -74,7 +74,7 @@ Ha mindhárom zöld, kész a telepítés. Az L2TP és a Cisco IPsec ezek nélkü
 
 Kapcsolatot a **Kapcsolatok** ablakban veszel fel. Megnyitása: menü → **Kapcsolatok kezelése…** vagy **Új kapcsolat / Import…**.
 
-- Bal oldalt a lista. A **Saját kapcsolatok** a MacVPN-ben létrehozottak. A **Rendszer VPN-ek** a macOS-ben máshonnan beállított VPN-ek. Ezeket csak indítani és bontani lehet.
+- Bal oldalt a lista. A **Saját kapcsolatok** a MacVPN-ben létrehozottak. A **Rendszer VPN-ek** a macOS-ben máshonnan beállított VPN-ek. Ezeket csak indítani és bontani lehet. L2TP és Cisco IPsec rendszer VPN-nél a közös kulcsot (PSK) is eltárolhatod a MacVPN-ben (lásd [3.5](#35-rendszer-vpn-ek-közös-kulcs-l2tp--cisco-esetén)).
 - Az eszköztár **Új** (+) menüjéből választhatsz típust (OpenVPN, WireGuard, IKEv2, L2TP, Cisco IPsec), vagy **Import fájlból…**.
 - Jobb oldalt a kijelölt kapcsolat két füle: **Beállítások** és **Napló**.
 
@@ -155,6 +155,21 @@ Ezek a macOS beépített VPN-jét használják. A beállítás űrlapon történ
 2. Kattints duplán a MacVPN profilra, majd a **Telepítés…** gombra, és add meg a jelszavadat.
 
 Minden módosítás után újra jóvá kell hagyni a profilt. Kapcsolat törlésekor a MacVPN megnyitja a Profilok panelt, ahol a profilt neked kell eltávolítanod.
+
+Csatlakozáskor a MacVPN a mentett PSK-t és jelszót közvetlenül átadja a macOS-nek, így a kapcsolat nem azon múlik, hogy a macOS megtalálja-e őket a Rendszer kulcskarikában.
+
+### 3.5 Rendszer VPN-ek: közös kulcs L2TP / Cisco esetén
+
+A Rendszerbeállításokban felvett VPN (például **Office L2TP**) a **Rendszer VPN-ek** alatt jelenik meg. A MacVPN nem módosítja a beállításait. Előfordul, hogy a macOS nem tudja kiolvasni egy ilyen VPN közös kulcsát, ha másik alkalmazás indítja: a kapcsolat nem jön létre, és a macOS „a szerver nem érhető el” jellegű üzenetet mutathat, holott a Rendszerbeállításokból indítva működik.
+
+L2TP és Cisco IPsec rendszer VPN-nél a részletező nézetben két mező van:
+
+- **Közös kulcs (PSK)**
+- **Jelszó (nem kötelező, ha nincs elmentve a macOS-ben)**
+
+Kattints a **Mentés** gombra. A MacVPN kulcskarikájában tárolódnak (nem a VPN saját beállításaiban), és minden MacVPN-ből indított csatlakozáskor átadja őket a macOS-nek. A **Mentett titkok törlése** gomb törli őket. Üresen hagyott mező szintén törlődik.
+
+Ha itt mentetlen módosítással váltasz vagy zárod be az ablakot, az app ugyanúgy rákérdez (**Mentés / Elvetés / Mégse**), mint a többi kapcsolatnál.
 
 ---
 
@@ -278,6 +293,8 @@ A WireGuard kapcsolat zöldnek látszik (az interfész létrejött), de nincs fo
 - Hagyd jóvá a **Rendszerbeállítások → Általános → Eszközkezelés** alatt (lásd [3.4](#34-l2tpipsec-és-cisco-ipsec)).
 - Módosítás után a profilt újra jóvá kell hagyni.
 - Ha az üzenet **A kapcsolat nem jött létre – részletek: debug csatlakozás**, csatlakozz debug módban, és nézd meg a `racoon` / `pppd` sorokat (tipikusan rossz PSK vagy jelszó).
+- **Rendszer VPN** (például **Office L2TP**): az üzenet **A kapcsolat nem jött létre. Ha ez egy L2TP/IPsec VPN, add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → <név>.** Add meg a PSK-t (és ha a macOS-ben nincs elmentve, a jelszót) a [3.5](#35-rendszer-vpn-ek-közös-kulcs-l2tp--cisco-esetén) szerint, majd csatlakozz újra. A rendszernaplóban ez az eset `L2TP: incorrect user shared secret found` sorként látszik.
+- Ha már van mentett PSK, és az üzenet **A kapcsolat nem jött létre.**, ellenőrizd a PSK-t és a jelszót, valamint hogy a szerver elérhető-e.
 
 ### 7.7 „Nem engedélyezett direktíva” / „Tiltott direktíva”
 
@@ -329,7 +346,7 @@ A MacVPN a GitHub Releases oldalon keresi az új verziókat: induláskor, majd 2
    - `/etc/sudoers.d/macvpn` (sudoers szabály)
    - `/var/run/macvpn` (futási adatok)
    - `/var/log/macvpn` (kapcsolatnaplók)
-3. Ha a **A felhasználói adatok törlése is** jelölőnégyzetet bejelölöd, a kapcsolataid (`~/Library/Application Support/MacVPN`) és a Keychainben tárolt jelszavaik is törlődnek.
+3. Ha a **A felhasználói adatok törlése is** jelölőnégyzetet bejelölöd, a kapcsolataid (`~/Library/Application Support/MacVPN`) és a Keychainben tárolt jelszavaik is törlődnek, a rendszer VPN-ekhez mentett közös kulcsokkal együtt.
 4. Kattints az **Eltávolítás** gombra, és add meg az admin jelszót. Előtte a MacVPN bontja az aktív kapcsolatokat.
    Ha egy kapcsolat nem bontható, az eltávolítás megszakad („Egy kapcsolat nem bontható, az eltávolítás megszakítva”), és semmi nem törlődik. Bontsd a kapcsolatot (vagy indítsd újra a gépet), majd próbáld újra.
 5. A végén egy **A MacVPN eltávolítva** című ablak jelenik meg, ezzel a szöveggel:

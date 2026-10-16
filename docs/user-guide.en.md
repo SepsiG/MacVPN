@@ -74,7 +74,7 @@ When all three are green, setup is done. L2TP and Cisco IPsec work without them.
 
 You add connections in the **Connections** window. To open it, use the menu: **Manage Connections…** or **New Connection / Import…**.
 
-- The list is on the left. **My Connections** are the ones created in MacVPN. **System VPNs** are VPNs configured elsewhere in macOS. You can only start and stop those.
+- The list is on the left. **My Connections** are the ones created in MacVPN. **System VPNs** are VPNs configured elsewhere in macOS. You can only start and stop those. For L2TP and Cisco IPsec system VPNs you can also store the shared secret in MacVPN (see [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco)).
 - From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, L2TP, Cisco IPsec) or **Import from File…**.
 - The selected connection has two tabs on the right: **Settings** and **Log**.
 
@@ -155,6 +155,21 @@ These use the built-in macOS VPN. You set them up in a form (**New → L2TP** or
 2. Double-click the MacVPN profile, click **Install…**, and enter your password.
 
 You must approve the profile again after every change. When you delete a connection, MacVPN opens the Profiles pane, where you remove the profile yourself.
+
+When connecting, MacVPN passes the saved PSK and password to macOS directly, so the connection does not depend on macOS finding them in the System keychain.
+
+### 3.5 System VPNs: shared secret for L2TP / Cisco
+
+A VPN set up in System Settings (for example **Office L2TP**) appears under **System VPNs**. MacVPN does not change its settings. Sometimes macOS cannot read the shared secret of such a VPN when it is started from another app: the connection does not come up, and macOS may show a "server not reachable" message, although connecting from System Settings works.
+
+For L2TP and Cisco IPsec system VPNs, the detail view has two fields:
+
+- **Shared secret (PSK)**
+- **Password (optional, if not saved in macOS)**
+
+Click **Save**. They are stored in the MacVPN keychain (not in the VPN's own settings), and passed to macOS each time you connect from MacVPN. **Forget saved secrets** deletes them. Leaving a field empty also deletes it.
+
+If you switch away or close the window with unsaved changes here, the app asks the same **Save / Discard / Cancel** question as for other connections.
 
 ---
 
@@ -278,6 +293,8 @@ Message: **The profile is not installed: <name>**. The profile created by MacVPN
 - Approve it under **System Settings → General → Device Management** (see [3.4](#34-l2tpipsec-and-cisco-ipsec)).
 - After any change, approve the profile again.
 - If the message is **The connection could not be established – for details, connect in debug mode**, connect in debug mode and look at the `racoon` / `pppd` lines (typically a wrong PSK or password).
+- **System VPN** (for example **Office L2TP**): the message is **The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → <name>.** Enter the PSK (and, if macOS does not have it saved, the password) as described in [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco), then connect again. In the system log this case shows up as `L2TP: incorrect user shared secret found`.
+- If a PSK is already saved and the message is **The connection did not come up.**, check that the PSK and password are correct, and that the server is reachable.
 
 ### 7.7 "Directive not allowed" / "Forbidden directive"
 
@@ -329,7 +346,7 @@ MacVPN looks for new versions on the GitHub Releases page: at launch, then every
    - `/etc/sudoers.d/macvpn` (sudoers rule)
    - `/var/run/macvpn` (runtime data)
    - `/var/log/macvpn` (connection logs)
-3. If you tick **Also delete user data (connections and Keychain passwords)**, your connections (`~/Library/Application Support/MacVPN`) and their passwords in the Keychain are deleted too.
+3. If you tick **Also delete user data (connections and Keychain passwords)**, your connections (`~/Library/Application Support/MacVPN`) and their passwords in the Keychain are deleted too, including the shared secrets saved for system VPNs.
 4. Click **Uninstall** and enter the admin password. MacVPN disconnects active connections first.
    If a connection cannot be disconnected, the uninstall stops ("A connection could not be disconnected, uninstall cancelled.") and nothing is removed. Disconnect it (or restart the Mac), then try again.
 5. At the end a window titled **MacVPN has been uninstalled** appears with this text:

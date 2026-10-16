@@ -156,32 +156,12 @@ public final class ConnectionManager: ObservableObject {
                 }
                 guard let services else { next[key] = previous ?? .disconnected; continue }
                 let service = services.first { $0.name == name }
-                if case .awaitingNative(let started, let saw, let sid)? = ops[key] {
-                    let elapsed = now().timeIntervalSince(started)
-                    switch service?.connectionState {
-                    case .connected?:
-                        setOp(key, nil)
-                        current = service!.connectionState
-                    case .connecting?:
-                        ops[key] = .awaitingNative(started: started, sawConnecting: true, serviceID: sid)
-                        if elapsed > Self.nativeTimeout {
-                            toStop.append(sid)
-                            next[key] = failNative(key, c.name, reason: L10n.tr("Timed out"))
-                        } else {
-                            next[key] = .connecting
-                        }
-                        continue
-                    default:
-                        if saw || elapsed > Self.nativeGrace {
-                            next[key] = failNative(key, c.name, reason: Self.nativeFailureReason)
-                        } else {
-                            next[key] = .connecting
-                        }
-                        continue
-                    }
-                } else {
-                    current = service?.connectionState ?? .disconnected
+                if let pending = evaluateAwaiting(key: key, name: c.name, service: service,
+                                                  failureReason: { Self.nativeFailureReason }, toStop: &toStop) {
+                    next[key] = pending
+                    continue
                 }
+                current = service?.connectionState ?? .disconnected
             } else {
                 guard let root else { next[key] = previous ?? .disconnected; continue }
                 current = root.first(where: { $0.id == c.id })?.connectionState ?? .disconnected
@@ -202,18 +182,68 @@ public final class ConnectionManager: ObservableObject {
                 case .disconnecting?: next[s.id] = .disconnecting; continue
                 default: break
                 }
+                if let pending = evaluateAwaiting(key: s.id, name: s.name, service: s,
+                                                  failureReason: { self.systemFailureReason(s) }, toStop: &toStop) {
+                    next[s.id] = pending
+                    continue
+                }
                 next[s.id] = resolve(key: s.id, name: s.name, previous: previous,
                                      current: s.connectionState, nativeLike: true)
             }
             systemServices = unmanaged
         } else {
-            for s in systemServices { if let st = states[s.id] { next[s.id] = st } }
+            for s in systemServices {
+                if !stale(s.id), case .awaitingNative(let started, _, let sid)? = ops[s.id],
+                   now().timeIntervalSince(started) > Self.nativeTimeout {
+                    toStop.append(sid)
+                    next[s.id] = failNative(s.id, s.name, reason: L10n.tr("Timed out"))
+                } else if let st = states[s.id] {
+                    next[s.id] = st
+                }
+            }
         }
         states = next
         let events = queuedEvents
         queuedEvents = []
         for event in events { onEvent?(event) }
         for id in toStop { try? await native.stop(serviceID: id) }
+    }
+
+    /// A függő natív indítás (`awaitingNative`) kiértékelése a friss scutil állapot alapján.
+    /// nil: nincs függő indítás, vagy épp csatlakozott – a hívó a szolgáltatás állapotát használja.
+    private func evaluateAwaiting(key: String, name: String, service: SystemVPNService?,
+                                  failureReason: () -> String, toStop: inout [String]) -> ConnectionState? {
+        guard case .awaitingNative(let started, let saw, let sid)? = ops[key] else { return nil }
+        let elapsed = now().timeIntervalSince(started)
+        switch service?.connectionState {
+        case .connected?:
+            setOp(key, nil)
+            return nil
+        case .connecting?:
+            ops[key] = .awaitingNative(started: started, sawConnecting: true, serviceID: sid)
+            if elapsed > Self.nativeTimeout {
+                toStop.append(sid)
+                return failNative(key, name, reason: L10n.tr("Timed out"))
+            }
+            return .connecting
+        default:
+            if saw || elapsed > Self.nativeGrace { return failNative(key, name, reason: failureReason()) }
+            return .connecting
+        }
+    }
+
+    /// Rendszer VPN hibája: PSK nélkül (L2TP / Cisco) arra utal, hogy a MacVPN-ben megadható.
+    func systemFailureReason(_ s: SystemVPNService) -> String {
+        if s.supportsStoredSecrets, let id = s.secretID, (secrets.get(id, field: .psk) ?? "").isEmpty {
+            return L10n.tr("The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → %@.", s.name)
+        }
+        return L10n.tr("The connection did not come up.")
+    }
+
+    /// A rendszer VPN-hez a MacVPN kulcskarikájában tárolt PSK/jelszó (csak L2TP / Cisco IPsec).
+    public func systemSecrets(for s: SystemVPNService) -> Secrets {
+        guard s.supportsStoredSecrets, let id = s.secretID else { return Secrets() }
+        return Secrets(password: secrets.get(id, field: .password), psk: secrets.get(id, field: .psk))
     }
 
     private func failNative(_ key: String, _ name: String, reason: String) -> ConnectionState {
@@ -237,7 +267,8 @@ public final class ConnectionManager: ObservableObject {
                 guard let service = try await native.list().first(where: { $0.name == name }) else {
                     throw MvpnError.failed(L10n.tr("The profile is not installed: %@", name))
                 }
-                try await native.start(serviceID: service.id)
+                try await native.start(serviceID: service.id, kind: NativeKind(kind: c.kind),
+                                       secrets: secrets.secrets(for: c.id))
                 guard keyEpoch[key] == token else {
                     if wantDown.contains(key) {
                         try? await native.stop(serviceID: service.id)
@@ -300,20 +331,34 @@ public final class ConnectionManager: ObservableObject {
     }
 
     public func connectSystem(_ s: SystemVPNService) async {
-        setOp(s.id, .connecting)
-        states[s.id] = .connecting
-        do { try await native.start(serviceID: s.id) } catch {
-            states[s.id] = .failed(error.localizedDescription)
-            setOp(s.id, nil)
-            onEvent?(.failed(connectionID: s.id, name: s.name, reason: error.localizedDescription))
-            return
+        let key = s.id
+        wantDown.remove(key)
+        setOp(key, .connecting)
+        states[key] = .connecting
+        let token = keyEpoch[key]
+        do {
+            try await native.start(serviceID: s.id, kind: NativeKind(typeLabel: s.typeLabel), secrets: systemSecrets(for: s))
+            guard keyEpoch[key] == token else {
+                if wantDown.contains(key) {
+                    try? await native.stop(serviceID: s.id)
+                    settleAfterTeardown(key)
+                }
+                return
+            }
+            // Mint a managed natívnál: a tényleges eredményt a refresh dönti el, így a hiba nem csendes "bontva".
+            setOp(key, .awaitingNative(started: now(), sawConnecting: false, serviceID: s.id))
+            states[key] = .connecting
+        } catch {
+            guard keyEpoch[key] == token else { return }
+            let reason = error.localizedDescription
+            states[key] = .failed(reason)
+            setOp(key, nil)
+            onEvent?(.failed(connectionID: key, name: s.name, reason: reason))
         }
-        states[s.id] = .connecting
-        setOp(s.id, nil)
-        await refresh()
     }
 
     public func disconnectSystem(_ s: SystemVPNService) async {
+        wantDown.insert(s.id)
         setOp(s.id, .disconnecting)
         states[s.id] = .disconnecting
         try? await native.stop(serviceID: s.id)

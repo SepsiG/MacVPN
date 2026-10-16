@@ -1280,6 +1280,56 @@
           }
         }
       }
+    },
+    "Shared secret (PSK)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Közös kulcs (PSK)"
+          }
+        }
+      }
+    },
+    "Password (optional, if not saved in macOS)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Jelszó (nem kötelező, ha nincs elmentve a macOS-ben)"
+          }
+        }
+      }
+    },
+    "Stored in the MacVPN keychain and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\")." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A MacVPN kulcskarikájában tárolódik, és csatlakozáskor a macOS megkapja. Akkor kell, ha a macOS magától nem tudja kiolvasni a közös kulcsot („incorrect user shared secret”)."
+          }
+        }
+      }
+    },
+    "Saved" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentve"
+          }
+        }
+      }
+    },
+    "Forget saved secrets" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mentett titkok törlése"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"

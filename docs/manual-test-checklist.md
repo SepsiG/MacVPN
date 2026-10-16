@@ -24,6 +24,13 @@ Előfeltétel: `scripts/build-dmg.sh` lefutott, `swift test` és `scripts/test-r
 - [ ] L2TP: új kapcsolat, űrlap kitöltése → profil jóváhagyása → csatlakozás → bontás
 - [ ] Cisco IPsec: ugyanez csoportnévvel
 - [ ] Meglévő `Office L2TP` rendszer VPN indítása és bontása a menüből
+- [ ] L2TP (MacVPN-ben létrehozott) csatlakozás: a PSK-t a MacVPN in-process adja át (`SCNetworkConnectionStart`), a naplóban nincs `L2TP: incorrect user shared secret found`; a `ps`/argv-ben nincs PSK vagy jelszó
+- [ ] `Office L2TP` rendszer VPN mentett PSK nélkül, ha a macOS nem találja a kulcsot → kb. 5–45 mp-en belül piros hiba a PSK-tippel („…add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → Office L2TP."), értesítéssel; nem csendes „bontva"
+- [ ] `Office L2TP` → Kapcsolatok ablak: „Közös kulcs (PSK)" és „Jelszó (nem kötelező…)" mező, Mentés → csatlakozás sikerül; „Mentett titkok törlése" után a mezők üresek, a Keychainben nincs `macvpn` bejegyzés a szolgáltatás UUID-jával
+- [ ] Rendszer VPN PSK mezőjének mentetlen módosítása, majd másik kapcsolat kijelölése / Cmd+W → Mentés / Elvetés / Mégse kérdés
+- [ ] WireGuard / IKEv2 rendszer VPN-nél nincs PSK mező
+- [ ] Natív (L2TP / Cisco) kapcsolat fut, kilépés „fussanak tovább" → a VPN a MacVPN kilépése után is fennmarad (linger)
+- [ ] Cisco IPsec csatlakozás mentett PSK-val és jelszóval (XAuth) sikerül
 
 ## Szerkesztés és mentetlen változások
 - [ ] Mentetlen módosítással másik kapcsolat kijelölése → megerősítő párbeszédablak (Mentés / Elvetés / Mégse), mindhárom ág helyes
@@ -74,5 +81,5 @@ Előfeltétel: `scripts/build-dmg.sh` lefutott, `swift test` és `scripts/test-r
 - [ ] Nyelv: `MacVPN.app/Contents/MacOS/MacVPN -AppleLanguages '(hu)'` → magyar felület (menü, ablakok, NSAlert-ek, értesítések, validátor-hibák); `'(en)'` → angol; `'(de)'` → angol; `'(de, hu)'` → magyar
 - [ ] Nyelv, root oldal: magyar felülettel egy hibás config csatlakozásakor a hiba és a Napló `▶ [mvpn]` sorai magyarok, angol felülettel angolok
 - [ ] „MacVPN eltávolítása…" aktív OpenVPN kapcsolattal → a kapcsolat lebomlik, a négy útvonal törlődik, a Homebrew csomagok megmaradnak
-- [ ] A „felhasználói adatok" jelölővel az Application Support/MacVPN és a Keychain `macvpn` bejegyzései is törlődnek; nélküle megmaradnak
+- [ ] A „felhasználói adatok" jelölővel az Application Support/MacVPN és a Keychain `macvpn` bejegyzései is törlődnek (a rendszer VPN-ekhez mentett PSK/jelszó is); nélküle megmaradnak
 - [ ] Az admin jelszókérés megszakítása → „Az eltávolítás megszakítva", semmi nem törlődik

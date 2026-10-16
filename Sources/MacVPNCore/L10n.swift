@@ -82,6 +82,12 @@ public enum L10n {
         "Cannot query the status: %@": "Az állapot nem kérdezhető le: %@",
         "Timed out": "Időtúllépés",
         "The profile is not installed: %@": "A profil nincs telepítve: %@",
+        "Cannot open the VPN service: %@": "A VPN szolgáltatás nem nyitható meg: %@",
+        "Cannot start the VPN service: %@": "A VPN szolgáltatás nem indítható: %@",
+        "Cannot stop the VPN service: %@": "A VPN szolgáltatás nem állítható le: %@",
+        "The connection did not come up.": "A kapcsolat nem jött létre.",
+        "The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → %@.":
+            "A kapcsolat nem jött létre. Ha ez egy L2TP/IPsec VPN, add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → %@.",
 
         // Log filter
         "All": "Minden",

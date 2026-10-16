@@ -28,3 +28,38 @@ final class MockCommandRunner: CommandRunner, @unchecked Sendable {
         return response ?? CommandResult()
     }
 }
+
+/// Records the native start/stop calls instead of calling SystemConfiguration (no real VPN is touched).
+final class MockNativeDriver: NativeConnectionDriver, @unchecked Sendable {
+    struct Start: Equatable {
+        let serviceID: String
+        let options: NSDictionary?
+        let linger: Bool
+    }
+
+    private let lock = NSLock()
+    private var _starts: [Start] = []
+    private var _stops: [String] = []
+    /// Thrown by `start` when set.
+    var startError: Error?
+    var stopError: Error?
+
+    var starts: [Start] { lock.withLock { _starts } }
+    var stops: [String] { lock.withLock { _stops } }
+
+    func start(serviceID: String, options: [String: Any]?, linger: Bool) throws {
+        let error: Error? = lock.withLock {
+            _starts.append(Start(serviceID: serviceID, options: options.map { $0 as NSDictionary }, linger: linger))
+            return startError
+        }
+        if let error { throw error }
+    }
+
+    func stop(serviceID: String) throws {
+        let error: Error? = lock.withLock {
+            _stops.append(serviceID)
+            return stopError
+        }
+        if let error { throw error }
+    }
+}

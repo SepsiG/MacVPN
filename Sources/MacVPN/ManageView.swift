@@ -116,7 +116,7 @@ struct ManageView: View {
         if let id = model.selectedID, let c = manager.connections.first(where: { $0.id.uuidString == id }) {
             ConnectionDetailView(connection: c).id(id)
         } else if let id = model.selectedID, let s = manager.systemServices.first(where: { $0.id == id }) {
-            SystemServiceDetail(service: s)
+            SystemServiceDetail(service: s).id(id)
         } else {
             ContentUnavailableView("Select a Connection", systemImage: "network",
                                    description: Text("Or drop an .ovpn / .conf file here."))
@@ -248,21 +248,121 @@ extension ConnectionDetailView {
     }
 }
 
+/// A rendszer VPN PSK / jelszó űrlapjának állapota (lásd `NativeConfigDraft`).
+@MainActor
+final class SystemSecretsDraft: ObservableObject {
+    struct Fields: Equatable {
+        var psk = ""
+        var password = ""
+    }
+
+    @Published var fields = Fields() { didSet { reportDirty() } }
+    @Published private(set) var saved = false
+    private var original = Fields()
+    private var service: SystemVPNService?
+    private weak var model: AppModel?
+
+    var isDirty: Bool { service != nil && fields != original }
+    var hasStored: Bool { original != Fields() }
+
+    func load(_ service: SystemVPNService, model: AppModel) {
+        guard self.service == nil, service.supportsStoredSecrets else { return }
+        self.model = model
+        let s = model.manager.systemSecrets(for: service)
+        let loaded = Fields(psk: s.psk ?? "", password: s.password ?? "")
+        original = loaded
+        self.service = service
+        fields = loaded
+    }
+
+    @discardableResult
+    func save() -> Bool {
+        guard let service, let model, model.saveSystemSecrets(service, psk: fields.psk, password: fields.password) else {
+            return false
+        }
+        original = fields
+        saved = true
+        reportDirty()
+        return true
+    }
+
+    func forget() {
+        guard let service, let model else { return }
+        model.forgetSystemSecrets(service)
+        original = Fields()
+        saved = false
+        fields = Fields()
+    }
+
+    func detach() {
+        if let id = service?.secretID { model?.setUnsaved(id, dirty: false) }
+    }
+
+    private func reportDirty() {
+        guard let id = service?.secretID, let model else { return }
+        model.setUnsaved(id, dirty: isDirty, save: { [weak self] in
+            (self?.save() ?? false) ? nil : String(localized: "The editor is no longer available")
+        })
+    }
+}
+
 struct SystemServiceDetail: View {
     let service: SystemVPNService
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var manager: ConnectionManager
+    @StateObject private var draft = SystemSecretsDraft()
+
+    var state: ConnectionState { manager.state(for: service.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text(service.name).font(.title3.bold())
-            Text("\(service.typeLabel) · system VPN (not created by MacVPN)").foregroundStyle(.secondary)
-            Text("This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.")
-            Button(manager.state(for: service.id).isActive ? "Disconnect" : "Connect") { model.toggleSystem(service) }
-                .disabled(manager.state(for: service.id) == .disconnecting)
-            Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                Text(service.name).font(.title3.bold())
+                Text("\(service.typeLabel) · system VPN (not created by MacVPN)").foregroundStyle(.secondary)
+                Text("This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.")
+                Button(state.isActive ? "Disconnect" : "Connect") { model.toggleSystem(service) }
+                    .disabled(state == .disconnecting)
+                if case .failed(let reason) = state {
+                    Label(reason, systemImage: "xmark.octagon.fill")
+                        .foregroundStyle(.red)
+                        .font(.callout)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .padding([.horizontal, .top])
+            if service.supportsStoredSecrets {
+                Form {
+                    Section {
+                        SecureField("Shared secret (PSK)", text: $draft.fields.psk)
+                        SecureField("Password (optional, if not saved in macOS)", text: $draft.fields.password)
+                    } footer: {
+                        Text("Stored in the MacVPN keychain and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Section {
+                        if draft.isDirty {
+                            Text("Unsaved changes").foregroundStyle(.orange)
+                        } else if draft.saved {
+                            Text("Saved").foregroundStyle(.green)
+                        }
+                        HStack {
+                            Button("Forget saved secrets", role: .destructive) { draft.forget() }
+                                .disabled(!draft.hasStored && !draft.isDirty)
+                            Spacer()
+                            Button("Save") { draft.save() }
+                                .buttonStyle(.borderedProminent)
+                                .disabled(!draft.isDirty)
+                        }
+                    }
+                }
+                .formStyle(.grouped)
+            } else {
+                Spacer()
+            }
         }
-        .padding()
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear { draft.load(service, model: model) }
+        .onDisappear { draft.detach() }
     }
 }
