@@ -70,7 +70,11 @@ struct ManageView: View {
                 }
                 detail
             }
+            // Legyen elég széles a részletező, különben a tördelt szövegek a minimális szélességnél
+            // hatalmas minimális ablakmagasságot kényszerítenek ki.
+            .navigationSplitViewColumnWidth(min: 480, ideal: 650)
         }
+        .frame(minWidth: 720, minHeight: 420)
         .background(WindowCloseGuard {
             guard model.hasUnsavedChanges else { return true }
             model.pendingAction = .closeWindow
@@ -254,7 +258,6 @@ struct SystemServiceDetail: View {
             Text(service.name).font(.title3.bold())
             Text("\(service.typeLabel) · system VPN (not created by MacVPN)").foregroundStyle(.secondary)
             Text("This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.")
-                .fixedSize(horizontal: false, vertical: true)
             Button(manager.state(for: service.id).isActive ? "Disconnect" : "Connect") { model.toggleSystem(service) }
                 .disabled(manager.state(for: service.id) == .disconnecting)
             Spacer()
