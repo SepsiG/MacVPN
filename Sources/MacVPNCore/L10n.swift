@@ -171,6 +171,7 @@ public enum L10n {
         "Invalid checksum file (.sha256)": "Hibás ellenőrzőösszeg-fájl (.sha256)",
         "The checksum (SHA-256) of the downloaded file does not match. Update cancelled.":
             "A letöltött fájl ellenőrzőösszege (SHA-256) nem egyezik. A frissítés megszakítva.",
+        "The update is not signed by the MacVPN maintainer": "A frissítést nem a MacVPN fejlesztője írta alá",
         "Cannot mount the disk image: %@": "A lemezkép nem csatolható: %@",
         "The app on the disk image is not accepted: %@": "A lemezképen lévő alkalmazás nem fogadható el: %@",
         "The app's location is not writable: %@. Drag the app to the Applications folder, or update manually from the DMG.":
@@ -190,8 +191,14 @@ public enum L10n {
         // Launch at login
         "Approve MacVPN in System Settings → General → Login Items.":
             "Engedélyezd a MacVPN-t a Rendszerbeállítások → Általános → Bejelentkezési elemek alatt.",
-        "macOS cannot find MacVPN as a login item. Move the app to the Applications folder and open it from there.":
-            "A macOS nem találja a MacVPN-t bejelentkezési elemként. Helyezd az appot az Alkalmazások mappába, és onnan nyisd meg.",
+        "Enabled via a login LaunchAgent (applies at next login).":
+            "Bejelentkezési LaunchAgenttel bekapcsolva (a következő bejelentkezéstől érvényes).",
+        "Refusing to write %@: it is a symbolic link or not a regular file.":
+            "A(z) %@ nem írható: szimbolikus link vagy nem szabályos fájl.",
+        "Could not write %@: %@":
+            "A(z) %@ nem írható: %@",
+        "Could not remove %@: %@":
+            "A(z) %@ nem törölhető: %@",
         "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.":
             "Az indítás bejelentkezéskor csak akkor érhető el, ha a MacVPN az Alkalmazások mappából fut. Előbb húzd oda az appot.",
         "macOS is running MacVPN from a temporary location. Move the app to the Applications folder and open it from there.":

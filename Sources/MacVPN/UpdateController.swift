@@ -34,11 +34,13 @@ final class UpdateController: ObservableObject {
     @Published var delayUpdates: Bool {
         didSet {
             UserDefaults.standard.set(delayUpdates, forKey: Self.delayKey)
-            if let release = available ?? deferred { apply(release) }
+            if let release = available ?? deferred ?? awaitingSignature { apply(release) }
         }
     }
     /// Újabb kiadás, amely a késleltetés miatt még nincs felajánlva.
     @Published private(set) var deferred: Release?
+    /// Újabb kiadás, amelynek még nincs offline aláírása (`.sig`): nem ajánljuk fel.
+    @Published private(set) var awaitingSignature: Release?
 
     var enabled: Bool { repo != nil && repoID != nil }
 
@@ -58,9 +60,10 @@ final class UpdateController: ObservableObject {
 
     private func apply(_ release: Release) {
         switch UpdateChecker.offer(release, currentVersion: currentVersion, delayed: delayUpdates) {
-        case .offer: available = release; deferred = nil
-        case .tooRecent: available = nil; deferred = release
-        case .upToDate: available = nil; deferred = nil
+        case .offer: available = release; deferred = nil; awaitingSignature = nil
+        case .tooRecent: available = nil; deferred = release; awaitingSignature = nil
+        case .awaitingSignature: available = nil; deferred = nil; awaitingSignature = release
+        case .upToDate: available = nil; deferred = nil; awaitingSignature = nil
         }
     }
 
@@ -111,6 +114,9 @@ final class UpdateController: ObservableObject {
             alert.messageText = String(localized: "The update check failed")
             alert.informativeText = lastError
             alert.alertStyle = .warning
+        } else if let awaitingSignature {
+            alert.messageText = String(localized: "Update waiting for signature")
+            alert.informativeText = String(localized: "Version \(awaitingSignature.version) has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed.")
         } else if let deferred {
             alert.messageText = String(localized: "MacVPN is up to date")
             alert.informativeText = String(localized: "Version \(deferred.version) was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.")
@@ -166,7 +172,7 @@ final class UpdateController: ObservableObject {
         }
     }
 
-    /// Letöltés → SHA-256 → csatolás → app ellenőrzés → segédscript → kilépés (a kilépési kérdések után).
+    /// Letöltés → SHA-256 → aláírás (Ed25519) → csatolás → app ellenőrzés → segédscript → kilépés (a kilépési kérdések után).
     func install(confirmQuit: () async -> Bool, terminate: () -> Void) async {
         guard let release = available, installStage == nil else { return }
         installError = nil

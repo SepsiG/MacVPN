@@ -51,8 +51,11 @@ final class LoginItemTests: XCTestCase {
                        LoginItemState(isOn: false, canToggle: true, note: nil, showsOpenSettings: false))
         XCTAssertEqual(LoginItemState.make(status: .requiresApproval, location: .applications),
                        LoginItemState(isOn: true, canToggle: true, note: .requiresApproval, showsOpenSettings: true))
+        // Ad-hoc aláírt build: az SMAppService .notFound-ot ad, de az app a helyén van → kikapcsolva, kattintható.
         XCTAssertEqual(LoginItemState.make(status: .notFound, location: .applications),
-                       LoginItemState(isOn: false, canToggle: false, note: .notFound, showsOpenSettings: false))
+                       LoginItemState(isOn: false, canToggle: true, note: nil, showsOpenSettings: false))
+        XCTAssertEqual(LoginItemState.make(status: .enabledViaLaunchAgent, location: .applications),
+                       LoginItemState(isOn: true, canToggle: true, note: .launchAgent, showsOpenSettings: false))
     }
 
     func testBadLocationDisablesTurningOnButAllowsTurningOff() {
@@ -62,6 +65,10 @@ final class LoginItemTests: XCTestCase {
                        LoginItemState(isOn: false, canToggle: false, note: .translocated, showsOpenSettings: false))
         XCTAssertEqual(LoginItemState.make(status: .notFound, location: .translocated),
                        LoginItemState(isOn: false, canToggle: false, note: .translocated, showsOpenSettings: false))
+        XCTAssertEqual(LoginItemState.make(status: .notFound, location: .notInApplications),
+                       LoginItemState(isOn: false, canToggle: false, note: .notInApplications, showsOpenSettings: false))
+        XCTAssertEqual(LoginItemState.make(status: .enabledViaLaunchAgent, location: .translocated),
+                       LoginItemState(isOn: true, canToggle: true, note: .translocated, showsOpenSettings: false))
         // Már regisztrálva (pl. az app azóta máshonnan fut): kikapcsolható marad.
         XCTAssertEqual(LoginItemState.make(status: .enabled, location: .notInApplications),
                        LoginItemState(isOn: true, canToggle: true, note: .notInApplications, showsOpenSettings: false))
@@ -126,9 +133,17 @@ final class LoginItemTests: XCTestCase {
         let service = MockLoginItemService(status: .notRegistered)
         try makeController(service, location: .translocated).setEnabled(true)
         let notFound = MockLoginItemService(status: .notFound)
-        try makeController(notFound).setEnabled(true)
+        try makeController(notFound, location: .notInApplications).setEnabled(true)
         XCTAssertEqual(service.calls, [])
         XCTAssertEqual(notFound.calls, [])
+    }
+
+    func testNotFoundFromApplicationsCanBeTurnedOn() throws {
+        let service = MockLoginItemService(status: .notFound)
+        let controller = makeController(service)
+        try controller.setEnabled(true)
+        XCTAssertEqual(service.calls, ["register"])
+        XCTAssertTrue(controller.state.isOn)
     }
 
     func testRegisterErrorSurfacesAndStateIsReread() {
@@ -200,10 +215,11 @@ final class LoginItemTests: XCTestCase {
     // MARK: Szövegek
 
     func testNotesAreLocalized() {
-        let notes: [LoginItemNote] = [.requiresApproval, .notFound, .notInApplications, .translocated]
+        let notes: [LoginItemNote] = [.requiresApproval, .launchAgent, .notInApplications, .translocated]
         AppLanguage.override = .en
         let english = notes.map(\.message)
         XCTAssertEqual(english[0], "Approve MacVPN in System Settings → General → Login Items.")
+        XCTAssertEqual(english[1], "Enabled via a login LaunchAgent (applies at next login).")
         AppLanguage.override = .hu
         for (note, en) in zip(notes, english) {
             XCTAssertEqual(note.message, L10n.hungarian[en], "nincs magyar fordítás: \(en)")

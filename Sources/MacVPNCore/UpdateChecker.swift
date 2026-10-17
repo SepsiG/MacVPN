@@ -115,6 +115,8 @@ public enum UpdateError: LocalizedError, Equatable {
     case untrustedURL(String)
     case invalidChecksumFile
     case checksumMismatch
+    /// A `.sig` hiányzik, hibás, vagy egyik beágyazott kulccsal sem érvényes.
+    case unsignedUpdate
     case mountFailed(String)
     case invalidApp(String)
     case notWritable(String)
@@ -131,6 +133,7 @@ public enum UpdateError: LocalizedError, Equatable {
         case .untrustedURL(let url): return L10n.tr("Download address not allowed: %@", url)
         case .invalidChecksumFile: return L10n.tr("Invalid checksum file (.sha256)")
         case .checksumMismatch: return L10n.tr("The checksum (SHA-256) of the downloaded file does not match. Update cancelled.")
+        case .unsignedUpdate: return L10n.tr("The update is not signed by the MacVPN maintainer")
         case .mountFailed(let msg): return L10n.tr("Cannot mount the disk image: %@", msg)
         case .invalidApp(let msg): return L10n.tr("The app on the disk image is not accepted: %@", msg)
         case .notWritable(let path):
@@ -188,9 +191,12 @@ public struct Release: Equatable, Sendable {
     public let publishedAt: Date?
     public let dmg: ReleaseAsset
     public let checksum: ReleaseAsset
+    /// `MacVPN-<verzió>.dmg.sig`: a karbantartó offline Ed25519 aláírása. Nil: a kiadás még nincs aláírva,
+    /// ilyenkor nem ajánljuk fel és nem telepítjük.
+    public let signature: ReleaseAsset?
 
     public init(tag: String, version: String, notes: String, pageURL: URL?, publishedAt: Date?,
-                dmg: ReleaseAsset, checksum: ReleaseAsset) {
+                dmg: ReleaseAsset, checksum: ReleaseAsset, signature: ReleaseAsset?) {
         self.tag = tag
         self.version = version
         self.notes = notes
@@ -198,6 +204,7 @@ public struct Release: Equatable, Sendable {
         self.publishedAt = publishedAt
         self.dmg = dmg
         self.checksum = checksum
+        self.signature = signature
     }
 
     /// Legalább `minimumAge` másodperce közzétett-e. Ismeretlen közzétételi idő csak `minimumAge <= 0` mellett elég.
@@ -256,11 +263,15 @@ public struct UpdateChecker: Sendable {
         case upToDate
         /// Újabb, de még nem telt el a késleltetés (24 óra) a közzététel óta.
         case tooRecent
+        /// Újabb, de nincs `.sig` assetje (még nincs offline aláírva): nem ajánljuk fel.
+        case awaitingSignature
     }
 
-    /// Felajánlható-e a kiadás: újabb a futónál, és ha a késleltetés be van kapcsolva, legalább 24 órás.
+    /// Felajánlható-e a kiadás: újabb a futónál, van aláírás assetje, és ha a késleltetés be van kapcsolva,
+    /// legalább 24 órás. (Az aláírás érvényességét a telepítő ellenőrzi a letöltött DMG helyben számolt hash-ével.)
     public static func offer(_ release: Release, currentVersion: String, delayed: Bool, now: Date = Date()) -> Offer {
         guard release.isNewer(than: currentVersion) else { return .upToDate }
+        guard release.signature != nil else { return .awaitingSignature }
         guard !delayed || release.isOldEnough(minimumAge: minimumReleaseAge, now: now) else { return .tooRecent }
         return .offer
     }
@@ -308,8 +319,9 @@ public struct UpdateChecker: Sendable {
         let assets: [Asset]
     }
 
-    /// A GitHub `releases/latest` JSON-ja. A DMG neve `MacVPN-<verzió>.dmg`, mellette `MacVPN-<verzió>.dmg.sha256`.
-    /// Az assetek csak `https://github.com/<repo>/releases/download/<tag>/<név>` címről jöhetnek.
+    /// A GitHub `releases/latest` JSON-ja. A DMG neve `MacVPN-<verzió>.dmg`, mellette `MacVPN-<verzió>.dmg.sha256` és
+    /// (aláírt kiadásnál) `MacVPN-<verzió>.dmg.sig`. Hiányzó `.sig` nem hiba itt (a `signature` nil, az `offer` nem
+    /// ajánlja fel), de ha van, ugyanaz az útvonal-ellenőrzés vonatkozik rá. Az assetek csak `https://github.com/<repo>/releases/download/<tag>/<név>` címről jöhetnek.
     public static func parseRelease(_ data: Data, repo: String) throws -> Release {
         guard let raw = try? JSONDecoder().decode(RawRelease.self, from: data) else { throw UpdateError.invalidResponse }
         guard raw.draft != true, raw.prerelease != true, SemVer(raw.tag_name) != nil,
@@ -319,7 +331,11 @@ public struct UpdateChecker: Sendable {
         let version = raw.tag_name.hasPrefix("v") ? String(raw.tag_name.dropFirst()) : raw.tag_name
         let dmgName = "MacVPN-\(version).dmg"
         func asset(_ name: String) throws -> ReleaseAsset {
-            guard let a = raw.assets.first(where: { $0.name == name }) else { throw UpdateError.missingAsset(name) }
+            guard let a = try optionalAsset(name) else { throw UpdateError.missingAsset(name) }
+            return a
+        }
+        func optionalAsset(_ name: String) throws -> ReleaseAsset? {
+            guard let a = raw.assets.first(where: { $0.name == name }) else { return nil }
             guard let url = URL(string: a.browser_download_url),
                   UpdateURLPolicy.isExpectedAsset(url, repo: repo, tag: raw.tag_name, name: name) else {
                 throw UpdateError.untrustedURL(a.browser_download_url)
@@ -329,7 +345,8 @@ public struct UpdateChecker: Sendable {
         let page = raw.html_url.flatMap(URL.init(string:)).flatMap { UpdateURLPolicy.isReleasePage($0, repo: repo) ? $0 : nil }
         let published = raw.published_at.flatMap { ISO8601DateFormatter().date(from: $0) }
         return Release(tag: raw.tag_name, version: version, notes: raw.body ?? "", pageURL: page, publishedAt: published,
-                       dmg: try asset(dmgName), checksum: try asset(dmgName + ".sha256"))
+                       dmg: try asset(dmgName), checksum: try asset(dmgName + ".sha256"),
+                       signature: try optionalAsset(dmgName + ".sig"))
     }
 }
 

@@ -3,7 +3,8 @@ import CryptoKit
 
 /// Frissítés letöltése, ellenőrzése, csatolása és a cserét végző segédscript előkészítése.
 ///
-/// Folyamat: DMG + `.sha256` letöltése a cache-be → SHA-256 ellenőrzés (CryptoKit) → `hdiutil attach -readonly`
+/// Folyamat: DMG + `.sha256` + `.sig` letöltése a cache-be → SHA-256 ellenőrzés (CryptoKit) → a karbantartó offline
+/// Ed25519 aláírásának ellenőrzése a helyben számolt hash-re (`UpdateSignature`) → `hdiutil attach -readonly`
 /// → a csatolt app bundle ID-je és verziója → segédscript egy friss 0700-as könyvtárban. A script megvárja az
 /// app kilépését, `ditto`-val a cél mellé másol, átnevezéssel cserél, leveszi a quarantine-t, leválasztja a DMG-t,
 /// újraindítja az appot és törli magát. Jogosultságot nem emel: nem írható célhelynél hibát ad.
@@ -22,15 +23,24 @@ public struct UpdateInstaller: Sendable {
     let http: HTTPClient
     let runner: CommandRunner
     public let cacheDirectory: URL
+    /// A `.sig` ellenőrzéséhez elfogadott kulcsok (nyers 32 bájt). Élesben a beágyazott elsődleges és tartalék kulcs;
+    /// tesztben eldobható kulcs.
+    let publicKeys: [Data]
 
     public static var defaultCacheDirectory: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Caches/MacVPN", isDirectory: true)
     }
 
     public init(http: HTTPClient, runner: CommandRunner, cacheDirectory: URL = UpdateInstaller.defaultCacheDirectory) {
+        self.init(http: http, runner: runner, cacheDirectory: cacheDirectory,
+                  publicKeys: UpdateSignature.trustedKeys.map(\.rawRepresentation))
+    }
+
+    init(http: HTTPClient, runner: CommandRunner, cacheDirectory: URL, publicKeys: [Data]) {
         self.http = http
         self.runner = runner
         self.cacheDirectory = cacheDirectory
+        self.publicKeys = publicKeys
     }
 
     // MARK: Letöltés + ellenőrzés
@@ -60,12 +70,17 @@ public struct UpdateInstaller: Sendable {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Letölti a DMG-t a cache alatti friss, 0700-as (mkdtemp) könyvtárba, és ellenőrzi az SHA-256-ot.
-    /// Eltérésnél (vagy bármely hibánál) a könyvtárat törli; eltérésnél `checksumMismatch`.
+    /// Letölti a DMG-t a cache alatti friss, 0700-as (mkdtemp) könyvtárba, ellenőrzi az SHA-256-ot, majd a
+    /// karbantartó Ed25519 aláírását a helyben számolt hash-re. Bármely hibánál a könyvtárat törli; hash-eltérésnél
+    /// `checksumMismatch`, hiányzó vagy érvénytelen aláírásnál `unsignedUpdate`.
     public func downloadVerified(_ release: Release) async throws -> VerifiedDownload {
         guard UpdateURLPolicy.isAllowedDownload(release.dmg.url) else { throw UpdateError.untrustedURL(release.dmg.url.absoluteString) }
         guard UpdateURLPolicy.isAllowedDownload(release.checksum.url) else {
             throw UpdateError.untrustedURL(release.checksum.url.absoluteString)
+        }
+        guard let signatureAsset = release.signature else { throw UpdateError.unsignedUpdate }
+        guard UpdateURLPolicy.isAllowedDownload(signatureAsset.url) else {
+            throw UpdateError.untrustedURL(signatureAsset.url.absoluteString)
         }
         // A név a release-ből jön, de csak a várt alakot fogadjuk el (útvonal-elem nem lehet benne).
         guard release.dmg.name.range(of: "^MacVPN-[0-9A-Za-z.]+\\.dmg$", options: .regularExpression) != nil else {
@@ -76,6 +91,7 @@ public struct UpdateInstaller: Sendable {
         guard sumResponse.data.count <= Self.maxChecksumFileSize,
               let text = String(data: sumResponse.data, encoding: .utf8) else { throw UpdateError.invalidChecksumFile }
         let expected = try Self.parseChecksum(text, expectedName: release.dmg.name)
+        let signature = try await downloadSignature(signatureAsset)
 
         try prepareCacheDirectory()
         let directory = try RootInstaller.makePrivateTempDirectory(prefix: "download", in: cacheDirectory)
@@ -85,12 +101,27 @@ public struct UpdateInstaller: Sendable {
             guard status == 200 else { throw UpdateError.http(status) }
             let dest = directory.appendingPathComponent(release.dmg.name)
             try FileManager.default.moveItem(at: tmp, to: dest)
-            guard try Self.sha256(of: dest) == expected else { throw UpdateError.checksumMismatch }
-            return VerifiedDownload(dmg: dest, directory: directory, sha256: expected)
+            let actual = try Self.sha256(of: dest)
+            guard actual == expected else { throw UpdateError.checksumMismatch }
+            // Az aláírás a helyben számolt hash-re: a `.sha256` asset csak kényelmi/diagnosztikai összevetés.
+            let keys = publicKeys.compactMap { try? Curve25519.Signing.PublicKey(rawRepresentation: $0) }
+            guard UpdateSignature.verify(version: release.version, sha256Hex: actual, signatureBase64: signature,
+                                         publicKeys: keys) else { throw UpdateError.unsignedUpdate }
+            return VerifiedDownload(dmg: dest, directory: directory, sha256: actual)
         } catch {
             try? FileManager.default.removeItem(at: directory)
             throw error
         }
+    }
+
+    /// A `.sig` letöltése (legfeljebb 1 KB, UTF-8). 404 (vagy túl nagy / nem szöveg): `unsignedUpdate`.
+    private func downloadSignature(_ asset: ReleaseAsset) async throws -> String {
+        let response = try await http.get(asset.url)
+        if response.status == 404 { throw UpdateError.unsignedUpdate }
+        guard response.status == 200 else { throw UpdateError.http(response.status) }
+        guard response.data.count <= UpdateSignature.maxSignatureFileSize,
+              let text = String(data: response.data, encoding: .utf8) else { throw UpdateError.unsignedUpdate }
+        return text
     }
 
     private func prepareCacheDirectory() throws {

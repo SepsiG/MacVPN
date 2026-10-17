@@ -57,7 +57,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         self.secrets = secrets
         self.runner = runner
         self.updates = UpdateController(runner: runner)
-        self.loginItem = LoginItemController(service: SMAppServiceLoginItem())
+        // SMAppService elöl; ad-hoc aláírt buildnél (.notFound / register hiba) per-user LaunchAgent a tartalék.
+        self.loginItem = LoginItemController(service: FallbackLoginItemService(primary: SMAppServiceLoginItem()))
         self.manager = ConnectionManager(store: store, secrets: secrets,
                                          mvpn: mvpn, native: NativeVPNController(runner: quickRunner, driver: SystemConfigurationDriver()))
         super.init()
@@ -231,6 +232,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         // Ne maradjon árva bejelentkezési elem.
         var loginItemLeft = false
         do { try loginItem.unregisterIfRegistered() } catch { loginItemLeft = true }
+        // Egy elavult tartalmú, de a mi címkénket viselő LaunchAgent se maradjon (idegen plistet nem bánt).
+        do { try LaunchAgentLoginItem().remove() } catch { loginItemLeft = true }
         if removeUserData {
             for c in manager.connections { secrets.deleteAll(for: c.id) }
             secrets.removeAll()

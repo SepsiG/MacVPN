@@ -23,6 +23,8 @@ jobs:
         run: scripts/test-root.sh
       - name: App string catalog coverage
         run: scripts/check-l10n.sh
+      - name: Release signing script (dry run, throwaway key, no network)
+        run: scripts/test-sign-release.sh
       - name: DMG build (packaging + xcstringstool)
         run: scripts/build-dmg.sh
       - name: Bash syntax check

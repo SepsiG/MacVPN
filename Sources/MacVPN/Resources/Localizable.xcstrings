@@ -1311,6 +1311,16 @@
         }
       }
     },
+    "Update waiting for signature" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A frissítés aláírásra vár"
+          }
+        }
+      }
+    },
     "Username" : {
       "localizations" : {
         "hu" : {
@@ -1327,6 +1337,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Az alkalmazás ellenőrzése…"
+          }
+        }
+      }
+    },
+    "Version %@ has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ verzió megjelent, de a MacVPN fejlesztője még nem írta alá. Az aláírás után kerül felajánlásra."
           }
         }
       }

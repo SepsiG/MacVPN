@@ -64,7 +64,10 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # 2. Release: írási jog, de nem futtat repó kódot (nincs checkout), csak a build artifactjait teszi közzé.
+  # 2. Release: írási jog, de nem futtat repó kódot (nincs checkout), csak a build artifactjait teszi fel egy
+  #    *piszkozat* (draft) kiadásba. A `.sig` aláírást itt nem készítjük: a CI soha nem fér hozzá az aláíró kulcshoz.
+  #    A karbantartó a saját gépén futtatja a `scripts/sign-release.sh vX.Y.Z`-t, ami aláír, feltölti a `.sig`-et és
+  #    közzéteszi a kiadást. Aláírás nélkül a 0.2.2+ appok nem ajánlják fel és nem telepítik.
   release:
     needs: build
     runs-on: ubuntu-latest
@@ -84,5 +87,6 @@ jobs:
           gh release create "$GITHUB_REF_NAME" dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256 \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
+            --draft \
             --title "MacVPN $GITHUB_REF_NAME" \
-            --notes "Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. Frissítés után a macOS egyszer rákérdezhet, hogy a MacVPN hozzáférhet-e a Keychainben tárolt saját elemeihez (az ad-hoc aláírás miatt): a „Mindig engedélyezés” gombot csak akkor válaszd, ha a kérdés a MacVPN-től jön (a név és az útvonal alapján, pl. /Applications/MacVPN.app). / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway. After an update macOS may ask once whether MacVPN may access its own items in the Keychain (because of the ad-hoc signature): click Always Allow only if the prompt is from MacVPN (check the name and the path, e.g. /Applications/MacVPN.app)."
+            --notes "Ez a kiadás csak a karbantartó offline Ed25519 aláírása (MacVPN-X.Y.Z.dmg.sig) után kerül közzétételre; a 0.2.2-es és újabb appok aláírás nélküli frissítést nem telepítenek. / This release is published only after offline signing by the maintainer (Ed25519, MacVPN-X.Y.Z.dmg.sig); apps from 0.2.2 on do not install unsigned updates. Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. Frissítés után a macOS egyszer rákérdezhet, hogy a MacVPN hozzáférhet-e a Keychainben tárolt saját elemeihez (az ad-hoc aláírás miatt): a „Mindig engedélyezés” gombot csak akkor válaszd, ha a kérdés a MacVPN-től jön (a név és az útvonal alapján, pl. /Applications/MacVPN.app). / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway. After an update macOS may ask once whether MacVPN may access its own items in the Keychain (because of the ad-hoc signature): click Always Allow only if the prompt is from MacVPN (check the name and the path, e.g. /Applications/MacVPN.app)."

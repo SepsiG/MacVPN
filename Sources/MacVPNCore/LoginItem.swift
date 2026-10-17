@@ -11,6 +11,9 @@ public enum LoginItemStatus: Equatable, Sendable {
     case notRegistered
     case requiresApproval
     case notFound
+    /// Az `SMAppService` nem regisztrált (ad-hoc aláírt buildnél tipikusan `.notFound`), de a saját per-user
+    /// LaunchAgentünk (`~/Library/LaunchAgents/local.macvpn.launcher.plist`) a várt tartalommal megvan.
+    case enabledViaLaunchAgent
 }
 
 /// A rendszer login item szolgáltatása (élesben `SMAppService.mainApp`).
@@ -52,7 +55,8 @@ public enum LoginItemLocation: Equatable, Sendable {
 /// A kapcsoló alatti megjegyzés.
 public enum LoginItemNote: Equatable, Sendable {
     case requiresApproval
-    case notFound
+    /// A bekapcsolás a LaunchAgent tartalékkal történt (a következő bejelentkezéstől érvényes).
+    case launchAgent
     case notInApplications
     case translocated
 
@@ -60,8 +64,8 @@ public enum LoginItemNote: Equatable, Sendable {
         switch self {
         case .requiresApproval:
             return L10n.tr("Approve MacVPN in System Settings → General → Login Items.")
-        case .notFound:
-            return L10n.tr("macOS cannot find MacVPN as a login item. Move the app to the Applications folder and open it from there.")
+        case .launchAgent:
+            return L10n.tr("Enabled via a login LaunchAgent (applies at next login).")
         case .notInApplications:
             return L10n.tr("Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.")
         case .translocated:
@@ -86,7 +90,10 @@ public struct LoginItemState: Equatable, Sendable {
 
     /// - `.enabled` → be; `.notRegistered` → ki.
     /// - `.requiresApproval` → be (regisztrálva van, csak jóváhagyásra vár; kikapcsolva visszavonható) + megjegyzés és gomb.
-    /// - `.notFound` → ki, nem kattintható, megjegyzés.
+    /// - `.notFound` → ugyanaz, mint `.notRegistered`: ad-hoc aláírt (Developer ID nélküli) buildnél az
+    ///   `SMAppService.mainApp` akkor is ezt adja, ha az app a helyén van. A bekapcsolás ilyenkor a LaunchAgent
+    ///   tartalékra esik vissza (`FallbackLoginItemService`); megjegyzés csak egy tényleges hibánál (riasztás).
+    /// - `.enabledViaLaunchAgent` → be, halvány megjegyzéssel (a következő bejelentkezéstől érvényes).
     /// - Rossz helyről futva bekapcsolni nem lehet; ha már regisztrálva van, kikapcsolni igen (ne ragadjon be).
     public static func make(status: LoginItemStatus, location: LoginItemLocation) -> LoginItemState {
         let locationNote: LoginItemNote? = switch location {
@@ -99,10 +106,10 @@ public struct LoginItemState: Equatable, Sendable {
             return LoginItemState(isOn: true, canToggle: true, note: locationNote, showsOpenSettings: false)
         case .requiresApproval:
             return LoginItemState(isOn: true, canToggle: true, note: .requiresApproval, showsOpenSettings: true)
-        case .notRegistered:
+        case .enabledViaLaunchAgent:
+            return LoginItemState(isOn: true, canToggle: true, note: locationNote ?? .launchAgent, showsOpenSettings: false)
+        case .notRegistered, .notFound:
             return LoginItemState(isOn: false, canToggle: locationNote == nil, note: locationNote, showsOpenSettings: false)
-        case .notFound:
-            return LoginItemState(isOn: false, canToggle: false, note: locationNote ?? .notFound, showsOpenSettings: false)
         }
     }
 }
@@ -149,13 +156,13 @@ public final class LoginItemController: ObservableObject {
         }
     }
 
-    /// Eltávolításkor: ha regisztrálva van (be vagy jóváhagyásra vár), leiratkozik, hogy ne maradjon árva login item.
+    /// Eltávolításkor: ha regisztrálva van (be, jóváhagyásra vár vagy LaunchAgenttel), leiratkozik, hogy ne maradjon árva login item.
     /// True, ha volt mit eltávolítani.
     @discardableResult
     public func unregisterIfRegistered() throws -> Bool {
         defer { refresh() }
         switch service.status {
-        case .enabled, .requiresApproval:
+        case .enabled, .requiresApproval, .enabledViaLaunchAgent:
             try service.unregister()
             return true
         case .notRegistered, .notFound:

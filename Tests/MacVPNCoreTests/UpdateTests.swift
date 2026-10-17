@@ -69,6 +69,7 @@ final class UpdateCheckerTests: XCTestCase {
 
     static func releaseJSON(tag: String = "v0.2.0", dmgURL: String = "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg",
                             sumURL: String = "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sha256",
+                            sigURL: String? = "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sig",
                             version: String = "0.2.0", htmlURL: String? = nil,
                             publishedAt: String? = "2026-10-01T12:00:00Z") -> Data {
         var json: [String: Any] = [
@@ -83,6 +84,9 @@ final class UpdateCheckerTests: XCTestCase {
             ],
         ]
         if let publishedAt { json["published_at"] = publishedAt }
+        if let sigURL {
+            json["assets"] = (json["assets"] as! [[String: String]]) + [["name": "MacVPN-\(version).dmg.sig", "browser_download_url": sigURL]]
+        }
         return try! JSONSerialization.data(withJSONObject: json)
     }
 
@@ -154,6 +158,8 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(r.dmg.name, "MacVPN-0.2.0.dmg")
         XCTAssertEqual(r.checksum.name, "MacVPN-0.2.0.dmg.sha256")
         XCTAssertEqual(r.checksum.url.absoluteString, "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sha256")
+        XCTAssertEqual(r.signature?.name, "MacVPN-0.2.0.dmg.sig")
+        XCTAssertEqual(r.signature?.url.absoluteString, "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sig")
         XCTAssertEqual(r.pageURL?.absoluteString, "https://github.com/SepsiG/MacVPN/releases/tag/v0.2.0")
         XCTAssertEqual(r.publishedAt, ISO8601DateFormatter().date(from: "2026-10-01T12:00:00Z"))
         XCTAssertTrue(r.isNewer(than: "0.1.0"))
@@ -203,6 +209,15 @@ final class UpdateCheckerTests: XCTestCase {
         let badSum = "https://github.com/Evil/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sha256"
         XCTAssertThrowsError(try Self.parse(Self.releaseJSON(sumURL: badSum))) {
             XCTAssertEqual($0 as? UpdateError, .untrustedURL(badSum))
+        }
+        // És a `.sig` assetre is.
+        for badSig in ["https://github.com/Evil/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sig",
+                       "https://evil.example/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sig",
+                       "https://github.com/SepsiG/MacVPN/releases/download/v0.1.0/MacVPN-0.2.0.dmg.sig",
+                       "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sig?x=1"] {
+            XCTAssertThrowsError(try Self.parse(Self.releaseJSON(sigURL: badSig)), badSig) {
+                XCTAssertEqual($0 as? UpdateError, .untrustedURL(badSig))
+            }
         }
         // Owner/repo kis-nagybetű függetlenül; a host is.
         XCTAssertNoThrow(try Self.parse(Self.releaseJSON(dmgURL: "https://GitHub.com/sepsig/macvpn/releases/download/v0.2.0/MacVPN-0.2.0.dmg")))
@@ -267,6 +282,20 @@ final class UpdateCheckerTests: XCTestCase {
         XCTAssertEqual(UpdateChecker.offer(r, currentVersion: "0.2.0", delayed: true, now: published), .upToDate)
     }
 
+    /// `.sig` asset nélküli (még nem aláírt) kiadást nem ajánl fel; régebbi aláíratlan kiadás „naprakész”.
+    func testReleaseWithoutSignatureAssetIsNotOffered() throws {
+        let published = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-01T12:00:00Z"))
+        let r = try Self.parse(Self.releaseJSON(sigURL: nil))
+        XCTAssertNil(r.signature)
+        XCTAssertEqual(UpdateChecker.offer(r, currentVersion: "0.1.0", delayed: false, now: published), .awaitingSignature)
+        XCTAssertEqual(UpdateChecker.offer(r, currentVersion: "0.1.0", delayed: true, now: published.addingTimeInterval(86400)),
+                       .awaitingSignature)
+        XCTAssertEqual(UpdateChecker.offer(r, currentVersion: "0.2.0", delayed: false, now: published), .upToDate)
+        XCTAssertEqual(UpdateError.unsignedUpdate.errorDescription, L10n.tr("The update is not signed by the MacVPN maintainer"))
+        XCTAssertEqual(L10n.tr("The update is not signed by the MacVPN maintainer", language: .hu),
+                       "A frissítést nem a MacVPN fejlesztője írta alá")
+    }
+
     func testRepoKey() {
         XCTAssertEqual(UpdateChecker.repo(fromInfo: ["MacVPNUpdateRepo": "SepsiG/MacVPN"]), "SepsiG/MacVPN")
         XCTAssertNil(UpdateChecker.repo(fromInfo: nil))
@@ -316,6 +345,19 @@ final class UpdateInstallerTests: XCTestCase {
 
     static func hex(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
 
+    /// Eldobható aláíró kulcs (nem a valódi kiadási kulcs).
+    static let signingKey = Curve25519.Signing.PrivateKey()
+
+    /// A `.sig` tartalma: base64 aláírás + újsor.
+    static func sig(_ dmg: Data, version: String = "0.2.0", key: Curve25519.Signing.PrivateKey = signingKey) throws -> Data {
+        let message = try XCTUnwrap(UpdateSignature.message(version: version, sha256Hex: hex(dmg)))
+        return Data((try key.signature(for: message).base64EncodedString() + "\n").utf8)
+    }
+
+    func installer(_ http: MockHTTPClient, runner: MockCommandRunner = MockCommandRunner()) -> UpdateInstaller {
+        UpdateInstaller(http: http, runner: runner, cacheDirectory: cache, publicKeys: [Self.signingKey.publicKey.rawRepresentation])
+    }
+
     func testChecksumParsing() throws {
         let h = String(repeating: "ab", count: 32)
         XCTAssertEqual(try UpdateInstaller.parseChecksum("\(h)  MacVPN-0.2.0.dmg\n", expectedName: "MacVPN-0.2.0.dmg"), h)
@@ -330,8 +372,9 @@ final class UpdateInstallerTests: XCTestCase {
         let http = MockHTTPClient()
         http.responses[r.dmg.url] = HTTPResponse(status: 200, data: dmg)
         http.responses[r.checksum.url] = HTTPResponse(status: 200, data: Data("\(Self.hex(dmg))  MacVPN-0.2.0.dmg\n".utf8))
+        http.responses[try XCTUnwrap(r.signature).url] = HTTPResponse(status: 200, data: try Self.sig(dmg))
         let runner = MockCommandRunner()
-        let installer = UpdateInstaller(http: http, runner: runner, cacheDirectory: cache)
+        let installer = installer(http, runner: runner)
         return (installer, runner, try await installer.downloadVerified(r))
     }
 
@@ -361,7 +404,8 @@ final class UpdateInstallerTests: XCTestCase {
         let http = MockHTTPClient()
         http.responses[r.dmg.url] = HTTPResponse(status: 200, data: Data("tampered".utf8))
         http.responses[r.checksum.url] = HTTPResponse(status: 200, data: Data("\(Self.hex(Data("original".utf8)))  MacVPN-0.2.0.dmg".utf8))
-        let installer = UpdateInstaller(http: http, runner: MockCommandRunner(), cacheDirectory: cache)
+        http.responses[try XCTUnwrap(r.signature).url] = HTTPResponse(status: 200, data: try Self.sig(Data("original".utf8)))
+        let installer = installer(http)
         do {
             _ = try await installer.downloadVerified(r)
             XCTFail("checksumMismatch várt")
@@ -375,9 +419,63 @@ final class UpdateInstallerTests: XCTestCase {
         let r = try release()
         let http = MockHTTPClient()
         http.responses[r.checksum.url] = HTTPResponse(status: 200, data: Data("\(String(repeating: "0", count: 64))  MacVPN-0.2.0.dmg".utf8))
-        let installer = UpdateInstaller(http: http, runner: MockCommandRunner(), cacheDirectory: cache)
+        http.responses[try XCTUnwrap(r.signature).url] = HTTPResponse(status: 200, data: try Self.sig(Data()))
+        let installer = installer(http)
         do { _ = try await installer.downloadVerified(r); XCTFail() } catch { XCTAssertEqual(error as? UpdateError, .http(404)) }
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cache.path), [])
+    }
+
+    /// Hiányzó, rossz kulcsú, más tartalomra szóló, túl nagy vagy hibás `.sig`: nincs telepítés, a letöltés törlődik.
+    /// Az aláírás a helyben számolt hash-re szól: egy, a `.sha256`-tal együtt cserélt DMG sem megy át.
+    func testDownloadRequiresValidSignature() async throws {
+        let dmg = Data("fake dmg contents".utf8)
+        let r = try release()
+        let sigURL = try XCTUnwrap(r.signature).url
+        func attempt(dmg served: Data, sum: Data, sig: HTTPResponse?, release: Release? = nil) async -> Error? {
+            let http = MockHTTPClient()
+            http.responses[r.dmg.url] = HTTPResponse(status: 200, data: served)
+            http.responses[r.checksum.url] = HTTPResponse(status: 200, data: Data("\(Self.hex(sum))  MacVPN-0.2.0.dmg".utf8))
+            if let sig { http.responses[sigURL] = sig }
+            do { _ = try await installer(http).downloadVerified(release ?? r); return nil } catch { return error }
+        }
+        let good = try Self.sig(dmg)
+        let evil = Data("evil dmg".utf8)
+        let cases: [(String, Error?)] = [
+            ("nincs .sig asset (404)", await attempt(dmg: dmg, sum: dmg, sig: nil)),
+            ("idegen kulcs", await attempt(dmg: dmg, sum: dmg,
+                                           sig: HTTPResponse(status: 200, data: try Self.sig(dmg, key: Curve25519.Signing.PrivateKey())))),
+            ("más verzióra szól", await attempt(dmg: dmg, sum: dmg, sig: HTTPResponse(status: 200, data: try Self.sig(dmg, version: "0.1.9")))),
+            ("DMG és .sha256 együtt cserélve", await attempt(dmg: evil, sum: evil, sig: HTTPResponse(status: 200, data: good))),
+            ("túl nagy", await attempt(dmg: dmg, sum: dmg,
+                                       sig: HTTPResponse(status: 200, data: good + Data(repeating: 0x0a, count: 1024)))),
+            ("nem base64", await attempt(dmg: dmg, sum: dmg, sig: HTTPResponse(status: 200, data: Data("not base64!\n".utf8)))),
+            ("üres", await attempt(dmg: dmg, sum: dmg, sig: HTTPResponse(status: 200, data: Data()))),
+        ]
+        for (name, error) in cases {
+            XCTAssertEqual(error as? UpdateError, .unsignedUpdate, name)
+        }
+        // Release `.sig` asset nélkül: le sem tölt semmit.
+        let unsigned = try UpdateCheckerTests.parse(UpdateCheckerTests.releaseJSON(sigURL: nil))
+        let none = await attempt(dmg: dmg, sum: dmg, sig: HTTPResponse(status: 200, data: good), release: unsigned)
+        XCTAssertEqual(none as? UpdateError, .unsignedUpdate)
+        // Más HTTP hiba a .sig letöltésekor: az marad.
+        let rateLimited = await attempt(dmg: dmg, sum: dmg, sig: HTTPResponse(status: 403, data: Data()))
+        XCTAssertEqual(rateLimited as? UpdateError, .http(403))
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: cache.path), [])
+        // Az éles telepítő a beágyazott kulcsokat használja: az eldobható kulccsal aláírtat elutasítja.
+        let http = MockHTTPClient()
+        http.responses[r.dmg.url] = HTTPResponse(status: 200, data: dmg)
+        http.responses[r.checksum.url] = HTTPResponse(status: 200, data: Data("\(Self.hex(dmg))  MacVPN-0.2.0.dmg".utf8))
+        http.responses[sigURL] = HTTPResponse(status: 200, data: good)
+        do {
+            _ = try await UpdateInstaller(http: http, runner: MockCommandRunner(), cacheDirectory: cache).downloadVerified(r)
+            XCTFail("unsignedUpdate várt")
+        } catch {
+            XCTAssertEqual(error as? UpdateError, .unsignedUpdate)
+        }
+        // A jó aláírás pedig átmegy.
+        let ok = await attempt(dmg: dmg, sum: dmg, sig: HTTPResponse(status: 200, data: good))
+        XCTAssertNil(ok)
     }
 
     static let attachPlist = """
