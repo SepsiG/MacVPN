@@ -209,7 +209,7 @@ download_asset() { # $1 = asset name → $WORK/$1
   api -L -H "Accept: application/octet-stream" -o "$WORK/$1" "$url"
 }
 
-echo "Downloading $DMG_NAME and $SUM_NAME…"
+echo "Downloading $DMG_NAME and ${SUM_NAME}…"
 download_asset "$DMG_NAME"
 download_asset "$SUM_NAME"
 
@@ -238,13 +238,13 @@ if [ -n "$OLD_SIG_ID" ]; then
   api -X DELETE "$REPO_API/releases/assets/$OLD_SIG_ID" >/dev/null
 fi
 
-echo "Uploading $SIG_NAME…"
+echo "Uploading ${SIG_NAME}…"
 UPLOAD_URL="https://uploads.github.com/repos/$FULL_NAME/releases/$RELEASE_ID/assets?name=$SIG_NAME"
 api -X POST -H "Content-Type: application/octet-stream" --data-binary @"$WORK/$SIG_NAME" "$UPLOAD_URL" >"$WORK/upload.json"
 [ "$(jq -r '.size' "$WORK/upload.json")" = "$(wc -c <"$WORK/$SIG_NAME" | tr -d ' ')" ] || die "upload size mismatch"
 
 if [ "$IS_DRAFT" = true ]; then
-  echo "Publishing $TAG…"
+  echo "Publishing ${TAG}…"
   api -X PATCH "$REPO_API/releases/$RELEASE_ID" -d '{"draft":false,"make_latest":"true"}' >"$WORK/published.json"
   [ "$(jq -r '.draft' "$WORK/published.json")" = false ] || die "the release is still a draft"
   URL="$(jq -r '.html_url' "$WORK/published.json")"

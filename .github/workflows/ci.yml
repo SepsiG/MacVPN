@@ -27,6 +27,11 @@ jobs:
         run: scripts/test-sign-release.sh
       - name: DMG build (packaging + xcstringstool)
         run: scripts/build-dmg.sh
+      - name: No unbraced $VAR right before non-ASCII text (breaks under UTF-8 locales)
+        run: |
+          if perl -ne 'print "$ARGV:$.: $_" if /\$[A-Za-z_][A-Za-z0-9_]*[\x80-\xff]/; close ARGV if eof' scripts/*.sh Resources/root/mvpn Resources/root/ovpn-dns | grep .; then
+            echo "Use \${VAR} before non-ASCII characters"; exit 1
+          fi
       - name: Bash syntax check
         run: |
           for f in Resources/root/mvpn Resources/root/ovpn-dns scripts/*.sh; do
