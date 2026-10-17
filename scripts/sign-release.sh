@@ -179,6 +179,15 @@ api() {
     -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "$@"
 }
 
+# Fájl (asset) letöltése: pontosan EGY Accept fejléc (octet-stream). Két Accept fejléc mellett a GitHub
+# a JSON-leírást adja vissza a fájl helyett. A -L átirányításnál a curl nem viszi tovább az Authorization
+# fejlécet más hosztra.
+api_download() {
+  curl -fsS --proto =https --tlsv1.2 -L \
+    -H @<(printf 'Authorization: Bearer %s\n' "$TOKEN") \
+    -H "Accept: application/octet-stream" -H "X-GitHub-Api-Version: 2022-11-28" "$@"
+}
+
 FULL_NAME="$(api "https://api.github.com/repositories/$REPO_ID" | jq -r '.full_name')"
 [ "$(printf %s "$FULL_NAME" | tr '[:upper:]' '[:lower:]')" = "$(printf %s "$EXPECTED_REPO" | tr '[:upper:]' '[:lower:]')" ] \
   || die "repository $REPO_ID is $FULL_NAME, expected $EXPECTED_REPO"
@@ -206,7 +215,7 @@ download_asset() { # $1 = asset name → $WORK/$1
   url="$(asset_field "$1" url)"
   [ -n "$url" ] || die "the release has no asset $1"
   [[ "$url" == "$REPO_API/releases/assets/"* ]] || die "unexpected asset URL: $url"
-  api -L -H "Accept: application/octet-stream" -o "$WORK/$1" "$url"
+  api_download -o "$WORK/$1" "$url"
 }
 
 echo "Downloading $DMG_NAME and ${SUM_NAME}…"
