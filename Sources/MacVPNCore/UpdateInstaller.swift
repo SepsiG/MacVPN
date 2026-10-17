@@ -294,7 +294,11 @@ public struct UpdateInstaller: Sendable {
           /usr/bin/open "$DEST"
           exit 1
         fi
+        # Csere: a két átnevezés között a cél hiányzik. Kijelentkezéskor (SIGTERM) vagy Ctrl-C-re (SIGINT) ne
+        # haljunk meg itt, különben az app eltűnne; a szakasz rövid (két mv), utána a jelzések visszaállnak.
+        trap '' TERM INT
         if [ -e "$DEST" ] && ! /bin/mv "$DEST" "$OLD"; then
+          trap - TERM INT
           echo "cannot rename the old app"
           /bin/rm -rf "$STAGED"
           finish
@@ -305,6 +309,7 @@ public struct UpdateInstaller: Sendable {
           echo "the target still exists after the rename, update cancelled"
           /bin/rm -rf "$STAGED"
           restore
+          trap - TERM INT
           finish
           exit 1
         fi
@@ -312,16 +317,66 @@ public struct UpdateInstaller: Sendable {
           echo "cannot move the new app into place, restoring"
           /bin/rm -rf "$STAGED"
           restore && /usr/bin/open "$DEST"
+          trap - TERM INT
           finish
           exit 1
         fi
+        trap - TERM INT
         /bin/rm -rf "$OLD"
         /usr/bin/xattr -dr com.apple.quarantine "$DEST" || true
+        # A végeredmény a megnyitás előtt kerül a naplóba: az új app induláskor ezt olvassa.
+        echo "done"
         finish
         /usr/bin/open "$DEST"
-        echo "done"
 
         """
+    }
+
+    // MARK: Induláskori takarítás és visszajelzés
+
+    /// A futó bundle melletti `.<App>.update-<token>` és `.<App>.old-<token>` maradványok (egy megszakadt csere
+    /// után) törlése. Ha a bundle maga nem létezik, nem nyúl semmihez. A törölt elemeket adja vissza.
+    @discardableResult
+    public static func sweepLeftovers(nextTo bundle: URL, fileManager fm: FileManager = .default) -> [URL] {
+        let bundle = bundle.standardizedFileURL
+        var st = stat()
+        guard lstat(bundle.path, &st) == 0 else { return [] }
+        let parent = bundle.deletingLastPathComponent()
+        let base = NSRegularExpression.escapedPattern(for: bundle.lastPathComponent)
+        guard let names = try? fm.contentsOfDirectory(atPath: parent.path),
+              let pattern = try? NSRegularExpression(pattern: "^\\.\(base)\\.(update|old)-[A-Za-z0-9-]+$") else { return [] }
+        var removed: [URL] = []
+        for name in names.sorted() {
+            guard pattern.firstMatch(in: name, range: NSRange(name.startIndex..., in: name)) != nil else { continue }
+            let url = parent.appendingPathComponent(name)
+            if (try? fm.removeItem(at: url)) != nil { removed.append(url) }
+        }
+        return removed
+    }
+
+    public enum HelperOutcome: Equatable, Sendable {
+        case succeeded
+        /// Az app nem lépett ki 30 mp-en belül, a csere elmaradt.
+        case timedOut
+        /// A csere hibával állt le; a napló hibasorával.
+        case failed(String)
+        /// Nincs végeredmény (még fut, vagy egy régi script a megnyitás után írja a „done"-t).
+        case unknown
+    }
+
+    /// A segédscript naplójának (`update.log`) utolsó futása: a fejléc sora (`=== … ===`, az azonosítója) és
+    /// a kimenetele. Nil, ha nincs futás a naplóban.
+    public static func lastHelperOutcome(log: String) -> (run: String, outcome: HelperOutcome)? {
+        let lines = log.split(whereSeparator: \.isNewline).map { String($0).trimmingCharacters(in: .whitespaces) }
+        guard let start = lines.lastIndex(where: { $0.hasPrefix("=== ") && $0.hasSuffix(" ===") }) else { return nil }
+        let body = lines[(start + 1)...]
+        if body.contains("done") { return (lines[start], .succeeded) }
+        if body.contains(where: { $0.contains("did not quit within 30 s") }) { return (lines[start], .timedOut) }
+        let markers = ["failed", "cannot ", "update cancelled"]
+        if let line = body.first(where: { l in markers.contains(where: { l.contains($0) }) }) {
+            return (lines[start], .failed(line))
+        }
+        return (lines[start], .unknown)
     }
 
     /// Friss 0700-as könyvtár, benne a script (O_EXCL, O_NOFOLLOW, 0700). A könyvtárat a script törli.

@@ -17,10 +17,8 @@ final class BrewInstaller: ObservableObject {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: brewPrefix + "/bin/brew")
         p.arguments = ["install"] + SetupChecker.brewPackages
-        var env = ProcessInfo.processInfo.environment
-        env["PATH"] = "\(brewPrefix)/bin:\(brewPrefix)/sbin:/usr/bin:/bin:/usr/sbin:/sbin"
-        env["HOMEBREW_NO_ENV_HINTS"] = "1"
-        p.environment = env
+        // Minimális környezet: az app környezetéből (pl. HOMEBREW_* felülírás) semmi más nem jut el a brew-hoz.
+        p.environment = BrewEnvironment.make(from: ProcessInfo.processInfo.environment, brewPrefix: brewPrefix)
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = pipe

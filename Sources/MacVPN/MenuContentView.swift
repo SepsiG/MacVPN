@@ -60,13 +60,20 @@ struct MenuContentView: View {
                     .toggleStyle(.checkbox)
                     .font(.callout)
                     .padding(.horizontal, 8).padding(.vertical, 2)
+                Toggle("Only Offer Updates Published at Least 24 Hours Ago", isOn: Binding(
+                    get: { model.updates.delayUpdates }, set: { model.updates.delayUpdates = $0 }))
+                    .toggleStyle(.checkbox)
+                    .font(.callout)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
             }
+            LaunchAtLoginToggle(compact: true)
             MenuButton(title: "Quit MacVPN", symbol: "power") { model.quit() }
             Text("Option-click a switch: debug mode").font(.caption2).foregroundStyle(.tertiary).padding(.horizontal, 8)
         }
         .padding(8)
         .frame(width: 330)
         .task { await manager.refresh() }
+        .onAppear { model.loginItem.refresh() }
     }
 
     private func open(_ id: String) {

@@ -30,8 +30,9 @@ public struct SetupChecker {
         (.openvpn, ["openvpn"]),
         (.wireguard, ["wg", "wg-quick", "wireguard-go", "bash"]),
         (.strongswan, ["swanctl", "charon"]),
+        (.sstp, ["sstpc"]),
     ]
-    public static let brewPackages = ["openvpn", "wireguard-tools", "strongswan", "bash"]
+    public static let brewPackages = ["openvpn", "wireguard-tools", "strongswan", "sstp-client", "bash"]
     public static let brewPrefixes = ["/opt/homebrew", "/usr/local"]
 
     let runner: CommandRunner

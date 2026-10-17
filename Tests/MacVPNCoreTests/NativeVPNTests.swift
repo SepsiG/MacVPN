@@ -14,6 +14,14 @@ final class NativeVPNTests: XCTestCase {
       (Connecting)     AAAAAAAA-624D-4F75-BD84-D3E278CFD84F IPSec              "Partner Cisco"                  [IPSec]
     """
 
+    func testParseRemoteAddress() {
+        XCTAssertEqual(ScutilParser.remoteAddress("PPP <dictionary> {\n  AuthName : bob\n  CommRemoteAddress : vpn.example.com\n}\n"),
+                       "vpn.example.com")
+        XCTAssertEqual(ScutilParser.remoteAddress("IPSec <dictionary> {\n  LocalIdentifier : g\n  RemoteAddress : 1.2.3.4 \n}\n"),
+                       "1.2.3.4")
+        XCTAssertNil(ScutilParser.remoteAddress("PPP <dictionary> {\n  AuthName : bob\n}\n"))
+    }
+
     func testParseListFiltersVPNs() {
         let list = ScutilParser.parseList(sample)
         XCTAssertEqual(list.map(\.name), ["Office L2TP", "Home", "Partner Cisco"])

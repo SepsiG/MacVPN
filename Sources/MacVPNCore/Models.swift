@@ -1,13 +1,14 @@
 import Foundation
 
 public enum VPNKind: String, Codable, CaseIterable, Sendable {
-    case openvpn, wireguard, strongswan, l2tp, cisco
+    case openvpn, wireguard, strongswan, sstp, l2tp, cisco
 
     public var displayName: String {
         switch self {
         case .openvpn: return "OpenVPN"
         case .wireguard: return "WireGuard"
         case .strongswan: return "IKEv2"
+        case .sstp: return "SSTP"
         case .l2tp: return "L2TP"
         case .cisco: return "Cisco IPsec"
         }
@@ -39,6 +40,10 @@ public struct Connection: Codable, Identifiable, Hashable, Sendable {
     public var createdAt: Date
     /// Natív kapcsolatnál a scutil-ban megjelenő szolgáltatás neve.
     public var nativeServiceName: String?
+    /// Natív kapcsolatnál a telepített szolgáltatás scutil azonosítója, amint megjelent (név és szervercím alapján
+    /// kötve). Ettől kezdve az indítás / leállítás / állapot ezt használja, nem a nevet.
+    public var nativeServiceID: String?
+    /// Natív beállítások. A fióknév nem titok (a `meta.json`-ban nyíltan áll); a jelszó és a PSK a Keychainben van.
     public var native: NativeSettings?
 
     public init(id: UUID = UUID(), name: String, kind: VPNKind, createdAt: Date = Date(),
@@ -96,7 +101,19 @@ public struct Secrets: Equatable, Sendable {
         self.psk = psk
     }
 
-    /// A `mvpn up` stdin formátuma: `kulcs=érték` soronként.
+    /// Mentéskor ellenőrzött szabály minden típusra: nincs sortörés és vezérlőkarakter (C0, DEL, C1,
+    /// U+2028/U+2029). nil: rendben, egyébként a hibaüzenet. (Az SSTP jelszóra ennél szigorúbb szabály is vonatkozik.)
+    public var inputError: String? {
+        let bad = [username, password, psk].contains { value in
+            (value ?? "").unicodeScalars.contains {
+                $0.value < 0x20 || (0x7F...0x9F).contains($0.value) || $0.value == 0x2028 || $0.value == 0x2029
+            }
+        }
+        return bad ? L10n.tr("The user name, password and PSK must not contain line breaks or control characters") : nil
+    }
+
+    /// A `mvpn up` stdin formátuma: `kulcs=érték` soronként. A sortörések levágása csak védőháló: mentéskor az
+    /// `inputError` már elutasítja őket.
     public var stdinPayload: String {
         var out = ""
         for (key, value) in [("username", username), ("password", password), ("psk", psk)] {

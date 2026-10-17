@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-/// `<base>/<UUID>/meta.json`, `config`, `profile.mobileconfig`.
+/// `<base>/<UUID>/meta.json`, `config`. (A natív profil nem itt van: lásd `NativeProfileStaging`.)
 /// A `mvpn` root script ugyanebből az útvonalból olvas: ~/Library/Application Support/MacVPN/connections/<UUID>/config
 public final class ConnectionStore {
     public let baseURL: URL
@@ -50,7 +50,8 @@ public final class ConnectionStore {
 
     public func directory(for id: UUID) -> URL { baseURL.appendingPathComponent(id.uuidString, isDirectory: true) }
     public func configURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("config") }
-    public func profileURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("profile.mobileconfig") }
+    /// A régebbi verziók ide írták a natív profilt (benne a jelszóval és a PSK-val); induláskor törlendő.
+    public static let legacyProfileName = "profile.mobileconfig"
     func metaURL(for id: UUID) -> URL { directory(for: id).appendingPathComponent("meta.json") }
 
     public func list() throws -> [Connection] {
@@ -80,8 +81,19 @@ public final class ConnectionStore {
         }
     }
 
-    public func writeProfile(_ data: Data, for id: UUID) throws {
-        try writePrivate(data, to: profileURL(for: id))
+    /// Migráció: a kapcsolat-könyvtárakban maradt régi `profile.mobileconfig` fájlok törlése. A törölt fájlok száma.
+    @discardableResult
+    public func removeLegacyProfiles() -> Int {
+        guard let dirs = try? fm.contentsOfDirectory(at: baseURL, includingPropertiesForKeys: nil) else { return 0 }
+        var removed = 0
+        for dir in dirs {
+            let url = dir.appendingPathComponent(Self.legacyProfileName)
+            var st = stat()
+            // Symlinket is törlünk (magát a linket), a célját nem.
+            guard lstat(url.path, &st) == 0 else { continue }
+            if unlink(url.path) == 0 { removed += 1 }
+        }
+        return removed
     }
 
     public func loadConfig(_ id: UUID) throws -> String {
@@ -92,14 +104,17 @@ public final class ConnectionStore {
         try fm.removeItem(at: directory(for: id))
     }
 
-    /// Temp fájl 0600-zal létrehozva (O_EXCL), majd rename: soha nincs tágabb jogú állapot.
+    /// Temp fájl 0600-zal létrehozva (O_EXCL), fsync, majd rename és a könyvtár fsync-je: soha nincs tágabb jogú
+    /// állapot, és áramszünet után sem marad üres / csonka meta.json vagy config.
     private func writePrivate(_ data: Data, to url: URL) throws {
-        let tmp = url.deletingLastPathComponent().appendingPathComponent(".tmp-\(UUID().uuidString)")
-        let fd = open(tmp.path, O_CREAT | O_EXCL | O_WRONLY, 0o600)
+        let dir = url.deletingLastPathComponent()
+        let tmp = dir.appendingPathComponent(".tmp-\(UUID().uuidString)")
+        let fd = open(tmp.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0o600)
         guard fd >= 0 else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: tmp.path]) }
         do {
             let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: true)
             try handle.write(contentsOf: data)
+            guard fsync(fd) == 0 else { throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: tmp.path]) }
             try handle.close()
             guard rename(tmp.path, url.path) == 0 else {
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
@@ -107,6 +122,12 @@ public final class ConnectionStore {
         } catch {
             try? fm.removeItem(at: tmp)
             throw error
+        }
+        // A rename tartóssága; ha a könyvtár nem nyitható meg, az írás attól még sikeres.
+        let dirFD = open(dir.path, O_RDONLY | O_DIRECTORY)
+        if dirFD >= 0 {
+            _ = fsync(dirFD)
+            close(dirFD)
         }
     }
 }

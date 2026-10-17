@@ -124,6 +124,16 @@ struct LogView: View {
         let panel = NSSavePanel()
         panel.nameFieldStringValue = String(localized: "\(connection.name)-log.txt")
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        try? vm.lines.map(\.text).joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+        // 0600, O_NOFOLLOW (mint az export): a napló szervercímeket és felhasználóneveket tartalmazhat.
+        do {
+            try ConfigExporter.write(Data(vm.lines.map(\.text).joined(separator: "\n").utf8), to: url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Could not save the log")
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "OK"))
+            alert.runModal()
+        }
     }
 }

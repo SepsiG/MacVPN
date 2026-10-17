@@ -3,14 +3,19 @@ import AppKit
 import MacVPNCore
 
 /// Frissítés-ellenőrzés (induláskor és 24 óránként) és a telepítés lépései.
-/// Ki van kapcsolva, ha az `Info.plist`-ben nincs `MacVPNUpdateRepo` (pl. `swift run`).
+/// Ki van kapcsolva, ha az `Info.plist`-ben nincs érvényes `MacVPNUpdateRepoID` és `MacVPNUpdateRepo` (pl. `swift run`).
 @MainActor
 final class UpdateController: ObservableObject {
     static let autoCheckKey = "autoCheckUpdates"
+    static let delayKey = "delayUpdates24h"
     static let lastCheckKey = "lastUpdateCheck"
+    static let noticedHelperRunKey = "noticedUpdateHelperRun"
     static let checkInterval: TimeInterval = 24 * 60 * 60
 
+    /// A Súgó linkjeihez és az asset útvonalak ellenőrzéséhez (`MacVPNUpdateRepo`).
     let repo: String?
+    /// A lekérdezéshez (`MacVPNUpdateRepoID`). Nélküle nincs frissítés.
+    let repoID: Int64?
     let currentVersion: String
     private let http: HTTPClient
     private let runner: CommandRunner
@@ -25,21 +30,44 @@ final class UpdateController: ObservableObject {
     @Published var autoCheck: Bool {
         didSet { UserDefaults.standard.set(autoCheck, forKey: Self.autoCheckKey) }
     }
+    /// Opcionális: csak a legalább 24 órája közzétett kiadást ajánlja fel (alapból ki).
+    @Published var delayUpdates: Bool {
+        didSet {
+            UserDefaults.standard.set(delayUpdates, forKey: Self.delayKey)
+            if let release = available ?? deferred { apply(release) }
+        }
+    }
+    /// Újabb kiadás, amely a késleltetés miatt még nincs felajánlva.
+    @Published private(set) var deferred: Release?
 
-    var enabled: Bool { repo != nil }
+    var enabled: Bool { repo != nil && repoID != nil }
 
     init(runner: CommandRunner, http: HTTPClient = URLSessionHTTPClient()) {
         let info = Bundle.main.infoDictionary
-        repo = Bundle.main.bundleIdentifier != nil ? UpdateChecker.repo(fromInfo: info) : nil
+        let isApp = Bundle.main.bundleIdentifier != nil
+        let source = isApp ? UpdateChecker.source(fromInfo: info) : nil
+        repo = isApp ? UpdateChecker.repo(fromInfo: info) : nil
+        repoID = source?.id
         currentVersion = info?["CFBundleShortVersionString"] as? String ?? "0.0.0"
         self.http = http
         self.runner = runner
-        UserDefaults.standard.register(defaults: [Self.autoCheckKey: true])
+        UserDefaults.standard.register(defaults: [Self.autoCheckKey: true, Self.delayKey: false])
         autoCheck = UserDefaults.standard.bool(forKey: Self.autoCheckKey)
+        delayUpdates = UserDefaults.standard.bool(forKey: Self.delayKey)
     }
 
-    /// Induláskor egyszer; óránként ébred, és ha az utolsó ellenőrzés óta 24 óra eltelt, ellenőriz.
+    private func apply(_ release: Release) {
+        switch UpdateChecker.offer(release, currentVersion: currentVersion, delayed: delayUpdates) {
+        case .offer: available = release; deferred = nil
+        case .tooRecent: available = nil; deferred = release
+        case .upToDate: available = nil; deferred = nil
+        }
+    }
+
+    /// Induláskor egyszer: egy megszakadt csere maradványainak törlése és az előző frissítés hibájának jelzése,
+    /// majd az ütemező: óránként ébred, és ha az utolsó ellenőrzés óta 24 óra eltelt, ellenőriz.
     func startScheduler() {
+        launchHousekeeping()
         guard enabled, schedulerTask == nil else { return }
         schedulerTask = Task { [weak self] in
             var first = true
@@ -60,14 +88,14 @@ final class UpdateController: ObservableObject {
     /// True, ha van újabb verzió. A hibát a `lastError` őrzi.
     @discardableResult
     func check() async -> Bool {
-        guard let repo, !checking else { return available != nil }
+        guard let repo, let repoID, !checking else { return available != nil }
         checking = true
         defer { checking = false }
         do {
-            let release = try await UpdateChecker(repo: repo, http: http).latestRelease()
+            let release = try await UpdateChecker(repoID: repoID, repo: repo, http: http).latestRelease()
             UserDefaults.standard.set(Date(), forKey: Self.lastCheckKey)
             lastError = nil
-            available = release.isNewer(than: currentVersion) ? release : nil
+            apply(release)
         } catch {
             lastError = error.localizedDescription
         }
@@ -83,6 +111,9 @@ final class UpdateController: ObservableObject {
             alert.messageText = String(localized: "The update check failed")
             alert.informativeText = lastError
             alert.alertStyle = .warning
+        } else if let deferred {
+            alert.messageText = String(localized: "MacVPN is up to date")
+            alert.informativeText = String(localized: "Version \(deferred.version) was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.")
         } else {
             alert.messageText = String(localized: "MacVPN is up to date")
             alert.informativeText = String(localized: "The installed version (\(currentVersion)) is the latest.")
@@ -91,6 +122,48 @@ final class UpdateController: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
         alert.runModal()
         return false
+    }
+
+    private var housekeepingDone = false
+
+    /// Csak valódi app bundle-ből (nem `swift run`), egyszer.
+    private func launchHousekeeping() {
+        guard !housekeepingDone, Bundle.main.bundleIdentifier != nil else { return }
+        housekeepingDone = true
+        UpdateInstaller.sweepLeftovers(nextTo: Bundle.main.bundleURL.resolvingSymlinksInPath())
+        guard let notice = previousUpdateNotice() else { return }
+        Task { @MainActor in
+            try? await Task.sleep(for: .seconds(2))
+            let alert = NSAlert()
+            alert.messageText = String(localized: "The previous update did not complete")
+            alert.informativeText = notice
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "OK"))
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    /// Az előző frissítés kimenetele a segédscript naplójából; egy futásról csak egyszer (és csak 14 napon belül) szól.
+    private func previousUpdateNotice() -> String? {
+        let log = UpdateInstaller.defaultCacheDirectory.appendingPathComponent("update.log")
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: log.path),
+              let modified = attrs[.modificationDate] as? Date, Date().timeIntervalSince(modified) < 14 * 24 * 3600,
+              (attrs[.size] as? Int ?? 0) < 1 << 20,
+              let text = try? String(contentsOf: log, encoding: .utf8),
+              let last = UpdateInstaller.lastHelperOutcome(log: text),
+              UserDefaults.standard.string(forKey: Self.noticedHelperRunKey) != last.run else { return nil }
+        let path = log.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
+        switch last.outcome {
+        case .succeeded, .unknown:
+            return nil
+        case .timedOut:
+            UserDefaults.standard.set(last.run, forKey: Self.noticedHelperRunKey)
+            return String(localized: "The update was cancelled because MacVPN did not quit within 30 seconds. The installed version was not changed; you can try again from the menu.")
+        case .failed(let line):
+            UserDefaults.standard.set(last.run, forKey: Self.noticedHelperRunKey)
+            return String(localized: "The update stopped with an error (\(line)). The installed version was kept. Details: \(path)")
+        }
     }
 
     /// Letöltés → SHA-256 → csatolás → app ellenőrzés → segédscript → kilépés (a kilépési kérdések után).

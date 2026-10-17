@@ -4,6 +4,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 VERSION=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Resources/Info.plist)
+# Az updater a rögzített numerikus repo ID-ről frissít (repo-jacking ellen); nélküle a kész app nem frissítene.
+REPO_ID=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepoID" Resources/Info.plist 2>/dev/null || true)
+[[ "$REPO_ID" =~ ^[1-9][0-9]*$ ]] || { echo "Hiányzó vagy érvénytelen MacVPNUpdateRepoID az Info.plist-ben" >&2; exit 1; }
 echo "▶ build $VERSION (universal)"
 ARCHS=(--arch arm64 --arch x86_64)
 swift build -c release "${ARCHS[@]}"

@@ -1,10 +1,13 @@
 #!/bin/bash
 # OpenVPN up/down hook (root). Hívás: ovpn-dns <run-dir> <log-fájl>, a típus a $script_type env-ből.
+# Az SSTP is ezt használja: a mvpn a pppd naplójából kiolvasott DNS-eket OpenVPN-formában adja át
+# (env -i script_type=up dev=pppN foreign_option_N="dhcp-option DNS <cím>"), így a mentés/visszaállítás közös.
 # A szerver által küldött DNS-t minden hálózati szolgáltatásra beállítja (mint a wg-quick), down-nál visszaállítja.
 # A szerver által küldött értékeket nem eval-oljuk: printenv + szigorú formátum-ellenőrzés.
 # script_type=check: csak kiírja az elfogadott DNS/DOMAIN értékeket (teszteléshez), semmit nem állít.
 # bash 3.2 kompatibilis.
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
+export LC_ALL=C   # bájt-alapú regex/tr/sed, a felhasználó locale-jától függetlenül
 RUN="$1"
 LOG="$2"
 [ -d "$RUN" ] || exit 0
@@ -42,7 +45,7 @@ case "$script_type" in
     for v in "${DOMS[@]}"; do echo "DOMAIN $v"; done
     ;;
   up)
-    if [[ "$dev" =~ ^utun[0-9]+$ ]]; then
+    if [[ "$dev" =~ ^(utun|ppp)[0-9]+$ ]]; then
       printf '%s\n' "$dev" >"$RUN/iface"
     else
       log "▶ [mvpn] $(msg "unexpected interface name, not recorded" "váratlan interfésznév, nem rögzítjük")"

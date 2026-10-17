@@ -38,4 +38,18 @@ final class ModelsTests: XCTestCase {
         XCTAssertEqual(s.stdinPayload, "username=bob\npassword=pw\n")
         XCTAssertEqual(Secrets().stdinPayload, "")
     }
+
+    func testSecretsInputErrorRejectsControlCharacters() {
+        XCTAssertNil(Secrets(username: "bob@x.hu", password: "pä ss\"\\w0rd", psk: "k!").inputError)
+        XCTAssertNil(Secrets().inputError)
+        for bad in ["a\nb", "a\rb", "a\tb", "a\u{0}b", "a\u{7F}b", "a\u{85}b", "a\u{2028}b"] {
+            XCTAssertNotNil(Secrets(username: bad).inputError, bad.debugDescription)
+            XCTAssertNotNil(Secrets(password: bad).inputError, bad.debugDescription)
+            XCTAssertNotNil(Secrets(psk: bad).inputError, bad.debugDescription)
+        }
+        AppLanguage.override = .hu
+        defer { AppLanguage.override = nil }
+        XCTAssertEqual(Secrets(psk: "a\nb").inputError,
+                       "A felhasználónév, a jelszó és a PSK nem tartalmazhat sortörést vagy vezérlőkaraktert")
+    }
 }

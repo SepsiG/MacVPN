@@ -36,7 +36,7 @@ final class SetupCheckerTests: XCTestCase {
         XCTAssertTrue(r.rootOK)
         XCTAssertTrue(r.isAvailable(.openvpn))
         XCTAssertFalse(r.isAvailable(.wireguard))
-        XCTAssertEqual(r.missingTools, ["wg", "wg-quick", "wireguard-go", "bash", "swanctl", "charon"])
+        XCTAssertEqual(r.missingTools, ["wg", "wg-quick", "wireguard-go", "bash", "swanctl", "charon", "sstpc"])
     }
 
     func testVersionMismatchNeedsReinstall() async {

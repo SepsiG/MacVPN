@@ -16,6 +16,10 @@ public final class ConnectionManager: ObservableObject {
     @Published public private(set) var statusError: String?
 
     public var onEvent: ((ConnectionEvent) -> Void)?
+    /// Minden sikeres `scutil --nc list` után: azok a managed natív kapcsolatok, amelyek szolgáltatása listázva van.
+    public var onNativeServicesSeen: ((Set<UUID>) -> Void)?
+    /// Az utolsó sikeres listázás szerint telepített managed natív kapcsolatok.
+    public private(set) var installedNativeIDs: Set<UUID> = []
     /// Tesztekhez injektálható óra.
     public var now: () -> Date = Date.init
 
@@ -33,6 +37,9 @@ public final class ConnectionManager: ObservableObject {
     static let nativeGrace: TimeInterval = 5
     static let nativeTimeout: TimeInterval = 45
     static let statusErrorThreshold = 3
+    static func serverMismatchReason(_ name: String) -> String {
+        L10n.tr("The server address of the VPN service named “%@” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.", name)
+    }
     static var nativeFailureReason: String { L10n.tr("The connection could not be established – for details, connect in debug mode") }
 
     private var ops: [String: Op] = [:]
@@ -44,6 +51,8 @@ public final class ConnectionManager: ObservableObject {
     private var lastApplied = 0
     private var keyEpoch: [String: Int] = [:]
     private var failureStreak = 0
+    /// `scutil --nc show` eredménye szolgáltatásonként (a kötéshez). A `reload` üríti.
+    private var remoteAddresses: [String: String?] = [:]
 
     public init(store: ConnectionStore, secrets: SecretStore, mvpn: MvpnClient, native: NativeVPNController) {
         self.store = store
@@ -54,6 +63,80 @@ public final class ConnectionManager: ObservableObject {
 
     public func reload() {
         if let list = try? store.list() { connections = list }
+        remoteAddresses = [:]
+    }
+
+    /// A kapcsolat legfrissebb (kötött azonosítójú) példánya.
+    private func current(_ c: Connection) -> Connection { connections.first { $0.id == c.id } ?? c }
+
+    // MARK: - Natív szolgáltatás egyeztetése
+
+    enum NativeMatch: Equatable {
+        case service(SystemVPNService)
+        case none
+        /// Nincs kötött azonosító, és több azonos nevű szolgáltatás van.
+        case ambiguous([SystemVPNService])
+    }
+
+    /// Kötött azonosítónál csak az számít (eltűnt: `.none`); különben a név, egyértelmű egyezéssel.
+    static func match(_ c: Connection, in services: [SystemVPNService]) -> NativeMatch {
+        if let id = c.nativeServiceID {
+            return services.first { $0.id == id }.map(NativeMatch.service) ?? .none
+        }
+        let name = c.nativeServiceName ?? c.name
+        let named = services.filter { $0.name == name }
+        switch named.count {
+        case 0: return .none
+        case 1: return .service(named[0])
+        default: return .ambiguous(named)
+        }
+    }
+
+    /// A managed natív kapcsolatokhoz tartozó szolgáltatás-azonosítók (ezek nem jelennek meg rendszer VPN-ként).
+    /// Kötetlen kapcsolatnál az összes azonos nevű.
+    static func managedServiceIDs(_ connections: [Connection], in services: [SystemVPNService]) -> Set<String> {
+        var ids = Set<String>()
+        for c in connections where c.kind.isNative {
+            switch match(c, in: services) {
+            case .service(let s): ids.insert(s.id)
+            case .ambiguous(let all): ids.formUnion(all.map(\.id))
+            case .none: break
+            }
+        }
+        return ids
+    }
+
+    /// Kötés: a kötött, de eltűnt azonosító törlődik; a kötetlen kapcsolat az első olyan azonos nevű szolgáltatáshoz
+    /// kötődik, amelynek a szervercíme is egyezik (és még nincs más kapcsolathoz kötve). A `meta.json`-ba menti.
+    private func bindNativeServices(_ services: [SystemVPNService]) async {
+        let listed = Set(services.map(\.id))
+        remoteAddresses = remoteAddresses.filter { listed.contains($0.key) }
+        for c in connections where c.kind.isNative {
+            var updated = c
+            if let id = c.nativeServiceID {
+                guard !listed.contains(id) else { continue }
+                updated.nativeServiceID = nil
+            }
+            if updated.nativeServiceID == nil, let server = c.native?.server, !server.isEmpty {
+                let taken = Set(connections.compactMap(\.nativeServiceID))
+                let name = c.nativeServiceName ?? c.name
+                for s in services where s.name == name && !taken.contains(s.id) {
+                    let address: String?
+                    if let cached = remoteAddresses[s.id] { address = cached } else {
+                        address = await native.remoteAddress(serviceID: s.id)
+                        remoteAddresses[s.id] = address
+                    }
+                    if address?.lowercased() == server.lowercased() {
+                        updated.nativeServiceID = s.id
+                        break
+                    }
+                }
+            }
+            guard updated.nativeServiceID != c.nativeServiceID,
+                  let index = connections.firstIndex(where: { $0.id == c.id }) else { continue }
+            connections[index] = updated
+            try? store.save(updated, config: nil)
+        }
     }
 
     public func state(for key: String) -> ConnectionState { states[key] ?? .disconnected }
@@ -111,6 +194,7 @@ public final class ConnectionManager: ObservableObject {
         }
         let services: [SystemVPNService]?
         do { services = try await native.list() } catch { services = nil; failure = failure ?? error.localizedDescription }
+        if let services { await bindNativeServices(services) }
 
         guard start >= lastApplied else { return }   // egy újabb refresh már érvényesült
         lastApplied = start
@@ -128,13 +212,10 @@ public final class ConnectionManager: ObservableObject {
         func stale(_ key: String) -> Bool { (keyEpoch[key] ?? 0) > start }
 
         var next: [String: ConnectionState] = [:]
-        var managedNativeNames = Set<String>()
         var toStop: [String] = []
 
         for c in connections {
             let key = c.id.uuidString
-            let name = c.nativeServiceName ?? c.name
-            if c.kind.isNative { managedNativeNames.insert(name) }
             let previous = states[key]
             if stale(key) {
                 if let previous { next[key] = previous }
@@ -155,7 +236,12 @@ public final class ConnectionManager: ObservableObject {
                     continue
                 }
                 guard let services else { next[key] = previous ?? .disconnected; continue }
-                let service = services.first { $0.name == name }
+                let service: SystemVPNService?
+                switch Self.match(c, in: services) {
+                case .service(let s): service = s
+                case .ambiguous(let all): service = all.first
+                case .none: service = nil
+                }
                 if let pending = evaluateAwaiting(key: key, name: c.name, service: service,
                                                   failureReason: { Self.nativeFailureReason }, toStop: &toStop) {
                     next[key] = pending
@@ -170,7 +256,13 @@ public final class ConnectionManager: ObservableObject {
         }
 
         if let services {
-            let unmanaged = services.filter { !managedNativeNames.contains($0.name) }
+            let managed = Self.managedServiceIDs(connections, in: services)
+            installedNativeIDs = Set(connections.filter {
+                guard $0.kind.isNative else { return false }
+                if case .none = Self.match($0, in: services) { return false }
+                return true
+            }.map(\.id))
+            let unmanaged = services.filter { !managed.contains($0.id) }
             for s in unmanaged {
                 let previous = states[s.id]
                 if stale(s.id) {
@@ -206,6 +298,7 @@ public final class ConnectionManager: ObservableObject {
         let events = queuedEvents
         queuedEvents = []
         for event in events { onEvent?(event) }
+        if services != nil { onNativeServicesSeen?(installedNativeIDs) }
         for id in toStop { try? await native.stop(serviceID: id) }
     }
 
@@ -255,6 +348,7 @@ public final class ConnectionManager: ObservableObject {
     // MARK: - Csatlakozás / bontás
 
     public func connect(_ c: Connection, debug: Bool) async {
+        let c = current(c)
         let key = c.id.uuidString
         wantDown.remove(key)
         setOp(key, .connecting)
@@ -264,8 +358,24 @@ public final class ConnectionManager: ObservableObject {
         do {
             if c.kind.isNative {
                 let name = c.nativeServiceName ?? c.name
-                guard let service = try await native.list().first(where: { $0.name == name }) else {
-                    throw MvpnError.failed(L10n.tr("The profile is not installed: %@", name))
+                let service: SystemVPNService
+                switch Self.match(c, in: try await native.list()) {
+                case .service(let s):
+                    // Kötetlen kapcsolat csak név szerint egyezett: a titkot csak akkor kaphatja, ha a szolgáltatás
+                    // szervercíme (`scutil --nc show`, frissen lekérve) a kapcsolat szervere. Különben titok nélkül sem indul.
+                    if c.nativeServiceID == nil {
+                        let address = await native.remoteAddress(serviceID: s.id)
+                        remoteAddresses[s.id] = address
+                        guard let server = c.native?.server, !server.isEmpty,
+                              address?.lowercased() == server.lowercased() else {
+                            throw MvpnError.failed(Self.serverMismatchReason(name))
+                        }
+                    }
+                    service = s
+                case .none: throw MvpnError.failed(L10n.tr("The profile is not installed: %@", name))
+                case .ambiguous:
+                    // Nem tudni, melyik a miénk: a jelszót / PSK-t nem adjuk át egy esetleg idegen szolgáltatásnak.
+                    throw MvpnError.failed(L10n.tr("More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.", name))
                 }
                 try await native.start(serviceID: service.id, kind: NativeKind(kind: c.kind),
                                        secrets: secrets.secrets(for: c.id))
@@ -304,6 +414,7 @@ public final class ConnectionManager: ObservableObject {
     }
 
     public func disconnect(_ c: Connection) async {
+        let c = current(c)
         let key = c.id.uuidString
         wantDown.insert(key)
         setOp(key, .disconnecting)
@@ -311,9 +422,12 @@ public final class ConnectionManager: ObservableObject {
         states[key] = .disconnecting
         do {
             if c.kind.isNative {
-                let name = c.nativeServiceName ?? c.name
-                if let service = try await native.list().first(where: { $0.name == name }) {
-                    try await native.stop(serviceID: service.id)
+                switch Self.match(c, in: try await native.list()) {
+                case .service(let s): try await native.stop(serviceID: s.id)
+                case .ambiguous(let all):
+                    // Bontásnál nincs titok: az összes aktív azonos nevűt leállítjuk.
+                    for s in all where s.connectionState.isActive { try await native.stop(serviceID: s.id) }
+                case .none: break
                 }
             } else {
                 try await mvpn.down(kind: c.kind, id: c.id)

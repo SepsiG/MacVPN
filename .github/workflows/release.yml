@@ -2,16 +2,37 @@ name: Release
 on:
   push:
     tags: ["v*"]
-permissions:
-  contents: write
+# Alapból semmi; a jobok külön kapják meg a szükséges minimumot.
+permissions: {}
 jobs:
-  dmg:
+  # 1. Build: csak olvasási jog. A repó kódja (tesztek, build-dmg.sh) itt fut, írási token nélkül.
+  build:
     runs-on: macos-15
+    permissions:
+      contents: read
     steps:
       - name: Tag ellenőrzése
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid tag: $GITHUB_REF_NAME"; exit 1; }
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: A tagelt commit a main ágon van
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "The tagged commit $GITHUB_SHA is not on main"; exit 1; }
+      - name: Frissítési forrás ellenőrzése
+        env:
+          REPO_ID: ${{ github.repository_id }}
+        run: |
+          # Az app a rögzített numerikus repo ID-ről frissít (Resources/Info.plist, MacVPNUpdateRepoID); a workflow
+          # nem írja át. Ha a repó ID-je vagy neve nem egyezik vele, a kiadás nem készül el.
+          ID=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepoID" Resources/Info.plist)
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepo" Resources/Info.plist)
+          [ "$ID" = "$REPO_ID" ] || { echo "MacVPNUpdateRepoID ($ID) != repository_id ($REPO_ID)"; exit 1; }
+          [ "$(printf %s "$NAME" | tr '[:upper:]' '[:lower:]')" = "$(printf %s "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" ] \
+            || { echo "MacVPNUpdateRepo ($NAME) != $GITHUB_REPOSITORY"; exit 1; }
       - name: Toolchain versions
         run: |
           xcodebuild -version
@@ -21,8 +42,6 @@ jobs:
           V="${GITHUB_REF_NAME#v}"
           /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $V" Resources/Info.plist
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $V" Resources/Info.plist
-          # Az app innen keresi a frissítéseket (GitHub Releases).
-          /usr/libexec/PlistBuddy -c "Set :MacVPNUpdateRepo $GITHUB_REPOSITORY" Resources/Info.plist
       - name: Tesztek
         run: swift test && scripts/test-root.sh
       - name: DMG
@@ -34,10 +53,34 @@ jobs:
             shasum -a 256 "$f" > "$f.sha256"
           done
           cat MacVPN-*.dmg.sha256
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: dmg
+          path: |
+            dist/MacVPN-*.dmg
+            dist/MacVPN-*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 7
+
+  # 2. Release: írási jog, de nem futtat repó kódot (nincs checkout), csak a build artifactjait teszi közzé.
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: dmg
+          path: dist
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          ls -l dist
+          (cd dist && shasum -a 256 -c MacVPN-*.dmg.sha256)
           gh release create "$GITHUB_REF_NAME" dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256 \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag \
             --title "MacVPN $GITHUB_REF_NAME" \
-            --notes "Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway."
+            --notes "Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. Frissítés után a macOS egyszer rákérdezhet, hogy a MacVPN hozzáférhet-e a Keychainben tárolt saját elemeihez (az ad-hoc aláírás miatt): a „Mindig engedélyezés” gombot csak akkor válaszd, ha a kérdés a MacVPN-től jön (a név és az útvonal alapján, pl. /Applications/MacVPN.app). / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway. After an update macOS may ask once whether MacVPN may access its own items in the Keychain (because of the ad-hoc signature): click Always Allow only if the prompt is from MacVPN (check the name and the path, e.g. /Applications/MacVPN.app)."

@@ -74,7 +74,7 @@ struct NativeConfigForm: View {
             }
             Toggle("Send all traffic over VPN", isOn: $draft.fields.settings.sendAllTraffic)
             Section {
-                Text("Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again.")
+                Text("Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).")
                     .font(.callout).foregroundStyle(.secondary)
                 if let error = draft.error { Text(error).foregroundStyle(.red) }
                 if draft.isDirty {

@@ -58,16 +58,45 @@ public final class URLSessionHTTPClient: NSObject, HTTPClient, URLSessionTaskDel
 
 /// Mely URL-ekről tölthet az updater.
 public enum UpdateURLPolicy {
-    /// A release asset `browser_download_url`-je csak ezekre mutathat.
-    public static let downloadHosts: Set<String> = ["github.com", "objects.githubusercontent.com"]
-    /// Átirányítás (és az API) célja. A GitHub az assetet ma már a `release-assets` hostról szolgálja ki;
-    /// a tartalom hitelességét a SHA-256 adja, a host-lista csak mélységi védelem.
+    /// A release asset `browser_download_url`-je és a release oldal (`html_url`) csak erre mutathat.
+    public static let downloadHosts: Set<String> = ["github.com"]
+    /// Átirányítás (és az API) célja. A GitHub az assetet ma már a `release-assets` hostról szolgálja ki
+    /// (korábban az `objects` hostról); a tartalom hitelességét a SHA-256 adja, a host-lista csak mélységi védelem.
     public static let redirectHosts: Set<String> = downloadHosts
-        .union(["api.github.com", "release-assets.githubusercontent.com"])
+        .union(["api.github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"])
 
     public static func isAllowedDownload(_ url: URL) -> Bool {
         url.scheme?.lowercased() == "https" && downloadHosts.contains(url.host?.lowercased() ?? "")
             && url.user == nil && url.password == nil && (url.port == nil || url.port == 443)
+    }
+
+    /// Az URL útvonal-elemei (a nyers, százalékkódolt útvonalból; `%2F` nem válhat elválasztóvá). Lekérdezés,
+    /// fragment, üres vagy `.`/`..` elem esetén nil.
+    static func pathSegments(_ url: URL) -> [String]? {
+        guard isAllowedDownload(url),
+              let c = URLComponents(url: url, resolvingAgainstBaseURL: false), c.query == nil, c.fragment == nil else { return nil }
+        let path = c.percentEncodedPath
+        guard path.hasPrefix("/"), !path.contains("%") else { return nil }
+        let parts = path.dropFirst().split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard !parts.contains(where: { $0.isEmpty || $0 == "." || $0 == ".." }) else { return nil }
+        return parts
+    }
+
+    static func sameRepo(_ owner: String, _ name: String, _ repo: String) -> Bool {
+        "\(owner)/\(name)".lowercased() == repo.lowercased()
+    }
+
+    /// A release asset pontos helye: `https://github.com/<owner>/<repo>/releases/download/<tag>/<név>`
+    /// (owner/repo kis-nagybetű függetlenül, a tag és a név pontosan).
+    public static func isExpectedAsset(_ url: URL, repo: String, tag: String, name: String) -> Bool {
+        guard let p = pathSegments(url), p.count == 6 else { return false }
+        return sameRepo(p[0], p[1], repo) && p[2] == "releases" && p[3] == "download" && p[4] == tag && p[5] == name
+    }
+
+    /// A release oldal: `https://github.com/<owner>/<repo>/releases/…`.
+    public static func isReleasePage(_ url: URL, repo: String) -> Bool {
+        guard let p = pathSegments(url), p.count >= 3 else { return false }
+        return sameRepo(p[0], p[1], repo) && p[2] == "releases"
     }
 
     public static func isAllowedRedirect(_ url: URL) -> Bool {
@@ -155,8 +184,28 @@ public struct Release: Equatable, Sendable {
     public let version: String
     public let notes: String
     public let pageURL: URL?
+    /// A GitHub `published_at` mezője (nil, ha hiányzik vagy nem értelmezhető).
+    public let publishedAt: Date?
     public let dmg: ReleaseAsset
     public let checksum: ReleaseAsset
+
+    public init(tag: String, version: String, notes: String, pageURL: URL?, publishedAt: Date?,
+                dmg: ReleaseAsset, checksum: ReleaseAsset) {
+        self.tag = tag
+        self.version = version
+        self.notes = notes
+        self.pageURL = pageURL
+        self.publishedAt = publishedAt
+        self.dmg = dmg
+        self.checksum = checksum
+    }
+
+    /// Legalább `minimumAge` másodperce közzétett-e. Ismeretlen közzétételi idő csak `minimumAge <= 0` mellett elég.
+    public func isOldEnough(minimumAge: TimeInterval, now: Date = Date()) -> Bool {
+        guard minimumAge > 0 else { return true }
+        guard let publishedAt else { return false }
+        return now.timeIntervalSince(publishedAt) >= minimumAge
+    }
 
     public func isNewer(than current: String) -> Bool {
         guard let mine = SemVer(current), let theirs = SemVer(version) else { return false }
@@ -167,9 +216,54 @@ public struct Release: Equatable, Sendable {
 // MARK: - Ellenőrzés
 
 public struct UpdateChecker: Sendable {
+    /// `owner/repo`: a Súgó és a dokumentáció linkjei, valamint az asset útvonalak ellenőrzése.
     public static let infoPlistKey = "MacVPNUpdateRepo"
+    /// A repó megváltoztathatatlan numerikus GitHub ID-je: a lekérdezés ezzel megy, így egy átnevezett vagy
+    /// törölt, majd ugyanazon a néven újra létrehozott repó (repo-jacking) nem szolgálhat ki frissítést.
+    public static let repoIDInfoPlistKey = "MacVPNUpdateRepoID"
+    /// Az opcionális késleltetés: csak a legalább ennyi ideje közzétett kiadást ajánlja fel.
+    public static let minimumReleaseAge: TimeInterval = 24 * 60 * 60
+
+    public let repoID: Int64
     public let repo: String
     let http: HTTPClient
+
+    /// Az `Info.plist` `MacVPNUpdateRepoID` kulcsa: pozitív egész (szövegként vagy számként). Nil, ha hiányzik vagy
+    /// érvénytelen; ilyenkor nincs frissítés-ellenőrzés (nincs visszaesés a névre).
+    public static func repoID(fromInfo info: [String: Any]?) -> Int64? {
+        guard let raw = info?[repoIDInfoPlistKey] else { return nil }
+        let text: String
+        if let s = raw as? String {
+            text = s.trimmingCharacters(in: .whitespaces)
+        } else if let n = raw as? NSNumber, CFGetTypeID(n) != CFBooleanGetTypeID(), CFNumberIsFloatType(n) == false {
+            text = n.stringValue
+        } else {
+            return nil
+        }
+        guard (1...19).contains(text.count), text.allSatisfy({ $0.isASCII && $0.isNumber }),
+              let id = Int64(text), id > 0 else { return nil }
+        return id
+    }
+
+    /// A frissítés forrása: ID (lekérdezés) és név (asset ellenőrzés) együtt; bármelyik hiánya kikapcsolja.
+    public static func source(fromInfo info: [String: Any]?) -> (id: Int64, repo: String)? {
+        guard let id = repoID(fromInfo: info), let repo = repo(fromInfo: info) else { return nil }
+        return (id, repo)
+    }
+
+    public enum Offer: Equatable, Sendable {
+        case offer
+        case upToDate
+        /// Újabb, de még nem telt el a késleltetés (24 óra) a közzététel óta.
+        case tooRecent
+    }
+
+    /// Felajánlható-e a kiadás: újabb a futónál, és ha a késleltetés be van kapcsolva, legalább 24 órás.
+    public static func offer(_ release: Release, currentVersion: String, delayed: Bool, now: Date = Date()) -> Offer {
+        guard release.isNewer(than: currentVersion) else { return .upToDate }
+        guard !delayed || release.isOldEnough(minimumAge: minimumReleaseAge, now: now) else { return .tooRecent }
+        return .offer
+    }
 
     /// `owner/repo` formátum, más karakter nélkül.
     public static func isValidRepo(_ repo: String) -> Bool {
@@ -184,18 +278,20 @@ public struct UpdateChecker: Sendable {
         return isValidRepo(trimmed) ? trimmed : nil
     }
 
-    public init(repo: String, http: HTTPClient) throws {
+    public init(repoID: Int64, repo: String, http: HTTPClient) throws {
+        guard repoID > 0 else { throw UpdateError.invalidRepo(String(repoID)) }
         guard Self.isValidRepo(repo) else { throw UpdateError.invalidRepo(repo) }
+        self.repoID = repoID
         self.repo = repo
         self.http = http
     }
 
-    public var latestReleaseURL: URL { URL(string: "https://api.github.com/repos/\(repo)/releases/latest")! }
+    public var latestReleaseURL: URL { URL(string: "https://api.github.com/repositories/\(repoID)/releases/latest")! }
 
     public func latestRelease() async throws -> Release {
         let response = try await http.get(latestReleaseURL)
         guard response.status == 200 else { throw UpdateError.http(response.status) }
-        return try Self.parseRelease(response.data)
+        return try Self.parseRelease(response.data, repo: repo)
     }
 
     private struct RawRelease: Decodable {
@@ -206,13 +302,15 @@ public struct UpdateChecker: Sendable {
         let tag_name: String
         let body: String?
         let html_url: String?
+        let published_at: String?
         let draft: Bool?
         let prerelease: Bool?
         let assets: [Asset]
     }
 
     /// A GitHub `releases/latest` JSON-ja. A DMG neve `MacVPN-<verzió>.dmg`, mellette `MacVPN-<verzió>.dmg.sha256`.
-    public static func parseRelease(_ data: Data) throws -> Release {
+    /// Az assetek csak `https://github.com/<repo>/releases/download/<tag>/<név>` címről jöhetnek.
+    public static func parseRelease(_ data: Data, repo: String) throws -> Release {
         guard let raw = try? JSONDecoder().decode(RawRelease.self, from: data) else { throw UpdateError.invalidResponse }
         guard raw.draft != true, raw.prerelease != true, SemVer(raw.tag_name) != nil,
               raw.tag_name.range(of: "^v?[0-9]+(\\.[0-9]+){0,2}$", options: .regularExpression) != nil else {
@@ -222,13 +320,15 @@ public struct UpdateChecker: Sendable {
         let dmgName = "MacVPN-\(version).dmg"
         func asset(_ name: String) throws -> ReleaseAsset {
             guard let a = raw.assets.first(where: { $0.name == name }) else { throw UpdateError.missingAsset(name) }
-            guard let url = URL(string: a.browser_download_url), UpdateURLPolicy.isAllowedDownload(url) else {
+            guard let url = URL(string: a.browser_download_url),
+                  UpdateURLPolicy.isExpectedAsset(url, repo: repo, tag: raw.tag_name, name: name) else {
                 throw UpdateError.untrustedURL(a.browser_download_url)
             }
             return ReleaseAsset(name: a.name, url: url)
         }
-        let page = raw.html_url.flatMap(URL.init(string:)).flatMap { UpdateURLPolicy.isAllowedDownload($0) ? $0 : nil }
-        return Release(tag: raw.tag_name, version: version, notes: raw.body ?? "", pageURL: page,
+        let page = raw.html_url.flatMap(URL.init(string:)).flatMap { UpdateURLPolicy.isReleasePage($0, repo: repo) ? $0 : nil }
+        let published = raw.published_at.flatMap { ISO8601DateFormatter().date(from: $0) }
+        return Release(tag: raw.tag_name, version: version, notes: raw.body ?? "", pageURL: page, publishedAt: published,
                        dmg: try asset(dmgName), checksum: try asset(dmgName + ".sha256"))
     }
 }

@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 
 public enum RootInstaller {
@@ -8,27 +9,107 @@ public enum RootInstaller {
 
     static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
-    public static func installScript(sourceDir: URL, user: String) throws -> String {
+    /// A telepítendő root fájlok (a bundle `Resources/root` mappájából).
+    public static let rootFiles = ["mvpn", "ovpn-dns", "mvpn-validate", "VERSION"]
+
+    /// A root fájlok SHA-256-ja (kisbetűs hex), közvetlenül a telepítő script előállítása előtt számolva.
+    public static func fileHashes(in sourceDir: URL) throws -> [String: String] {
+        var hashes: [String: String] = [:]
+        for name in rootFiles {
+            let path = sourceDir.appendingPathComponent(name).path
+            guard let data = FileManager.default.contents(atPath: path) else {
+                throw InstallError(message: L10n.tr("Cannot read the file: %@", path))
+            }
+            hashes[name] = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        }
+        return hashes
+    }
+
+    /// A sudoers fájl sorai. A `mvpn`-re vonatkozó Defaults: tiszta környezet (`env_reset`), a felhasználói változók
+    /// (LANG, LC_* stb.) közül semmi nem marad meg (`!env_keep`), és env_reset nélkül is törlődnének (`env_delete`).
+    public static func sudoersLines(user: String) -> [String] {
+        let mvpn = MvpnClient.executable
+        return [
+            "\(user) ALL=(root) NOPASSWD: \(mvpn)",
+            "Defaults!\(mvpn) env_reset, !env_keep",
+            "Defaults!\(mvpn) env_delete += \"LANG LANGUAGE LC_* CHARSET\"",
+        ]
+    }
+
+    /// A telepítő script (rootként fut, `osascript … with administrator privileges`).
+    /// 1. `/usr/local`, `/usr/local/libexec`, `/usr/local/libexec/macvpn`: symlink vagy nem könyvtár → megszakítás; hiányzó →
+    ///    root tulajdonnal létrejön. Ha a két szülő nem root tulajdonú vagy group/world írható → megszakítás kézi javítási
+    ///    útmutatóval (nem írjuk át: Intel Macen a Homebrew-é lehet); a saját `macvpn` könyvtárat `chown root:wheel` + `chmod go-w` javítja.
+    /// 2. A forrásfájlok egy root tulajdonú átmeneti könyvtárba másolódnak, és csak akkor települnek (onnan), ha a SHA-256-juk
+    ///    egyezik a `hashes`-ben átadottal (az app közvetlenül a script írása előtt számolja). Így a felhasználó által írható
+    ///    forrás a script megírása és a root futás között nem cserélhető ki észrevétlenül.
+    /// 3. sudoers: `visudo -c -f` ellenőrzés után a helyére kerül.
+    public static func installScript(sourceDir: URL, user: String, hashes: [String: String]) throws -> String {
         guard user.range(of: "^[A-Za-z_][A-Za-z0-9_.-]*$", options: .regularExpression) != nil else {
             throw InstallError(message: L10n.tr("Invalid user name: %@", user))
         }
-        let src = { (name: String) in shellQuote(sourceDir.appendingPathComponent(name).path) }
+        var stageLines: [String] = []
+        for name in rootFiles {
+            guard let hash = hashes[name], hash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else {
+                throw InstallError(message: L10n.tr("Integrity check failed, installation cancelled:") + " " + name)
+            }
+            stageLines.append("stage \(shellQuote(sourceDir.appendingPathComponent(name).path)) \(name) \(hash)")
+        }
         let dir = MvpnClient.installDir
+        // A szülőkönyvtárakat nem írjuk át (Intel Macen a /usr/local/libexec lehet a Homebrew-é): ha nem root tulajdonúak
+        // vagy group/world írhatók, a telepítés megszakad, kézi javítási útmutatóval. Csak a saját könyvtárunkat javítjuk.
+        let parentChecks = ["/usr/local", "/usr/local/libexec"].map { d in
+            "check_dir \(d) \(shellQuote(L10n.tr("Installation cancelled: %@ is not owned by root or is writable by other users, so anything running as that user could replace the MacVPN root scripts. Fix it in Terminal, then try again: sudo chown root:wheel %@ && sudo chmod go-w %@ (on Intel Macs this may affect Homebrew).", d, d, d)))"
+        }.joined(separator: "\n")
+        let sudoers = sudoersLines(user: user).map(shellQuote).joined(separator: " ")
         return """
         #!/bin/bash
         set -euo pipefail
-        install -d -o root -g wheel -m 755 \(dir)
-        install -o root -g wheel -m 755 \(src("mvpn")) \(dir)/mvpn
-        install -o root -g wheel -m 755 \(src("ovpn-dns")) \(dir)/ovpn-dns
-        install -o root -g wheel -m 755 \(src("mvpn-validate")) \(dir)/mvpn-validate
-        install -o root -g wheel -m 644 \(src("VERSION")) \(dir)/VERSION
+        export PATH=/usr/bin:/bin:/usr/sbin:/sbin
+        export LC_ALL=C
+        DIR=\(dir)
+        TMP=""
+        STAGE=""
+        trap 'rm -rf "$STAGE" "$TMP"' EXIT
+        unsafe_dir() { [ "$(stat -f %u "$1")" != 0 ] || [ $(( 0$(stat -f %Lp "$1") & 022 )) != 0 ]; }
+        check_dir() { # <könyvtár> <üzenet, ha nem root tulajdonú vagy group/world írható szülő>
+          if [ -L "$1" ] || { [ -e "$1" ] && [ ! -d "$1" ]; }; then
+            echo \(shellQuote(L10n.tr("Unsafe directory, installation cancelled:"))) "$1" >&2
+            exit 1
+          fi
+          if [ ! -d "$1" ]; then
+            install -d -o root -g wheel -m 755 "$1"
+          elif unsafe_dir "$1"; then
+            if [ -z "$2" ]; then
+              chown root:wheel "$1"
+              chmod go-w "$1"
+            else
+              echo "$2" >&2
+              exit 1
+            fi
+          fi
+        }
+        \(parentChecks)
+        check_dir "$DIR" ""
+        STAGE=$(mktemp -d /var/run/macvpn-install.XXXXXX)
+        stage() {
+          cp -- "$1" "$STAGE/$2"
+          if [ "$(shasum -a 256 "$STAGE/$2" | awk '{print $1}')" != "$3" ]; then
+            echo \(shellQuote(L10n.tr("Integrity check failed, installation cancelled:"))) "$2" >&2
+            exit 1
+          fi
+        }
+        \(stageLines.joined(separator: "\n"))
+        install -o root -g wheel -m 755 "$STAGE/mvpn" "$DIR/mvpn"
+        install -o root -g wheel -m 755 "$STAGE/ovpn-dns" "$DIR/ovpn-dns"
+        install -o root -g wheel -m 755 "$STAGE/mvpn-validate" "$DIR/mvpn-validate"
+        install -o root -g wheel -m 644 "$STAGE/VERSION" "$DIR/VERSION"
         install -d -o root -g wheel -m 755 \(MvpnClient.logDir)
         install -d -o root -g wheel -m 700 /var/run/macvpn
         TMP=$(mktemp)
-        printf '%s\\n' '\(user) ALL=(root) NOPASSWD: \(dir)/mvpn' > "$TMP"
+        printf '%s\\n' \(sudoers) > "$TMP"
         visudo -c -f "$TMP"
         install -o root -g wheel -m 440 "$TMP" /etc/sudoers.d/macvpn
-        rm -f "$TMP"
 
         """
     }
@@ -73,7 +154,8 @@ public enum RootInstaller {
 
     /// Egy admin jelszó-bekéréssel telepíti a root scripteket és a sudoers szabályt.
     public static func install(sourceDir: URL, user: String = NSUserName(), runner: CommandRunner) async throws {
-        try await runPrivileged(installScript(sourceDir: sourceDir, user: user), runner: runner,
+        let hashes = try fileHashes(in: sourceDir)
+        try await runPrivileged(installScript(sourceDir: sourceDir, user: user, hashes: hashes), runner: runner,
                                 cancelled: L10n.tr("Installation cancelled"), failure: L10n.tr("Installation error"))
     }
 
@@ -90,6 +172,8 @@ public enum RootInstaller {
         set -uo pipefail
         MVPN=\(shellQuote(MvpnClient.executable))
         RUN_BASE=/var/run/macvpn
+        PPP_OPTIONS=/etc/ppp/options
+        PPP_MARKER=\(dir)/.created-ppp-options
         FAILED=""
         if [ -x "$MVPN" ] && [ -d "$RUN_BASE" ] && [ ! -L "$RUN_BASE" ]; then
           for d in "$RUN_BASE"/*/; do
@@ -99,7 +183,7 @@ public enum RootInstaller {
             [[ "$id" =~ ^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$ ]] || continue
             [ -f "$d/kind" ] && [ ! -L "$d/kind" ] || continue
             kind=$(/usr/bin/head -c 32 "$d/kind")
-            case "$kind" in openvpn|wireguard|strongswan) ;; *) continue ;; esac
+            case "$kind" in openvpn|wireguard|strongswan|sstp) ;; *) continue ;; esac
             if ! SUDO_USER=\(shellQuote(user)) "$MVPN" down "$kind" "$id" --lang \(AppLanguage.current.rawValue) </dev/null; then
               FAILED="$FAILED $id"
             fi
@@ -109,6 +193,10 @@ public enum RootInstaller {
         if [ -n "$FAILED" ]; then
           echo \(shellQuote(disconnectFailureMarker))"$FAILED" >&2
           exit 1
+        fi
+        # A /etc/ppp/options-t csak akkor töröljük, ha a mvpn hozta létre (jelölő), és azóta is üres.
+        if [ -f "$PPP_MARKER" ] && [ ! -L "$PPP_MARKER" ] && [ -f "$PPP_OPTIONS" ] && [ ! -L "$PPP_OPTIONS" ] && [ ! -s "$PPP_OPTIONS" ]; then
+          /bin/rm -f "$PPP_OPTIONS"
         fi
         /bin/rm -f /etc/sudoers.d/macvpn
         /bin/rm -rf \(dir) /var/run/macvpn \(MvpnClient.logDir)

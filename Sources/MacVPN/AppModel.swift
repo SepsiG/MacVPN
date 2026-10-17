@@ -26,7 +26,11 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     let brew = BrewInstaller()
     /// Frissítés-ellenőrzés és telepítés (GitHub Releases).
     let updates: UpdateController
+    /// Indítás bejelentkezéskor (SMAppService.mainApp). Alapból ki, csak a kapcsolóra regisztrál.
+    let loginItem: LoginItemController
     @Published var nativeLogs: [UUID: NativeLogCollector] = [:]
+    /// A megnyitott, még nem telepített natív profilok (ideiglenes fájlok).
+    let stagedProfiles = StagedProfiles()
     @Published var installError: String?
 
     /// Aktív (vagy folyamatban lévő) kapcsolat mellett 3 mp, egyébként 30 mp.
@@ -42,6 +46,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     override init() {
         let store = ConnectionStore()
         let secrets = KeychainSecretStore()
+        // Egyszeri áthelyezés a régi "macvpn" szolgáltatásból (idempotens, megszakítás után is biztonságos).
+        secrets.migrateLegacyItems()
         let runner = ProcessCommandRunner()
         // `mvpn up` hosszabb, a gyakori status / scutil lekérdezések rövidebb időkorláttal futnak.
         let quickRunner = ProcessCommandRunner(timeout: RunnerTimeouts.quick)
@@ -51,17 +57,24 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         self.secrets = secrets
         self.runner = runner
         self.updates = UpdateController(runner: runner)
+        self.loginItem = LoginItemController(service: SMAppServiceLoginItem())
         self.manager = ConnectionManager(store: store, secrets: secrets,
                                          mvpn: mvpn, native: NativeVPNController(runner: quickRunner, driver: SystemConfigurationDriver()))
         super.init()
         manager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         brew.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         updates.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
+        loginItem.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         // A telepítés végén akkor is újraellenőriz, ha a Rendszerállapot ablak közben bezárult.
         brew.$finishedCount.dropFirst().sink { [weak self] _ in
             Task { await self?.checkSetup() }
         }.store(in: &cancellables)
         manager.onEvent = { [weak self] event in self?.notify(event) }
+        manager.onNativeServicesSeen = { [weak self] ids in self?.stagedProfiles.servicesSeen(ids) }
+        // Az előző futásból maradt ideiglenes profilok, és a régi verziók által a kapcsolat-könyvtárba írt
+        // profile.mobileconfig (benne jelszó és PSK) törlése.
+        NativeProfileStaging.sweep(in: NativeProfileStaging.defaultParent)
+        store.removeLegacyProfiles()
         NSWorkspace.shared.notificationCenter.publisher(for: NSWorkspace.didWakeNotification)
             .sink { [weak self] _ in Task { await self?.manager.refresh() } }
             .store(in: &cancellables)
@@ -125,21 +138,44 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         await checkSetup()
     }
 
+    /// A Homebrew hivatalos telepítője a Terminálban. A script friss, privát ideiglenes könyvtárba kerül (O_EXCL),
+    /// és leáll, ha a letöltés nem sikerül. Hiba esetén riasztás.
     func openBrewInstallInTerminal() {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("macvpn-install-homebrew.command")
-        let quote = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
-        let start = quote(String(localized: "Installing Homebrew (with the official installer)…"))
-        let done = quote(String(localized: "Done. Go back to MacVPN and click Check Again."))
-        let script = """
-        #!/bin/bash
-        echo \(start)
-        /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-        echo; echo \(done)
+        let start = String(localized: "Installing Homebrew (with the official installer)…")
+        let done = String(localized: "Done. Go back to MacVPN and click Check Again.")
+        let failed = String(localized: "Could not download the Homebrew installer. Check the internet connection, then try again.")
+        do {
+            let url = try BrewBootstrap.write(script: { dir in
+                BrewBootstrap.script(start: start, done: done, failed: failed, cleanupDirectory: dir)
+            }, in: FileManager.default.temporaryDirectory)
+            NSWorkspace.shared.open(url)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = String(localized: "Could not start the Homebrew installer")
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "OK"))
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
 
-        """
-        try? script.write(to: url, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: url.path)
-        NSWorkspace.shared.open(url)
+    // MARK: Indítás bejelentkezéskor
+
+    /// A kapcsoló: regisztrál / leiratkozik, hiba esetén riasztásban mutatja a rendszer üzenetét.
+    func setLaunchAtLogin(_ on: Bool) {
+        do {
+            try loginItem.setEnabled(on)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = on ? String(localized: "Could not turn on launch at login")
+                                   : String(localized: "Could not turn off launch at login")
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "OK"))
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
     }
 
     // MARK: Súgó, eltávolítás
@@ -192,6 +228,9 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
         pollTask?.cancel()
         let hadNative = manager.connections.contains { $0.kind.isNative }
+        // Ne maradjon árva bejelentkezési elem.
+        var loginItemLeft = false
+        do { try loginItem.unregisterIfRegistered() } catch { loginItemLeft = true }
         if removeUserData {
             for c in manager.connections { secrets.deleteAll(for: c.id) }
             secrets.removeAll()
@@ -203,9 +242,12 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
         let done = NSAlert()
         done.messageText = String(localized: "MacVPN has been uninstalled")
-        var info = String(localized: "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan).")
+        var info = String(localized: "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).")
         if hadNative {
             info += "\n\n" + String(localized: "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.")
+        }
+        if loginItemLeft {
+            info += "\n\n" + String(localized: "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items.")
         }
         done.informativeText = info
         done.addButton(withTitle: String(localized: "Quit MacVPN"))
@@ -351,55 +393,110 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         select(c.id.uuidString)
     }
 
-    func importFile(_ url: URL) -> String? {
-        let scoped = url.startAccessingSecurityScopedResource()
-        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
-        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return String(localized: "Cannot read the file") }
-        do {
-            let kind = try ConfigImporter.kind(fileName: url.lastPathComponent, content: content)
-            let config = kind == .openvpn
-                ? try ConfigImporter.inlineOpenVPNFiles(content, baseDirectory: url.deletingLastPathComponent())
-                : content
-            let c = Connection(name: url.deletingPathExtension().lastPathComponent, kind: kind)
-            try store.save(c, config: config)
-            manager.reload()
-            select(c.id.uuidString)
-            return nil
-        } catch {
-            return error.localizedDescription
+    /// Egy import eredménye: hibák (nem importált fájlok) és tájékoztatás (beemelt fájlok, validációs hibák).
+    struct ImportReport: Equatable {
+        var errors: [String] = []
+        var notes: [String] = []
+
+        var isEmpty: Bool { errors.isEmpty && notes.isEmpty }
+        var message: String { (errors + notes).joined(separator: "\n") }
+
+        mutating func merge(_ other: ImportReport) {
+            errors += other.errors
+            notes += other.notes
         }
     }
 
-    /// Több fájl importja; a hibák összefűzve, nil = minden sikerült.
-    func importFiles(_ urls: [URL]) -> String? {
-        let errors = urls.compactMap { url in importFile(url).map { "\(url.lastPathComponent): \($0)" } }
-        return errors.isEmpty ? nil : errors.joined(separator: "\n")
+    /// Az importált kapcsolat validációs hibái: a szerkesztő az első betöltéskor megjeleníti (egyszer használatos).
+    private var importIssues: [UUID: [ValidationIssue]] = [:]
+
+    func takeImportIssues(_ id: UUID) -> [ValidationIssue] {
+        importIssues.removeValue(forKey: id) ?? []
     }
 
+    /// A configot validációs hiba esetén is menti (a szerkesztőben javítható), és rögtön meg is nyitja.
+    private func importFile(_ url: URL) -> ImportReport {
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        let file = url.lastPathComponent
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else {
+            return ImportReport(errors: ["\(file): \(String(localized: "Cannot read the file"))"])
+        }
+        do {
+            let prepared = try ConfigImporter.prepare(fileName: file, content: content,
+                                                      baseDirectory: url.deletingLastPathComponent())
+            let c = Connection(name: url.deletingPathExtension().lastPathComponent, kind: prepared.kind)
+            try store.save(c, config: prepared.config)
+            if !prepared.issues.isEmpty { importIssues[c.id] = prepared.issues }
+            manager.reload()
+            select(c.id.uuidString)
+            var report = ImportReport()
+            if !prepared.inlinedFiles.isEmpty {
+                let list = prepared.inlinedFiles.joined(separator: ", ")
+                report.notes.append("\(file): \(String(localized: "Imported, inlined: \(list)"))")
+            }
+            if !prepared.issues.isEmpty {
+                report.notes.append("\(file): \(String(localized: "Imported, but the config has problems. Fix them in the editor (red list)."))")
+            }
+            return report
+        } catch {
+            return ImportReport(errors: ["\(file): \(error.localizedDescription)"])
+        }
+    }
+
+    func importFiles(_ urls: [URL]) -> ImportReport {
+        var report = ImportReport()
+        for url in urls { report.merge(importFile(url)) }
+        return report
+    }
+
+    /// Export. Ha a config privát / statikus kulcsot vagy inline hitelesítő adatot tartalmaz, rákérdez: kulcsok nélkül
+    /// (alapértelmezett), kulcsokkal, vagy mégse. A Keychainben tárolt jelszó és PSK sosem kerül bele. A mentési panel
+    /// szövege a ténylegesen kiírt adatból dől el: ha abban kulcsanyag maradt, kimondja, hogy benne van.
     func export(_ c: Connection) {
-        if let warning = ConfigExporter.warning(for: c.kind) {
+        var data: Data
+        do { data = try ConfigExporter.export(c, store: store) } catch {
+            NSAlert(error: error).runModal()
+            return
+        }
+        let text = String(decoding: data, as: UTF8.self)
+        let material = ConfigExporter.secretMaterial(in: text, kind: c.kind)
+        if !material.isEmpty {
             let alert = NSAlert()
-            alert.messageText = String(localized: "Warning")
-            alert.informativeText = warning
-            alert.addButton(withTitle: String(localized: "Export"))
+            alert.messageText = String(localized: "The config contains private keys or credentials")
+            let list = material.joined(separator: ", ")
+            alert.informativeText = String(localized: "It contains: \(list). Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.")
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: String(localized: "Export Without Keys"))
+            alert.addButton(withTitle: String(localized: "Export With Keys"))
             alert.addButton(withTitle: String(localized: "Cancel"))
-            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: data = Data(ConfigExporter.stripSecrets(text, kind: c.kind).utf8)
+            case .alertSecondButtonReturn: break
+            default: return
+            }
         }
         let panel = NSSavePanel()
         panel.nameFieldStringValue = ConfigExporter.fileName(for: c)
-        panel.message = String(localized: "Passwords and the PSK are not included in the export.")
+        let included = ConfigExporter.secretMaterial(in: String(decoding: data, as: UTF8.self), kind: c.kind)
+        if included.isEmpty {
+            panel.message = String(localized: "Passwords and the PSK are not included in the export.")
+        } else {
+            let list = included.joined(separator: ", ")
+            panel.message = String(localized: "The export INCLUDES the private keys and credentials from the config (\(list)). Passwords and the PSK stored in the Keychain are not included.")
+        }
         guard panel.runModal() == .OK, let url = panel.url else { return }
         do {
-            try ConfigExporter.write(ConfigExporter.export(c, store: store), to: url)
+            try ConfigExporter.write(data, to: url)
         } catch {
-            let alert = NSAlert(error: error)
-            alert.runModal()
+            NSAlert(error: error).runModal()
         }
     }
 
     /// Hibák listája; üres = mentve.
     func saveText(_ c: Connection, name: String, config: String, secrets newSecrets: Secrets) -> [ValidationIssue] {
-        let issues = Validators.validator(for: c.kind)?.validate(config) ?? []
+        var issues = Validators.validator(for: c.kind)?.validate(config) ?? []
+        if let error = newSecrets.inputError { issues.append(ValidationIssue(line: 0, message: error)) }
         guard issues.isEmpty else { return issues }
         var updated = c
         updated.name = name
@@ -411,19 +508,33 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         return []
     }
 
+    /// Az SSTP űrlap mentése: a config szerializálva és validálva, a jelszó a Keychainbe. Hibák listája; üres = mentve.
+    func saveSSTP(_ c: Connection, name: String, config: SSTPConfig, password: String) -> [ValidationIssue] {
+        guard SSTPConfig.isAcceptablePassword(password) else {
+            return [ValidationIssue(line: 0, message: SSTPConfig.passwordRuleMessage)]
+        }
+        return saveText(c, name: name, config: config.serialized(), secrets: Secrets(password: password))
+    }
+
+    /// Natív mentés: a profil (jelszó nélkül, PSK-val) egy friss, privát ideiglenes könyvtárba kerül, onnan nyílik meg,
+    /// és törlődik, amint a szolgáltatás megjelenik a `scutil --nc list`-ben (legkésőbb a következő induláskor).
     func saveNative(_ c: Connection, name: String, settings: NativeSettings, password: String, psk: String) -> String? {
         guard !settings.server.isEmpty, !settings.account.isEmpty else { return String(localized: "Server and account name are required") }
+        if let error = Secrets(username: settings.account, password: password, psk: psk).inputError { return error }
         var updated = c
         updated.name = name
         updated.native = settings
         updated.nativeServiceName = name
+        let serviceExisted = manager.installedNativeIDs.contains(c.id)
         do {
-            let data = try MobileconfigGenerator.generate(connection: updated, password: password, psk: psk)
+            let data = try MobileconfigGenerator.generate(connection: updated, psk: psk)
             try store.save(updated, config: nil)
-            try store.writeProfile(data, for: c.id)
             storeSecrets(Secrets(username: settings.account, password: password, psk: psk), for: c.id)
             manager.reload()
-            NSWorkspace.shared.open(store.profileURL(for: c.id))
+            let profile = try NativeProfileStaging.stage(data, fileName: ConfigExporter.fileName(for: updated),
+                                                         in: NativeProfileStaging.defaultParent)
+            stagedProfiles.track(c.id, profile: profile, serviceExisted: serviceExisted)
+            NSWorkspace.shared.open(profile)
             return nil
         } catch {
             return error.localizedDescription
@@ -437,13 +548,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     /// A rendszer VPN-hez a MacVPN kulcskarikájában tárolt PSK / jelszó (csak L2TP / Cisco IPsec, UUID azonosítóval).
-    /// Üres mező törli a bejegyzést. False: nem menthető (más típus, vagy nem UUID az azonosító).
-    @discardableResult
-    func saveSystemSecrets(_ s: SystemVPNService, psk: String, password: String) -> Bool {
-        guard s.supportsStoredSecrets, let id = s.secretID else { return false }
+    /// Üres mező törli a bejegyzést. nil: mentve; egyébként a hiba (vezérlőkarakter, más típus, nem UUID azonosító).
+    func saveSystemSecrets(_ s: SystemVPNService, psk: String, password: String) -> String? {
+        guard s.supportsStoredSecrets, let id = s.secretID else { return String(localized: "The editor is no longer available") }
+        if let error = Secrets(password: password, psk: psk).inputError { return error }
         secrets.set(psk, for: id, field: .psk)
         secrets.set(password, for: id, field: .password)
-        return true
+        return nil
     }
 
     func forgetSystemSecrets(_ s: SystemVPNService) {
@@ -477,10 +588,12 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         let content = UNMutableNotificationContent()
         let id: String
         switch event {
-        case .failed(let cid, let name, let reason):
+        case .failed(let cid, let name, _):
             id = cid
             content.title = String(localized: "\(name): connection failed")
-            content.body = reason
+            // A hiba szövege (szerver, felhasználónév, rendszerüzenet) nem kerül a lezárt képernyőn is látható
+            // értesítésbe: a teljes ok az appban látszik.
+            content.body = String(localized: "Open MacVPN for details")
         case .dropped(let cid, let name):
             id = cid
             content.title = String(localized: "\(name): the connection dropped")

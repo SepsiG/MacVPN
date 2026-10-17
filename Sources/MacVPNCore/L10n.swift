@@ -64,12 +64,35 @@ public enum L10n {
         "Forbidden: include": "Tiltott: include",
         "Missing connections block": "Hiányzik a connections blokk",
         "Missing children block": "Hiányzik a children blokk",
+        "Invalid argument: %@": "Érvénytelen argumentum: %@",
+        "Wrong number of arguments: %@": "Hibás argumentumszám: %@",
+        "Directive not allowed in a <connection> block: %@": "Nem engedélyezett direktíva <connection> blokkban: %@",
+        "Invalid value: %@": "Érvénytelen érték: %@",
+        "Section not allowed: %@": "Nem engedélyezett szakasz: %@",
+        "Section not allowed": "Nem engedélyezett szakasz",
+        "Only a file name is allowed, no path: %@": "Csak fájlnév adható meg, útvonal nem: %@",
+        "Forbidden: file: URI": "Tiltott: file: URI",
+        "Unexpected closing brace": "Váratlan záró kapcsos zárójel",
+        "Unclosed section": "Lezáratlan szakasz",
         "Line %ld: %@": "%ld. sor: %@",
+        "Invalid line in the CA certificate block": "Érvénytelen sor a CA tanúsítvány blokkban",
+        "Only one <ca> block is allowed": "Csak egy <ca> blokk lehet",
+        "Duplicate key: %@": "Ismétlődő kulcs: %@",
+        "Missing key: %@": "Hiányzó kulcs: %@",
+        "cert=ca requires a <ca> block with a PEM certificate": "A cert=ca mellé PEM tanúsítványt tartalmazó <ca> blokk kell",
+        "Invalid server: use a host name or an IPv4/IPv6 address, without a port":
+            "Érvénytelen szerver: hosztnév vagy IPv4/IPv6 cím kell, port nélkül",
+        "Invalid port: 1–65535": "Érvénytelen port: 1–65535",
+        "The SSTP password must not contain quotation marks, backslashes or control characters":
+            "Az SSTP jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter",
+        "Invalid user name: letters, digits and . _ @ + - only (use user@domain instead of DOMAIN\\user)":
+            "Érvénytelen felhasználónév: csak betű, számjegy és . _ @ + - lehet (DOMAIN\\user helyett user@domain)",
+        "Invalid value for %@: allowed: %@": "Érvénytelen érték (%@), megengedett: %@",
 
         // mvpn-validate
         "Cannot read the file: %@": "A fájl nem olvasható: %@",
-        "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan> <file> | --swan-names <file>":
-            "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan> <fájl> | --swan-names <fájl>",
+        "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>":
+            "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
         "Unknown type: %@": "Ismeretlen típus: %@",
 
         // Connections, root and native backends
@@ -82,12 +105,19 @@ public enum L10n {
         "Cannot query the status: %@": "Az állapot nem kérdezhető le: %@",
         "Timed out": "Időtúllépés",
         "The profile is not installed: %@": "A profil nincs telepítve: %@",
+        "More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.":
+            "Több „%@” nevű VPN szolgáltatás van. A MacVPN nem adja át a jelszót, amíg nem egyértelmű, melyik az övé: nevezd át vagy töröld a másikat a Rendszerbeállítások → Hálózat alatt.",
+        "The server address of the VPN service named “%@” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.":
+            "A(z) „%@” nevű VPN szolgáltatás szervercíme nem egyezik a kapcsolat szerverével. A MacVPN nem adja át neki a jelszót és a PSK-t: telepítsd újra a profilt a MacVPN → Kapcsolatok alatt, vagy töröld a másik szolgáltatást a Rendszerbeállítások → Hálózat alatt.",
         "Cannot open the VPN service: %@": "A VPN szolgáltatás nem nyitható meg: %@",
         "Cannot start the VPN service: %@": "A VPN szolgáltatás nem indítható: %@",
         "Cannot stop the VPN service: %@": "A VPN szolgáltatás nem állítható le: %@",
         "The connection did not come up.": "A kapcsolat nem jött létre.",
         "The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → %@.":
             "A kapcsolat nem jött létre. Ha ez egy L2TP/IPsec VPN, add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → %@.",
+
+        "The user name, password and PSK must not contain line breaks or control characters":
+            "A felhasználónév, a jelszó és a PSK nem tartalmazhat sortörést vagy vezérlőkaraktert",
 
         // Log filter
         "All": "Minden",
@@ -96,14 +126,15 @@ public enum L10n {
 
         // Import, export, storage
         "Referenced file not found: %@": "A hivatkozott fájl nem található: %@",
+        "The referenced file is outside the config's folder: %@": "A hivatkozott fájl a config mappáján kívül van: %@",
+        "The referenced file is larger than 1 MB: %@": "A hivatkozott fájl nagyobb 1 MB-nál: %@",
+        "The file for the %@ directive (%@) does not have the expected format": "A(z) %@ direktíva fájlja (%@) nem a várt formátumú",
         "Directive not supported for import: %@": "Nem támogatott direktíva importnál: %@",
         "Cannot detect the config type": "Nem ismerhető fel a config típusa",
         "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).":
             "A .mobileconfig profil nem importálható a MacVPN-be. Kattints rá duplán a Finderben: a macOS profilként telepíti, utána a Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt hagyd jóvá.",
         "Cannot write: %@": "Nem írható: %@",
         "Cannot set the permissions: %@": "Nem állítható be a jogosultság: %@",
-        "The WireGuard config contains the private key (PrivateKey). Only save it to a trusted place or share it with someone you trust.":
-            "A WireGuard config tartalmazza a privát kulcsot (PrivateKey). Csak megbízható helyre mentsd vagy add át.",
         "Cannot delete: %@": "Nem törölhető: %@",
         "Not a directory: %@": "Nem könyvtár: %@",
         "A profile can only be generated for L2TP and Cisco IPsec connections":
@@ -118,6 +149,10 @@ public enum L10n {
         "Cannot set the permissions of the script": "Nem állítható be a script jogosultsága",
         "Installation cancelled": "A telepítés megszakítva",
         "Installation error": "Telepítési hiba",
+        "Unsafe directory, installation cancelled:": "Nem biztonságos könyvtár, a telepítés megszakítva:",
+        "Installation cancelled: %@ is not owned by root or is writable by other users, so anything running as that user could replace the MacVPN root scripts. Fix it in Terminal, then try again: sudo chown root:wheel %@ && sudo chmod go-w %@ (on Intel Macs this may affect Homebrew).":
+            "A telepítés megszakítva: a(z) %@ nem a root tulajdona, vagy más felhasználó is írhatja, így bármi, ami ennek a felhasználónak a nevében fut, kicserélhetné a MacVPN root scriptjeit. Javítsd a Terminálban, majd próbáld újra: sudo chown root:wheel %@ && sudo chmod go-w %@ (Intel Macen ez érintheti a Homebrew-t).",
+        "Integrity check failed, installation cancelled:": "A sértetlenség-ellenőrzés sikertelen, a telepítés megszakítva:",
         "Uninstall cancelled": "Az eltávolítás megszakítva",
         "Uninstall error": "Eltávolítási hiba",
         "Could not disconnect:": "Nem bontható kapcsolat:",
@@ -152,5 +187,14 @@ public enum L10n {
         "version %@, expected: %@": "a verzió %@, várt: %@",
         "link pointing outside the bundle: %@": "a bundle-ön kívülre mutató link: %@",
         "exit code: %d": "kilépési kód: %d",
+        // Launch at login
+        "Approve MacVPN in System Settings → General → Login Items.":
+            "Engedélyezd a MacVPN-t a Rendszerbeállítások → Általános → Bejelentkezési elemek alatt.",
+        "macOS cannot find MacVPN as a login item. Move the app to the Applications folder and open it from there.":
+            "A macOS nem találja a MacVPN-t bejelentkezési elemként. Helyezd az appot az Alkalmazások mappába, és onnan nyisd meg.",
+        "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.":
+            "Az indítás bejelentkezéskor csak akkor érhető el, ha a MacVPN az Alkalmazások mappából fut. Előbb húzd oda az appot.",
+        "macOS is running MacVPN from a temporary location. Move the app to the Applications folder and open it from there.":
+            "A macOS egy ideiglenes helyről futtatja a MacVPN-t. Helyezd az appot az Alkalmazások mappába, és onnan nyisd meg.",
     ]
 }

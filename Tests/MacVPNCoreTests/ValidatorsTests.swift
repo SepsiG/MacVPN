@@ -45,12 +45,12 @@ final class ValidatorsTests: XCTestCase {
 
     let goodWG = """
     [Interface]
-    PrivateKey = aGVsbG8=
+    PrivateKey = bWFjdnBuLXRlc3QtcHJpdmF0ZS1rZXktMzJieXRlcyE=
     Address = 10.0.0.2/32
     # PostUp = rm -rf /
 
     [Peer]
-    PublicKey = d29ybGQ=
+    PublicKey = bWFjdnBuLXRlc3QtcHVibGljLS1rZXktMzJieXRlcyE=
     AllowedIPs = 0.0.0.0/0
     Endpoint = vpn.example.com:51820
     """
@@ -142,8 +142,9 @@ final class ValidatorsTests: XCTestCase {
     }
 
     func testStrongSwanRejectsHashInQuotesBypass() {
+        // Default-deny: az ismeretlen `x` szakasz (10. sor) is hiba; a lényeg, hogy a 11. sori updown nem csúszik át.
         let text = goodSwan + "\nx {\n  esp_proposals = \"#\" } net2 { updown = /tmp/x\n}\n"
-        XCTAssertEqual(StrongSwanValidator().validate(text).map(\.line), [11])
+        XCTAssertTrue(StrongSwanValidator().validate(text).map(\.line).contains(11))
     }
 
     func testStrongSwanRejectsIncludeAnywhere() {
@@ -157,7 +158,7 @@ final class ValidatorsTests: XCTestCase {
     }
 
     func testStrongSwanIgnoresEqualsInQuotes() {
-        let text = goodSwan.replacingOccurrences(of: "remote_addrs = vpn.example.com", with: "id = \"a=b\"")
+        let text = goodSwan.replacingOccurrences(of: "remote_addrs = vpn.example.com", with: "proposals = \"a=b\"")
         XCTAssertEqual(StrongSwanValidator().validate(text), [])
     }
 
@@ -192,7 +193,7 @@ final class ValidatorsTests: XCTestCase {
     }
 
     func testStrongSwanQuotedValuesStillFine() {
-        let text = goodSwan.replacingOccurrences(of: "remote_addrs = vpn.example.com", with: "id = \"file # updown\" # c")
+        let text = goodSwan.replacingOccurrences(of: "remote_addrs = vpn.example.com", with: "remote_addrs = \"file # updown\" # c")
         XCTAssertEqual(StrongSwanValidator().validate(text), [])
     }
 

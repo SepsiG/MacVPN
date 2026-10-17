@@ -56,9 +56,119 @@ final class ConfigExporterTests: XCTestCase {
                                                  content: String(decoding: data, as: UTF8.self)), .wireguard)
     }
 
-    func testWarnsForWireGuardPrivateKey() {
-        XCTAssertNotNil(ConfigExporter.warning(for: .wireguard))
-        XCTAssertNil(ConfigExporter.warning(for: .openvpn))
+    static let ovpn = """
+    client
+    remote a 1194
+    <ca>
+    -----BEGIN CERTIFICATE-----
+    MIIB
+    -----END CERTIFICATE-----
+    </ca>
+    <cert>
+    -----BEGIN CERTIFICATE-----
+    MIIC
+    -----END CERTIFICATE-----
+    </cert>
+    <key>
+    -----BEGIN PRIVATE KEY-----
+    SECRET1
+    -----END PRIVATE KEY-----
+    </key>
+    <TLS-AUTH>
+    SECRET2
+    </TLS-AUTH>
+    key-direction 1
+    <tls-crypt>
+    SECRET3
+    </tls-crypt>
+    <tls-crypt-v2>
+    SECRET4
+    </tls-crypt-v2>
+    <secret>
+    SECRET5
+    </secret>
+    <pkcs12>
+    SECRET6
+    </pkcs12>
+    verb 3
+
+    """
+
+    func testOpenVPNSecretsAreDetectedAndStripped() {
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: Self.ovpn, kind: .openvpn),
+                       ["<key>", "<tls-auth>", "<tls-crypt>", "<tls-crypt-v2>", "<secret>", "<pkcs12>"])
+        let stripped = ConfigExporter.stripSecrets(Self.ovpn, kind: .openvpn)
+        XCTAssertFalse(stripped.contains("SECRET"))
+        XCTAssertTrue(stripped.contains("<ca>\n-----BEGIN CERTIFICATE-----\nMIIB"))
+        XCTAssertTrue(stripped.contains("<cert>"))
+        XCTAssertTrue(stripped.hasSuffix("key-direction 1\nverb 3\n"))
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: stripped, kind: .openvpn), [])
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: "client\nremote a 1\n<ca>\nx\n</ca>\n", kind: .openvpn), [])
+    }
+
+    /// Inline credentials (`<auth-user-pass>`, `<http-proxy-user-pass>`, also inside `<connection>`) are flagged and stripped.
+    func testOpenVPNInlineCredentialsAreDetectedAndStripped() {
+        let conf = """
+        client
+        remote vpn.example.com 1194
+        auth-user-pass
+        <auth-user-pass>
+        bob
+        CredPass1
+        </auth-user-pass>
+        <connection>
+        remote alt.example.com 443 tcp
+        http-proxy proxy.example.com 8080 [inline]
+        <http-proxy-user-pass>
+        proxyuser
+        ProxyPass2
+        </http-proxy-user-pass>
+        </connection>
+        <ca>
+        CA
+        </ca>
+        verb 3
+
+        """
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: conf, kind: .openvpn),
+                       ["<auth-user-pass>", "<http-proxy-user-pass>"])
+        let stripped = ConfigExporter.stripSecrets(conf, kind: .openvpn)
+        XCTAssertFalse(stripped.contains("CredPass1"))
+        XCTAssertFalse(stripped.contains("ProxyPass2"))
+        XCTAssertFalse(stripped.contains("proxyuser"))
+        XCTAssertFalse(stripped.contains("\nbob\n"))
+        XCTAssertTrue(stripped.contains("<connection>\nremote alt.example.com 443 tcp\nhttp-proxy proxy.example.com 8080 [inline]\n</connection>"))
+        XCTAssertTrue(stripped.contains("<ca>\nCA\n</ca>"))
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: stripped, kind: .openvpn), [])
+        // The plain directive alone (credentials from the Keychain) is not secret material.
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: "remote a 1\nauth-user-pass\n", kind: .openvpn), [])
+    }
+
+    func testOpenVPNUnclosedSecretBlockIsStrippedToTheEnd() {
+        let stripped = ConfigExporter.stripSecrets("remote a 1\n<key>\nSECRET\n", kind: .openvpn)
+        XCTAssertEqual(stripped, "remote a 1\n")
+    }
+
+    func testWireGuardKeysAreBlanked() {
+        let conf = "[Interface]\nprivatekey = abc=\nAddress = 10.0.0.2/32\n\n[Peer]\nPublicKey = pub=\nPresharedKey=psk=\n"
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: conf, kind: .wireguard), ["PrivateKey", "PresharedKey"])
+        let stripped = ConfigExporter.stripSecrets(conf, kind: .wireguard)
+        XCTAssertEqual(stripped, "[Interface]\nPrivateKey =\nAddress = 10.0.0.2/32\n\n[Peer]\nPublicKey = pub=\nPresharedKey =\n")
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: stripped, kind: .wireguard), [])
+        XCTAssertEqual(ConfigImporter.detectKind(fileName: "x.conf", content: stripped), .wireguard)
+    }
+
+    func testStrongSwanSecretsSectionIsStripped() {
+        let conf = "connections {\n  a {\n    children { a { } }\n  }\n}\nsecrets {\n  eap-1 {\n    id = bob\n    secret = \"p{w}\"\n  }\n}\npools { }\n"
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: conf, kind: .strongswan), ["secrets"])
+        let stripped = ConfigExporter.stripSecrets(conf, kind: .strongswan)
+        XCTAssertEqual(stripped, "connections {\n  a {\n    children { a { } }\n  }\n}\npools { }\n")
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: "connections {\n}\n", kind: .strongswan), [])
+    }
+
+    func testOtherKindsHaveNoSecretMaterial() {
+        XCTAssertEqual(ConfigExporter.secretMaterial(in: "server=x\n", kind: .sstp), [])
+        XCTAssertEqual(ConfigExporter.stripSecrets("server=x\n", kind: .sstp), "server=x\n")
     }
 
     private func mode(_ url: URL) throws -> Int {

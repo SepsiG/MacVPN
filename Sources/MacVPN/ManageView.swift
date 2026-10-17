@@ -6,7 +6,7 @@ struct ManageView: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var manager: ConnectionManager
     @State private var showImporter = false
-    @State private var importError: String?
+    @State private var importReport: AppModel.ImportReport?
     @State private var confirmUnsaved = false
     @Environment(\.dismissWindow) private var dismissWindow
 
@@ -45,19 +45,24 @@ struct ManageView: View {
             }
             .fileImporter(isPresented: $showImporter, allowedContentTypes: [.data, .plainText, .item],
                           allowsMultipleSelection: true) { result in
-                if case .success(let urls) = result { importError = model.importFiles(urls) }
+                if case .success(let urls) = result {
+                    let report = model.importFiles(urls)
+                    importReport = report.isEmpty ? nil : report
+                }
             }
             .onDrop(of: [.fileURL], isTargeted: nil) { providers in
                 guard !providers.isEmpty else { return false }
-                importError = nil
+                importReport = nil
                 for provider in providers {
                     _ = provider.loadObject(ofClass: URL.self) { url, _ in
                         guard let url else { return }
                         Task { @MainActor in
-                            // Fájlonként érkezik: a hibák gyűlnek, nem írják felül egymást.
-                            if let error = model.importFiles([url]) {
-                                importError = [importError, error].compactMap { $0 }.joined(separator: "\n")
-                            }
+                            // Fájlonként érkezik: az üzenetek gyűlnek, nem írják felül egymást.
+                            let report = model.importFiles([url])
+                            guard !report.isEmpty else { return }
+                            var merged = importReport ?? AppModel.ImportReport()
+                            merged.merge(report)
+                            importReport = merged
                         }
                     }
                 }
@@ -93,10 +98,11 @@ struct ManageView: View {
         } message: {
             Text("The edited settings have not been saved yet.")
         }
-        .alert("Import Error", isPresented: Binding(get: { importError != nil }, set: { if !$0 { importError = nil } })) {
-            Button("OK") { importError = nil }
+        .alert((importReport?.errors.isEmpty ?? true) ? "Import" : "Import Error",
+               isPresented: Binding(get: { importReport != nil }, set: { if !$0 { importReport = nil } })) {
+            Button("OK") { importReport = nil }
         } message: {
-            Text(importError ?? "")
+            Text(importReport?.message ?? "")
         }
     }
 
@@ -119,7 +125,7 @@ struct ManageView: View {
             SystemServiceDetail(service: s).id(id)
         } else {
             ContentUnavailableView("Select a Connection", systemImage: "network",
-                                   description: Text("Or drop an .ovpn / .conf file here."))
+                                   description: Text("Or drop an .ovpn / .conf / .sstp file here."))
         }
     }
 }
@@ -182,7 +188,7 @@ struct ConnectionDetailView: View {
                 Button("Connect in Debug Mode") { model.connect(connection, debug: true) }
                     .disabled(state.isActive || !model.setup.isAvailable(connection.kind))
                 Button { model.export(connection) } label: { Image(systemName: "square.and.arrow.up") }
-                    .help("Export… (without passwords)")
+                    .help("Export… (passwords are never included)")
                 Button(role: .destructive) { confirmDelete = true } label: { Image(systemName: "trash") }
                     .help("Delete")
             }
@@ -208,6 +214,8 @@ struct ConnectionDetailView: View {
                 Group {
                     if connection.kind.isNative {
                         NativeConfigForm(connection: connection)
+                    } else if connection.kind == .sstp {
+                        SSTPConfigForm(connection: connection, isActive: tab == 0)
                     } else {
                         TextConfigEditor(connection: connection, isActive: tab == 0)
                     }
@@ -258,6 +266,7 @@ final class SystemSecretsDraft: ObservableObject {
 
     @Published var fields = Fields() { didSet { reportDirty() } }
     @Published private(set) var saved = false
+    @Published private(set) var error: String?
     private var original = Fields()
     private var service: SystemVPNService?
     private weak var model: AppModel?
@@ -277,7 +286,10 @@ final class SystemSecretsDraft: ObservableObject {
 
     @discardableResult
     func save() -> Bool {
-        guard let service, let model, model.saveSystemSecrets(service, psk: fields.psk, password: fields.password) else {
+        guard let service, let model else { return false }
+        error = model.saveSystemSecrets(service, psk: fields.psk, password: fields.password)
+        guard error == nil else {
+            saved = false
             return false
         }
         original = fields
@@ -289,6 +301,7 @@ final class SystemSecretsDraft: ObservableObject {
     func forget() {
         guard let service, let model else { return }
         model.forgetSystemSecrets(service)
+        error = nil
         original = Fields()
         saved = false
         fields = Fields()
@@ -301,7 +314,8 @@ final class SystemSecretsDraft: ObservableObject {
     private func reportDirty() {
         guard let id = service?.secretID, let model else { return }
         model.setUnsaved(id, dirty: isDirty, save: { [weak self] in
-            (self?.save() ?? false) ? nil : String(localized: "The editor is no longer available")
+            guard let self else { return String(localized: "The editor is no longer available") }
+            return self.save() ? nil : (self.error ?? String(localized: "The editor is no longer available"))
         })
     }
 }
@@ -341,6 +355,7 @@ struct SystemServiceDetail: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     Section {
+                        if let error = draft.error { Text(error).foregroundStyle(.red) }
                         if draft.isDirty {
                             Text("Unsaved changes").foregroundStyle(.orange)
                         } else if draft.saved {

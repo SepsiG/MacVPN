@@ -2,8 +2,11 @@ import Foundation
 import MacVPNCore
 
 // Root oldali validátor a `mvpn` scripthez. Ugyanazt a kódot futtatja, mint az app.
-//   mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan> <fájl>  → hibák soronként stdout-ra; exit 1, ha van hiba
+//   mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> → hibák soronként stdout-ra; exit 1, ha van hiba
 //   mvpn-validate [--lang en|hu] --swan-names <fájl>                    → connection és child név két sorban; exit 1, ha nincs
+//   mvpn-validate [--lang en|hu] --sstp-params <fájl>                   → validált SSTP paraméterek soronként (server, port,
+//                                                                         user, cert, route_all, peer_dns); exit 1, ha hibás
+//   mvpn-validate [--lang en|hu] --sstp-ca <fájl>                       → a validált config <ca> PEM blokkja; exit 1, ha nincs
 // A nyelvet a `--lang` adja (a `sudo` nem viszi át a felhasználó locale-ját); hiányzó vagy ismeretlen érték: angol.
 // Az üzenetek a MacVPNCore beágyazott táblájából jönnek (`L10n`), resource bundle nem kell.
 
@@ -23,7 +26,7 @@ func readFile(_ path: String) -> String {
 }
 
 guard args.count == 2 else {
-    print(L10n.tr("Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan> <file> | --swan-names <file>"))
+    print(L10n.tr("Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>"))
     exit(2)
 }
 
@@ -31,6 +34,18 @@ if args[0] == "--swan-names" {
     guard let names = StrongSwanValidator.names(in: readFile(args[1])) else { exit(1) }
     print(names.connection)
     print(names.child)
+    exit(0)
+}
+
+if args[0] == "--sstp-params" {
+    guard let params = SSTPValidator.parameters(in: readFile(args[1])) else { exit(1) }
+    params.forEach { print($0) }
+    exit(0)
+}
+
+if args[0] == "--sstp-ca" {
+    guard let pem = SSTPValidator.caPEM(in: readFile(args[1])) else { exit(1) }
+    print(pem)
     exit(0)
 }
 

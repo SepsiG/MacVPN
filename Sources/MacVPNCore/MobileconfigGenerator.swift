@@ -11,7 +11,9 @@ public enum MobileconfigGenerator {
     }
 
     /// A fix PayloadIdentifier miatt az újratelepítés felülírja a korábbi profilt.
-    public static func generate(connection: Connection, password: String, psk: String) throws -> Data {
+    /// Jelszó nincs a profilban: a MacVPN csatlakozáskor folyamaton belül adja át (`NativeStartOptions`), a
+    /// Rendszerbeállításokból indítva a macOS rákérdez. A PSK bekerül, különben a szolgáltatás onnan nem használható.
+    public static func generate(connection: Connection, psk: String) throws -> Data {
         guard connection.kind.isNative else { throw NotNativeError() }
         let s = connection.native ?? NativeSettings()
         let identifier = "macvpn.\(connection.id.uuidString)"
@@ -29,9 +31,7 @@ public enum MobileconfigGenerator {
         switch connection.kind {
         case .l2tp:
             vpn["VPNType"] = "L2TP"
-            var ppp: [String: Any] = ["CommRemoteAddress": s.server, "AuthName": s.account]
-            if !password.isEmpty { ppp["AuthPassword"] = password }
-            vpn["PPP"] = ppp
+            vpn["PPP"] = ["CommRemoteAddress": s.server, "AuthName": s.account]
             vpn["IPSec"] = [
                 "AuthenticationMethod": "SharedSecret",
                 "SharedSecret": Data(psk.utf8),
@@ -41,7 +41,7 @@ public enum MobileconfigGenerator {
             guard !s.groupName.isEmpty else {
                 throw ValidationError(message: L10n.tr("Cisco IPsec requires a group name"))
             }
-            var ipsec: [String: Any] = [
+            vpn["IPSec"] = [
                 "RemoteAddress": s.server,
                 "AuthenticationMethod": "SharedSecret",
                 "SharedSecret": Data(psk.utf8),
@@ -50,9 +50,7 @@ public enum MobileconfigGenerator {
                 "XAuthEnabled": 1,
                 "XAuthName": s.account,
                 "PromptForVPNPIN": false,
-            ]
-            if !password.isEmpty { ipsec["XAuthPassword"] = password }
-            vpn["IPSec"] = ipsec
+            ] as [String: Any]
         default:
             throw NotNativeError()
         }

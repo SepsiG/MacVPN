@@ -33,6 +33,7 @@ final class TextConfigDraft: ObservableObject {
         original = loaded
         self.connection = connection
         fields = loaded
+        issues = model.takeImportIssues(connection.id)
     }
 
     @discardableResult

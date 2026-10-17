@@ -40,6 +40,16 @@ public enum ScutilParser {
         }
     }
 
+    /// The server address from `scutil --nc show <id>` (`CommRemoteAddress` for L2TP, `RemoteAddress` for IPsec).
+    public static func remoteAddress(_ output: String) -> String? {
+        for line in output.components(separatedBy: "\n") {
+            let parts = line.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            guard parts.count == 2, parts[0] == "CommRemoteAddress" || parts[0] == "RemoteAddress", !parts[1].isEmpty else { continue }
+            return parts[1]
+        }
+        return nil
+    }
+
     /// nil: nem VPN (pl. modem).
     static func typeLabel(_ raw: String) -> String? {
         switch raw {
@@ -168,6 +178,13 @@ public struct NativeVPNController: Sendable {
         let result = try await runner.run("/usr/sbin/scutil", ["--nc", "list"], stdin: nil)
         try check(result)
         return ScutilParser.parseList(result.stdout)
+    }
+
+    /// The service's server address (`scutil --nc show`); nil if it cannot be read.
+    public func remoteAddress(serviceID: String) async -> String? {
+        guard let result = try? await runner.run("/usr/sbin/scutil", ["--nc", "show", serviceID], stdin: nil),
+              result.exitCode == 0 else { return nil }
+        return ScutilParser.remoteAddress(result.stdout)
     }
 
     /// `kind` nil or no secrets: started with the stored configuration only.

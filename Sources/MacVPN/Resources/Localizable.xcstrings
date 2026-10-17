@@ -261,6 +261,36 @@
         }
       }
     },
+    "Could not download the Homebrew installer. Check the internet connection, then try again." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem sikerült letölteni a Homebrew telepítőt. Ellenőrizd az internetkapcsolatot, majd próbáld újra."
+          }
+        }
+      }
+    },
+    "Could not save the log" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A napló nem menthető"
+          }
+        }
+      }
+    },
+    "Could not start the Homebrew installer" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem indítható a Homebrew telepítő"
+          }
+        }
+      }
+    },
     "Delete" : {
       "localizations" : {
         "hu" : {
@@ -361,22 +391,32 @@
         }
       }
     },
-    "Export" : {
+    "Export With Keys" : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exportálás"
+            "value" : "Exportálás kulcsokkal"
           }
         }
       }
     },
-    "Export… (without passwords)" : {
+    "Export Without Keys" : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Exportálás… (jelszavak nélkül)"
+            "value" : "Exportálás kulcsok nélkül"
+          }
+        }
+      }
+    },
+    "Export… (passwords are never included)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Exportálás… (jelszavak sosem kerülnek bele)"
           }
         }
       }
@@ -421,6 +461,16 @@
         }
       }
     },
+    "Import" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importálás"
+          }
+        }
+      }
+    },
     "Import Error" : {
       "localizations" : {
         "hu" : {
@@ -437,6 +487,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Import fájlból…"
+          }
+        }
+      }
+    },
+    "Imported, but the config has problems. Fix them in the editor (red list)." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importálva, de a config hibás. Javítsd a szerkesztőben (piros lista)."
+          }
+        }
+      }
+    },
+    "Imported, inlined: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importálva, beemelt fájlok: %@"
           }
         }
       }
@@ -497,6 +567,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Telepítés…"
+          }
+        }
+      }
+    },
+    "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tartalmazza: %@. Aki ezeket a kulcsokat birtokolja, a te nevedben csatlakozhat. Csak akkor exportáld őket, ha a címzettnek szüksége van rájuk, és a fájlt megbízható helyen tartsd."
           }
         }
       }
@@ -581,12 +661,12 @@
         }
       }
     },
-    "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, bash). You can install the missing ones here." : {
+    "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here." : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, bash). A hiányzókat innen telepítheted."
+            "value" : "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, sstp-client, bash). A hiányzókat innen telepítheted."
           }
         }
       }
@@ -731,6 +811,16 @@
         }
       }
     },
+    "Open MacVPN for details" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Részletek a MacVPN-ben"
+          }
+        }
+      }
+    },
     "Open System Status" : {
       "localizations" : {
         "hu" : {
@@ -761,12 +851,12 @@
         }
       }
     },
-    "Or drop an .ovpn / .conf file here." : {
+    "Or drop an .ovpn / .conf / .sstp file here." : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vagy húzz ide egy .ovpn / .conf fájlt."
+            "value" : "Vagy húzz ide egy .ovpn / .conf / .sstp fájlt."
           }
         }
       }
@@ -911,12 +1001,12 @@
         }
       }
     },
-    "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again." : {
+    "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it)." : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mentéskor egy konfigurációs profil készül és megnyílik. A Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt kell jóváhagyni. Módosítás után ismét jóvá kell hagyni."
+            "value" : "Mentéskor egy konfigurációs profil készül és megnyílik. A Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt kell jóváhagyni. Módosítás után ismét jóvá kell hagyni. A jelszó nincs a profilban: a MacVPN csatlakozáskor adja át (a Rendszerbeállításokból indítva a macOS rákérdez)."
           }
         }
       }
@@ -1017,6 +1107,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A config és a mentett jelszavak törlődnek."
+          }
+        }
+      }
+    },
+    "The config contains private keys or credentials" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A config privát kulcsokat vagy hitelesítő adatokat tartalmaz"
+          }
+        }
+      }
+    },
+    "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the Keychain are not included." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az export TARTALMAZZA a config privát kulcsait és hitelesítő adatait (%@). A Keychainben tárolt jelszavak és a PSK nem kerülnek bele."
           }
         }
       }
@@ -1231,22 +1341,12 @@
         }
       }
     },
-    "Warning" : {
+    "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client)." : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Figyelem"
-          }
-        }
-      }
-    },
-    "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan)." : {
-      "localizations" : {
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan)."
+            "value" : "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan sstp-client)."
           }
         }
       }
@@ -1327,6 +1427,236 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Mentett titkok törlése"
+          }
+        }
+      }
+    },
+    "Server certificate" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szervertanúsítvány"
+          }
+        }
+      }
+    },
+    "System CA" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rendszer CA"
+          }
+        }
+      }
+    },
+    "Custom CA file" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Saját CA fájl"
+          }
+        }
+      }
+    },
+    "No verification" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs ellenőrzés"
+          }
+        }
+      }
+    },
+    "Uses the CA certificates of Homebrew's OpenSSL, not the macOS Keychain. For a company CA, choose a custom CA file." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Homebrew OpenSSL CA-tanúsítványait használja, nem a macOS kulcskarikát. Céges CA-hoz válaszd a saját CA fájlt."
+          }
+        }
+      }
+    },
+    "Certificates loaded: %lld" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Betöltött tanúsítványok: %lld"
+          }
+        }
+      }
+    },
+    "No CA certificate loaded" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs betöltött CA tanúsítvány"
+          }
+        }
+      }
+    },
+    "Choose PEM File…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "PEM fájl kiválasztása…"
+          }
+        }
+      }
+    },
+    "The server's certificate is not verified. Anyone between you and the server can impersonate it and capture your login. Use this only for testing." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A szerver tanúsítványát semmi nem ellenőrzi. Bárki, aki közted és a szerver között van, kiadhatja magát a szervernek, és megszerezheti a bejelentkezési adataidat. Csak tesztelésre használd."
+          }
+        }
+      }
+    },
+    "Use the server's DNS" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A szerver DNS-ének használata"
+          }
+        }
+      }
+    },
+    "The file contains no PEM certificate (-----BEGIN CERTIFICATE-----). Convert a binary (DER) .cer file to PEM first." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A fájlban nincs PEM tanúsítvány (-----BEGIN CERTIFICATE-----). Bináris (DER) .cer fájlt előbb alakíts PEM-re."
+          }
+        }
+      }
+    },
+    "Port" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Port"
+          }
+        }
+      }
+    },
+    "The password is stored in the Keychain. Use user@domain instead of DOMAIN\\user." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A jelszó a kulcskarikába kerül. DOMAIN\\user helyett user@domain formát használj."
+          }
+        }
+      }
+    },
+    "Launch at Login" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Indítás bejelentkezéskor"
+          }
+        }
+      }
+    },
+    "Open Login Items Settings…" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bejelentkezési elemek beállításai…"
+          }
+        }
+      }
+    },
+    "Could not turn on launch at login" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem sikerült bekapcsolni az indítást bejelentkezéskor"
+          }
+        }
+      }
+    },
+    "Could not turn off launch at login" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nem sikerült kikapcsolni az indítást bejelentkezéskor"
+          }
+        }
+      }
+    },
+    "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A MacVPN-t nem sikerült eltávolítani a bejelentkezési elemek közül. A Rendszerbeállítások → Általános → Bejelentkezési elemek alatt távolíthatod el."
+          }
+        }
+      }
+    },
+    "Only Offer Updates Published at Least 24 Hours Ago" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Csak a legalább 24 órája megjelent frissítések felajánlása"
+          }
+        }
+      }
+    },
+    "The previous update did not complete" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Az előző frissítés nem fejeződött be"
+          }
+        }
+      }
+    },
+    "The update stopped with an error (%@). The installed version was kept. Details: %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A frissítés hibával leállt (%@). A telepített verzió megmaradt. Részletek: %@"
+          }
+        }
+      }
+    },
+    "The update was cancelled because MacVPN did not quit within 30 seconds. The installed version was not changed; you can try again from the menu." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A frissítés megszakadt, mert a MacVPN 30 másodpercen belül nem lépett ki. A telepített verzió nem változott; a menüből újra megpróbálhatod."
+          }
+        }
+      }
+    },
+    "Version %@ was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ verzió kevesebb mint 24 órája jelent meg. Később kerül felajánlásra, mert be van kapcsolva a „Csak a legalább 24 órája megjelent frissítések felajánlása” beállítás."
           }
         }
       }

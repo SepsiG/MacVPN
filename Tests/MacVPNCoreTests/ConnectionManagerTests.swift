@@ -70,6 +70,24 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertEqual(m.state(for: c.id.uuidString), .failed("időtúllépés"), "a refresh nem törölheti a hibát")
     }
 
+    /// Az SSTP root típus: ugyanazon az úton megy, mint a többi (`mvpn up sstp <id>`, jelszó a stdin-en).
+    func testSSTPConnectUsesRootPath() async throws {
+        let c = Connection(name: "SSTP", kind: .sstp)
+        try store.save(c, config: "server=vpn.example.com\nuser=bob\n")
+        secrets.set("Titok123", for: c.id, field: .password)
+        let up = "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn up sstp \(c.id.uuidString) --lang hu"
+        mock.responses[statusCmd] = CommandResult(stdout:
+            #"[{"id":"\#(c.id.uuidString)","kind":"sstp","state":"connected","iface":"ppp0","ip":"10.0.0.7","since":null}]"#)
+        let m = makeManager()
+        await m.connect(c, debug: false)
+        let call = try XCTUnwrap(mock.calls.first { $0.commandLine == up })
+        XCTAssertEqual(call.stdin, "password=Titok123\n")
+        XCTAssertFalse(call.arguments.contains { $0.contains("Titok123") })
+        XCTAssertEqual(m.state(for: c.id.uuidString), .connected(ip: "10.0.0.7", since: nil))
+        await m.disconnect(c)
+        XCTAssertTrue(mock.calls.contains { $0.commandLine == "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn down sstp \(c.id.uuidString) --lang hu" })
+    }
+
     func testDropDetection() async throws {
         let c = Connection(name: "Iroda", kind: .openvpn)
         try store.save(c, config: "remote x\n")
@@ -186,11 +204,14 @@ final class ConnectionManagerTests: XCTestCase {
         XCTAssertEqual(m.state(for: c.id.uuidString), .disconnected)
     }
 
+    /// An unbound managed connection whose only same-named service points to its server (secrets may be passed).
     func nativeManager() throws -> (ConnectionManager, Connection) {
-        let c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP")
+        let c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP",
+                           native: NativeSettings(server: "vpn.example.com", account: "bob"))
         try store.save(c, config: nil)
         mock.responses[statusCmd] = CommandResult(stdout: "[]")
         mock.responses[listCmd] = list("Disconnected")
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = show("vpn.example.com")
         return (makeManager(), c)
     }
 
@@ -408,9 +429,11 @@ final class ConnectionManagerTests: XCTestCase {
     }
 
     func testManagedCiscoConnectPassesXAuth() async throws {
-        let c = Connection(name: "Partner", kind: .cisco, nativeServiceName: "Partner")
+        let c = Connection(name: "Partner", kind: .cisco, nativeServiceName: "Partner",
+                           native: NativeSettings(server: "1.2.3.4", account: "bob", groupName: "g"))
         try store.save(c, config: nil)
         mock.responses[listCmd] = CommandResult(stdout: "  (Disconnected)     \(svcID) IPSec              \"Partner\"    [IPSec]\n")
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = CommandResult(stdout: "IPSec <dictionary> {\n  RemoteAddress : 1.2.3.4\n}\n")
         secrets.set("bob", for: c.id, field: .username)
         secrets.set("k", for: c.id, field: .psk)
         let m = makeManager()
@@ -562,5 +585,166 @@ final class ConnectionManagerTests: XCTestCase {
         await m.disconnectSystem(s)
         XCTAssertEqual(m.state(for: svcID), .disconnected)
         XCTAssertEqual(driver.stops, [svcID])
+    }
+
+    // MARK: - Native service binding (scutil service ID)
+
+    let otherID = "AAAAAAAA-1111-2222-3333-444444444444"
+
+    func twoServices(_ firstStatus: String = "Disconnected", _ secondStatus: String = "Disconnected") -> CommandResult {
+        CommandResult(stdout: """
+        * (\(firstStatus))      \(otherID) PPP --> L2TP       "Office L2TP"     [PPP:L2TP]
+        * (\(secondStatus))      \(svcID) PPP --> L2TP       "Office L2TP"     [PPP:L2TP]
+
+        """)
+    }
+
+    func show(_ address: String) -> CommandResult {
+        CommandResult(stdout: "* (Disconnected) x PPP --> L2TP \"Office L2TP\" [PPP:L2TP]\nPPP <dictionary> {\n  AuthName : bob\n  CommRemoteAddress : \(address)\n}\n")
+    }
+
+    func boundCandidate() throws -> Connection {
+        let c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP",
+                           native: NativeSettings(server: "vpn.example.com", account: "bob"))
+        try store.save(c, config: nil)
+        mock.responses[listCmd] = twoServices()
+        mock.responses["/usr/sbin/scutil --nc show \(otherID)"] = show("evil.example.net")
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = show("VPN.example.com")
+        return c
+    }
+
+    func testRefreshBindsServiceByNameAndServerAddress() async throws {
+        let c = try boundCandidate()
+        let m = makeManager()
+        await m.refresh()
+        XCTAssertEqual(m.connections.first?.nativeServiceID, svcID)
+        XCTAssertEqual(try store.list().first?.nativeServiceID, svcID, "persisted in meta.json")
+        // The same-named foreign service is not hidden as "managed".
+        XCTAssertEqual(m.systemServices.map(\.id), [otherID])
+        // Once bound, no more scutil --nc show.
+        let shows = mock.calls.filter { $0.arguments.contains("show") }.count
+        await m.refresh()
+        XCTAssertEqual(mock.calls.filter { $0.arguments.contains("show") }.count, shows)
+        _ = c
+    }
+
+    func testBoundConnectAndStatusUseTheServiceID() async throws {
+        let c = try boundCandidate()
+        secrets.set("pw", for: c.id, field: .password)
+        let m = makeManager()
+        await m.refresh()
+        let bound = try XCTUnwrap(m.connections.first)
+        await m.connect(bound, debug: false)
+        XCTAssertEqual(driver.starts.map(\.serviceID), [svcID])
+        mock.responses[listCmd] = twoServices("Connected", "Disconnected")
+        await m.refresh()
+        XCTAssertNotEqual(m.state(for: c.id.uuidString), .connected(ip: nil, since: nil),
+                          "the foreign service's state is not ours")
+        mock.responses[listCmd] = twoServices("Disconnected", "Connected")
+        await m.refresh()
+        XCTAssertEqual(m.state(for: c.id.uuidString), .connected(ip: nil, since: nil))
+        await m.disconnect(bound)
+        XCTAssertEqual(driver.stops, [svcID])
+    }
+
+    func testAmbiguousNameRefusesToPassSecrets() async throws {
+        let c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP")
+        try store.save(c, config: nil)
+        secrets.set("pw", for: c.id, field: .password)
+        mock.responses[listCmd] = twoServices()
+        let m = makeManager()
+        var events: [ConnectionEvent] = []
+        m.onEvent = { events.append($0) }
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts, [])
+        let reason = "Több „Office L2TP” nevű VPN szolgáltatás van. A MacVPN nem adja át a jelszót, amíg nem egyértelmű, melyik az övé: nevezd át vagy töröld a másikat a Rendszerbeállítások → Hálózat alatt."
+        XCTAssertEqual(m.state(for: c.id.uuidString), .failed(reason))
+        XCTAssertEqual(events, [.failed(connectionID: c.id.uuidString, name: "Office L2TP", reason: reason)])
+    }
+
+    static let serverMismatchHU = "A(z) „Office L2TP” nevű VPN szolgáltatás szervercíme nem egyezik a kapcsolat szerverével. A MacVPN nem adja át neki a jelszót és a PSK-t: telepítsd újra a profilt a MacVPN → Kapcsolatok alatt, vagy töröld a másik szolgáltatást a Rendszerbeállítások → Hálózat alatt."
+
+    /// Unbound, the only same-named service points to another server: no start at all (neither with nor without secrets).
+    func testUnboundNameMatchWithOtherServerRefusesToStart() async throws {
+        let c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP",
+                           native: NativeSettings(server: "other.example.com", account: "bob"))
+        try store.save(c, config: nil)
+        secrets.set("pw", for: c.id, field: .password)
+        secrets.set("k", for: c.id, field: .psk)
+        mock.responses[listCmd] = list("Disconnected")
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = show("vpn.example.com")
+        let m = makeManager()
+        await m.refresh()
+        XCTAssertNil(m.connections.first?.nativeServiceID)
+        var events: [ConnectionEvent] = []
+        m.onEvent = { events.append($0) }
+        await m.connect(try XCTUnwrap(m.connections.first), debug: false)
+        XCTAssertEqual(driver.starts, [])
+        XCTAssertEqual(m.state(for: c.id.uuidString), .failed(Self.serverMismatchHU))
+        XCTAssertEqual(events, [.failed(connectionID: c.id.uuidString, name: "Office L2TP", reason: Self.serverMismatchHU)])
+    }
+
+    /// Unbound and the server address cannot be read (or the connection has no server): refused too.
+    func testUnboundNameMatchWithUnknownAddressRefusesToStart() async throws {
+        let c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP",
+                           native: NativeSettings(server: "vpn.example.com", account: "bob"))
+        try store.save(c, config: nil)
+        secrets.set("pw", for: c.id, field: .password)
+        mock.responses[listCmd] = list("Disconnected")
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = CommandResult(exitCode: 1, stderr: "nope")
+        let m = makeManager()
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts, [])
+        XCTAssertEqual(m.state(for: c.id.uuidString), .failed(Self.serverMismatchHU))
+
+        let legacy = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP")
+        try store.save(legacy, config: nil)
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = show("vpn.example.com")
+        m.reload()
+        await m.connect(legacy, debug: false)
+        XCTAssertEqual(driver.starts, [])
+        XCTAssertEqual(m.state(for: legacy.id.uuidString), .failed(Self.serverMismatchHU))
+    }
+
+    /// Unbound, address matches (case-insensitively) at connect time even without a prior refresh: secrets passed.
+    func testUnboundNameMatchWithSameServerPassesSecrets() async throws {
+        let (m, c) = try nativeManager()
+        mock.responses["/usr/sbin/scutil --nc show \(svcID)"] = show("VPN.Example.com")
+        secrets.set("pw", for: c.id, field: .password)
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts.map(\.serviceID), [svcID])
+        XCTAssertEqual(driver.starts.first?.options, ["PPP": ["AuthPassword": "pw"]] as NSDictionary)
+    }
+
+    func testServerMismatchMessageIsEnglishToo() {
+        AppLanguage.override = .en
+        XCTAssertEqual(ConnectionManager.serverMismatchReason("Office L2TP"),
+                       "The server address of the VPN service named “Office L2TP” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.")
+    }
+
+    func testVanishedBoundServiceIsUnbound() async throws {
+        var c = Connection(name: "Office L2TP", kind: .l2tp, nativeServiceName: "Office L2TP")
+        c.nativeServiceID = otherID
+        try store.save(c, config: nil)
+        mock.responses[listCmd] = list("Disconnected")
+        let m = makeManager()
+        await m.connect(c, debug: false)
+        XCTAssertEqual(driver.starts, [], "a bound but missing service is not replaced by a name match")
+        XCTAssertEqual(m.state(for: c.id.uuidString), .failed("A profil nincs telepítve: Office L2TP"))
+        await m.refresh()
+        XCTAssertNil(m.connections.first?.nativeServiceID)
+        XCTAssertNil(try store.list().first?.nativeServiceID)
+    }
+
+    func testInstalledNativeIDsAreReported() async throws {
+        let (m, c) = try nativeManager()
+        var seen: [Set<UUID>] = []
+        m.onNativeServicesSeen = { seen.append($0) }
+        await m.refresh()
+        XCTAssertEqual(seen, [[c.id]])
+        mock.responses[listCmd] = CommandResult(stdout: "")
+        await m.refresh()
+        XCTAssertEqual(seen, [[c.id], []])
+        XCTAssertEqual(m.installedNativeIDs, [])
     }
 }

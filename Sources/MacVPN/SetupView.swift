@@ -12,7 +12,7 @@ struct SetupView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("System Status").font(.title2.bold())
-            Text("MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, bash). You can install the missing ones here.")
+            Text("MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.")
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
 
@@ -69,6 +69,9 @@ struct SetupView: View {
             }
 
             Divider()
+            LaunchAtLoginToggle()
+
+            Divider()
             HStack {
                 Text("Removes the root scripts, the sudoers rule and the logs; optionally your connections too.")
                     .font(.caption).foregroundStyle(.secondary)
@@ -83,7 +86,10 @@ struct SetupView: View {
         }
         .padding(20)
         .frame(width: 560)
-        .task { await model.checkSetup() }
+        .task {
+            model.loginItem.refresh()
+            await model.checkSetup()
+        }
     }
 
     private var rootDetail: String {
