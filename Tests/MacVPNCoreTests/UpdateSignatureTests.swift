@@ -68,10 +68,20 @@ final class UpdateSignatureTests: XCTestCase {
 
     func testMalformedBase64() throws {
         let good = try sign(primary).trimmingCharacters(in: .newlines)
-        for bad in ["", "\n", "not base64!", String(good.dropLast(4)), good + "AAAA", "====",
-                    Data(repeating: 1, count: 63).base64EncodedString(), Data(repeating: 1, count: 65).base64EncodedString(),
-                    String(good.prefix(44)) + "\n" + String(good.dropFirst(44)), String(good.prefix(44)) + " " + String(good.dropFirst(44)),
-                    good + "\n" + good] {
+        // Egyszerű lépésekben építve: az Xcode 16 fordító egy kifejezésben nem tudja kikövetkeztetni a típusokat.
+        let head: String = String(good.prefix(44))
+        let tail: String = String(good.dropFirst(44))
+        let short63: String = Data(repeating: 1, count: 63).base64EncodedString()
+        let long65: String = Data(repeating: 1, count: 65).base64EncodedString()
+        var cases: [String] = ["", "\n", "not base64!", "===="]
+        cases.append(String(good.dropLast(4)))
+        cases.append(good + "AAAA")
+        cases.append(short63)
+        cases.append(long65)
+        cases.append(head + "\n" + tail)
+        cases.append(head + " " + tail)
+        cases.append(good + "\n" + good)
+        for bad in cases {
             XCTAssertFalse(verify(bad), bad)
         }
     }
