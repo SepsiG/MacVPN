@@ -43,15 +43,14 @@ public enum BrewBootstrap {
     /// Writes the script (built from its directory's path) into a fresh `mkdtemp` 0700 directory in `parent`,
     /// created with O_EXCL | O_NOFOLLOW and mode 0700. Every error is thrown.
     public static func write(script: (_ directory: String) -> String, in parent: URL) throws -> URL {
-        var template = Array(parent.appendingPathComponent(directoryPrefix + "XXXXXXXX").path.utf8CString)
-        guard let created = mkdtemp(&template) else {
-            throw WriteError(message: L10n.tr("Cannot create a temporary directory"))
+        let dir: URL
+        do { dir = try SecureTempDirectory.make(prefix: directoryPrefix, in: parent) } catch {
+            throw WriteError(message: error.localizedDescription)
         }
-        let dir = URL(fileURLWithPath: String(cString: created), isDirectory: true)
         let url = dir.appendingPathComponent("install-homebrew.command")
         let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o700)
         guard fd >= 0 else {
-            try? FileManager.default.removeItem(at: dir)
+            SecureTempDirectory.removeIfOwned(dir, prefix: directoryPrefix)
             throw WriteError(message: L10n.tr("Cannot write: %@", url.path))
         }
         do {
@@ -61,7 +60,7 @@ public enum BrewBootstrap {
             // A umask szűkíthette: legyen pontosan 0700 (futtatható a Terminálnak).
             guard chmod(url.path, 0o700) == 0 else { throw WriteError(message: L10n.tr("Cannot set the permissions: %@", url.path)) }
         } catch {
-            try? FileManager.default.removeItem(at: dir)
+            SecureTempDirectory.removeIfOwned(dir, prefix: directoryPrefix)
             throw error
         }
         return url

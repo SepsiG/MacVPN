@@ -44,6 +44,8 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $V" Resources/Info.plist
       - name: Tesztek
         run: swift test && scripts/test-root.sh
+      - name: Tesztek (release, optimalizált – ugyanaz a fordítási mód, mint a DMG-é)
+        run: swift test -c release -Xswiftc -enable-testing
       - name: DMG
         run: scripts/build-dmg.sh
       - name: SHA-256

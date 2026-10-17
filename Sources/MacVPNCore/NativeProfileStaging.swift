@@ -21,15 +21,14 @@ public enum NativeProfileStaging {
         guard !fileName.isEmpty, !fileName.contains("/"), fileName != ".", fileName != ".." else {
             throw StagingError(message: L10n.tr("Cannot write: %@", fileName))
         }
-        var template = Array(parent.appendingPathComponent(prefix + "XXXXXXXX").path.utf8CString)
-        guard let created = mkdtemp(&template) else {
-            throw StagingError(message: L10n.tr("Cannot create a temporary directory"))
+        let dir: URL
+        do { dir = try SecureTempDirectory.make(prefix: prefix, in: parent) } catch {
+            throw StagingError(message: error.localizedDescription)
         }
-        let dir = URL(fileURLWithPath: String(cString: created), isDirectory: true)
         let file = dir.appendingPathComponent(fileName)
         let fd = open(file.path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600)
         guard fd >= 0 else {
-            try? FileManager.default.removeItem(at: dir)
+            SecureTempDirectory.removeIfOwned(dir, prefix: prefix)
             throw StagingError(message: L10n.tr("Cannot write: %@", file.path))
         }
         do {
@@ -37,7 +36,7 @@ public enum NativeProfileStaging {
             try handle.write(contentsOf: data)
             try handle.close()
         } catch {
-            try? FileManager.default.removeItem(at: dir)
+            SecureTempDirectory.removeIfOwned(dir, prefix: prefix)
             throw error
         }
         return file
@@ -47,7 +46,7 @@ public enum NativeProfileStaging {
     public static func remove(_ profile: URL) {
         let dir = profile.deletingLastPathComponent()
         guard dir.lastPathComponent.hasPrefix(prefix), isRealDirectory(dir.path) else { return }
-        try? FileManager.default.removeItem(at: dir)
+        SecureTempDirectory.removeIfOwned(dir, prefix: prefix)
     }
 
     /// Launch sweep: deletes every leftover staging directory in `parent` (real directories only, not symlinks).
