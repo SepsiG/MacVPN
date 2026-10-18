@@ -1,6 +1,26 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the Keychain for this connection. The files are never copied into the config." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ ezekre a fájlokra hivatkozik. A Használat választásakor a bennük lévő felhasználónév, jelszó vagy privát kulcs jelszó a Keychainbe kerül ehhez a kapcsolathoz. A fájlok sosem kerülnek a configba."
+          }
+        }
+      }
+    },
+    "%@ was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ nincs beolvasva (hiányzik, a config mappáján kívül van, nagyobb 1 KB-nál, vagy nem a várt formájú). Add meg a hitelesítő adatokat a szerkesztőben."
+          }
+        }
+      }
+    },
     "%@ · Missing tool" : {
       "localizations" : {
         "hu" : {
@@ -461,6 +481,26 @@
         }
       }
     },
+    "I acknowledge these settings and the security risks" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tudomásul veszem a beállításokat és a biztonsági kockázatokat"
+          }
+        }
+      }
+    },
+    "Ignore" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mellőzés"
+          }
+        }
+      }
+    },
     "Import" : {
       "localizations" : {
         "hu" : {
@@ -507,6 +547,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Importálva, beemelt fájlok: %@"
+          }
+        }
+      }
+    },
+    "Imported. It contains risky settings (%@): review them in the editor’s yellow panel and tick the checkbox before connecting." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Importálva. Kockázatos beállításokat tartalmaz (%@): nézd át őket a szerkesztő sárga paneljén, és csatlakozás előtt jelöld be a négyzetet."
           }
         }
       }
@@ -911,6 +961,16 @@
         }
       }
     },
+    "Private key password" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Privát kulcs jelszava"
+          }
+        }
+      }
+    },
     "Profile opened, approve it in System Settings." : {
       "localizations" : {
         "hu" : {
@@ -957,6 +1017,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is."
+          }
+        }
+      }
+    },
+    "Risky settings" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kockázatos beállítások"
           }
         }
       }
@@ -1121,6 +1191,16 @@
         }
       }
     },
+    "The credentials in %@ were not used. Enter them in the editor if needed." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ hitelesítő adatai nincsenek felhasználva. Ha kell, add meg őket a szerkesztőben."
+          }
+        }
+      }
+    },
     "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the Keychain are not included." : {
       "localizations" : {
         "hu" : {
@@ -1161,6 +1241,26 @@
         }
       }
     },
+    "The private key is encrypted: enter its password in the Private key password field before connecting." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A privát kulcs titkosított: csatlakozás előtt add meg a jelszavát a Privát kulcs jelszava mezőben."
+          }
+        }
+      }
+    },
+    "The private key password from %@ is stored in the Keychain." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ fájlban lévő privát kulcs jelszó a Keychainbe került."
+          }
+        }
+      }
+    },
     "The root scripts were not found in the app" : {
       "localizations" : {
         "hu" : {
@@ -1187,6 +1287,16 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A frissítés-ellenőrzés nem sikerült"
+          }
+        }
+      }
+    },
+    "The username and password from %@ are stored in the Keychain; the file is not copied into the config." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ fájlban lévő felhasználónév és jelszó a Keychainbe került; a fájl nem kerül a configba."
           }
         }
       }
@@ -1317,6 +1427,26 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A frissítés aláírásra vár"
+          }
+        }
+      }
+    },
+    "Use" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Használat"
+          }
+        }
+      }
+    },
+    "Use the credentials from %@ for this connection?" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Használod a(z) %@ fájlban lévő hitelesítő adatokat ehhez a kapcsolathoz?"
           }
         }
       }

@@ -45,15 +45,37 @@ public struct Connection: Codable, Identifiable, Hashable, Sendable {
     public var nativeServiceID: String?
     /// Natív beállítások. A fióknév nem titok (a `meta.json`-ban nyíltan áll); a jelszó és a PSK a Keychainben van.
     public var native: NativeSettings?
+    /// OpenVPN: a felhasználó által tudomásul vett kockázatos (RISKY) direktívák nevei, rendezve. Pontosan a mentéskori
+    /// kockázatos halmaz; egy újonnan bekerülő kockázatos direktíva új tudomásulvételt igényel. A `mvpn up` ezt adja át
+    /// `--accept-risky`-ként. Hiányzó mező (régebbi `meta.json`): üres.
+    public var acknowledgedRiskyDirectives: [String]
 
     public init(id: UUID = UUID(), name: String, kind: VPNKind, createdAt: Date = Date(),
-                nativeServiceName: String? = nil, native: NativeSettings? = nil) {
+                nativeServiceName: String? = nil, native: NativeSettings? = nil,
+                acknowledgedRiskyDirectives: [String] = []) {
         self.id = id
         self.name = name
         self.kind = kind
         self.createdAt = createdAt
         self.nativeServiceName = nativeServiceName
         self.native = native
+        self.acknowledgedRiskyDirectives = acknowledgedRiskyDirectives
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id, name, kind, createdAt, nativeServiceName, nativeServiceID, native, acknowledgedRiskyDirectives
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decode(VPNKind.self, forKey: .kind)
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        nativeServiceName = try c.decodeIfPresent(String.self, forKey: .nativeServiceName)
+        nativeServiceID = try c.decodeIfPresent(String.self, forKey: .nativeServiceID)
+        native = try c.decodeIfPresent(NativeSettings.self, forKey: .native)
+        acknowledgedRiskyDirectives = try c.decodeIfPresent([String].self, forKey: .acknowledgedRiskyDirectives) ?? []
     }
 }
 
@@ -94,17 +116,20 @@ public struct Secrets: Equatable, Sendable {
     public var username: String?
     public var password: String?
     public var psk: String?
+    /// OpenVPN: a privát kulcs (titkosított PEM `<key>` vagy PKCS#12) jelszava. A `mvpn` `--askpass` fájlként adja át.
+    public var keyPassword: String?
 
-    public init(username: String? = nil, password: String? = nil, psk: String? = nil) {
+    public init(username: String? = nil, password: String? = nil, psk: String? = nil, keyPassword: String? = nil) {
         self.username = username
         self.password = password
         self.psk = psk
+        self.keyPassword = keyPassword
     }
 
     /// Mentéskor ellenőrzött szabály minden típusra: nincs sortörés és vezérlőkarakter (C0, DEL, C1,
     /// U+2028/U+2029). nil: rendben, egyébként a hibaüzenet. (Az SSTP jelszóra ennél szigorúbb szabály is vonatkozik.)
     public var inputError: String? {
-        let bad = [username, password, psk].contains { value in
+        let bad = [username, password, psk, keyPassword].contains { value in
             (value ?? "").unicodeScalars.contains {
                 $0.value < 0x20 || (0x7F...0x9F).contains($0.value) || $0.value == 0x2028 || $0.value == 0x2029
             }
@@ -116,7 +141,7 @@ public struct Secrets: Equatable, Sendable {
     /// `inputError` már elutasítja őket.
     public var stdinPayload: String {
         var out = ""
-        for (key, value) in [("username", username), ("password", password), ("psk", psk)] {
+        for (key, value) in [("username", username), ("password", password), ("psk", psk), ("keypass", keyPassword)] {
             guard let v = value?.replacingOccurrences(of: "\n", with: "")
                 .replacingOccurrences(of: "\r", with: ""), !v.isEmpty else { continue }
             out += "\(key)=\(v)\n"

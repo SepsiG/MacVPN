@@ -430,6 +430,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
                                                       baseDirectory: url.deletingLastPathComponent())
             let c = Connection(name: url.deletingPathExtension().lastPathComponent, kind: prepared.kind)
             try store.save(c, config: prepared.config)
+            // Az `auth-user-pass <fájl>` / `askpass <fájl>` titkai csak a felhasználó megerősítése után kerülnek a
+            // Keychainbe (a configba soha): egy szomszédos fájl tartalma ne tárolódjon csendben.
+            let creds = prepared.credentials
+            let useCredentials = !creds.candidateFiles.isEmpty && confirmCredentialFiles(creds.candidateFiles, config: file)
+            if useCredentials {
+                if let user = creds.username { secrets.set(user, for: c.id, field: .username) }
+                if let pass = creds.password { secrets.set(pass, for: c.id, field: .password) }
+                if let keyPass = creds.keyPassword { secrets.set(keyPass, for: c.id, field: .keyPassword) }
+            }
             if !prepared.issues.isEmpty { importIssues[c.id] = prepared.issues }
             manager.reload()
             select(c.id.uuidString)
@@ -441,10 +450,41 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             if !prepared.issues.isEmpty {
                 report.notes.append("\(file): \(String(localized: "Imported, but the config has problems. Fix them in the editor (red list)."))")
             }
+            if useCredentials, let source = creds.credentialsFile {
+                report.notes.append("\(file): \(String(localized: "The username and password from \(source) are stored in the Keychain; the file is not copied into the config."))")
+            }
+            if useCredentials, let source = creds.keyPasswordFile {
+                report.notes.append("\(file): \(String(localized: "The private key password from \(source) is stored in the Keychain."))")
+            }
+            if !useCredentials, !creds.candidateFiles.isEmpty {
+                let list = creds.candidateFiles.joined(separator: ", ")
+                report.notes.append("\(file): \(String(localized: "The credentials in \(list) were not used. Enter them in the editor if needed."))")
+            }
+            for unread in creds.unreadFiles {
+                report.notes.append("\(file): \(String(localized: "\(unread) was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor."))")
+            }
+            if prepared.hasEncryptedKey, !(useCredentials && creds.keyPassword != nil) {
+                report.notes.append("\(file): \(String(localized: "The private key is encrypted: enter its password in the Private key password field before connecting."))")
+            }
+            if !prepared.risky.isEmpty {
+                let list = Array(Set(prepared.risky.map(\.directive))).sorted().joined(separator: ", ")
+                report.notes.append("\(file): \(String(localized: "Imported. It contains risky settings (\(list)): review them in the editor’s yellow panel and tick the checkbox before connecting."))")
+            }
             return report
         } catch {
             return ImportReport(errors: ["\(file): \(error.localizedDescription)"])
         }
+    }
+
+    /// Rákérdez, hogy a config mellett talált titokfájl(ok) tartalma a kapcsolathoz tárolódjon-e. true: „Használat”.
+    private func confirmCredentialFiles(_ files: [String], config: String) -> Bool {
+        let alert = NSAlert()
+        let list = files.joined(separator: ", ")
+        alert.messageText = String(localized: "Use the credentials from \(list) for this connection?")
+        alert.informativeText = String(localized: "\(config) refers to these files. If you choose Use, their user name, password or private key password is stored in the Keychain for this connection. The files are never copied into the config.")
+        alert.addButton(withTitle: String(localized: "Use"))
+        alert.addButton(withTitle: String(localized: "Ignore"))
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     func importFiles(_ urls: [URL]) -> ImportReport {
@@ -496,13 +536,29 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         }
     }
 
-    /// Hibák listája; üres = mentve.
-    func saveText(_ c: Connection, name: String, config: String, secrets newSecrets: Secrets) -> [ValidationIssue] {
-        var issues = Validators.validator(for: c.kind)?.validate(config) ?? []
+    /// Hibák listája; üres = mentve. OpenVPN-nél az `acknowledgedRisky` a szerkesztőben tudomásul vett kockázatos
+    /// direktívák halmaza: a config minden kockázatos direktívájának benne kell lennie, és pontosan a config kockázatos
+    /// halmaza tárolódik (egy később hozzáadott kockázatos direktíva újra tudomásulvételt kér).
+    func saveText(_ c: Connection, name: String, config: String, secrets newSecrets: Secrets,
+                  acknowledgedRisky: Set<String> = []) -> [ValidationIssue] {
+        var issues: [ValidationIssue]
+        var riskyNames: [String] = []
+        if c.kind == .openvpn {
+            let result = OpenVPNValidator().validate(config, acknowledgedRisky: acknowledgedRisky)
+            issues = result.issues
+            riskyNames = result.riskyNames
+            if !result.unacknowledged.isEmpty {
+                issues.append(ValidationIssue(line: 0, message: L10n.tr("Acknowledge the risky settings (tick the checkbox) before saving: %@",
+                                                                         result.unacknowledged.joined(separator: ", "))))
+            }
+        } else {
+            issues = Validators.validator(for: c.kind)?.validate(config) ?? []
+        }
         if let error = newSecrets.inputError { issues.append(ValidationIssue(line: 0, message: error)) }
         guard issues.isEmpty else { return issues }
         var updated = c
         updated.name = name
+        updated.acknowledgedRiskyDirectives = riskyNames
         do { try store.save(updated, config: config) } catch {
             return [ValidationIssue(line: 0, message: error.localizedDescription)]
         }
@@ -548,6 +604,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         secrets.set(s.username ?? "", for: id, field: .username)
         secrets.set(s.password ?? "", for: id, field: .password)
         secrets.set(s.psk ?? "", for: id, field: .psk)
+        secrets.set(s.keyPassword ?? "", for: id, field: .keyPassword)
     }
 
     /// A rendszer VPN-hez a MacVPN kulcskarikájában tárolt PSK / jelszó (csak L2TP / Cisco IPsec, UUID azonosítóval).

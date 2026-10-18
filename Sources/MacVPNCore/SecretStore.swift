@@ -4,6 +4,8 @@ import os
 
 public enum SecretField: String, CaseIterable, Sendable {
     case username, password, psk
+    /// OpenVPN privát kulcs (PKCS#12 / titkosított PEM) jelszava.
+    case keyPassword = "keypass"
 }
 
 public protocol SecretStore: AnyObject {
@@ -17,7 +19,8 @@ public protocol SecretStore: AnyObject {
 
 public extension SecretStore {
     func secrets(for id: UUID) -> Secrets {
-        Secrets(username: get(id, field: .username), password: get(id, field: .password), psk: get(id, field: .psk))
+        Secrets(username: get(id, field: .username), password: get(id, field: .password), psk: get(id, field: .psk),
+                keyPassword: get(id, field: .keyPassword))
     }
 }
 
@@ -148,7 +151,7 @@ public final class KeychainSecretStore: SecretStore {
 
     private func account(_ id: UUID, _ field: SecretField) -> String { "\(id.uuidString).\(field.rawValue)" }
 
-    /// `<UUID>.<username|password|psk>`: the account names MacVPN writes.
+    /// `<UUID>.<username|password|psk|keypass>`: the account names MacVPN writes.
     public static func isOurAccount(_ account: String) -> Bool {
         guard let dot = account.lastIndex(of: ".") else { return false }
         return UUID(uuidString: String(account[..<dot])) != nil

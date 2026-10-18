@@ -125,7 +125,7 @@ final class ValidatorsTests: XCTestCase {
 
     func testOpenVPNRejectsNewForbiddenAndUnknown() {
         XCTAssertEqual(ovpn("pkcs11-providers /tmp/evil.dylib\n").first?.message.hasPrefix("Tiltott"), true)
-        XCTAssertEqual(ovpn("foo-bar 1\n").first?.message.hasPrefix("Nem engedélyezett direktíva: foo-bar"), true)
+        XCTAssertEqual(ovpn("foo-bar 1\n").first?.message, "Kockázatos direktíva, tudomásulvétel szükséges: foo-bar")
     }
 
     func testOpenVPNRejectsUnknownBlockAndSkipsContent() {
@@ -277,7 +277,7 @@ final class ValidatorsTests: XCTestCase {
             }
         }
         // Az engedélyezett karakterkészletű nevek továbbra is látszanak.
-        XCTAssertEqual(ovpn("setenv FOO_BAR x\n").first?.message.hasPrefix("Nem engedélyezett setenv: FOO_BAR"), true)
+        XCTAssertEqual(ovpn("setenv LD_PRELOAD x\n").first?.message.hasPrefix("Nem engedélyezett setenv: LD_PRELOAD"), true)
         XCTAssertEqual(ovpn("setenv a=b x\n").first?.message.hasPrefix("Nem engedélyezett setenv – "), true)
         let wg = WireGuardValidator().validate(goodWG.replacingOccurrences(of: "Address = 10.0.0.2/32", with: "a b = 1"))
         XCTAssertEqual(wg.first?.message, "Nem engedélyezett kulcs")

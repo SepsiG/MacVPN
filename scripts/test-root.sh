@@ -40,9 +40,72 @@ DESC="jó openvpn dry-run";   expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$G
 DESC="jó wireguard dry-run"; expect_ok "$SH" "$MVPN" up wireguard "$(new_conn "$GOOD_WG")" --dry-run
 DESC="jó strongswan dry-run";expect_ok "$SH" "$MVPN" up strongswan "$(new_conn "$GOOD_SWAN")" --dry-run
 
-for d in up down route-up plugin script-security config daemon log-append management user group pkcs11-providers; do
-  DESC="openvpn tiltott: $d"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\n'"$d /tmp/x")" --dry-run
+for d in up down route-up plugin script-security config daemon log-append management user group pkcs11-providers chroot echo; do
+  DESC="openvpn tiltott/kockázatos jelzés nélkül: $d"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\n'"$d /tmp/x")" --dry-run
 done
+
+# Kockázatos (RISKY) direktívák: csak a kapcsolatnál tudomásul vett nevek (--accept-risky) mellett mennek át;
+# a FORBIDDEN szintet a jelzés nem oldja fel; a jelzés értéke szigorú formátumú.
+RISKY_OVPN="$GOOD_OVPN"$'\nuser nobody\ngroup nogroup\nremap-usr1 SIGTERM\nsetenv CONFIG_VERSION "2.0.4"'
+DESC="kockázatos jelzés nélkül → elutasítva"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$RISKY_OVPN")" --dry-run
+DESC="kockázatos, csak részben tudomásul véve → elutasítva"
+expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$RISKY_OVPN")" --dry-run --accept-risky user
+DESC="kockázatos --accept-risky mellett → elfogadva"
+expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$RISKY_OVPN")" --dry-run --accept-risky group,user --lang en
+grep -q 'acknowledged risky directives: group,user' "$MVPN_LOG_BASE"/*.log && ok "kockázatos lista a naplóban" || nok "kockázatos lista a naplóban"
+DESC="ismeretlen direktíva --accept-risky mellett → elfogadva"
+expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nfuture-option 3 abc')" --dry-run --accept-risky future-option
+DESC="ismeretlen direktíva útvonal-argumentummal → elutasítva jelzéssel is"
+expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nfuture-option /etc/master.passwd')" --dry-run --accept-risky future-option
+for d in up chroot plugin script-security echo; do
+  DESC="tiltott név az --accept-risky-ben is tiltott: $d"
+  expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\n'"$d x")" --dry-run --accept-risky "$d"
+done
+for v in 'User' 'a,,b' ',a' 'a;b' 'a b' '../x' ''; do
+  DESC="érvénytelen --accept-risky érték: '$v'"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run --accept-risky "$v"
+done
+DESC="--accept-risky érték nélkül (utolsó argumentum)"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run --accept-risky
+DESC="tiltott setenv név: LD_PRELOAD"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nsetenv LD_PRELOAD x')" --dry-run --accept-risky ld-preload
+head -1 Resources/root/ovpn-dns | grep -qx '#!/bin/bash -p' && ok "ovpn-dns: #!/bin/bash -p" || nok "ovpn-dns: #!/bin/bash -p"
+grep -q 'script_type|dev|ifconfig_local|foreign_option_\[0-9\]\*) ;;' Resources/root/ovpn-dns \
+  && grep -q '^set +o posix' Resources/root/ovpn-dns && ok "ovpn-dns: környezet-allowlist a script elején" || nok "ovpn-dns: környezet-allowlist a script elején"
+OUT=$(env BASH_ENV="$T/evil-env" ENV="$T/evil-env" DYLD_INSERT_LIBRARIES=/x script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' \
+  Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
+[ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete" || nok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete ($OUT)"
+# Környezet-allowlist: csak az OpenVPN által adott, a hook által olvasott változók (és a fix PATH/LC_ALL) maradnak.
+OUT=$(env -i TMOUT=1 POSIXLY_CORRECT=1 CDPATH=/tmp GLOBIGNORE='*' BASH_ENV="$T/evil-env" SHELLOPTS=xtrace FOO=bar \
+  OPENSSL_CONF=/x GREP_OPTIONS=-v script_type=check-env dev=utun3 ifconfig_local=10.8.0.2 foreign_option_1='dhcp-option DNS 1.1.1.1' \
+  /bin/bash -p Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
+# A SHELLOPTS readonly: a bash a saját (a -p miatt a környezetből nem átvett) értékével exportálja; xtrace nincs.
+BADVARS=$(printf '%s\n' "$OUT" | grep -E '^(TMOUT|POSIXLY_CORRECT|CDPATH|GLOBIGNORE|BASH_ENV|FOO|OPENSSL_CONF|GREP_OPTIONS|[+].*)$')
+[ -z "$BADVARS" ] && printf '%s\n' "$OUT" | grep -qx 'POSIX off' && printf '%s\n' "$OUT" | grep -qx script_type \
+  && printf '%s\n' "$OUT" | grep -qx foreign_option_1 && printf '%s\n' "$OUT" | grep -qx LC_ALL \
+  && ok "ovpn-dns: környezet-allowlist (TMOUT, POSIXLY_CORRECT, CDPATH, … törölve, posix mód ki)" || { nok "ovpn-dns: környezet-allowlist"; echo "$OUT"; }
+OUT=$(env TMOUT=1 POSIXLY_CORRECT=1 script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
+[ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: TMOUT/POSIXLY_CORRECT mellett is ugyanaz a kimenet" || nok "ovpn-dns: TMOUT/POSIXLY_CORRECT mellett is ugyanaz a kimenet ($OUT)"
+
+# MikroTik RouterOS által exportált / a wiki szerinti configok: tudomásulvétel nélkül, rootként is átmennek.
+for f in Tests/Fixtures/mikrotik/routeros-v7-export-udp.ovpn Tests/Fixtures/mikrotik/routeros-v7-export-tcp.ovpn \
+         Tests/Fixtures/mikrotik/routeros-v7-export-tls-crypt.ovpn Tests/Fixtures/mikrotik/routeros-wiki-extras.ovpn \
+         Tests/Fixtures/mikrotik/routeros-v6-imported.ovpn; do
+  DESC="MikroTik fixture, jelzés nélkül: ${f##*/}"; expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$(cat "$f")")" --dry-run
+done
+DESC="MikroTik v6 import előtt (külső fájlok) rootként elutasítva"
+expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$(cat Tests/Fixtures/mikrotik/routeros-v6-wiki.ovpn)")" --dry-run
+DESC="script-security 1 (SAFE)"; expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nscript-security 1')" --dry-run
+DESC="script-security 2 jelzéssel is tiltott"
+expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nscript-security 2')" --dry-run --accept-risky script-security
+
+# Privát kulcs jelszava: --askpass $RUN/askpass, a jelszó soha nem látszik.
+KID=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yP4ssTitok\n' | "$SH" "$MVPN" up openvpn "$KID" --dry-run --debug >"$T/kp.out" 2>&1
+grep -q 'DRY: .*--askpass [^ ]*/askpass' "$T/kp.out" && ok "dry-run: --askpass \$RUN/askpass" || { nok "dry-run: --askpass \$RUN/askpass"; cat "$T/kp.out"; }
+grep -q 'K3yP4ssTitok' "$T/kp.out" "$MVPN_LOG_BASE/$KID.log" && nok "kulcsjelszó nem látszik" || ok "kulcsjelszó nem látszik"
+KID2=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=x1\n' | "$SH" "$MVPN" up openvpn "$KID2" --dry-run >"$T/kp2.out" 2>&1
+grep -q -- '--askpass' "$T/kp2.out" && nok "kulcsjelszó nélkül nincs --askpass" || ok "kulcsjelszó nélkül nincs --askpass"
+OUT=$(printf 'k K3yP4ss\n' | MVPN_MASK_3=K3yP4ss "$SH" "$MVPN" __mask)
+[ "$OUT" = "k ***" ] && ok "mask: kulcsjelszó" || nok "mask: kulcsjelszó ($OUT)"
 DESC="openvpn --up forma";   expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\n--up /tmp/x')" --dry-run
 DESC="openvpn külső ca";     expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nca /etc/ca.crt')" --dry-run
 DESC="openvpn setenv BASH_ENV"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nsetenv BASH_ENV /tmp/x')" --dry-run
@@ -116,7 +179,7 @@ OUT=$(printf 'pw=%%s! end\n' | MVPN_MASK_1='%s!' "$SH" "$MVPN" __mask)
 
 # Locale, verzió, charon: statikus ellenőrzések
 grep -q '^export LC_ALL=C' "$MVPN" && grep -q '^export LC_ALL=C' Resources/root/ovpn-dns && ok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben" || nok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben"
-[ "$("$SH" "$MVPN" version)" = 4 ] && [ "$(cat Resources/root/VERSION)" = 4 ] && ok "root verzió: 4" || nok "root verzió: 4"
+[ "$("$SH" "$MVPN" version)" = 5 ] && [ "$(cat Resources/root/VERSION)" = 5 ] && ok "root verzió: 5" || nok "root verzió: 5"
 OUT=$(printf 'Szép ÁRVÍZTŰRŐ\n' | env LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 MVPN_MASK_1=ŰR "$SH" "$MVPN" __mask)
 [ "$OUT" = "Szép ÁRVÍZT***Ő" ] && ok "mask felhasználói locale mellett is bájt-alapú" || nok "mask felhasználói locale mellett is bájt-alapú ($OUT)"
 grep -q 'pgrep -U 0 -x charon' "$MVPN" && ! grep -qE 'p(grep|kill) -x charon' "$MVPN" && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
@@ -236,6 +299,21 @@ head -1 "$RL.1" | grep -q NEWMARKER && [ ! -e "$RL.2" ] && ok "csak egy .1 marad
 SZ=$(stat -f %z "$RL"); "$SH" "$MVPN" down openvpn "$RID" --dry-run </dev/null >/dev/null 2>&1
 head -1 "$RL.1" | grep -q NEWMARKER && [ "$(stat -f %z "$RL")" -ge "$SZ" ] && ok "down nem forgat" || nok "down nem forgat"
 
+# A "kapcsolódva" minta minden valódi OpenVPN 2.7 naplóformátumra illeszkedik, és a hamisítványokra nem.
+DONE_RE=$(sed -n "s/^OVPN_DONE_RE='\(.*\)'$/\1/p" "$MVPN")
+for line in "2026-10-18 15:22:48 Initialization Sequence Completed" \
+            "2026-10-18 15:42:51 us=411817 Initialization Sequence Completed" \
+            "Initialization Sequence Completed" \
+            "1792330971.453131 32000004 Initialization Sequence Completed" \
+            "2026-10-18 15:42:51 us=5 Initialization Sequence Completed With Errors ( see http://openvpn.net/faq.html#dhcpclientserv )"; do
+  printf '%s\n' "$line" | grep -q -E "$DONE_RE" && ok "completion minta illeszkedik: ${line:0:40}" || nok "completion minta illeszkedik: $line"
+done
+for line in "2026-10-18 15:22:48 ECHO:msg x Initialization Sequence Completed" \
+            "2026-10-18 15:22:48 PUSH: Received control message: 'PUSH_REPLY,echo msg Initialization Sequence Completed'" \
+            "2026-10-18 15:22:48 us=abc Initialization Sequence Completed"; do
+  printf '%s\n' "$line" | grep -q -E "$DONE_RE" && nok "completion minta nem illeszkedik: $line" || ok "completion minta nem illeszkedik: ${line:0:40}"
+done
+
 # status JSON hamis futási könyvtárakkal (élő openvpn pid → connected, wireguard interfész nélkül → failed)
 SB="$T/statusrun"; mkdir -p "$SB/x-not-uuid"; echo openvpn >"$SB/x-not-uuid/kind"
 S1=$(uuidgen); S2=$(uuidgen); mkdir -p "$SB/$S1" "$SB/$S2"
@@ -285,7 +363,7 @@ assert d[sys.argv[3]]["state"] == "failed", d[sys.argv[3]]
 FB="$T/flushrun"; FLG="$T/flushlog"; mkdir -p "$FB" "$FLG"
 "$T/bin/openvpn" 30 & FP=$!
 F1=$(uuidgen); mkdir -p "$FB/$F1"; echo openvpn >"$FB/$F1/kind"; echo "$FP" >"$FB/$F1/pid"; echo utun7 >"$FB/$F1/iface"
-printf '%s\n' "x Initialization Sequence Completed" "x KEEPMARKER" "x Password: LEAKPW1" "x AUTH: Received control message LEAKAUTH2" "x passwd LEAKPW3" >"$FB/$F1/openvpn.log"
+printf '%s\n' "2026-10-17 00:00:00 Initialization Sequence Completed" "x KEEPMARKER" "x Password: LEAKPW1" "x AUTH: Received control message LEAKAUTH2" "x passwd LEAKPW3" >"$FB/$F1/openvpn.log"
 : >"$FLG/$F1.log"
 mkdir "$FB/.$F1.lock"; echo "$FP" >"$FB/.$F1.lock/pid"
 MVPN_RUN_BASE="$FB" MVPN_LOG_BASE="$FLG" "$SH" "$MVPN" status >/dev/null
@@ -376,12 +454,15 @@ exit 0
 FAKE
 chmod 755 "$SB2/bin/openvpn"
 UID4=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=Sup3rTitok\n' | upt MVPN_BREW="$SB2" "$SH" "$MVPN" up openvpn "$UID4" >"$T/out" 2>&1 \
+printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yTitok77\n' | upt MVPN_BREW="$SB2" "$SH" "$MVPN" up openvpn "$UID4" >"$T/out" 2>&1 \
   && ok "up openvpn (hamis) sikeres" || { nok "up openvpn (hamis) sikeres"; cat "$T/out"; }
 [ -f "$MVPN_RUN_BASE/$UID4/auth" ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4/auth")" = 600 ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4")" = 700 ] \
   && ok "auth fájl megmarad a felépülés után (600, könyvtár 700)" || { nok "auth fájl megmarad a felépülés után (600, könyvtár 700)"; ls -la "$MVPN_RUN_BASE/$UID4"; }
 [ "$(sed -n 2p "$MVPN_RUN_BASE/$UID4/auth" 2>/dev/null)" = Sup3rTitok ] && ok "auth fájl tartalma" || nok "auth fájl tartalma"
 grep -q 'Sup3rTitok' "$MVPN_LOG_BASE/$UID4.log" && nok "jelszó nem kerül a naplóba (valódi up)" || ok "jelszó nem kerül a naplóba (valódi up)"
+[ -f "$MVPN_RUN_BASE/$UID4/askpass" ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4/askpass")" = 600 ] \
+  && [ "$(cat "$MVPN_RUN_BASE/$UID4/askpass")" = K3yTitok77 ] && ok "askpass fájl (600) a felépülés után" || nok "askpass fájl (600) a felépülés után"
+grep -q 'K3yTitok77' "$MVPN_LOG_BASE/$UID4.log" && nok "kulcsjelszó nem kerül a naplóba (valódi up)" || ok "kulcsjelszó nem kerül a naplóba (valódi up)"
 DESC="down a felépült kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$UID4"
 [ ! -e "$MVPN_RUN_BASE/$UID4" ] && ok "down után az auth fájl és a futási könyvtár törölve" || nok "down után az auth fájl és a futási könyvtár törölve"
 
@@ -401,6 +482,11 @@ case "\$FAKE_OVPN_MODE" in
   inject)     printf 'Initialization Sequence Completed\n' >>"\$INJECT_LOG" ;;
   authinject) printf 'AUTH_FAILED\n' >>"\$INJECT_LOG"; printf '2026-10-17 00:00:00 Initialization Sequence Completed\n' >>"\$L" ;;
   auth)       printf '2026-10-17 00:00:00 AUTH: Received control message: AUTH_FAILED\n' >>"\$L" ;;
+  echo)       printf '2026-10-17 00:00:00 ECHO:msg Initialization Sequence Completed\n' >>"\$L"
+              printf "2026-10-17 00:00:01 PUSH: Received control message: 'PUSH_REPLY,echo msg Initialization Sequence Completed'\\n" >>"\$L"
+              printf '2026-10-17 00:00:02 ECHO-PULL:msg Initialization Sequence Completed\n' >>"\$L" ;;
+  echoauth)   printf '2026-10-17 00:00:00 ECHO:msg AUTH_FAILED\n' >>"\$L"
+              ( sleep 2; printf '2026-10-17 00:00:01 Initialization Sequence Completed\n' >>"\$L" ) </dev/null >/dev/null 2>&1 & ;;
 esac
 exit 0
 FAKE
@@ -423,6 +509,26 @@ OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=auth "$SH" "$MVPN" up openvpn "$OID" 2>
   && grep -q 'AUTH: Received control message: AUTH_FAILED' "$MVPN_LOG_BASE/$OID.log" \
   && ok "openvpn: AUTH_FAILED a root-only naplóból → hiba, takarítás, napló átmásolva" || { nok "openvpn: AUTH_FAILED a root-only naplóból → hiba, takarítás, napló átmásolva"; echo "$OUT"; }
 pgrep -f "$T/bin/openvpn 60" >/dev/null && nok "openvpn: nem maradt futó hamis openvpn" || ok "openvpn: nem maradt futó hamis openvpn"
+# ECHO / ECHO-PULL / PUSH_REPLY sor a root-only naplóban (config `echo`/`parameter`, vagy a szerver által küldött echo)
+# nem jelent felépülést és nem jelent AUTH_FAILED-et: csak az OpenVPN saját, horgonyzott sora számít.
+OID=$(new_conn "$GOOD_OVPN")
+OUT=$(upt MVPN_BREW="$OI" MVPN_UP_TIMEOUT=3 FAKE_OVPN_MODE=echo "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+[ "$RC" != 0 ] && case "$OUT" in *"Timed out: the connection was not established within 3 s"*) true ;; *) false ;; esac \
+  && ok "openvpn: 'ECHO:msg Initialization Sequence Completed' nem számít felépülésnek" || { nok "openvpn: 'ECHO:msg Initialization Sequence Completed' nem számít felépülésnek"; echo "$OUT"; }
+OID=$(new_conn "$GOOD_OVPN")
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=echoauth "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+[ "$RC" = 0 ] && ok "openvpn: 'ECHO:msg AUTH_FAILED' nem hitelesítési hiba" || { nok "openvpn: 'ECHO:msg AUTH_FAILED' nem hitelesítési hiba"; echo "$OUT"; }
+DESC="openvpn: down az echoauth kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
+# status: csak ECHO sorral a kapcsolat nem "connected".
+EB="$T/echostatus"; mkdir -p "$EB"; "$T/bin/openvpn" 30 & EP=$!
+E1=$(uuidgen); mkdir -p "$EB/$E1"; echo openvpn >"$EB/$E1/kind"; echo "$EP" >"$EB/$E1/pid"; echo utun5 >"$EB/$E1/iface"
+printf '%s\n' "2026-10-17 00:00:00 ECHO:msg Initialization Sequence Completed" >"$EB/$E1/openvpn.log"
+E2=$(uuidgen); mkdir -p "$EB/$E2"; echo openvpn >"$EB/$E2/kind"; echo "$EP" >"$EB/$E2/pid"; echo utun6 >"$EB/$E2/iface"
+printf '%s\n' "1760000000.123456 1 Initialization Sequence Completed" >"$EB/$E2/openvpn.log"
+SJ=$(MVPN_RUN_BASE="$EB" "$SH" "$MVPN" status)
+python3 -c 'import json,sys; d={x["id"]:x["state"] for x in json.loads(sys.argv[1])}; sys.exit(0 if d[sys.argv[2]]=="connecting" and d[sys.argv[3]]=="connected" else 1)' "$SJ" "$E1" "$E2" \
+  && ok "status: ECHO sor nem 'connected', machine-readable sor igen" || { nok "status: ECHO sor nem 'connected', machine-readable sor igen"; echo "$SJ"; }
+kill "$EP" 2>/dev/null; wait "$EP" 2>/dev/null
 
 # Összeomlott openvpn maradéka (halott pid, dns-backup): az up előbb visszaállítja a DNS-t, aztán törli.
 UID5=$(new_conn "$GOOD_OVPN"); mkdir -m 700 "$MVPN_RUN_BASE/$UID5"

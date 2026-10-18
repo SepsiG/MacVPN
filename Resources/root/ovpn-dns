@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -p
 # OpenVPN up/down hook (root). Hívás: ovpn-dns <run-dir> <log-fájl>, a típus a $script_type env-ből.
 # Az SSTP is ezt használja: a mvpn a pppd naplójából kiolvasott DNS-eket OpenVPN-formában adja át
 # (env -i script_type=up dev=pppN foreign_option_N="dhcp-option DNS <cím>"), így a mentés/visszaállítás közös.
@@ -6,6 +6,22 @@
 # A szerver által küldött értékeket nem eval-oljuk: printenv + szigorú formátum-ellenőrzés.
 # script_type=check: csak kiírja az elfogadott DNS/DOMAIN értékeket (teszteléshez), semmit nem állít.
 # bash 3.2 kompatibilis.
+#
+# Környezet-keményítés: a hook rootként fut, a környezetét az OpenVPN adja, amibe a config `setenv` sorai is bekerülnek
+# (a validátor a veszélyes neveket tiltja, ez a mélységi védelem). A `-p` (privileged) mód miatt a bash 3.2 nem olvassa
+# a BASH_ENV/ENV fájlt, nem importál függvényt, és figyelmen kívül hagyja a SHELLOPTS-t (a CDPATH-t és a GLOBIGNORE-t
+# 3.2-ben NEM: ezeket az alábbi törlés intézi). Környezet-allowlist: minden exportált változót törlünk, kivéve amit az
+# OpenVPN a hooknak ad és mi olvasunk (script_type, dev, ifconfig_local, foreign_option_N); a PATH-t és az LC_ALL-t
+# utána fixen beállítjuk. A POSIXLY_CORRECT indításkor már posix módba kapcsolhatta a bash-t: azt is visszakapcsoljuk.
+IFS=$' \t\n'
+for _v in $(compgen -e); do
+  case "$_v" in
+    script_type|dev|ifconfig_local|foreign_option_[0-9]*) ;;
+    *) unset "$_v" 2>/dev/null ;;
+  esac
+done
+unset _v CDPATH GLOBIGNORE TMOUT POSIXLY_CORRECT BASH_ENV ENV PS4 2>/dev/null
+set +o posix
 export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 export LC_ALL=C   # bájt-alapú regex/tr/sed, a felhasználó locale-jától függetlenül
 RUN="$1"
@@ -39,6 +55,11 @@ parse_options() {
 }
 
 case "$script_type" in
+  check-env)
+    # Teszteléshez: a megtisztított környezet változóneveit és a posix módot írja ki (értéket nem).
+    compgen -e | sort
+    if shopt -qo posix; then echo "POSIX on"; else echo "POSIX off"; fi
+    ;;
   check)
     parse_options
     for v in "${DNS[@]}"; do echo "DNS $v"; done

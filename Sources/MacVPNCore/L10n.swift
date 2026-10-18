@@ -49,7 +49,6 @@ public enum L10n {
         "setenv not allowed": "Nem engedélyezett setenv",
         " – delete the line or comment it out (#)": " – töröld vagy tedd megjegyzésbe (#) a sort",
         "Forbidden directive: %@": "Tiltott direktíva: %@",
-        "Directive not allowed: %@": "Nem engedélyezett direktíva: %@",
         "External file reference, use an inline block: %@": "Külső fájl hivatkozás, inline blokk kell: %@",
         "Unknown section": "Ismeretlen szakasz",
         "Invalid line": "Érvénytelen sor",
@@ -68,6 +67,27 @@ public enum L10n {
         "Wrong number of arguments: %@": "Hibás argumentumszám: %@",
         "Directive not allowed in a <connection> block: %@": "Nem engedélyezett direktíva <connection> blokkban: %@",
         "Invalid value: %@": "Érvénytelen érték: %@",
+        "Risky directive, acknowledgement required: %@": "Kockázatos direktíva, tudomásulvétel szükséges: %@",
+        "Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects":
+            "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat, és a DNS-t csak a MacVPN bontása állítja vissza",
+        "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic":
+            "Az OpenVPN nem állítja be az interfészt vagy az útvonalakat: a tunnel lehet, hogy nem visz forgalmat",
+        "Changes when MacVPN's DNS hooks run": "Megváltoztatja, mikor futnak a MacVPN DNS-hookjai",
+        "Server-side option, not meant for a client connection": "Szerveroldali beállítás, nem kliens kapcsolatba való",
+        "Makes this Mac accept incoming VPN connections (listens on the network as root)":
+            "Ez a Mac bejövő VPN-kapcsolatokat fogadna (rootként figyel a hálózaton)",
+        "Normally sent by the server or used internally by OpenVPN, not set in a client config":
+            "Ezt általában a szerver küldi, vagy az OpenVPN belsőleg használja, kliens configba nem való",
+        "Removed from OpenVPN: the connection will fail to start": "Az OpenVPN-ből eltávolították: a kapcsolat nem fog elindulni",
+        "Debugging option that deliberately disrupts the connection": "Hibakereső beállítás, amely szándékosan zavarja a kapcsolatot",
+        "Weakens the security of the tunnel (deprecated or insecure mode)":
+            "Gyengíti a tunnel biztonságát (elavult vagy nem biztonságos mód)",
+        "Allows routing that can bypass or loop the tunnel": "Olyan útválasztást enged, amely megkerülheti vagy hurokba viheti a tunnelt",
+        "Not supported on macOS (Windows or Linux only)": "macOS-en nem támogatott (csak Windows vagy Linux)",
+        "Standalone mode: OpenVPN prints information or exits instead of connecting":
+            "Önálló mód: az OpenVPN kapcsolódás helyett információt ír ki vagy kilép",
+        "Unknown to MacVPN: its effect cannot be checked": "A MacVPN nem ismeri: a hatása nem ellenőrizhető",
+        "Invalid --accept-risky value": "Érvénytelen --accept-risky érték",
         "Section not allowed: %@": "Nem engedélyezett szakasz: %@",
         "Section not allowed": "Nem engedélyezett szakasz",
         "Only a file name is allowed, no path: %@": "Csak fájlnév adható meg, útvonal nem: %@",
@@ -91,8 +111,8 @@ public enum L10n {
 
         // mvpn-validate
         "Cannot read the file: %@": "A fájl nem olvasható: %@",
-        "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>":
-            "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
+        "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>":
+            "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
         "Unknown type: %@": "Ismeretlen típus: %@",
 
         // Connections, root and native backends
@@ -118,6 +138,10 @@ public enum L10n {
 
         "The user name, password and PSK must not contain line breaks or control characters":
             "A felhasználónév, a jelszó és a PSK nem tartalmazhat sortörést vagy vezérlőkaraktert",
+        "Risky settings are not acknowledged: %@. Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.":
+            "A kockázatos beállítások nincsenek tudomásul véve: %@. Nyisd meg a kapcsolatot a MacVPN → Kapcsolatok alatt, és jelöld be a négyzetet a Kockázatos beállítások résznél.",
+        "Acknowledge the risky settings (tick the checkbox) before saving: %@":
+            "Mentés előtt vedd tudomásul a kockázatos beállításokat (jelöld be a négyzetet): %@",
 
         // Log filter
         "All": "Minden",

@@ -87,7 +87,7 @@ Kapcsolatot a **Kapcsolatok** ablakban veszel fel. Megnyitása: menü → **Kapc
 - Az eszköztár **Új** (+) menüjéből választhatsz típust (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec), vagy **Import fájlból…**.
 - Jobb oldalt a kijelölt kapcsolat két füle: **Beállítások** és **Napló**.
 
-A szöveges típusoknál (OpenVPN, WireGuard, IKEv2) monospace szerkesztő van. A **Mentés** (⌘S) előbb ellenőrzi a configot. Ha hibát talál, a hibás sorok pirosan, sorszámmal jelennek meg (például `3. sor: Nem engedélyezett direktíva: up`), és a mentés nem történik meg. A jelszavak külön mezőkben vannak (**Hitelesítés (Keychainben tárolva)**), ezek a macOS Keychainbe kerülnek, nem a configba.
+A szöveges típusoknál (OpenVPN, WireGuard, IKEv2) monospace szerkesztő van. A **Mentés** (⌘S) előbb ellenőrzi a configot. Ha hibát talál, a hibás sorok pirosan, sorszámmal jelennek meg (például `3. sor: Tiltott direktíva: up`), és a mentés nem történik meg. A jelszavak külön mezőkben vannak (**Hitelesítés (Keychainben tárolva)**), ezek a macOS Keychainbe kerülnek, nem a configba.
 
 Az SSTP-nek szöveges szerkesztő helyett űrlapja van (lásd [3.6](#36-sstp)).
 
@@ -99,7 +99,12 @@ A legegyszerűbb, ha a szolgáltatótól kapott `.ovpn` fájlt importálod (**Ú
 
 - Ha a `.ovpn` külső fájlokra hivatkozik (például `ca ca.crt`, `cert client.crt`, `key client.key`, `tls-auth ta.key`), az import a `.ovpn` mellől beolvassa és beágyazza őket (`<ca>…</ca>` blokkokba). Ezért importálás előtt a fájlok legyenek a `.ovpn` mellett. Ha egy fájl hiányzik, az import hibát jelez.
 - Ha a szerver felhasználónevet és jelszót kér (`auth-user-pass` sor), töltsd ki a **Felhasználónév** és **Jelszó** mezőket.
-- Biztonsági okból néhány direktíva nem engedett, például `up`, `down`, `script-security`, `plugin` és `log` (külső scriptet futtatnának, vagy a MacVPN saját beállításait írnák felül). A DNS-t a MacVPN maga állítja be. Részletek a [7.7 fejezetben](#77-nem-engedélyezett-direktíva--tiltott-direktíva).
+- Ha a privát kulcs jelszóval védett (jelszavas PKCS#12 fájl, vagy titkosított PEM kulcs: `-----BEGIN ENCRYPTED PRIVATE KEY-----` vagy `Proc-Type: 4,ENCRYPTED`), add meg a **Privát kulcs jelszava** mezőben. A Keychainbe kerül, és az OpenVPN csak csatlakozáskor kapja meg.
+- A MacVPN minden direktívát három szintbe sorol (a teljes lista: [openvpn-directives.md](openvpn-directives.md)):
+  - Az **engedett** direktívák a megszokott módon működnek, például `setenv CONFIG_VERSION "2.0.4"`, `remap-usr1 SIGTERM`, `pull-filter`, `machine-readable-output`.
+  - A **kockázatos beállítások** (például `user nobody`, `group nogroup`, `route-noexec`, szerveroldali vagy csak Windowson működő opciók, és minden direktíva, amelyet a MacVPN nem ismer) egy sárga **Kockázatos beállítások** panelen jelennek meg, mindegyik rövid indoklással. Mentéshez és csatlakozáshoz jelöld be: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. A tudomásulvétel pontosan a mentéskor jelen lévő kockázatos direktívákra szól: ha később újat adsz hozzá, újra be kell jelölnöd.
+  - A **tiltott** direktívák, például `up`, `down`, `script-security`, `plugin`, `log`, `chroot` és `echo`, sosem engedettek (külső scriptet futtatnának, kódot töltenének be, rootként olvasnának vagy írnának fájlt, vagy a MacVPN saját beállításait írnák felül). A DNS-t a MacVPN maga állítja be. Részletek a [7.7 fejezetben](#77-nem-engedélyezett-direktíva--tiltott-direktíva).
+- `user` / `group` mellett az OpenVPN a kapcsolódás után eldobja a root jogot: tegyél a configba `persist-tun` sort, hogy az újracsatlakozás működjön. A DNS-t a MacVPN-ben való bontás állítja vissza; ha az OpenVPN magától lép ki, bontsd a kapcsolatot a MacVPN-ben.
 - Az engedélyezett direktívák argumentumait is ellenőrzi: például a `dev` csak `tun`, `tap` vagy `utunN` lehet, a port és az időzítők számok, a hosztnév és a titkosító neve nem tartalmazhat `/` jelet, és nem kezdődhet `-` jellel. A `<connection>` blokkok használhatók, a soraik ugyanezen az ellenőrzésen mennek át.
 
 ### 3.2 WireGuard
@@ -240,9 +245,11 @@ Ha egy fájl nem ismerhető fel vagy nem importálható, a többi fájl attól m
 - legfeljebb 1 MB;
 - a tartalma megfelel a direktívának: `ca`, `cert`, `extra-certs` → PEM tanúsítvány; `key` → PEM privát kulcs (`-----BEGIN … PRIVATE KEY-----`); `tls-auth`, `tls-crypt`, `secret` → OpenVPN statikus kulcs (`-----BEGIN OpenVPN Static key V1-----`); `tls-crypt-v2` → tls-crypt-v2 kliens kulcs; `dh` → DH paraméterek. Különben: **A(z) … direktíva fájlja (…) nem a várt formátumú**.
 
-`pkcs12` fájl nem importálható, előbb alakítsd PEM-re. Az `auth-user-pass` mellett megadott felhasználónév/jelszó fájlt a MacVPN sosem olvassa be: a hitelesítő adatokat a MacVPN-ben add meg.
+A `pkcs12 client.p12` fájlt ugyanígy beemeli, base64-ként egy `<pkcs12>` blokkba (PKCS#12 fájl legyen, a mappán belül, legfeljebb 1 MB). Ha jelszavas, az import után add meg a **Privát kulcs jelszava** mezőben. Az `auth-user-pass` mellett megadott felhasználónév/jelszó fájl (például `auth-user-pass auth.cfg`) sosem kerül a configba: ha a mappán belül van, legfeljebb 1 KB, és pontosan két sora van (felhasználónév, jelszó), a MacVPN megkérdezi: **Használod a(z) … fájlban lévő hitelesítő adatokat ehhez a kapcsolathoz?**; **Használat** esetén a kapcsolat **Felhasználónév** és **Jelszó** mezőjébe (Keychain) teszi, és ezt az import üzenete jelzi; különben add meg kézzel. Az `askpass pass.txt` fájlt ugyanígy a **Privát kulcs jelszava** mezőbe teszi. Ha a privát kulcs titkosított, az import üzenete emlékeztet a **Privát kulcs jelszava** kitöltésére.
 
-**Az importált config ellenőrzése.** Az importált configot a MacVPN rögtön ugyanazokkal a szabályokkal ellenőrzi, mint a **Mentés**. Ha hibás, attól még importálódik, és a szerkesztője pirossal jelölt hibalistával nyílik meg, így javíthatod és mentheted.
+**MikroTik RouterOS.** A RouterOS v7 exportja (`/interface ovpn-server server export-client-config`) és a klasszikus v6 wiki szerinti configok (a `.ovpn` mellett `ca.crt`, `client.crt`, titkosított `client.key` és `auth-user-pass auth.cfg`) hiba és kockázatos beállítás nélkül importálódnak. A kulcs export-jelszavát add meg a **Privát kulcs jelszava** mezőben.
+
+**Az importált config ellenőrzése.** Az importált configot a MacVPN rögtön ugyanazokkal a szabályokkal ellenőrzi, mint a **Mentés**. Ha hibás, attól még importálódik, és a szerkesztője pirossal jelölt hibalistával nyílik meg, így javíthatod és mentheted. Ha kockázatos beállítást tartalmaz, az import üzenete jelzi (**Importálva. Kockázatos beállításokat tartalmaz (…)**), a szerkesztő pedig a sárga **Kockázatos beállítások** panelen mutatja: csatlakozás előtt jelöld be a négyzetet, és mentsd.
 
 **Export.** A kapcsolat fejlécében az export ikon (**Exportálás… (jelszavak sosem kerülnek bele)**) az eredeti formátumban menti ki a configot: `.ovpn`, WireGuard `.conf`, `.swanctl.conf`, `.sstp`, natív kapcsolatnál `.mobileconfig`.
 
@@ -363,7 +370,9 @@ A WireGuard kapcsolat zöldnek látszik (az interfész létrejött), de nincs fo
 Ilyen hibát a **Mentés** vagy a csatlakozás ad, például:
 
 - `3. sor: Tiltott direktíva: up – töröld vagy tedd megjegyzésbe (#) a sort`
-- `5. sor: Nem engedélyezett direktíva: xyz – töröld vagy tedd megjegyzésbe (#) a sort`
+- `5. sor: Kockázatos direktíva, tudomásulvétel szükséges: user` (a beállítás a sárga **Kockázatos beállítások** panelen látszik)
+- Csatlakozáskor: `A kockázatos beállítások nincsenek tudomásul véve: user. Nyisd meg a kapcsolatot a MacVPN → Kapcsolatok alatt, és jelöld be a négyzetet a Kockázatos beállítások résznél.`
+- `6. sor: Nem engedélyezett setenv: LD_PRELOAD – töröld vagy tedd megjegyzésbe (#) a sort`
 - `Külső fájl hivatkozás, inline blokk kell: ca`
 - WireGuard: `Tiltott kulcs: postup`, `Nem engedélyezett kulcs: …`
 - IKEv2: `Tiltott: include`, `Tiltott kulcs: updown`, `Csak fájlnév adható meg, útvonal nem: cacerts`
@@ -372,7 +381,9 @@ Ilyen hibát a **Mentés** vagy a csatlakozás ad, például:
 A MacVPN rootként indítja a VPN-eszközöket, ezért csak ismert, biztonságos beállításokat enged. Javítás:
 
 - **Tiltott direktíva / kulcs** (például `up`, `down`, `script-security`, `PostUp`): ezek külső parancsot futtatnának. Töröld a sort, vagy tegyél elé `#` jelet. A DNS-t és a route-okat a MacVPN kezeli, ezekre a scriptekre nincs szükség.
-- **Nem engedélyezett direktíva:** ritka vagy ismeretlen beállítás. Ha nem nélkülözhetetlen, tedd megjegyzésbe. Ha szükséges, jelezd egy GitHub issue-ban.
+- **Kockázatos direktíva, tudomásulvétel szükséges / nincsenek tudomásul véve:** a beállítás csak tudomásulvétel után engedett. Olvasd el az indoklást a sárga panelen; ha kell a beállítás, jelöld be a **Tudomásul veszem a beállításokat és a biztonsági kockázatokat** négyzetet és **Mentés**, különben tedd megjegyzésbe a sort. Ha a tudomásulvétel után új kockázatos sort adtál hozzá, jelöld be újra.
+- **Nem engedélyezett setenv:** a változó neve befolyásolhatná a MacVPN root DNS-scriptjét (például `PATH`, `BASH_ENV`, `LD_*`, `DYLD_*`). Töröld a sort, a kapcsolathoz nem kell.
+- **Érvénytelen argumentum** ismeretlen vagy kockázatos direktívánál: az argumentum nem tartalmazhat útvonalat (`/`, `..`, `~`, `file:`), vezető `-` jelet és shell-karaktert (`` ` $ ; | & < > ``).
 - **Érvénytelen argumentum / érték, hibás argumentumszám:** a beállítás engedett, de az értéke nem a várt formájú (például eszközútvonal a `dev` után, szám helyett szó). Az üzenet a beállítás nevét mondja meg, az értéket nem. Vesd össze a sort a szolgáltató eredeti configjával.
 - **Külső fájl hivatkozás:** a tanúsítvány fájlra hivatkozik (`ca ca.crt`). Importáld újra a `.ovpn` fájlt úgy, hogy a hivatkozott fájlok mellette legyenek, vagy másold be a tartalmukat egy `<ca>…</ca>` blokkba.
 - **Nem engedélyezett vezérlőkarakter:** a fájlban láthatatlan karakter van (például Windowsból másolt szöveg). Írd be újra a sort.

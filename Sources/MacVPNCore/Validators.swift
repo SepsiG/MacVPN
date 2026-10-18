@@ -86,7 +86,66 @@ struct OpenVPNToken: Equatable {
     let quoted: Bool
 }
 
-/// Allowlist alapú. Rootként a `mvpn-validate` futtatja.
+/// Egy OpenVPN direktíva besorolása (lásd `docs/openvpn-directives.md`).
+public enum OpenVPNTier: String, Sendable {
+    /// Engedett, argumentum-ellenőrzéssel (`argumentSpecs`).
+    case safe
+    /// Nem lépi át a root jogosultsági határt, de a kapcsolat vagy a rendszer viselkedését befolyásolja: csak akkor
+    /// engedett, ha a kapcsolatnál név szerint tudomásul vették (`acknowledgedRisky`). Ide tartozik minden ismeretlen direktíva.
+    case risky
+    /// Soha nem engedett: kódot futtat vagy tölt be, tetszőleges fájlt olvas/ír rootként, vagy vezérlőcsatornát nyit.
+    case forbidden
+}
+
+/// Egy tudomásulvételt igénylő (kockázatos) direktíva előfordulása.
+public struct RiskyFinding: Equatable, Sendable {
+    public let directive: String
+    public let line: Int
+    /// Az `L10n` táblabeli angol kulcs (rövid indoklás).
+    public let reasonKey: String
+
+    public init(directive: String, line: Int, reasonKey: String) {
+        self.directive = directive
+        self.line = line
+        self.reasonKey = reasonKey
+    }
+
+    public var reason: String { L10n.tr(reasonKey) }
+}
+
+/// Az OpenVPN validálás teljes eredménye.
+public struct OpenVPNValidation: Equatable, Sendable {
+    /// Blokkoló hibák (tiltott, érvénytelen, nem engedett) – tudomásulvétellel sem javíthatók.
+    public let issues: [ValidationIssue]
+    /// Minden kockázatos előfordulás, sorrendben (a tudomásul vettek is).
+    public let risky: [RiskyFinding]
+    /// A még tudomásul nem vett kockázatos direktívák nevei, rendezve.
+    public let unacknowledged: [String]
+
+    /// A kockázatos direktívák nevei (rendezve, egyedi).
+    public var riskyNames: [String] { Array(Set(risky.map(\.directive))).sorted() }
+
+    /// A blokkoló hibák, kiegészítve a tudomásul nem vett kockázatos sorokkal (soronként egy hiba).
+    public var allIssues: [ValidationIssue] {
+        let open = Set(unacknowledged)
+        let extra = risky.filter { open.contains($0.directive) }.map {
+            ValidationIssue(line: $0.line, message: L10n.tr("Risky directive, acknowledgement required: %@", $0.directive))
+        }
+        // Soronként rendezve (stabilan); a 0. soros (egész fájlra vonatkozó) hibák a végén maradnak.
+        func key(_ i: ValidationIssue) -> Int { i.line == 0 ? Int.max : i.line }
+        return (issues + extra).enumerated().sorted { (key($0.element), $0.offset) < (key($1.element), $1.offset) }.map(\.element)
+    }
+}
+
+/// Egy direktíva-sor ellenőrzésének eredménye.
+struct OpenVPNLineResult {
+    var messages: [String] = []
+    var directive: String?
+    /// Kockázatos direktíva (név, indoklás-kulcs), ha a sor egyébként érvényes.
+    var risky: (directive: String, reasonKey: String)?
+}
+
+/// Táblázatvezérelt, három szintű besorolás. Rootként a `mvpn-validate` futtatja.
 ///
 /// Szabályok sorrendben, soronként:
 /// 1. vezérlőkarakter -> hiba (blokkon belül is);
@@ -97,11 +156,16 @@ struct OpenVPNToken: Equatable {
 ///    adatblokk csak a `connectionBlocks`-ból nyílhat. Csak `</connection>` zárja; más `</…>` benne "Hibás záró tag";
 /// 5. `^<[A-Za-z0-9-]+>$` nyitó tag: csak `allowedBlocks`-beli lehet, különben "Nem engedélyezett inline blokk" (de blokként kezelve, tartalma kihagyva);
 /// 6. direktíva = első token (szóköz/tab szerint), egyezzen `^(--)?[A-Za-z0-9-]+$`-val, különben "Érvénytelen direktíva"; kisbetűsítés, `--` levágása;
-/// 7. `forbidden` -> "Tiltott direktíva"; ami nincs az `allowed`-ben -> "Nem engedélyezett direktíva";
-/// 7b. `setenv` külön: `setenv opt <direktíva> ...` -> a <direktíva> ugyanezen az ellenőrzésen megy át; `setenv NAME ...`
-///     -> NAME egyezzen `^(FORWARD_COMPATIBLE|PUSH_PEER_INFO|CLIENT_CERT|UV_[A-Z0-9_]+|IV_[A-Z0-9_]+)$` (kis/nagybetű érzékeny), különben
-///     "Nem engedélyezett setenv" (a név csak akkor szerepel az üzenetben, ha `^[A-Za-z0-9_]+$`); `setenv` argumentum nélkül, vagy `setenv opt` direktíva nélkül -> hiba;
-/// 8. argumentumok: az OpenVPN `parse_line` tükre (szóköz/tab határ, `"…"`/`'…'` csak token elején, a záró idézőjel zárja a tokent,
+/// 7. besorolás a `tier(of:)` szerint (táblázat: `argumentSpecs` = SAFE, `riskyReasons` = RISKY, `forbidden` = FORBIDDEN;
+///    ismeretlen név: `forbiddenPattern`-re illeszkedő -> FORBIDDEN, egyébként RISKY):
+///    - FORBIDDEN -> "Tiltott direktíva";
+///    - RISKY -> `<connection>` blokkban hiba; az argumentumok a `isHarmlessArgument` szabályán mennek át (nincs vezető `-`,
+///      `..`, abszolút út, `~`, `file:`, shell-metakarakter, `/` csak CIDR-ben), különben "Érvénytelen argumentum";
+///      érvényes sornál kockázatos találat (nem hiba): a `validate(_:acknowledgedRisky:)` csak a tudomásul nem vett nevekre ad hibát;
+/// 7b. `setenv` külön: `setenv opt <direktíva> ...` -> a <direktíva> ugyanezen az ellenőrzésen megy át; `setenv NAME [érték]`
+///     -> NAME egyezzen `^[A-Za-z_][A-Za-z0-9_]*$`-val és ne legyen a `setenvDenylist`-ben (ezek az értékek a root `ovpn-dns`
+///     bash hookhoz jutnak), különben "Nem engedélyezett setenv"; `setenv` argumentum nélkül, vagy `setenv opt` direktíva nélkül -> hiba;
+/// 8. argumentumok (SAFE): az OpenVPN `parse_line` tükre (szóköz/tab határ, `"…"`/`'…'` csak token elején, a záró idézőjel zárja a tokent,
 ///    token elején álló `#`/`;` a sor végéig komment); backslash vagy lezáratlan idézőjel -> "Érvénytelen argumentum";
 ///    `fileReferencing` direktíva, ha van argumentuma és az nem `[inline]` -> fájlhivatkozás-hiba; `http-proxy` 3. argumentuma csak
 ///    `auto`/`auto-nct`/`[inline]`, `socks-proxy` 3. argumentuma csak `[inline]` lehet;
@@ -109,55 +173,132 @@ struct OpenVPNToken: Equatable {
 ///    Az üzenet csak a direktíva nevét idézi, az argumentumot soha;
 /// 9. fájl végén nyitott blokk -> "Lezáratlan inline blokk"; érvényes `remote` (legfelső szinten vagy connection blokkban) hiánya -> 0. soros hiba.
 public struct OpenVPNValidator: ConfigValidator {
-    public static let forbidden: Set<String> = [
-        "up", "down", "route-up", "route-pre-down", "ipchange", "tls-verify", "auth-user-pass-verify",
-        "client-connect", "client-disconnect", "learn-address", "plugin", "script-security", "config",
-        "cd", "chroot", "daemon", "log", "log-append", "writepid", "management", "status",
-        "iproute", "ifconfig-noexec", "route-noexec", "user", "group",
-        "pkcs11-providers", "providers", "engine", "dns-updown", "tls-export-cert", "tmp-dir",
-        "tls-crypt-v2-verify",
-    ]
+    // MARK: FORBIDDEN
+
+    /// Soha nem engedett, tudomásulvétellel sem. Indoklás csoportonként a `docs/openvpn-directives.md`-ben.
+    public static let forbidden: Set<String> = {
+        var s = Set<String>()
+        // Script hookok és parancsfuttatás.
+        s.formUnion(["up", "down", "route-up", "route-pre-down", "ipchange", "tls-verify", "auth-user-pass-verify",
+                     "client-connect", "client-disconnect", "client-crresponse", "learn-address", "dns-updown", "iproute",
+                     "script-security"])
+        // Kódbetöltés (a pkcs11-* a provider könyvtár nélkül működésképtelen, a provider kódot tölt be).
+        s.formUnion(["plugin", "providers", "engine", "pkcs11-providers", "pkcs11-id", "pkcs11-id-management",
+                     "pkcs11-cert-private", "pkcs11-pin-cache", "pkcs11-private-mode", "pkcs11-protected-authentication",
+                     "show-pkcs11-ids"])
+        // Config- és könyvtárváltás; a chroot után a MacVPN hookjai és a jelszófájlok nem érhetők el.
+        s.formUnion(["config", "cd", "chroot"])
+        // Kimenet, vezérlőcsatorna, állapotfájl (a MacVPN ezeket maga állítja be, vagy a naplóból dönt).
+        s.formUnion(["daemon", "log", "log-append", "syslog", "echo", "parameter", "writepid", "status", "tmp-dir", "management",
+                     "management-client", "management-client-auth", "management-client-group", "management-client-pf",
+                     "management-client-user", "management-external-cert", "management-external-key",
+                     "management-forget-disconnect", "management-hold", "management-log-cache", "management-query-passwords",
+                     "management-query-proxy", "management-query-remote", "management-signal", "management-up-down"])
+        // Tetszőleges fájl/könyvtár olvasása vagy írása rootként.
+        s.formUnion(["dev-node", "tls-export-cert", "client-config-dir", "replay-persist", "ifconfig-pool-persist",
+                     "tls-crypt-v2-verify", "capath", "genkey", "port-share", "auth-gen-token-secret"])
+        return s
+    }()
+
+    /// Ismeretlen (egyik táblában sem szereplő) név, amely a mintája alapján valószínűleg parancsot, fájlt vagy
+    /// vezérlőcsatornát jelent: FORBIDDEN, nem RISKY.
+    static let forbiddenPattern = "^(management|pkcs11|plugin|script)|-(verify|up|down|connect|disconnect|script|dir|file|persist|path|exec|cmd)$"
+
+    // MARK: RISKY
+
+    static let reasonPrivilegeDrop = "Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects"
+    static let reasonNoExec = "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic"
+    static let reasonHooks = "Changes when MacVPN's DNS hooks run"
+    static let reasonServer = "Server-side option, not meant for a client connection"
+    static let reasonListens = "Makes this Mac accept incoming VPN connections (listens on the network as root)"
+    static let reasonPushed = "Normally sent by the server or used internally by OpenVPN, not set in a client config"
+    static let reasonRemoved = "Removed from OpenVPN: the connection will fail to start"
+    static let reasonDebug = "Debugging option that deliberately disrupts the connection"
+    static let reasonWeakens = "Weakens the security of the tunnel (deprecated or insecure mode)"
+    static let reasonRouting = "Allows routing that can bypass or loop the tunnel"
+    static let reasonPlatform = "Not supported on macOS (Windows or Linux only)"
+    static let reasonStandalone = "Standalone mode: OpenVPN prints information or exits instead of connecting"
+    static let reasonUnknown = "Unknown to MacVPN: its effect cannot be checked"
+
+    /// Ismert RISKY direktívák -> indoklás (`L10n` kulcs). Lépésenként épül (gyors típusellenőrzés).
+    public static let riskyReasons: [String: String] = {
+        var t: [String: String] = [:]
+        for d in ["user", "group"] { t[d] = reasonPrivilegeDrop }
+        for d in ["route-noexec", "ifconfig-noexec"] { t[d] = reasonNoExec }
+        for d in ["up-restart", "down-pre"] { t[d] = reasonHooks }
+        for d in ["mode", "server", "server-bridge", "server-ipv6", "tls-server", "client-to-client"] { t[d] = reasonListens }
+        let server = ["duplicate-cn",
+                      "max-clients", "max-routes-per-client", "ccd-exclusive", "client-nat", "connect-freq",
+                      "connect-freq-initial", "hash-size", "bcast-buffers", "stale-routes-check", "verify-client-cert",
+                      "client-cert-not-required", "username-as-common-name", "override-username", "auth-user-pass-optional",
+                      "auth-gen-token", "ifconfig-pool", "ifconfig-pool-linear", "ifconfig-ipv6-pool", "ifconfig-push",
+                      "ifconfig-ipv6-push", "iroute", "iroute-ipv6", "push", "push-reset", "push-remove", "disable",
+                      "vlan-tagging", "vlan-accept", "vlan-pvid", "tls-crypt-v2-max-age"]
+        for d in server { t[d] = reasonServer }
+        t["ifconfig-push-constraint"] = reasonServer
+        for d in ["key-derivation", "protocol-flags", "peer-id", "push-continuation", "http-proxy-override"] { t[d] = reasonPushed }
+        for d in ["compat-names", "no-name-remapping", "mtu-dynamic"] { t[d] = reasonRemoved }
+        t["gremlin"] = reasonDebug
+        for d in ["allow-deprecated-insecure-static-crypto", "compat-mode", "no-replay", "no-iv", "key-method"] { t[d] = reasonWeakens }
+        t["allow-recursive-routing"] = reasonRouting
+        for d in ["win-sys", "service", "cryptoapicert", "allow-nonadmin", "setcon", "msg-channel", "rdns-internal",
+                  "dhcp-internal"] {
+            t[d] = reasonPlatform
+        }
+        let standalone = ["help", "version", "show-adapters", "show-ciphers", "show-digests", "show-engines", "show-gateway",
+                          "show-groups", "show-net", "show-net-up", "show-tls", "show-valid-subnets", "show-curves",
+                          "test-crypto", "mktun", "rmtun"]
+        for d in standalone { t[d] = reasonStandalone }
+        return t
+    }()
+
+    // MARK: SAFE kiegészítők
+
     public static let fileReferencing: Set<String> = [
         "ca", "cert", "key", "tls-auth", "tls-crypt", "tls-crypt-v2", "pkcs12", "secret",
-        "extra-certs", "dh", "crl-verify", "askpass", "auth-user-pass",
+        "extra-certs", "dh", "crl-verify", "askpass", "auth-user-pass", "http-proxy-user-pass",
     ]
-    public static let allowed: Set<String> = [
-        "client", "tls-client", "pull", "dev", "dev-type", "proto", "remote", "port", "rport", "lport",
-        "remote-random", "resolv-retry", "nobind", "bind", "float", "persist-key", "persist-tun",
-        "persist-remote-ip", "connect-retry", "connect-retry-max", "connect-timeout", "server-poll-timeout",
-        "explicit-exit-notify", "remote-cert-tls", "remote-cert-ku", "remote-cert-eku", "ns-cert-type",
-        "verify-x509-name", "peer-fingerprint", "ca", "cert", "key", "extra-certs", "dh", "pkcs12", "secret",
-        "tls-auth", "tls-crypt", "tls-crypt-v2", "key-direction", "auth-user-pass", "auth-nocache",
-        "auth-retry", "auth-token", "static-challenge", "cipher", "ciphers", "data-ciphers",
-        "data-ciphers-fallback", "ncp-ciphers", "ncp-disable", "auth", "tls-version-min", "tls-version-max",
-        "tls-cipher", "tls-ciphersuites", "tls-groups", "tls-timeout", "hand-window", "reneg-sec",
-        "reneg-bytes", "reneg-pkts", "comp-lzo", "compress", "allow-compression", "verb", "mute",
-        "mute-replay-warnings", "replay-window", "keepalive", "ping", "ping-restart", "ping-exit", "inactive",
-        "redirect-gateway", "redirect-private", "route", "route-ipv6", "route-gateway", "route-metric",
-        "route-delay", "route-nopull", "pull-filter", "dhcp-option", "block-ipv6", "ifconfig",
-        "ifconfig-ipv6", "topology", "tun-mtu", "tun-mtu-extra", "link-mtu", "mssfix", "fragment",
-        "mtu-disc", "tun-ipv6", "sndbuf", "rcvbuf", "fast-io", "txqueuelen", "push-peer-info",
-        "setenv-safe", "ignore-unknown-option", "single-session", "http-proxy-retry", "socks-proxy",
-        "disable-occ", "opt-verify", "remote-random-hostname", "machine-readable-output",
-        "suppress-timestamps", "mark",
-        "ping-timer-rem", "crl-verify", "block-outside-dns", "http-proxy", "auth-token-user",
-        "tls-cert-profile", "ifconfig-nowarn", "route-method",
-    ]
+    /// SAFE direktívák (az `argumentSpecs` kulcsai). A `setenv` külön szabállyal SAFE.
+    public static var allowed: Set<String> { Set(argumentSpecs.keys) }
     public static let allowedBlocks: Set<String> = [
         "ca", "cert", "key", "extra-certs", "dh", "pkcs12", "secret", "tls-auth", "tls-crypt",
-        "tls-crypt-v2", "peer-fingerprint", "auth-user-pass", "crl-verify", "http-proxy-user-pass",
+        "tls-crypt-v2", "peer-fingerprint", "auth-user-pass", "crl-verify", "http-proxy-user-pass", "verify-hash",
     ]
     /// A `<connection>` blokkban engedett direktívák: az OpenVPN kézikönyv listája (bind, connect-retry, connect-retry-max,
     /// connect-timeout, explicit-exit-notify, float, fragment, http-proxy, http-proxy-option, link-mtu, local, lport, mssfix,
-    /// mtu-disc, nobind, port, proto, remote, rport, socks-proxy, tun-mtu, tun-mtu-extra) metszve az `allowed` listával.
+    /// mtu-disc, nobind, port, proto, remote, rport, socks-proxy, tun-mtu, tun-mtu-extra) metszve a SAFE listával.
     public static let connectionAllowed: Set<String> = [
         "bind", "connect-retry", "connect-retry-max", "connect-timeout", "explicit-exit-notify", "float", "fragment",
-        "http-proxy", "link-mtu", "lport", "mssfix", "mtu-disc", "nobind", "port", "proto", "remote", "rport",
-        "socks-proxy", "tun-mtu", "tun-mtu-extra",
+        "http-proxy", "http-proxy-option", "link-mtu", "udp-mtu", "local", "lport", "mssfix", "mtu-disc", "nobind", "port", "proto",
+        "remote", "rport", "socks-proxy", "tun-mtu", "tun-mtu-extra",
     ]
     /// A `<connection>` blokkon belül nyitható adatblokkok (a connection-opciók inline párja).
     public static let connectionBlocks: Set<String> = ["http-proxy-user-pass"]
-    static let setenvNamePattern = "^(FORWARD_COMPATIBLE|PUSH_PEER_INFO|CLIENT_CERT|UV_[A-Z0-9_]+|IV_[A-Z0-9_]+)$"
+
+    /// `setenv` név: bármely shell-azonosító, a denylist kivételével.
+    static let setenvNamePattern = "^[A-Za-z_][A-Za-z0-9_]*$"
+    /// Pontos (kis/nagybetű-független) nevek, amelyek a root `ovpn-dns` hookot, a bash-t, a dinamikus linkert vagy a
+    /// hook által hívott programokat befolyásolhatják; illetve amelyeket a hook maga olvas.
+    static let setenvDeniedNames: Set<String> = [
+        "BASH_ENV", "ENV", "PATH", "IFS", "SHELLOPTS", "BASHOPTS", "PS4", "CDPATH", "GLOBIGNORE", "HOME", "TMPDIR",
+        "OPENSSL_CONF", "TZDIR", "LANG", "NLSPATH", "LOCPATH", "GCONV_PATH", "HOSTALIASES", "RES_OPTIONS", "LOCALDOMAIN",
+        "BASH_XTRACEFD", "BASH_LOADABLES_PATH", "EXECIGNORE", "PROMPT_COMMAND", "ZDOTDIR", "SHELL", "TERMINFO",
+        "POSIXLY_CORRECT", "TMOUT", "PATH_LOCALE", "GREP_OPTIONS", "OPENSSL_MODULES", "OPENSSL_ENGINES",
+        "SCRIPT_TYPE", "DEV", "IFCONFIG_LOCAL",
+    ]
+    /// Előtagok, kis/nagybetű-függetlenül.
+    static let setenvDeniedPrefixes = ["BASH_FUNC", "DYLD_", "LD_", "MALLOC_", "PYTHON", "PERL", "RUBY", "SSL_CERT_", "LC_",
+                                       "FOREIGN_OPTION_"]
+    /// Előtagok, kis/nagybetű-érzékenyen (macOS keretrendszer-változók, pl. `MallocStackLoggingDirectory`, `NSObjCMessageLoggingEnabled`).
+    static let setenvDeniedCaseSensitivePrefixes = ["Malloc", "NS", "CF", "__CF", "OBJC_"]
+
+    public static func isDeniedSetenvName(_ name: String) -> Bool {
+        let upper = name.uppercased()
+        if setenvDeniedNames.contains(upper) { return true }
+        if setenvDeniedPrefixes.contains(where: { upper.hasPrefix($0) }) { return true }
+        return setenvDeniedCaseSensitivePrefixes.contains { name.hasPrefix($0) }
+    }
+
     static var hint: String { L10n.tr(" – delete the line or comment it out (#)") }
 
     // Argumentum-szabályok. Ahol a teljes nyelvtan túlzás, szigorú karakterkészlet: nincs vezető `-`, és `/` csak
@@ -172,40 +313,61 @@ public struct OpenVPNValidator: ConfigValidator {
     static let inline = ArgRule.pattern("^\\[inline\\]$")
     static let direction = ArgRule.pattern("^[01]$")
     static let base64ish = ArgRule.pattern("^[A-Za-z0-9+=_.-][A-Za-z0-9+/=_.-]*$")
+    static let word = ArgRule.pattern("^[A-Za-z0-9_+][A-Za-z0-9_.:+=@-]*$")
     static let flag = ArgSpec(0, 0)
     static func oneOf(_ values: String) -> ArgRule { .pattern("^(\(values))$") }
 
-    /// Direktíva -> argumentumszám és argumentum-szabályok. Ennek a kulcshalmaza az engedélyezőlista (`allowed`).
+    /// Direktíva -> argumentumszám és argumentum-szabályok. Ennek a kulcshalmaza a SAFE szint.
     static let argumentSpecs: [String: ArgSpec] = {
         var t: [String: ArgSpec] = [:]
-        for d in ["client", "tls-client", "pull", "nobind", "float", "persist-key", "persist-tun", "persist-remote-ip",
-                  "remote-random", "auth-nocache", "ncp-disable", "mute-replay-warnings", "route-nopull", "block-ipv6",
-                  "tun-ipv6", "fast-io", "push-peer-info", "single-session", "http-proxy-retry", "disable-occ", "opt-verify",
-                  "remote-random-hostname", "machine-readable-output", "suppress-timestamps", "ping-timer-rem",
-                  "block-outside-dns", "ifconfig-nowarn"] {
-            t[d] = flag
-        }
+        let flags1 = ["client", "tls-client", "pull", "nobind", "float", "persist-key", "persist-tun", "persist-remote-ip",
+                      "remote-random", "auth-nocache", "ncp-disable", "mute-replay-warnings", "route-nopull", "block-ipv6",
+                      "tun-ipv6", "fast-io", "push-peer-info", "single-session", "http-proxy-retry", "disable-occ", "opt-verify",
+                      "remote-random-hostname", "machine-readable-output", "suppress-timestamps", "ping-timer-rem",
+                      "block-outside-dns", "ifconfig-nowarn"]
+        let flags2 = ["allow-pull-fqdn", "disable-dco", "mlock", "errors-to-stderr", "passtos", "tcp-nodelay", "multihome",
+                      "persist-local-ip", "mtu-test", "tls-exit", "force-tls-key-material-export", "use-prediction-resistance",
+                      "comp-noadapt", "register-dns", "dhcp-renew", "dhcp-release", "dhcp-pre-release", "pause-exit",
+                      "socks-proxy-retry", "up-delay", "askpass"]
+        for d in flags1 { t[d] = flag }
+        for d in flags2 { t[d] = flag }
         t["bind"] = ArgSpec(0, 1, [oneOf("ipv6only")])
         t["dev"] = ArgSpec(1, 1, [.pattern("^(tun|tap|utun[0-9]*|tun[0-9]+|tap[0-9]+)$")])
         t["dev-type"] = ArgSpec(1, 1, [oneOf("tun|tap")])
         t["proto"] = ArgSpec(1, 1, [proto])
+        t["proto-force"] = ArgSpec(1, 1, [oneOf("udp|tcp|udp4|udp6|tcp4|tcp6")])
         t["remote"] = ArgSpec(1, 3, [host, port, proto])
+        t["local"] = ArgSpec(1, 1, [host])
         for d in ["port", "rport", "lport"] { t[d] = ArgSpec(1, 1, [port]) }
         t["resolv-retry"] = ArgSpec(1, 1, [.pattern("^(infinite|[0-9]{1,9})$")])
         t["connect-retry"] = ArgSpec(1, 2, [uint, uint])
-        for d in ["connect-retry-max", "connect-timeout", "server-poll-timeout", "tls-timeout", "hand-window", "reneg-bytes",
-                  "reneg-pkts", "mute", "ping", "ping-restart", "ping-exit", "route-metric", "tun-mtu-extra", "link-mtu",
-                  "sndbuf", "rcvbuf", "txqueuelen", "mark"] {
-            t[d] = ArgSpec(1, 1, [uint])
-        }
+        let numbers = ["connect-retry-max", "connect-timeout", "server-poll-timeout", "tls-timeout", "hand-window", "reneg-bytes",
+                       "reneg-pkts", "mute", "ping", "ping-restart", "ping-exit", "route-metric", "tun-mtu-extra", "link-mtu", "udp-mtu",
+                       "sndbuf", "rcvbuf", "txqueuelen", "mark", "tran-window", "tun-mtu-max", "max-packet-size",
+                       "session-timeout", "route-table", "tap-sleep", "status-version", "tcp-queue-limit", "shaper",
+                       "http-proxy-timeout"]
+        for d in numbers { t[d] = ArgSpec(1, 1, [uint]) }
+        t["max-routes"] = ArgSpec(0, 1, [uint])
         t["explicit-exit-notify"] = ArgSpec(0, 1, [uint])
+        // `preresolve [hint]`; az `ip-remote-hint` a régi neve (options.c: ugyanaz az ág).
+        for d in ["preresolve", "ip-remote-hint"] { t[d] = ArgSpec(0, 1, [host]) }
+        t["remap-usr1"] = ArgSpec(1, 1, [oneOf("SIGHUP|SIGTERM")])
+        t["nice"] = ArgSpec(1, 1, [.pattern("^-?[0-9]{1,2}$")])
+        t["bind-dev"] = ArgSpec(1, 1, [.pattern("^[A-Za-z0-9_][A-Za-z0-9_.-]{0,14}$")])
+        t["lladdr"] = ArgSpec(1, 1, [.pattern("^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$")])
+        t["socket-flags"] = ArgSpec(1, 1, [oneOf("TCP_NODELAY")])
         t["remote-cert-tls"] = ArgSpec(1, 1, [oneOf("client|server")])
         t["ns-cert-type"] = ArgSpec(1, 1, [oneOf("client|server")])
         t["remote-cert-ku"] = ArgSpec(1, 8, [], rest: .pattern("^[0-9A-Fa-f]{1,4}$"))
         t["remote-cert-eku"] = ArgSpec(1, 1, [.pattern("^[A-Za-z0-9][A-Za-z0-9 ._-]*$")])
         t["verify-x509-name"] = ArgSpec(1, 2, [.text, oneOf("subject|name|name-prefix")])
         t["peer-fingerprint"] = ArgSpec(0, 1, [.pattern("^([0-9A-Fa-f:]+|\\[inline\\])$")])
-        for d in ["ca", "cert", "key", "extra-certs", "dh", "pkcs12", "tls-crypt", "tls-crypt-v2", "crl-verify", "auth-user-pass"] {
+        t["verify-hash"] = ArgSpec(1, 2, [.pattern("^([0-9A-Fa-f:]+|\\[inline\\])$"), oneOf("SHA1|SHA256")])
+        t["x509-track"] = ArgSpec(1, 1, [.pattern("^\\+?[A-Za-z0-9_.-]+$")])
+        t["x509-username-field"] = ArgSpec(1, 8, [], rest: .pattern("^(ext:)?[A-Za-z0-9_.-]+$"))
+        t["keying-material-exporter"] = ArgSpec(2, 2, [.pattern("^EXPORTER[A-Za-z0-9_.-]*$"), .number(16...4095)])
+        for d in ["ca", "cert", "key", "extra-certs", "dh", "pkcs12", "tls-crypt", "tls-crypt-v2", "crl-verify", "auth-user-pass",
+                  "http-proxy-user-pass"] {
             t[d] = ArgSpec(0, 1, [inline])
         }
         t["tls-auth"] = ArgSpec(0, 2, [inline, direction])
@@ -215,7 +377,7 @@ public struct OpenVPNValidator: ConfigValidator {
         t["auth-token"] = ArgSpec(1, 1, [base64ish])
         t["auth-token-user"] = ArgSpec(1, 1, [base64ish])
         t["static-challenge"] = ArgSpec(2, 3, [.text, direction, oneOf("scrv1|concat")])
-        for d in ["cipher", "ciphers", "data-ciphers", "data-ciphers-fallback", "ncp-ciphers", "auth"] {
+        for d in ["cipher", "ciphers", "data-ciphers", "data-ciphers-fallback", "ncp-ciphers", "auth", "ecdh-curve"] {
             t[d] = ArgSpec(1, 1, [cipher])
         }
         t["tls-version-min"] = ArgSpec(1, 2, [.pattern("^[0-9](\\.[0-9])?$"), oneOf("or-highest")])
@@ -239,12 +401,17 @@ public struct OpenVPNValidator: ConfigValidator {
                                          .pattern("^([0-9A-Fa-f:.]+|default|vpn_gateway|net_gateway|remote_host)$"),
                                          .pattern("^([0-9]{1,9}|default)$")])
         t["route-gateway"] = ArgSpec(1, 1, [.pattern("^([0-9]{1,3}(\\.[0-9]{1,3}){3}|dhcp)$")])
+        t["route-ipv6-gateway"] = ArgSpec(1, 1, [.pattern("^[0-9A-Fa-f:.]+$")])
         t["route-delay"] = ArgSpec(0, 2, [uint, uint])
         t["pull-filter"] = ArgSpec(2, 2, [oneOf("accept|ignore|reject"), .text])
-        t["dhcp-option"] = ArgSpec(1, 3, [oneOf("DNS|DNS6|DOMAIN|DOMAIN-SEARCH|ADAPTER_DOMAIN_SUFFIX|WINS|NBDD|NTP|NBT|NBS|DISABLE-NBT|PROXY_HTTP")],
-                                   rest: .pattern("^[A-Za-z0-9_][A-Za-z0-9_.:-]*$"))
+        // A típus kisbetűs alakja is átmegy (az OpenVPN dönti el, érvényes-e); a PROXY_* értéke URL is lehet.
+        t["dhcp-option"] = ArgSpec(1, 16, [.pattern("^(?i:DNS|DNS6|DOMAIN|DOMAIN-SEARCH|ADAPTER_DOMAIN_SUFFIX|WINS|NBDD|NTP|NBT|NBS|DISABLE-NBT|PROXY_[A-Z_]+)$")],
+                                   rest: .pattern("^[A-Za-z0-9_\\[][A-Za-z0-9_.:/?=&%+@~\\[\\]-]*$"))
+        // `dns search-domains d…`, `dns server n address|resolve-domains|dnssec|transport|sni …`; n: -128…127.
+        t["dns"] = ArgSpec(2, 16, [oneOf("search-domains|server")],
+                           rest: .pattern("^(-[0-9]{1,3}|[A-Za-z0-9_\\[][A-Za-z0-9_.:\\[\\]-]*)$"))
         t["ifconfig"] = ArgSpec(2, 2, [ipv4, ipv4])
-        t["ifconfig-ipv6"] = ArgSpec(2, 2, [.pattern("^[0-9A-Fa-f:.]+/[0-9]{1,3}$"), .pattern("^[0-9A-Fa-f:.]+$")])
+        t["ifconfig-ipv6"] = ArgSpec(1, 2, [.pattern("^[0-9A-Fa-f:.]+/[0-9]{1,3}$"), .pattern("^[0-9A-Fa-f:.]+$")])
         t["topology"] = ArgSpec(1, 1, [oneOf("net30|p2p|subnet")])
         t["tun-mtu"] = ArgSpec(1, 2, [uint, uint])
         t["fragment"] = ArgSpec(1, 2, [uint, oneOf("mtu")])
@@ -254,14 +421,44 @@ public struct OpenVPNValidator: ConfigValidator {
         t["ignore-unknown-option"] = ArgSpec(1, 64, [], rest: .pattern("^[A-Za-z0-9-]+$"))
         t["socks-proxy"] = ArgSpec(1, 3, [host, port, inline])
         t["http-proxy"] = ArgSpec(1, 4, [host, port, oneOf("auto|auto-nct|\\[inline\\]"), oneOf("none|basic|ntlm|ntlm2")])
+        t["http-proxy-option"] = ArgSpec(1, 3, [oneOf("VERSION|AGENT|CUSTOM-HEADER")], rest: .text)
         t["route-method"] = ArgSpec(1, 1, [oneOf("adaptive|ipapi|exe")])
+        t["ip-win32"] = ArgSpec(1, 3, [oneOf("manual|dynamic|netsh|ipapi|exe|adaptive"), uint, uint])
+        t["windows-driver"] = ArgSpec(1, 1, [oneOf("tap-windows6|wintun|ovpn-dco")])
+        t["prng"] = ArgSpec(0, 2, [word, uint])
         return t
     }()
 
+    /// Egy direktíva szintje: táblázat, ismeretlen névnél a `forbiddenPattern`, egyébként RISKY.
+    public static func tier(of directive: String) -> OpenVPNTier {
+        if forbidden.contains(directive) { return .forbidden }
+        if directive == "setenv" || argumentSpecs[directive] != nil { return .safe }
+        if riskyReasons[directive] != nil { return .risky }
+        return matches(directive, forbiddenPattern) ? .forbidden : .risky
+    }
+
+    /// A RISKY (köztük az ismeretlen) direktívák argumentumainak szabálya: nem csempészhet be fájlt, útvonalat vagy
+    /// parancsot. Nincs vezető `-`, `..`, `/` (csak CIDR-ben), `~`, `file:`, és shell-metakarakter (`` ` $ ; | & < > ``).
+    static func isHarmlessArgument(_ arg: String) -> Bool {
+        guard !arg.isEmpty, !arg.hasPrefix("-"), !arg.hasPrefix("~"), !arg.contains("..") else { return false }
+        if asciiLowercased(arg).contains("file:") { return false }
+        if arg.utf8.contains(where: { "`$;|&<>\\".utf8.contains($0) }) { return false }
+        if arg.contains("/") { return WireGuardValidator.isCIDR(arg) }
+        return true
+    }
+
     public init() {}
 
+    /// A `ConfigValidator` felülete: tudomásulvétel nélkül, a kockázatos sorok is hibák.
     public func validate(_ text: String) -> [ValidationIssue] {
+        validate(text, acknowledgedRisky: []).allIssues
+    }
+
+    /// Teljes eredmény: blokkoló hibák, kockázatos találatok és a még tudomásul nem vett kockázatos nevek.
+    /// Az `acknowledgedRisky` csak RISKY neveket fogadhat el: FORBIDDEN név benne hatástalan.
+    public func validate(_ text: String, acknowledgedRisky: Set<String>) -> OpenVPNValidation {
         var issues: [ValidationIssue] = []
+        var risky: [RiskyFinding] = []
         var inBlock: String?           // adatblokk (tartalma kihagyva)
         var blockLine = 0
         var connectionLine: Int?       // nyitott <connection> blokk
@@ -304,9 +501,12 @@ public struct OpenVPNValidator: ConfigValidator {
                 continue
             }
             if line.isEmpty || line.hasPrefix("#") || line.hasPrefix(";") { continue }
-            let (messages, directive) = Self.checkLine(line, inConnection: connectionLine != nil)
-            for m in messages { issues.append(ValidationIssue(line: lineNo, message: m)) }
-            if directive == "remote", messages.isEmpty { hasRemote = true }
+            let result = Self.checkLine(line, inConnection: connectionLine != nil)
+            for m in result.messages { issues.append(ValidationIssue(line: lineNo, message: m)) }
+            if let r = result.risky, result.messages.isEmpty {
+                risky.append(RiskyFinding(directive: r.directive, line: lineNo, reasonKey: r.reasonKey))
+            }
+            if result.directive == "remote", result.messages.isEmpty { hasRemote = true }
         }
         if let block = inBlock {
             issues.append(ValidationIssue(line: blockLine, message: L10n.tr("Unclosed inline block: %@", block)))
@@ -315,18 +515,33 @@ public struct OpenVPNValidator: ConfigValidator {
             issues.append(ValidationIssue(line: line, message: L10n.tr("Unclosed inline block: %@", "connection")))
         }
         if !hasRemote { issues.append(ValidationIssue(line: 0, message: L10n.tr("Missing remote directive"))) }
-        return issues
+        let names = Set(risky.map(\.directive))
+        let open = names.filter { !acknowledgedRisky.contains($0) || tier(of: $0) != .risky }.sorted()
+        return OpenVPNValidation(issues: issues, risky: risky, unacknowledged: open)
+    }
+
+    private func tier(of d: String) -> OpenVPNTier { Self.tier(of: d) }
+
+    /// Az első tokenből a direktíva neve: opcionális `--` előtag, utána `[a-z0-9]` kezdetű `[A-Za-z0-9-]` név
+    /// (kisbetűsítve). nil: érvénytelen (pl. önálló `--`, `---x`).
+    static func directiveName(_ token: String) -> String? {
+        guard matches(token, "^(--)?[A-Za-z0-9][A-Za-z0-9-]*$") else { return nil }
+        var name = asciiLowercased(token)
+        if name.hasPrefix("--") { name.removeFirst(2) }
+        return name
     }
 
     /// Egy (trimmelt, nem üres, nem komment) direktíva-sor ellenőrzése.
-    static func checkLine(_ line: String, inConnection: Bool = false) -> (messages: [String], directive: String?) {
+    static func checkLine(_ line: String, inConnection: Bool = false) -> OpenVPNLineResult {
         let first = String(line.prefix { $0 != " " && $0 != "\t" })
-        guard matches(first, "^(--)?[A-Za-z0-9-]+$") else { return ([L10n.tr("Invalid directive")], nil) }
+        guard Self.directiveName(first) != nil else { return OpenVPNLineResult(messages: [L10n.tr("Invalid directive")]) }
         guard let tokens = tokenize(line), let head = tokens.first, !head.quoted, head.text == first else {
             var directive = asciiLowercased(first)
             if directive.hasPrefix("--") { directive.removeFirst(2) }
-            if forbidden.contains(directive) { return ([L10n.tr("Forbidden directive: %@", directive) + hint], directive) }
-            return ([L10n.tr("Invalid argument: %@", directive)], directive)
+            if tier(of: directive) == .forbidden {
+                return OpenVPNLineResult(messages: [L10n.tr("Forbidden directive: %@", directive) + hint], directive: directive)
+            }
+            return OpenVPNLineResult(messages: [L10n.tr("Invalid argument: %@", directive)], directive: directive)
         }
         return checkDirective(tokens.map(\.text), inConnection: inConnection)
     }
@@ -375,51 +590,69 @@ public struct OpenVPNValidator: ConfigValidator {
     }
 
     /// Egy direktíva-sor (tokenekre bontva) ellenőrzése; a `setenv opt <direktíva> ...` is ezen megy át.
-    /// Visszaadja a hibaüzeneteket és a (kisbetűs, `--` nélküli) direktívanevet, ha érvényes volt.
-    static func checkDirective(_ tokens: [String], inConnection: Bool = false) -> (messages: [String], directive: String?) {
-        guard matches(tokens[0], "^(--)?[A-Za-z0-9-]+$") else { return ([L10n.tr("Invalid directive")], nil) }
-        var directive = asciiLowercased(tokens[0])
-        if directive.hasPrefix("--") { directive.removeFirst(2) }
+    static func checkDirective(_ tokens: [String], inConnection: Bool = false) -> OpenVPNLineResult {
+        guard let directive = directiveName(tokens[0]) else { return OpenVPNLineResult(messages: [L10n.tr("Invalid directive")]) }
+        func fail(_ message: String) -> OpenVPNLineResult { OpenVPNLineResult(messages: [message], directive: directive) }
         if directive == "setenv" {
-            if inConnection { return ([L10n.tr("Directive not allowed in a <connection> block: %@", directive)], directive) }
-            guard tokens.count >= 2 else { return ([L10n.tr("setenv: missing argument")], directive) }
+            if inConnection { return fail(L10n.tr("Directive not allowed in a <connection> block: %@", directive)) }
+            guard tokens.count >= 2 else { return fail(L10n.tr("setenv: missing argument")) }
             if asciiLowercased(tokens[1]) == "opt" {
-                guard tokens.count >= 3 else { return ([L10n.tr("setenv opt: missing directive")], directive) }
-                return (checkDirective(Array(tokens.dropFirst(2))).messages, directive)
+                guard tokens.count >= 3 else { return fail(L10n.tr("setenv opt: missing directive")) }
+                var inner = checkDirective(Array(tokens.dropFirst(2)))
+                inner.directive = directive
+                return inner
             }
-            if !matches(tokens[1], setenvNamePattern) {
-                let message = matches(tokens[1], "^[A-Za-z0-9_]+$")
-                    ? L10n.tr("setenv not allowed: %@", tokens[1]) : L10n.tr("setenv not allowed")
-                return ([message + hint], directive)
-            }
-            return ([], directive)
-        }
-        if forbidden.contains(directive) { return ([L10n.tr("Forbidden directive: %@", directive) + hint], directive) }
-        guard allowed.contains(directive), let spec = argumentSpecs[directive] else {
-            return ([L10n.tr("Directive not allowed: %@", directive) + hint], directive)
-        }
-        if inConnection, !connectionAllowed.contains(directive) {
-            return ([L10n.tr("Directive not allowed in a <connection> block: %@", directive)], directive)
+            guard matches(tokens[1], setenvNamePattern) else { return fail(L10n.tr("setenv not allowed") + hint) }
+            if isDeniedSetenvName(tokens[1]) { return fail(L10n.tr("setenv not allowed: %@", tokens[1]) + hint) }
+            guard tokens.count <= 3 else { return fail(L10n.tr("Wrong number of arguments: %@", directive)) }
+            if tokens.count == 3, !argumentMatches(tokens[2], .text) { return fail(L10n.tr("Invalid argument: %@", directive)) }
+            return OpenVPNLineResult(directive: directive)
         }
         let args = Array(tokens.dropFirst())
+        // `script-security 0|1`: nem futtat felhasználói scriptet, és a MacVPN parancssori `--script-security 2`-je a
+        // config után áll, így felülírja: SAFE (de `<connection>` blokkban, mint az OpenVPN-ben, nem). A 2 és 3 (és
+        // bármi más) FORBIDDEN marad.
+        if directive == "script-security", args == ["0"] || args == ["1"] {
+            if inConnection { return fail(L10n.tr("Directive not allowed in a <connection> block: %@", directive)) }
+            return OpenVPNLineResult(directive: directive)
+        }
+        // A `connection` csak inline blokként (`<connection>…</connection>`) érvényes; az egysoros alak (fájlnév) nem.
+        if directive == "connection" { return fail(L10n.tr("Invalid directive")) }
+        switch tier(of: directive) {
+        case .forbidden:
+            return fail(L10n.tr("Forbidden directive: %@", directive) + hint)
+        case .risky:
+            if inConnection { return fail(L10n.tr("Directive not allowed in a <connection> block: %@", directive)) }
+            guard args.count <= 16 else { return fail(L10n.tr("Wrong number of arguments: %@", directive)) }
+            guard args.allSatisfy(isHarmlessArgument) else { return fail(L10n.tr("Invalid argument: %@", directive)) }
+            var result = OpenVPNLineResult(directive: directive)
+            result.risky = (directive, riskyReasons[directive] ?? reasonUnknown)
+            return result
+        case .safe:
+            break
+        }
+        guard let spec = argumentSpecs[directive] else { return fail(L10n.tr("Invalid directive")) }
+        if inConnection, !connectionAllowed.contains(directive) {
+            return fail(L10n.tr("Directive not allowed in a <connection> block: %@", directive))
+        }
         if fileReferencing.contains(directive), let a = args.first, a != "[inline]" {
-            return ([L10n.tr("External file reference, use an inline block: %@", directive)], directive)
+            return fail(L10n.tr("External file reference, use an inline block: %@", directive))
         }
         if directive == "http-proxy", args.count >= 3, !["auto", "auto-nct", "[inline]"].contains(args[2]) {
-            return ([L10n.tr("External file reference, use an inline block: %@", directive)], directive)
+            return fail(L10n.tr("External file reference, use an inline block: %@", directive))
         }
         if directive == "socks-proxy", args.count >= 3, args[2] != "[inline]" {
-            return ([L10n.tr("External file reference, use an inline block: %@", directive)], directive)
+            return fail(L10n.tr("External file reference, use an inline block: %@", directive))
         }
         guard (spec.min...spec.max).contains(args.count) else {
-            return ([L10n.tr("Wrong number of arguments: %@", directive)], directive)
+            return fail(L10n.tr("Wrong number of arguments: %@", directive))
         }
         for (i, arg) in args.enumerated() {
             guard let rule = spec.rule(at: i), argumentMatches(arg, rule) else {
-                return ([L10n.tr("Invalid argument: %@", directive)], directive)
+                return fail(L10n.tr("Invalid argument: %@", directive))
             }
         }
-        return ([], directive)
+        return OpenVPNLineResult(directive: directive)
     }
 
     static func argumentMatches(_ arg: String, _ rule: ArgRule) -> Bool {

@@ -391,7 +391,11 @@ public final class ConnectionManager: ObservableObject {
                 token = keyEpoch[key]
                 states[key] = .connecting
             } else {
-                try await mvpn.up(kind: c.kind, id: c.id, secrets: secrets.secrets(for: c.id), debug: debug)
+                if c.kind == .openvpn, let reason = Self.unacknowledgedRiskReason(c, config: try? store.loadConfig(c.id)) {
+                    throw MvpnError.failed(reason)
+                }
+                try await mvpn.up(kind: c.kind, id: c.id, secrets: secrets.secrets(for: c.id), debug: debug,
+                                  acceptRisky: c.kind == .openvpn ? c.acknowledgedRiskyDirectives : [])
                 guard keyEpoch[key] == token else {
                     // Közben a felhasználó bontott: a sikeres tunnelt le kell bontani. Újabb connect érintetlen marad.
                     if wantDown.contains(key) {
@@ -411,6 +415,16 @@ public final class ConnectionManager: ObservableObject {
             setOp(key, nil)
             onEvent?(.failed(connectionID: key, name: c.name, reason: reason))
         }
+    }
+
+    /// OpenVPN: ha a configban tudomásul nem vett kockázatos direktíva van, a hibaüzenet (a root is elutasítaná,
+    /// de így érthetőbb). nil: rendben, vagy a config nem olvasható (a root dönt).
+    nonisolated static func unacknowledgedRiskReason(_ c: Connection, config: String?) -> String? {
+        guard let config else { return nil }
+        let result = OpenVPNValidator().validate(config, acknowledgedRisky: Set(c.acknowledgedRiskyDirectives))
+        guard !result.unacknowledged.isEmpty else { return nil }
+        return L10n.tr("Risky settings are not acknowledged: %@. Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.",
+                       result.unacknowledged.joined(separator: ", "))
     }
 
     public func disconnect(_ c: Connection) async {

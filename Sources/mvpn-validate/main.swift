@@ -2,7 +2,10 @@ import Foundation
 import MacVPNCore
 
 // Root oldali validátor a `mvpn` scripthez. Ugyanazt a kódot futtatja, mint az app.
-//   mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> → hibák soronként stdout-ra; exit 1, ha van hiba
+//   mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky a,b] → hibák soronként stdout-ra;
+//                                                                         exit 1, ha van hiba. Az `--accept-risky` (csak openvpn) a
+//                                                                         kapcsolatnál tudomásul vett RISKY direktívák neve,
+//                                                                         `^[a-z0-9-]+(,[a-z0-9-]+)*$`; FORBIDDEN nevet nem fogad el
 //   mvpn-validate [--lang en|hu] --swan-names <fájl>                    → connection és child név két sorban; exit 1, ha nincs
 //   mvpn-validate [--lang en|hu] --sstp-params <fájl>                   → validált SSTP paraméterek soronként (server, port,
 //                                                                         user, cert, route_all, peer_dns); exit 1, ha hibás
@@ -17,6 +20,18 @@ if let i = args.firstIndex(of: "--lang") {
     args.removeSubrange(i..<min(i + 2, args.count))
 }
 
+// A tudomásul vett kockázatos direktívák (a `mvpn` már ellenőrizte a formátumot; itt újra).
+var acceptRisky = Set<String>()
+if let i = args.firstIndex(of: "--accept-risky") {
+    let value = i + 1 < args.count ? args[i + 1] : ""
+    guard value.utf8.count <= 4096, value.range(of: "^[a-z0-9-]+(,[a-z0-9-]+)*$", options: .regularExpression) != nil else {
+        print(L10n.tr("Invalid --accept-risky value"))
+        exit(2)
+    }
+    acceptRisky = Set(value.split(separator: ",").map(String.init))
+    args.removeSubrange(i..<min(i + 2, args.count))
+}
+
 func readFile(_ path: String) -> String {
     guard let data = FileManager.default.contents(atPath: path) else {
         print(L10n.tr("Cannot read the file: %@", path))
@@ -26,7 +41,7 @@ func readFile(_ path: String) -> String {
 }
 
 guard args.count == 2 else {
-    print(L10n.tr("Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>"))
+    print(L10n.tr("Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>"))
     exit(2)
 }
 
@@ -53,6 +68,8 @@ guard let kind = VPNKind(rawValue: args[0]), let validator = Validators.validato
     print(L10n.tr("Unknown type: %@", args[0]))
     exit(2)
 }
-let issues = validator.validate(readFile(args[1]))
+let issues = kind == .openvpn
+    ? OpenVPNValidator().validate(readFile(args[1]), acknowledgedRisky: acceptRisky).allIssues
+    : validator.validate(readFile(args[1]))
 issues.forEach { print($0.display) }
 exit(issues.isEmpty ? 0 : 1)

@@ -87,7 +87,7 @@ You add connections in the **Connections** window. To open it, use the menu: **M
 - From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec) or **Import from File…**.
 - The selected connection has two tabs on the right: **Settings** and **Log**.
 
-Text-based types (OpenVPN, WireGuard, IKEv2) have a monospace editor. **Save** (⌘S) checks the config first. If it finds errors, the faulty lines are shown in red with their line numbers (for example `Line 3: Directive not allowed: xyz – delete the line or comment it out (#)`), and nothing is saved. Passwords have their own fields (**Authentication (stored in the Keychain)**). They go into the macOS Keychain, not into the config.
+Text-based types (OpenVPN, WireGuard, IKEv2) have a monospace editor. **Save** (⌘S) checks the config first. If it finds errors, the faulty lines are shown in red with their line numbers (for example `Line 3: Forbidden directive: up – delete the line or comment it out (#)`), and nothing is saved. Passwords have their own fields (**Authentication (stored in the Keychain)**). They go into the macOS Keychain, not into the config.
 
 SSTP has a form instead of a text editor (see [3.6](#36-sstp)).
 
@@ -99,7 +99,12 @@ The easiest way is to import the `.ovpn` file from your provider (**New → Impo
 
 - If the `.ovpn` refers to external files (for example `ca ca.crt`, `cert client.crt`, `key client.key`, `tls-auth ta.key`), the import reads them from next to the `.ovpn` and embeds them (into `<ca>…</ca>` blocks). So before importing, keep those files next to the `.ovpn`. If a file is missing, the import reports an error.
 - If the server asks for a username and password (an `auth-user-pass` line), fill in **Username** and **Password**.
-- For security reasons some directives are not allowed, for example `up`, `down`, `script-security`, `plugin` and `log` (they would run external scripts or override MacVPN's own settings). MacVPN sets up DNS itself. See [section 7.7](#77-directive-not-allowed--forbidden-directive) for details.
+- If the private key is protected by a password (a password-protected PKCS#12 file, or an encrypted PEM key: `-----BEGIN ENCRYPTED PRIVATE KEY-----` or `Proc-Type: 4,ENCRYPTED`), enter it in **Private key password**. It is stored in the Keychain and passed to OpenVPN only while connecting.
+- MacVPN sorts every directive into three tiers (the full list is in [openvpn-directives.md](openvpn-directives.md)):
+  - **Allowed** directives work as usual, for example `setenv CONFIG_VERSION "2.0.4"`, `remap-usr1 SIGTERM`, `pull-filter`, `machine-readable-output`.
+  - **Risky settings** (for example `user nobody`, `group nogroup`, `route-noexec`, server-side or Windows-only options, and every directive MacVPN does not know) are shown in a yellow **Risky settings** panel, each with a short reason. Tick **I acknowledge these settings and the security risks** to save and connect. The acknowledgement covers exactly the risky directives present when you save: if you add another one later, you have to tick the box again.
+  - **Forbidden** directives, for example `up`, `down`, `script-security`, `plugin`, `log`, `chroot` and `echo`, are never allowed (they would run external scripts, load code, read or write files as root, or override MacVPN's own settings). MacVPN sets up DNS itself. See [section 7.7](#77-directive-not-allowed--forbidden-directive) for details.
+- With `user` / `group`, OpenVPN drops root after connecting: add `persist-tun` so reconnects keep working. DNS is restored when you disconnect in MacVPN; if OpenVPN exits on its own, disconnect in MacVPN to restore it.
 - The arguments of the allowed directives are checked too: for example `dev` can only be `tun`, `tap` or `utunN`, ports and timers must be numbers, and host names and cipher names cannot contain `/` or start with `-`. `<connection>` blocks are supported; their lines go through the same checks.
 
 ### 3.2 WireGuard
@@ -240,9 +245,11 @@ If one file cannot be recognized or cannot be imported, the other files are stil
 - it is at most 1 MB;
 - its content matches the directive: a PEM certificate for `ca`, `cert` and `extra-certs`; a PEM private key (`-----BEGIN … PRIVATE KEY-----`) for `key`; an OpenVPN static key (`-----BEGIN OpenVPN Static key V1-----`) for `tls-auth`, `tls-crypt` and `secret`; a tls-crypt-v2 client key for `tls-crypt-v2`; DH parameters for `dh`. Otherwise: **The file for the … directive (…) does not have the expected format**.
 
-`pkcs12` files cannot be imported; convert them to PEM first. A username/password file in `auth-user-pass` is never read: enter the credentials in MacVPN.
+A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` block (it must be a PKCS#12 file, inside the folder, at most 1 MB). If it has a password, enter it in **Private key password** after the import. A username/password file in `auth-user-pass` (for example `auth-user-pass auth.cfg`) is never copied into the config: if it is inside the folder, at most 1 KB and has exactly two lines (username, password), MacVPN asks **Use the credentials from … for this connection?**; if you choose **Use**, it stores them in the connection's **Username** and **Password** fields (Keychain) and says so in the import message; otherwise enter them yourself. An `askpass pass.txt` file is handled the same way for the **Private key password**. If the private key is encrypted, the import message reminds you to fill in **Private key password**.
 
-**Checking imported configs.** The imported config is checked right away with the same rules as **Save**. If it has problems, it is still imported, and its editor opens with the problems in red, so you can fix them and save.
+**MikroTik RouterOS.** Configs exported from RouterOS v7 (`/interface ovpn-server server export-client-config`) and the classic v6 wiki configs (with `ca.crt`, `client.crt`, an encrypted `client.key` and `auth-user-pass auth.cfg` next to the `.ovpn`) import without errors or risky settings. Enter the key's export passphrase in **Private key password**.
+
+**Checking imported configs.** The imported config is checked right away with the same rules as **Save**. If it has problems, it is still imported, and its editor opens with the problems in red, so you can fix them and save. If it contains risky settings, the import message says so (**Imported. It contains risky settings (…)**), and the editor shows them in the yellow **Risky settings** panel: tick the checkbox and save before connecting.
 
 **Export.** The export icon in the connection header (**Export… (passwords are never included)**) saves the config in its original format: `.ovpn`, WireGuard `.conf`, `.swanctl.conf`, `.sstp`, or `.mobileconfig` for native connections.
 
@@ -363,7 +370,9 @@ Message: **The profile is not installed: <name>**. The profile created by MacVPN
 You get these errors on **Save** or when connecting, for example:
 
 - `Line 3: Forbidden directive: up – delete the line or comment it out (#)`
-- `Line 5: Directive not allowed: xyz – delete the line or comment it out (#)`
+- `Line 5: Risky directive, acknowledgement required: user` (the setting is in the yellow **Risky settings** panel)
+- When connecting: `Risky settings are not acknowledged: user. Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.`
+- `Line 6: setenv not allowed: LD_PRELOAD – delete the line or comment it out (#)`
 - `Line 7: External file reference, use an inline block: ca`
 - WireGuard: `Line 4: Forbidden key: postup`, `Line 6: Key not allowed: …`
 - IKEv2: `Line 2: Forbidden: include`, `Line 9: Forbidden key: updown`, `Line 6: Only a file name is allowed, no path: cacerts`
@@ -372,7 +381,9 @@ You get these errors on **Save** or when connecting, for example:
 MacVPN starts the VPN tools as root, so it only allows known, safe settings. To fix:
 
 - **Forbidden directive / key** (for example `up`, `down`, `script-security`, `PostUp`): these would run external commands. Delete the line or put `#` in front of it. MacVPN handles DNS and routes itself, so these scripts are not needed.
-- **Directive not allowed:** a rare or unknown setting. If it is not essential, comment it out. If you need it, open a GitHub issue.
+- **Risky directive, acknowledgement required / Risky settings are not acknowledged:** the setting is allowed only after you acknowledge it. Read the reason in the yellow panel; if you want the setting, tick **I acknowledge these settings and the security risks** and **Save**, otherwise comment the line out. If you added a new risky line after acknowledging, tick the box again.
+- **setenv not allowed:** the variable name could influence MacVPN's root DNS script (for example `PATH`, `BASH_ENV`, `LD_*`, `DYLD_*`). Delete the line; it is not needed for the connection.
+- **Invalid argument** on an unknown or risky directive: its arguments cannot contain paths (`/`, `..`, `~`, `file:`), a leading `-` or shell characters (`` ` $ ; | & < > ``).
 - **Invalid argument / value, wrong number of arguments:** the setting is allowed, but its value is not in the expected form (for example a device path after `dev`, a word instead of a number). The message names the setting, not the value. Check the line against the provider's original config.
 - **External file reference:** a certificate refers to a file (`ca ca.crt`). Import the `.ovpn` again with the referenced files next to it, or paste their contents into a `<ca>…</ca>` block.
 - **Control character not allowed**: the file contains an invisible character (for example text copied from Windows). Retype the line.

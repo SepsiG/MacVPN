@@ -62,10 +62,19 @@ public struct MvpnClient: Sendable {
         try await (runner ?? self.runner).run("/usr/bin/sudo", Self.sudoArguments(args, language: language ?? .current), stdin: stdin)
     }
 
-    public func up(kind: VPNKind, id: UUID, secrets: Secrets, debug: Bool) async throws {
+    /// `acceptRisky`: OpenVPN-nél a kapcsolatnál tudomásul vett kockázatos direktívák; nem üresen
+    /// `--accept-risky a,b` (rendezve), a `--lang` előtt. Csak `^[a-z0-9-]+$` nevek mennek át.
+    public func up(kind: VPNKind, id: UUID, secrets: Secrets, debug: Bool, acceptRisky: [String] = []) async throws {
+        try check(await sudo(Self.upArguments(kind: kind, id: id, debug: debug, acceptRisky: acceptRisky),
+                             stdin: secrets.stdinPayload, using: upRunner))
+    }
+
+    static func upArguments(kind: VPNKind, id: UUID, debug: Bool, acceptRisky: [String]) -> [String] {
         var args = ["up", kind.rawValue, id.uuidString]
         if debug { args.append("--debug") }
-        try check(await sudo(args, stdin: secrets.stdinPayload, using: upRunner))
+        let names = Set(acceptRisky.filter { $0.range(of: "^[a-z0-9-]+$", options: .regularExpression) != nil }).sorted()
+        if kind == .openvpn, !names.isEmpty { args += ["--accept-risky", names.joined(separator: ",")] }
+        return args
     }
 
     public func down(kind: VPNKind, id: UUID) async throws {

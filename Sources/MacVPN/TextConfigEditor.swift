@@ -11,16 +11,40 @@ final class TextConfigDraft: ObservableObject {
         var username = ""
         var password = ""
         var psk = ""
+        var keyPassword = ""
+        /// A tudomásul vett kockázatos direktívák (OpenVPN). A négyzet akkor bejelölt, ha minden jelenlegi kockázatos
+        /// direktíva benne van; bejelöléskor pontosan a jelenlegi halmaz lesz.
+        var acknowledged: Set<String> = []
     }
 
-    @Published var fields = Fields() { didSet { reportDirty() } }
+    @Published var fields = Fields() {
+        didSet {
+            if fields.text != oldValue.text { updateRisky() }
+            reportDirty()
+        }
+    }
     @Published private(set) var issues: [ValidationIssue] = []
+    /// A config kockázatos (RISKY) direktívái, élőben (OpenVPN).
+    @Published private(set) var risky: [RiskyFinding] = []
     @Published private(set) var savedAt: Date?
     private var original = Fields()
     private var connection: Connection?
     private weak var model: AppModel?
 
     var isDirty: Bool { connection != nil && fields != original }
+
+    var riskyNames: Set<String> { Set(risky.map(\.directive)) }
+
+    /// „Tudomásul veszem…” négyzet.
+    var acknowledgesRisk: Bool {
+        get { !risky.isEmpty && riskyNames.isSubset(of: fields.acknowledged) }
+        set { fields.acknowledged = newValue ? riskyNames : [] }
+    }
+
+    private func updateRisky() {
+        guard connection?.kind == .openvpn else { return }
+        risky = OpenVPNValidator().validate(fields.text, acknowledgedRisky: []).risky
+    }
 
     /// Csak az első megjelenéskor tölt: egy újabb `onAppear` nem írja felül a szerkesztést.
     func load(_ connection: Connection, model: AppModel) {
@@ -29,20 +53,29 @@ final class TextConfigDraft: ObservableObject {
         let s = model.secrets.secrets(for: connection.id)
         let loaded = Fields(name: connection.name,
                             text: (try? model.store.loadConfig(connection.id)) ?? "",
-                            username: s.username ?? "", password: s.password ?? "", psk: s.psk ?? "")
+                            username: s.username ?? "", password: s.password ?? "", psk: s.psk ?? "",
+                            keyPassword: s.keyPassword ?? "",
+                            acknowledged: Set(connection.acknowledgedRiskyDirectives))
         original = loaded
         self.connection = connection
         fields = loaded
+        updateRisky()
         issues = model.takeImportIssues(connection.id)
     }
 
     @discardableResult
     func save() -> Bool {
         guard let connection, let model else { return false }
+        let acknowledged = acknowledgesRisk ? riskyNames : []
         issues = model.saveText(connection, name: fields.name, config: fields.text,
-                                secrets: Secrets(username: fields.username, password: fields.password, psk: fields.psk))
+                                secrets: Secrets(username: fields.username, password: fields.password, psk: fields.psk,
+                                                 keyPassword: connection.kind == .openvpn ? fields.keyPassword : ""),
+                                acknowledgedRisky: acknowledged)
         let ok = issues.isEmpty
-        if ok { original = fields }
+        if ok {
+            fields.acknowledged = acknowledged
+            original = fields
+        }
         savedAt = ok ? Date() : nil
         reportDirty()
         return ok
@@ -72,6 +105,7 @@ struct TextConfigEditor: View {
 
     private var showsUser: Bool { connection.kind == .openvpn || connection.kind == .strongswan }
     private var showsPSK: Bool { connection.kind == .strongswan }
+    private var showsKeyPassword: Bool { connection.kind == .openvpn }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -87,6 +121,7 @@ struct TextConfigEditor: View {
                     }
                 }
             }
+            if !draft.risky.isEmpty { RiskyPanel(findings: draft.risky, acknowledged: $draft.acknowledgesRisk) }
             if showsUser || showsPSK {
                 GroupBox("Authentication (stored in the Keychain)") {
                     VStack {
@@ -94,6 +129,7 @@ struct TextConfigEditor: View {
                             TextField("Username", text: $draft.fields.username)
                             SecureField("Password", text: $draft.fields.password)
                         }
+                        if showsKeyPassword { SecureField("Private key password", text: $draft.fields.keyPassword) }
                         if showsPSK { SecureField("Pre-shared key (PSK)", text: $draft.fields.psk) }
                     }
                     .textFieldStyle(.roundedBorder)
@@ -116,5 +152,31 @@ struct TextConfigEditor: View {
         .padding()
         .onAppear { draft.load(connection, model: model) }
         .onDisappear { draft.detach() }
+    }
+}
+
+/// Sárga „Kockázatos beállítások” panel: soronként a direktíva és a rövid indoklás, alatta a tudomásulvétel négyzete.
+struct RiskyPanel: View {
+    let findings: [RiskyFinding]
+    @Binding var acknowledged: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Risky settings", systemImage: "exclamationmark.triangle.fill")
+                .font(.headline).foregroundStyle(.orange)
+            ForEach(Array(findings.enumerated()), id: \.offset) { _, f in
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text(verbatim: "\(f.line).").foregroundStyle(.secondary).monospacedDigit()
+                    Text(verbatim: f.directive).font(.system(.callout, design: .monospaced)).bold()
+                    Text(verbatim: f.reason).font(.callout).foregroundStyle(.secondary)
+                }
+            }
+            Toggle("I acknowledge these settings and the security risks", isOn: $acknowledged)
+                .toggleStyle(.checkbox)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.yellow.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.yellow.opacity(0.6)))
     }
 }
