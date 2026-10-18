@@ -77,6 +77,12 @@ public struct MvpnClient: Sendable {
         return args
     }
 
+    /// `mvpn respond openvpn <id>`: a felhasználó válasza a management közvetítőnek (MFA). A kód csak a stdin-en megy.
+    public func respond(id: UUID, kind: AuthResponseKind, response: String = "") async throws {
+        guard let payload = kind.stdinPayload(response: response) else { throw MFAError.invalidCode }
+        try check(await sudo(["respond", VPNKind.openvpn.rawValue, id.uuidString], stdin: payload, using: statusRunner))
+    }
+
     public func down(kind: VPNKind, id: UUID) async throws {
         try check(await sudo(["down", kind.rawValue, id.uuidString], stdin: nil))
     }

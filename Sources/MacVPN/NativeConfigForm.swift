@@ -9,6 +9,7 @@ final class NativeConfigDraft: ObservableObject {
         var settings = NativeSettings()
         var password = ""
         var psk = ""
+        var otp = OTPSetting()
     }
 
     @Published var fields = Fields() { didSet { reportDirty() } }
@@ -25,7 +26,7 @@ final class NativeConfigDraft: ObservableObject {
         self.model = model
         let s = model.secrets.secrets(for: connection.id)
         let loaded = Fields(name: connection.name, settings: connection.native ?? NativeSettings(),
-                            password: s.password ?? "", psk: s.psk ?? "")
+                            password: s.password ?? "", psk: s.psk ?? "", otp: connection.otp)
         original = loaded
         self.connection = connection
         fields = loaded
@@ -34,8 +35,15 @@ final class NativeConfigDraft: ObservableObject {
     @discardableResult
     func save() -> Bool {
         guard let connection, let model else { return false }
-        error = model.saveNative(connection, name: fields.name, settings: fields.settings,
-                                 password: fields.password, psk: fields.psk)
+        var withoutOTP = fields
+        withoutOTP.otp = original.otp
+        if withoutOTP == original {
+            // Csak a kód-beállítás változott: nem kell új profil (és jóváhagyás).
+            error = model.saveOTP(connection, otp: fields.otp)
+        } else {
+            error = model.saveNative(connection, name: fields.name, settings: fields.settings,
+                                     password: fields.password, psk: fields.psk, otp: fields.otp)
+        }
         saved = error == nil
         if saved { original = fields }
         reportDirty()
@@ -73,6 +81,9 @@ struct NativeConfigForm: View {
                 TextField("Group name", text: $draft.fields.settings.groupName)
             }
             Toggle("Send all traffic over VPN", isOn: $draft.fields.settings.sendAllTraffic)
+            Section("One-time code (MFA)") {
+                OTPSettingFields(setting: $draft.fields.otp)
+            }
             Section {
                 Text("Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).")
                     .font(.callout).foregroundStyle(.secondary)

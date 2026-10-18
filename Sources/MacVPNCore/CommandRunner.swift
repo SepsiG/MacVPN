@@ -30,8 +30,9 @@ public enum CommandError: LocalizedError, Equatable {
 public enum RunnerTimeouts {
     /// Alapértelmezés: telepítés, frissítés, `mvpn down` (ez is várhat a zárra), rendszerállapot.
     public static let standard: TimeInterval = 90
-    /// `mvpn up`: legrosszabb esetben 45 mp zárvárakozás + a korábbi futás bontása + 30 mp kapcsolódás + pillanatképek.
-    public static let up: TimeInterval = 150
+    /// `mvpn up`: legrosszabb esetben 45 mp zárvárakozás + a korábbi futás bontása + 30 mp kapcsolódás + pillanatképek,
+    /// MFA-nál ezen felül legfeljebb 420 mp hitelesítésre várás (a `mvpn` MFA_MAX-a: webes bejelentkezés + kód).
+    public static let up: TimeInterval = 600
     /// Gyakori, gyors lekérdezések: `mvpn status`, `scutil --nc …`.
     public static let quick: TimeInterval = 20
 }

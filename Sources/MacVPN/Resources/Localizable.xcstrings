@@ -81,12 +81,12 @@
         }
       }
     },
-    "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept." : {
+    "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept." : {
       "localizations" : {
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak."
+            "value" : "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn, /var/run/macvpn-ui (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak."
           }
         }
       }
@@ -751,16 +751,6 @@
         }
       }
     },
-    "My Connections" : {
-      "localizations" : {
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Saját kapcsolatok"
-          }
-        }
-      }
-    },
     "Name" : {
       "localizations" : {
         "hu" : {
@@ -1157,16 +1147,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Rendszerállapot"
-          }
-        }
-      }
-    },
-    "System VPNs" : {
-      "localizations" : {
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rendszer VPN-ek"
           }
         }
       }
@@ -1807,6 +1787,246 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "A(z) %@ verzió kevesebb mint 24 órája jelent meg. Később kerül felajánlásra, mert be van kapcsolva a „Csak a legalább 24 órája megjelent frissítések felajánlása” beállítás."
+          }
+        }
+      }
+    },
+    "Pinned" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitűzött"
+          }
+        }
+      }
+    },
+    "Pin to Top" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitűzés"
+          }
+        }
+      }
+    },
+    "Unpin" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kitűzés megszüntetése"
+          }
+        }
+      }
+    },
+    "%@ · System VPN" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Rendszer-VPN"
+          }
+        }
+      }
+    },
+    "Code" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kód"
+          }
+        }
+      }
+    },
+    "Continue" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tovább"
+          }
+        }
+      }
+    },
+    "Sign in in the browser" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bejelentkezés a böngészőben"
+          }
+        }
+      }
+    },
+    "The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A VPN szerver weboldalon kér bejelentkezést. Csak akkor nyisd meg, ha te indítottad ezt a kapcsolatot, és megbízol ebben a címben:"
+          }
+        }
+      }
+    },
+    "Open in Browser" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Megnyitás a böngészőben"
+          }
+        }
+      }
+    },
+    "Expires in %@" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lejár: %@"
+          }
+        }
+      }
+    },
+    "Ask for a one-time code at connect and append it to the password" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egyszer használatos kód kérése csatlakozáskor, a jelszó végére fűzve"
+          }
+        }
+      }
+    },
+    "Separator" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elválasztó"
+          }
+        }
+      }
+    },
+    "None" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs"
+          }
+        }
+      }
+    },
+    "The code is never stored. If no password is saved here, the code alone is sent as the password." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A kód soha nem tárolódik. Ha itt nincs mentett jelszó, jelszóként csak a kód megy át."
+          }
+        }
+      }
+    },
+    "One-time code" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egyszer használatos kód"
+          }
+        }
+      }
+    },
+    "%@ · Waiting for authentication" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ · Hitelesítésre vár"
+          }
+        }
+      }
+    },
+    "Waiting for authentication" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hitelesítésre vár"
+          }
+        }
+      }
+    },
+    "One-time code (MFA)" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egyszer használatos kód (MFA)"
+          }
+        }
+      }
+    },
+    "Incomplete installation (missing: %@). Reinstall: asks for the admin password once." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiányos telepítés (hiányzik: %@). Újratelepítés: egyszer kéri az admin jelszót."
+          }
+        }
+      }
+    },
+    "This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1)." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a config static-challenge-et használ: a MacVPN csatlakozáskor bekéri a kódot, és a jelszóval együtt küldi (SCRV1)."
+          }
+        }
+      }
+    },
+    "Codes and web sign-in requested by the server during the connection (challenge/response, SAML, push) are asked for automatically." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A szerver által csatlakozás közben kért kódot és webes bejelentkezést (challenge/response, SAML, push) a MacVPN automatikusan bekéri."
+          }
+        }
+      }
+    },
+    "The VPN server says:" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A VPN-szerver üzenete:"
+          }
+        }
+      }
+    },
+    "%@: authentication needed" : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@: hitelesítés szükséges"
+          }
+        }
+      }
+    },
+    "Click to enter the code or to sign in." : {
+      "localizations" : {
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kattints a kód megadásához vagy a bejelentkezéshez."
           }
         }
       }

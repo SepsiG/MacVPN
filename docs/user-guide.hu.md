@@ -83,7 +83,7 @@ A MacVPN alapból nem indul el magától. Ha minden bejelentkezéskor el szeretn
 
 Kapcsolatot a **Kapcsolatok** ablakban veszel fel. Megnyitása: menü → **Kapcsolatok kezelése…** vagy **Új kapcsolat / Import…**.
 
-- Bal oldalt a lista. A **Saját kapcsolatok** a MacVPN-ben létrehozottak. A **Rendszer VPN-ek** a macOS-ben máshonnan beállított VPN-ek. Ezeket csak indítani és bontani lehet. L2TP és Cisco IPsec rendszer VPN-nél a közös kulcsot (PSK) is eltárolhatod a MacVPN-ben (lásd [3.5](#35-rendszer-vpn-ek-közös-kulcs-l2tp--cisco-esetén)).
+- Bal oldalt a lista: a MacVPN-ben létrehozott kapcsolatok és a **rendszer VPN-ek** (a macOS-ben máshonnan beállított VPN-ek, a nevük alatt **Rendszer-VPN** jelöléssel) egy listában, a kitűzöttek felül, a **Kitűzött** részben (lásd [5.1](#51-a-kapcsolatok-sorrendje)). A rendszer VPN-eket csak indítani és bontani lehet. L2TP és Cisco IPsec rendszer VPN-nél a közös kulcsot (PSK) is eltárolhatod a MacVPN-ben (lásd [3.5](#35-rendszer-vpn-ek-közös-kulcs-l2tp--cisco-esetén)).
 - Az eszköztár **Új** (+) menüjéből választhatsz típust (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec), vagy **Import fájlból…**.
 - Jobb oldalt a kijelölt kapcsolat két füle: **Beállítások** és **Napló**.
 
@@ -179,13 +179,13 @@ Minden módosítás után újra jóvá kell hagyni a profilt. Kapcsolat törlés
 
 A profilfájl egy privát ideiglenes mappába kerül (csak te olvashatod), nem a kapcsolatok mellé. A MacVPN törli, amint a VPN megjelenik a macOS-ben, legkésőbb a MacVPN következő indításakor. Ha ennél később hagyod jóvá a profilt, kattints újra a **Mentés és profil telepítése** gombra. A régebbi MacVPN verziók a kapcsolat mappájában tartottak egy `profile.mobileconfig` fájlt (benne a jelszóval); ezeket a MacVPN induláskor törli.
 
-**A macOS szolgáltatás azonosítása.** A profil telepítése után a MacVPN megjegyzi a macOS VPN szolgáltatás azonosítóját (azonos nevű és szervercímű szolgáltatás), és onnantól ezzel csatlakozik, bont és kérdezi le az állapotot. Egy véletlenül azonos nevű másik VPN így a **Rendszer VPN-ek** között jelenik meg. Ha a MacVPN nem tudja eldönteni, hogy több azonos nevű szolgáltatás közül melyik az övé, nem csatlakozik (és nem adja át a jelszót), hanem ezt írja ki: **Több „<név>” nevű VPN szolgáltatás van…**. Nevezd át vagy töröld a másikat a **Rendszerbeállítások → Hálózat** alatt.
+**A macOS szolgáltatás azonosítása.** A profil telepítése után a MacVPN megjegyzi a macOS VPN szolgáltatás azonosítóját (azonos nevű és szervercímű szolgáltatás), és onnantól ezzel csatlakozik, bont és kérdezi le az állapotot. Egy véletlenül azonos nevű másik VPN így rendszer VPN-ként (**Rendszer-VPN** jelöléssel) jelenik meg a listában. Ha a MacVPN nem tudja eldönteni, hogy több azonos nevű szolgáltatás közül melyik az övé, nem csatlakozik (és nem adja át a jelszót), hanem ezt írja ki: **Több „<név>” nevű VPN szolgáltatás van…**. Nevezd át vagy töröld a másikat a **Rendszerbeállítások → Hálózat** alatt.
 
 A **fióknév** a kapcsolat beállításfájljában (`meta.json`) nyíltan tárolódik: nem titok. A jelszó és a PSK a Keychainben van.
 
 ### 3.5 Rendszer VPN-ek: közös kulcs L2TP / Cisco esetén
 
-A Rendszerbeállításokban felvett VPN (például **Office L2TP**) a **Rendszer VPN-ek** alatt jelenik meg. A MacVPN nem módosítja a beállításait. Előfordul, hogy a macOS nem tudja kiolvasni egy ilyen VPN közös kulcsát, ha másik alkalmazás indítja: a kapcsolat nem jön létre, és a macOS „a szerver nem érhető el” jellegű üzenetet mutathat, holott a Rendszerbeállításokból indítva működik.
+A Rendszerbeállításokban felvett VPN (például **Office L2TP**) **Rendszer-VPN** jelöléssel jelenik meg a listában. A MacVPN nem módosítja a beállításait. Előfordul, hogy a macOS nem tudja kiolvasni egy ilyen VPN közös kulcsát, ha másik alkalmazás indítja: a kapcsolat nem jön létre, és a macOS „a szerver nem érhető el” jellegű üzenetet mutathat, holott a Rendszerbeállításokból indítva működik.
 
 L2TP és Cisco IPsec rendszer VPN-nél a részletező nézetben két mező van:
 
@@ -267,12 +267,37 @@ A `pkcs12 client.p12` fájlt ugyanígy beemeli, base64-ként egy `<pkcs12>` blok
   - **zöld pont:** kapcsolódva (mellette az IP és az eltelt idő)
   - **forgó jel:** csatlakozás vagy bontás folyamatban
   - **piros pont:** hiba (mellette a rövid ok)
+  - **kulcs ikon:** hitelesítésre vár: egyszer használatos kódra vagy böngészős bejelentkezésre (lásd [5.2. fejezet](#52-többfaktoros-hitelesítés-mfa))
   - **üres kör:** nincs kapcsolat
 - **A Kapcsolatok ablakból:** **Csatlakozás** / **Bontás** gomb.
 - Egyszerre több kapcsolat is aktív lehet.
 - Ha egy típushoz hiányzik eszköz, a kapcsolat kiszürkül, és a **Hiányzó eszköz** felirat jelenik meg rajta. Ilyenkor nézd meg a **Rendszerállapot** ablakot.
 - Sikertelen csatlakozásnál macOS értesítés jelenik meg („…: sikertelen csatlakozás”, **Részletek a MacVPN-ben** szöveggel). Maga a hibaüzenet nem kerül az értesítésbe, mert az a lezárt képernyőn is látszhat; a teljes ok a MacVPN-ben látszik. Kattintásra a kapcsolat **Napló** füle nyílik meg. Ha egy élő kapcsolat váratlanul megszakad, arról is értesítés jön. Automatikus újracsatlakozás nincs.
 - **Kilépéskor**, ha van aktív kapcsolat, az app megkérdezi: **Leállítás és kilépés**, **Kilépés, fussanak tovább** vagy **Mégse**. A tovább futó kapcsolatokat a MacVPN következő indításkor felismeri.
+
+### 5.1 A kapcsolatok sorrendje
+
+A menü és a **Kapcsolatok** ablak listája ugyanazt a sorrendet használja. A MacVPN-ben létrehozott kapcsolatok és a rendszer VPN-ek közös rangsorban vannak.
+
+- **Elöl a kitűzött kapcsolatok**, a te sorrendedben. Kitűzéshez kattints jobb gombbal a kapcsolatra a **Kapcsolatok** ablakban, és válaszd a **Kitűzés** pontot; levenni a **Kitűzés megszüntetése** ponttal lehet. A **Kitűzött** részben a kapcsolatokat húzással rendezheted. A kitűzött kapcsolatok mellett kis gombostű ikon látszik, a menüben is.
+- **Utánuk a többi, a leggyakrabban használt elöl.** Minden sikeres, a MacVPN-ből indított csatlakozás 1 pontot ér. A pontok értéke 14 naponta a felére csökken, így egy múlt hónapban sokat használt kapcsolat hátrébb kerül annál, amit most használsz. Csak a kapcsolat létrejöttének pillanata számít: a fennálló kapcsolat állapotlekérdezései és a MacVPN-en kívül (például a Rendszerbeállításokban) indított kapcsolatok nem. Az azonos pontszámú kapcsolatok (például az új, még pont nélküliek) név szerint követik egymást.
+- A sorrend ezen a Macen tárolódik: `~/Library/Application Support/MacVPN/connection-order.json`. Nincs benne titok, és az export nem viszi. Ha törölsz egy kapcsolatot, vagy egy rendszer VPN eltűnik, a bejegyzése is törlődik.
+
+### 5.2 Többfaktoros hitelesítés (MFA)
+
+A MacVPN kezeli az egyszer használatos kódokat (OTP, TOTP, token PIN) és a böngészős bejelentkezést (SAML / SSO, push jóváhagyás). A kód soha nem tárolódik, és nem kerül a naplóba.
+
+**A kódbekérő ablak.** Ha kód kell, egy kis ablak nyílik meg a kapcsolat nevével, a szerver (vagy a config) kérdésével, egy **Kód** mezővel, **Mégse** és **Tovább** gombbal. A mező elrejti a beírt kódot, hacsak a szerver nem kéri a megjelenítését. Az ablak 2 perc után lejár, ilyenkor a csatlakozás **A hitelesítés nem fejeződött be időben** hibával ér véget. Amíg a MacVPN vár, a menüben a kapcsolat sorában **Hitelesítésre vár** áll, és a menüsor ikonja kulcs lesz. Az ablak nem veszi el a billentyűzetet attól az apptól, amelyikben éppen dolgozol: értesítés is jön („…: hitelesítés szükséges”); a kód beírásához kattints az értesítésre vagy az ablakra. A szervertől jövő szöveg **A VPN-szerver üzenete:** címkét kap. A megjelenés utáni kb. egy másodpercben az ablak nem fogad bevitelt, így egy véletlen leütés nem válaszol rá. Bontáskor az ablak bezárul, és a csatlakozás leáll.
+
+**OpenVPN: automatikus.** Nincs mit beállítani:
+
+- **Statikus challenge** (`static-challenge "…" 0|1` a configban): a MacVPN csatlakozás előtt bekéri a kódot a config szövegével, és a jelszóval együtt küldi a szervernek (SCRV1 formában, vagy egyszerűen a jelszó végére fűzve, ha a configban `concat` áll).
+- **A szerver által küldött challenge** (dinamikus `CRV1` challenge vagy szöveges challenge): a kódbekérő ablak csatlakozás közben nyílik meg, a szerver szövegével.
+- **Bejelentkezés a böngészőben** (`OPEN_URL`, `WEB_AUTH`: SAML, SSO, push): a MacVPN megmutatja a cím hosztját (egyszerű ASCII alakban, kisbetűvel) és a teljes címet, és rákérdez: **Megnyitás a böngészőben** (ez nem alapértelmezett gomb: kattints rá). Csak `https://` címet nyit meg, minden más címet figyelmen kívül hagy. A bejelentkezés (vagy a push jóváhagyása a telefonon) után a kapcsolat felépül. A MacVPN legfeljebb 5 percig vár (vagy a szerver rövidebb határidejéig).
+
+**Minden típus: kód a jelszó végén.** Egyes szerverek a jelszó után beírt kódot várják (például `jelszó123456` vagy `jelszó,123456`). A kapcsolat beállításainál kapcsold be: **Egyszer használatos kód kérése csatlakozáskor, a jelszó végére fűzve**, és válaszd ki az **Elválasztó**t: nincs, `,` vagy `:`. OpenVPN, IKEv2, SSTP, L2TP és Cisco IPsec kapcsolatnál érhető el, valamint azoknál a rendszer VPN-eknél, amelyekhez a MacVPN-ben jelszó van mentve (a **Kapcsolatok** ablakban). Csatlakozáskor a MacVPN bekéri a kódot, és jelszó + elválasztó + kód formában küldi. Ha a MacVPN-ben nincs mentett jelszó, jelszóként csak a kód megy át. SSTP-nél a kóddal együtt sem lehet a jelszóban `"`, `\` vagy vezérlőkarakter. `static-challenge`-es OpenVPN confignál a beállítás nem érvényes, mert a statikus challenge már viszi a kódot.
+
+**Hogyan működik (OpenVPN).** A MacVPN az OpenVPN-t a management interfészével indítja, egy csak root által elérhető socketen. Ehhez csak a MacVPN root segédje (`mvpn-mgmt`) csatlakozik, rögzített parancslistával. A segéd csak a kérdést, a `https` címet és az állapotot adja át az appnak (a `/var/run/macvpn-ui/<id>.json` fájlban, amit csak te olvashatsz), a válaszodat pedig az OpenVPN-nek.
 
 ---
 
@@ -320,7 +345,7 @@ Először nézd meg a hibaüzenetet a menüben vagy az értesítésben. Ha ez ne
 
 - Ellenőrizd a **Felhasználónév** és **Jelszó** mezőket, majd nyomd meg a **Mentés** gombot.
 - Lejárt vagy zárolt fiók esetén keresd a szolgáltatót.
-- Ha a szerver egyszer használatos kódot (OTP) kér, a MacVPN ezt jelenleg nem támogatja.
+- Ha a szerver egyszer használatos kódot kér, lásd az [5.2. fejezetet](#52-többfaktoros-hitelesítés-mfa) és a [7.11. fejezetet](#711-egyszer-használatos-kód-és-böngészős-bejelentkezés-mfa).
 
 ### 7.2 `TLS handshake failed` / `TLS Error` (OpenVPN)
 
@@ -417,6 +442,17 @@ A MacVPN rootként indítja a VPN-eszközöket, ezért csak ismert, biztonságos
 - **Az SSTP-hez jelszó kell**: üres a jelszó mező. Add meg az űrlapon, és ments.
 - **Az sstpc nem található (brew install sstp-client)**: telepítsd az `sstp-client` csomagot a **Rendszerállapot** ablakból.
 
+### 7.11 Egyszer használatos kód és böngészős bejelentkezés (MFA)
+
+- **A hitelesítés nem fejeződött be időben**: 2 percen belül nem érkezett kód, vagy a böngészős bejelentkezés nem fejeződött be a határidőn belül (legfeljebb 5 perc). Csatlakozz újra, és válaszolj hamarabb.
+- **A hitelesítés megszakítva**: a kódbekérő vagy a böngészős ablakban a **Mégse** gombra kattintottál, vagy bontottál.
+- **Hitelesítési hiba**: a szerver elutasította a kódot vagy a jelszót. A kódok gyorsan lejárnak: használj frisset. A jelszó végére fűzött kódnál ellenőrizd, milyen **Elválasztó**t vár a szolgáltató.
+- **Nem jelenik meg a böngészős ablak**: a MacVPN csak egyszerű ASCII hosztnevű `https://` címet nyit meg (nemzetközi név csak `xn--` alakban, az elérési út előtt nincs `%` és `@`). Ilyenkor a naplóban `web authentication URL dropped (only https with a plain ASCII host is accepted)` áll. Kérj ilyen bejelentkezési címet a szolgáltatótól.
+- **A management közvetítő leállt**: a MacVPN root segédje bejelentkezés közben váratlanul leállt. Csatlakozz újra; ha ismétlődik, csatlakozz debug módban, és nézd meg a `[mgmt]` sorokat.
+- **Nincs hitelesítésre váró kapcsolat**: a csatlakozás már véget ért (határidő vagy hiba), mielőtt a válasz megérkezett. Csatlakozz újra.
+- **A mvpn-mgmt nem található**, vagy **Hiányos telepítés** a **Rendszerállapot** ablakban: a root réteg egy régebbi verzióé. Kattints az **Engedélyezés** gombra a **Rendszerállapot** ablakban a frissítéshez.
+- A naplóban a `[mgmt]` sorok a segéd lépései (például `hold released`, `credentials sent`, `dynamic challenge received`). Soha nem tartalmazzák a kódot vagy a jelszót, a bejelentkezési címnek pedig csak a hosztja kerül a naplóba.
+
 ---
 
 ## 8. Frissítés
@@ -446,7 +482,7 @@ A MacVPN a GitHub Releases oldalon keresi az új verziókat: induláskor, majd 2
 2. A megerősítő ablak felsorolja, mi törlődik:
    - `/usr/local/libexec/macvpn` (root scriptek)
    - `/etc/sudoers.d/macvpn` (sudoers szabály)
-   - `/var/run/macvpn` (futási adatok)
+   - `/var/run/macvpn`, `/var/run/macvpn-ui` (futási adatok)
    - `/var/log/macvpn` (kapcsolatnaplók)
 3. Ha a **A felhasználói adatok törlése is** jelölőnégyzetet bejelölöd, a kapcsolataid (`~/Library/Application Support/MacVPN`) és a Keychainben tárolt jelszavaik is törlődnek, a rendszer VPN-ekhez mentett közös kulcsokkal együtt.
 4. Kattints az **Eltávolítás** gombra, és add meg az admin jelszót. Előtte a MacVPN bontja az aktív kapcsolatokat.
@@ -478,7 +514,7 @@ Ha a `/etc/ppp/options` fájlt az SSTP miatt a MacVPN hozta létre (ilyenkor jel
 **Fenyegetési modell.** A MacVPN a veszélyes *configok* ellen véd: egy letöltött vagy importált `.ovpn`, WireGuard vagy IKEv2 fájl nem tud parancsot futtatni, rootként tetszőleges fájlt olvasni vagy írni, és sikeres kapcsolódást sem tud színlelni, mert a root oldal minden beállítást engedélyezőlistán ellenőriz, és csak root által írható fájlokból dönt. A *felhasználói fiókodban már futó programok* ellen viszont **nem** véd: egy ilyen program a gyakorlatban rootjogot szerezhet. Kicserélheti a (felhasználód által írható) Homebrew VPN-eszközöket, majd a MacVPN jelszó nélküli sudo szabályával rootként futtathatja őket. Úgy kezeld a MacVPN-t, mint bármely eszközt, amely a fiókodnak adminisztrátori erejű jogot ad: csak olyan gépen használd, amelynek te vagy az adminisztrátora, és ahol megbízol a fiókod alatt futó programokban.
 
 - **Aláíratlan app.** A MacVPN nincs Apple Developer ID-vel aláírva és notarizálva, ezért kell az első indításkor a „Megnyitás mindenképp” lépés. Csak a hivatalos [Releases](https://github.com/SepsiG/MacVPN/releases) oldalról töltsd le.
-- **Jelszavak.** A jelszavak és a PSK a macOS Keychainben vannak (`local.macvpn.secrets` szolgáltatás; a régebbi verziók `macvpn` alatti bejegyzéseit a MacVPN induláskor automatikusan áthelyezi). A szöveges típusok felhasználóneve is a Keychainben van; az L2TP / Cisco kapcsolatok fiókneve nyíltan a kapcsolat `meta.json` fájljában, mert nem titok. A jelszavak és a PSK a naplóban maszkolva (`***`) jelennek meg, és az export sem tartalmazza őket. A config részét képező kulcsok (WireGuard `PrivateKey`, OpenVPN `<key>` és hasonlók) csak az **Exportálás kulcsokkal** választásával kerülnek az exportba. Az L2TP / Cisco profil tartalmazza a PSK-t (a jelszót nem), és telepítés után törlődik a lemezről. Felhasználónévben, jelszóban és PSK-ban nem lehet sortörés vagy vezérlőkarakter (a MacVPN nem menti el). A mentett napló `600`-as jogosultsággal jön létre. Jelszavas OpenVPN kapcsolat alatt a felhasználónév és a jelszó egy csak root által olvasható fájlban is megvan (`/var/run/macvpn/<id>/auth`, `600`-as jogosultság egy `700`-as könyvtárban), hogy az OpenVPN újracsatlakozáskor újra be tudjon lépni. Bontáskor a fájl törlődik.
+- **Jelszavak.** A jelszavak és a PSK a macOS Keychainben vannak (`local.macvpn.secrets` szolgáltatás; a régebbi verziók `macvpn` alatti bejegyzéseit a MacVPN induláskor automatikusan áthelyezi). A szöveges típusok felhasználóneve is a Keychainben van; az L2TP / Cisco kapcsolatok fiókneve nyíltan a kapcsolat `meta.json` fájljában, mert nem titok. A jelszavak és a PSK a naplóban maszkolva (`***`) jelennek meg, és az export sem tartalmazza őket. A config részét képező kulcsok (WireGuard `PrivateKey`, OpenVPN `<key>` és hasonlók) csak az **Exportálás kulcsokkal** választásával kerülnek az exportba. Az L2TP / Cisco profil tartalmazza a PSK-t (a jelszót nem), és telepítés után törlődik a lemezről. Felhasználónévben, jelszóban és PSK-ban nem lehet sortörés vagy vezérlőkarakter (a MacVPN nem menti el). A mentett napló `600`-as jogosultsággal jön létre. OpenVPN-nél a felhasználónév és a jelszó egy csak root által olvasható fájlon át (`600`-as jogosultság egy `700`-as könyvtárban) jut a MacVPN root segédjéhez (`mvpn-mgmt`), amely a fájlt a beolvasás után azonnal törli. A segéd a memóriájában tartja őket, hogy az OpenVPN újracsatlakozáskor újra be tudjon lépni, és a csak root által elérhető management socketen adja át őket az OpenVPN-nek. Az egyszer használatos kód soha nem tárolódik: csak a csatlakozás idejére van a memóriában, és a naplóban maszkolva jelenik meg.
 - **A root réteg sértetlensége.** A telepítő a root scripteket egy csak root által elérhető átmeneti mappába másolja, és csak akkor telepíti őket, ha a SHA-256-juk egyezik azzal, amit az app közvetlenül az admin jelszó kérése előtt kiszámolt. A `/usr/local/libexec/macvpn` mappát a root tulajdonába adja, és mások számára írhatatlanná teszi. Ha a `/usr/local` vagy a `/usr/local/libexec` nem a root tulajdona, vagy más is írhatja, nem módosítja őket, hanem útmutatással megáll (lásd [7.8](#78-egyéb)). A sudoers szabály tiszta környezettel indítja a `mvpn`-t (a munkameneted `LANG`, `LC_*` és más változói nélkül).
 - **Sudoers és Homebrew (ismert korlát).** A csatlakozáshoz a MacVPN egy sudoers szabállyal, jelszó nélkül futtatja rootként a `/usr/local/libexec/macvpn/mvpn` scriptet, ez pedig a Homebrew eszközeit (`openvpn`, `wg-quick`, `charon`, `sstpc`). A Homebrew könyvtára (`/opt/homebrew`) a felhasználó által írható. Egy, a felhasználói fiókodban futó kártevő kicserélheti ezeket a programokat, és így rootjogot szerezhet. A configok szűrése a véletlen vagy importált veszélyes beállítások ellen véd, a fiókodon belül futó kártevő ellen nem. Egyfelhasználós, általad adminisztrált gépen ez elfogadható kockázat. Ha nem az, ne engedélyezd a root réteget, és csak L2TP / Cisco kapcsolatot használj.
 - **SSTP jelszó a parancssorban (ismert korlát).** A Homebrew `sstpc` az SSTP crypto binding kulcsait maga számolja a jelszóból, ezért csak akkor indul el, ha a jelszót a parancssorában kapja (`--password`). A MacVPN ott adja át, a naplóba soha nem írja (`***`). Az `sstpc` a saját parancssorát a beolvasás után azonnal kicsillagozza, de ebben az első pillanatban a gép más felhasználói a `ps` paranccsal láthatják a jelszót. Egyfelhasználós gépen ez elfogadható kockázat. Ha nálad nem az, ne használj SSTP-t.

@@ -109,6 +109,17 @@ public enum L10n {
             "Érvénytelen felhasználónév: csak betű, számjegy és . _ @ + - lehet (DOMAIN\\user helyett user@domain)",
         "Invalid value for %@: allowed: %@": "Érvénytelen érték (%@), megengedett: %@",
 
+        // MFA (spec 10f)
+        "The code must not be empty or contain line breaks or control characters (256 characters at most)":
+            "A kód nem lehet üres, és nem lehet benne sortörés vagy vezérlőkarakter (legfeljebb 256 karakter)",
+        "The password with the code must not contain quotation marks, backslashes or control characters (SSTP)":
+            "A kóddal együtt a jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter (SSTP)",
+        "The password and the code together are too long": "A jelszó és a kód együtt túl hosszú",
+        "Authentication was not completed in time": "A hitelesítés nem fejeződött be időben",
+        "Enter the one-time code. MacVPN appends it to the password for this connection.":
+            "Add meg az egyszer használatos kódot. A MacVPN ennél a kapcsolatnál a jelszó végére fűzi.",
+        "The server asks for a code.": "A szerver kódot kér.",
+
         // mvpn-validate
         "Cannot read the file: %@": "A fájl nem olvasható: %@",
         "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>":

@@ -49,10 +49,12 @@ public struct Connection: Codable, Identifiable, Hashable, Sendable {
     /// kockázatos halmaz; egy újonnan bekerülő kockázatos direktíva új tudomásulvételt igényel. A `mvpn up` ezt adja át
     /// `--accept-risky`-ként. Hiányzó mező (régebbi `meta.json`): üres.
     public var acknowledgedRiskyDirectives: [String]
+    /// MFA: csatlakozáskor egyszer használatos kód a jelszó végére (spec 10f). Hiányzó mező (régebbi `meta.json`): ki.
+    public var otp: OTPSetting
 
     public init(id: UUID = UUID(), name: String, kind: VPNKind, createdAt: Date = Date(),
                 nativeServiceName: String? = nil, native: NativeSettings? = nil,
-                acknowledgedRiskyDirectives: [String] = []) {
+                acknowledgedRiskyDirectives: [String] = [], otp: OTPSetting = OTPSetting()) {
         self.id = id
         self.name = name
         self.kind = kind
@@ -60,10 +62,11 @@ public struct Connection: Codable, Identifiable, Hashable, Sendable {
         self.nativeServiceName = nativeServiceName
         self.native = native
         self.acknowledgedRiskyDirectives = acknowledgedRiskyDirectives
+        self.otp = otp
     }
 
     enum CodingKeys: String, CodingKey {
-        case id, name, kind, createdAt, nativeServiceName, nativeServiceID, native, acknowledgedRiskyDirectives
+        case id, name, kind, createdAt, nativeServiceName, nativeServiceID, native, acknowledgedRiskyDirectives, otp
     }
 
     public init(from decoder: Decoder) throws {
@@ -76,6 +79,7 @@ public struct Connection: Codable, Identifiable, Hashable, Sendable {
         nativeServiceID = try c.decodeIfPresent(String.self, forKey: .nativeServiceID)
         native = try c.decodeIfPresent(NativeSettings.self, forKey: .native)
         acknowledgedRiskyDirectives = try c.decodeIfPresent([String].self, forKey: .acknowledgedRiskyDirectives) ?? []
+        otp = (try? c.decodeIfPresent(OTPSetting.self, forKey: .otp)) ?? OTPSetting()
     }
 }
 
@@ -85,10 +89,12 @@ public enum ConnectionState: Equatable, Sendable {
     case connected(ip: String?, since: Date?)
     case disconnecting
     case failed(String)
+    /// Csatlakozás közben hitelesítésre vár (MFA kód vagy webes / push jóváhagyás).
+    case awaitingAuth(AuthWait)
 
     public var isActive: Bool {
         switch self {
-        case .connecting, .connected, .disconnecting: return true
+        case .connecting, .connected, .disconnecting, .awaitingAuth: return true
         case .disconnected, .failed: return false
         }
     }
@@ -118,12 +124,20 @@ public struct Secrets: Equatable, Sendable {
     public var psk: String?
     /// OpenVPN: a privát kulcs (titkosított PEM `<key>` vagy PKCS#12) jelszava. A `mvpn` `--askpass` fájlként adja át.
     public var keyPassword: String?
+    /// MFA: a csatlakozáskor bekért egyszer használatos kód (csak maszkoláshoz: a `mvpn` a naplóban önálló titokként is
+    /// kicsillagozza). Soha nem tárolódik.
+    public var oneTimeCode: String?
+    /// OpenVPN statikus challenge: a `password` már SCRV1 / concat formában van (`challenge=packed`).
+    public var challengePacked: Bool
 
-    public init(username: String? = nil, password: String? = nil, psk: String? = nil, keyPassword: String? = nil) {
+    public init(username: String? = nil, password: String? = nil, psk: String? = nil, keyPassword: String? = nil,
+                oneTimeCode: String? = nil, challengePacked: Bool = false) {
         self.username = username
         self.password = password
         self.psk = psk
         self.keyPassword = keyPassword
+        self.oneTimeCode = oneTimeCode
+        self.challengePacked = challengePacked
     }
 
     /// Mentéskor ellenőrzött szabály minden típusra: nincs sortörés és vezérlőkarakter (C0, DEL, C1,
@@ -141,11 +155,13 @@ public struct Secrets: Equatable, Sendable {
     /// `inputError` már elutasítja őket.
     public var stdinPayload: String {
         var out = ""
-        for (key, value) in [("username", username), ("password", password), ("psk", psk), ("keypass", keyPassword)] {
+        for (key, value) in [("username", username), ("password", password), ("psk", psk), ("keypass", keyPassword),
+                             ("otp", oneTimeCode)] {
             guard let v = value?.replacingOccurrences(of: "\n", with: "")
                 .replacingOccurrences(of: "\r", with: ""), !v.isEmpty else { continue }
             out += "\(key)=\(v)\n"
         }
+        if challengePacked { out += "challenge=packed\n" }
         return out
     }
 }

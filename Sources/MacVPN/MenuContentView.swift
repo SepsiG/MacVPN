@@ -27,16 +27,21 @@ struct MenuContentView: View {
             if manager.connections.isEmpty && manager.systemServices.isEmpty {
                 Text("No connections yet").foregroundStyle(.secondary).padding(8)
             }
-            ForEach(manager.connections) { c in
-                MenuRow(name: c.name, type: c.kind.displayName,
-                        state: manager.state(for: c.id.uuidString),
-                        available: model.setup.isAvailable(c.kind)) { debug in
-                    model.toggle(c, debug: debug)
-                }
-            }
-            ForEach(manager.systemServices) { s in
-                MenuRow(name: s.name, type: s.typeLabel, state: manager.state(for: s.id), available: true) { _ in
-                    model.toggleSystem(s)
+            // Egy lista: kitűzöttek, majd használat szerint (spec 10e).
+            ForEach(manager.orderedItems) { item in
+                switch item {
+                case .managed(let c):
+                    MenuRow(name: c.name, type: c.kind.displayName,
+                            state: manager.state(for: item.id),
+                            available: model.setup.isAvailable(c.kind),
+                            pinned: manager.isPinned(item.id)) { debug in
+                        model.toggle(c, debug: debug)
+                    }
+                case .system(let s):
+                    MenuRow(name: s.name, type: s.typeLabel, state: manager.state(for: item.id), available: true,
+                            pinned: manager.isPinned(item.id)) { _ in
+                        model.toggleSystem(s)
+                    }
                 }
             }
             Divider().padding(.vertical, 4)
@@ -87,6 +92,7 @@ struct MenuRow: View {
     let type: String
     let state: ConnectionState
     let available: Bool
+    let pinned: Bool
     /// Paraméter: debug mód (Option lenyomva).
     let action: (Bool) -> Void
 
@@ -94,7 +100,10 @@ struct MenuRow: View {
         HStack(spacing: 8) {
             StatusDot(state: state)
             VStack(alignment: .leading, spacing: 1) {
-                Text(name).fontWeight(.medium)
+                HStack(spacing: 4) {
+                    Text(name).fontWeight(.medium)
+                    if pinned { PinBadge() }
+                }
                 subtitle.font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
@@ -120,6 +129,8 @@ struct MenuRow: View {
             }
         case .failed(let reason):
             Text(verbatim: "\(type) · \(reason)").lineLimit(1)
+        case .awaitingAuth:
+            Text("\(type) · Waiting for authentication").lineLimit(1)
         default:
             Text(available ? type : String(localized: "\(type) · Missing tool"))
         }
@@ -137,6 +148,9 @@ struct StatusDot: View {
             Circle().fill(.green).frame(width: 10, height: 10)
         case .failed:
             Circle().fill(.red).frame(width: 10, height: 10)
+        case .awaitingAuth:
+            Image(systemName: "key.fill").font(.system(size: 9)).foregroundStyle(.orange).frame(width: 10, height: 10)
+                .accessibilityLabel(Text("Waiting for authentication"))
         case .disconnected:
             Circle().strokeBorder(.secondary, lineWidth: 1.5).frame(width: 10, height: 10)
         }
@@ -157,5 +171,16 @@ struct MenuButton: View {
         }
         .buttonStyle(.plain)
         .onHover { hover = $0 }
+    }
+}
+
+/// Kitűzött kapcsolat jele (menü és Kapcsolatok ablak).
+struct PinBadge: View {
+    var body: some View {
+        Image(systemName: "pin.fill")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .rotationEffect(.degrees(45))
+            .accessibilityLabel(Text("Pinned"))
     }
 }

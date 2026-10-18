@@ -44,9 +44,10 @@ final class MvpnClientTests: XCTestCase {
     }
 
     func testRunnerTimeoutBudget() {
-        // mvpn up legrosszabb esetben: 45 mp zárvárakozás + 30 mp kapcsolódás + pillanatképek, korábbi futás bontása.
-        XCTAssertEqual(RunnerTimeouts.up, 150)
-        XCTAssertGreaterThan(RunnerTimeouts.up, 45 + 30 + 45)
+        // mvpn up legrosszabb esetben: 45 mp zárvárakozás + 30 mp kapcsolódás + pillanatképek, korábbi futás bontása,
+        // MFA-nál ezen felül legfeljebb 420 mp hitelesítésre várás (a mvpn MFA_MAX-a).
+        XCTAssertEqual(RunnerTimeouts.up, 600)
+        XCTAssertGreaterThan(RunnerTimeouts.up, 45 + 30 + 45 + 420)
         XCTAssertEqual(RunnerTimeouts.quick, 20)
         XCTAssertLessThan(RunnerTimeouts.quick, RunnerTimeouts.standard)
         XCTAssertEqual(RunnerTimeouts.standard, ProcessCommandRunner().timeout)

@@ -10,7 +10,7 @@ public enum RootInstaller {
     static func shellQuote(_ s: String) -> String { "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 
     /// A telepítendő root fájlok (a bundle `Resources/root` mappájából).
-    public static let rootFiles = ["mvpn", "ovpn-dns", "mvpn-validate", "VERSION"]
+    public static let rootFiles = ["mvpn", "ovpn-dns", "mvpn-validate", "mvpn-mgmt", "VERSION"]
 
     /// A root fájlok SHA-256-ja (kisbetűs hex), közvetlenül a telepítő script előállítása előtt számolva.
     public static func fileHashes(in sourceDir: URL) throws -> [String: String] {
@@ -103,6 +103,7 @@ public enum RootInstaller {
         install -o root -g wheel -m 755 "$STAGE/mvpn" "$DIR/mvpn"
         install -o root -g wheel -m 755 "$STAGE/ovpn-dns" "$DIR/ovpn-dns"
         install -o root -g wheel -m 755 "$STAGE/mvpn-validate" "$DIR/mvpn-validate"
+        install -o root -g wheel -m 755 "$STAGE/mvpn-mgmt" "$DIR/mvpn-mgmt"
         install -o root -g wheel -m 644 "$STAGE/VERSION" "$DIR/VERSION"
         install -d -o root -g wheel -m 755 \(MvpnClient.logDir)
         install -d -o root -g wheel -m 700 /var/run/macvpn
@@ -199,7 +200,7 @@ public enum RootInstaller {
           /bin/rm -f "$PPP_OPTIONS"
         fi
         /bin/rm -f /etc/sudoers.d/macvpn
-        /bin/rm -rf \(dir) /var/run/macvpn \(MvpnClient.logDir)
+        /bin/rm -rf \(dir) /var/run/macvpn \(AuthUIState.directory()) \(MvpnClient.logDir)
 
         """
     }

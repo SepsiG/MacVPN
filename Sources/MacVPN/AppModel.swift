@@ -32,6 +32,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     /// A megnyitott, még nem telepített natív profilok (ideiglenes fájlok).
     let stagedProfiles = StagedProfiles()
     @Published var installError: String?
+    /// MFA: kódbekérő és webes megerősítés (spec 10f).
+    let prompts = AuthPromptPresenter()
 
     /// Aktív (vagy folyamatban lévő) kapcsolat mellett 3 mp, egyébként 30 mp.
     static let activePollInterval: TimeInterval = 3
@@ -60,7 +62,8 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         // SMAppService elöl; ad-hoc aláírt buildnél (.notFound / register hiba) per-user LaunchAgent a tartalék.
         self.loginItem = LoginItemController(service: FallbackLoginItemService(primary: SMAppServiceLoginItem()))
         self.manager = ConnectionManager(store: store, secrets: secrets,
-                                         mvpn: mvpn, native: NativeVPNController(runner: quickRunner, driver: SystemConfigurationDriver()))
+                                         mvpn: mvpn, native: NativeVPNController(runner: quickRunner, driver: SystemConfigurationDriver()),
+                                         rankingStore: ConnectionRankingStore(), systemOTPStore: SystemOTPStore())
         super.init()
         manager.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
         brew.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &cancellables)
@@ -71,6 +74,15 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             Task { await self?.checkSetup() }
         }.store(in: &cancellables)
         manager.onEvent = { [weak self] event in self?.notify(event) }
+        manager.promptHandler = { [weak self] prompt in
+            guard let self else { return .cancelled }
+            return await self.prompts.present(prompt)
+        }
+        manager.dismissPrompt = { [weak self] key in self?.prompts.dismiss(key) }
+        prompts.onShow = { [weak self] prompt in self?.notifyAuthNeeded(prompt) }
+        prompts.onClose = { key in
+            UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [Self.authNotificationID(key)])
+        }
         manager.onNativeServicesSeen = { [weak self] ids in self?.stagedProfiles.servicesSeen(ids) }
         // Az előző futásból maradt ideiglenes profilok, és a régi verziók által a kapcsolat-könyvtárba írt
         // profile.mobileconfig (benne jelszó és PSK) törlése.
@@ -116,6 +128,10 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     var menuBarSymbol: String {
+        // Hitelesítésre vár (kód vagy webes bejelentkezés): a menüsor ikonja is jelzi.
+        if manager.states.values.contains(where: { if case .awaitingAuth = $0 { return true } else { return false } }) {
+            return "key.fill"
+        }
         if manager.hasFailure || manager.statusError != nil { return "exclamationmark.shield.fill" }
         if manager.hasActive { return "checkmark.shield.fill" }
         return "shield"
@@ -196,7 +212,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         After you enter an admin password, these are deleted:
         • /usr/local/libexec/macvpn (root scripts)
         • /etc/sudoers.d/macvpn (sudoers rule)
-        • /var/run/macvpn (runtime data)
+        • /var/run/macvpn, /var/run/macvpn-ui (runtime data)
         • /var/log/macvpn (connection logs)
 
         Active connections are disconnected first. Homebrew packages are kept.
@@ -373,7 +389,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
             case .connected, .failed, .disconnected:
                 collector.stop()
                 return
-            case .connecting, .disconnecting:
+            case .connecting, .disconnecting, .awaitingAuth:
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
@@ -540,7 +556,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     /// direktívák halmaza: a config minden kockázatos direktívájának benne kell lennie, és pontosan a config kockázatos
     /// halmaza tárolódik (egy később hozzáadott kockázatos direktíva újra tudomásulvételt kér).
     func saveText(_ c: Connection, name: String, config: String, secrets newSecrets: Secrets,
-                  acknowledgedRisky: Set<String> = []) -> [ValidationIssue] {
+                  acknowledgedRisky: Set<String> = [], otp: OTPSetting? = nil) -> [ValidationIssue] {
         var issues: [ValidationIssue]
         var riskyNames: [String] = []
         if c.kind == .openvpn {
@@ -559,6 +575,7 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
         var updated = c
         updated.name = name
         updated.acknowledgedRiskyDirectives = riskyNames
+        if let otp { updated.otp = otp }
         do { try store.save(updated, config: config) } catch {
             return [ValidationIssue(line: 0, message: error.localizedDescription)]
         }
@@ -568,22 +585,33 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     /// Az SSTP űrlap mentése: a config szerializálva és validálva, a jelszó a Keychainbe. Hibák listája; üres = mentve.
-    func saveSSTP(_ c: Connection, name: String, config: SSTPConfig, password: String) -> [ValidationIssue] {
+    func saveSSTP(_ c: Connection, name: String, config: SSTPConfig, password: String, otp: OTPSetting) -> [ValidationIssue] {
         guard SSTPConfig.isAcceptablePassword(password) else {
             return [ValidationIssue(line: 0, message: SSTPConfig.passwordRuleMessage)]
         }
-        return saveText(c, name: name, config: config.serialized(), secrets: Secrets(password: password))
+        return saveText(c, name: name, config: config.serialized(), secrets: Secrets(password: password), otp: otp)
+    }
+
+    /// Csak a „kód a jelszó végén” beállítás változott: a `meta.json` mentése (natív kapcsolatnál profil-újratelepítés nélkül).
+    func saveOTP(_ c: Connection, otp: OTPSetting) -> String? {
+        var updated = manager.connections.first { $0.id == c.id } ?? c
+        updated.otp = otp
+        do { try store.save(updated, config: nil) } catch { return error.localizedDescription }
+        manager.reload()
+        return nil
     }
 
     /// Natív mentés: a profil (jelszó nélkül, PSK-val) egy friss, privát ideiglenes könyvtárba kerül, onnan nyílik meg,
     /// és törlődik, amint a szolgáltatás megjelenik a `scutil --nc list`-ben (legkésőbb a következő induláskor).
-    func saveNative(_ c: Connection, name: String, settings: NativeSettings, password: String, psk: String) -> String? {
+    func saveNative(_ c: Connection, name: String, settings: NativeSettings, password: String, psk: String,
+                    otp: OTPSetting) -> String? {
         guard !settings.server.isEmpty, !settings.account.isEmpty else { return String(localized: "Server and account name are required") }
         if let error = Secrets(username: settings.account, password: password, psk: psk).inputError { return error }
         var updated = c
         updated.name = name
         updated.native = settings
         updated.nativeServiceName = name
+        updated.otp = otp
         let serviceExisted = manager.installedNativeIDs.contains(c.id)
         do {
             let data = try MobileconfigGenerator.generate(connection: updated, psk: psk)
@@ -609,17 +637,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
 
     /// A rendszer VPN-hez a MacVPN kulcskarikájában tárolt PSK / jelszó (csak L2TP / Cisco IPsec, UUID azonosítóval).
     /// Üres mező törli a bejegyzést. nil: mentve; egyébként a hiba (vezérlőkarakter, más típus, nem UUID azonosító).
-    func saveSystemSecrets(_ s: SystemVPNService, psk: String, password: String) -> String? {
+    func saveSystemSecrets(_ s: SystemVPNService, psk: String, password: String, otp: OTPSetting) -> String? {
         guard s.supportsStoredSecrets, let id = s.secretID else { return String(localized: "The editor is no longer available") }
         if let error = Secrets(password: password, psk: psk).inputError { return error }
         secrets.set(psk, for: id, field: .psk)
         secrets.set(password, for: id, field: .password)
+        manager.setSystemOTP(otp, for: s.id)
         return nil
     }
 
     func forgetSystemSecrets(_ s: SystemVPNService) {
         guard let id = s.secretID else { return }
         secrets.deleteAll(for: id)
+        manager.setSystemOTP(OTPSetting(), for: s.id)
         setUnsaved(id, dirty: false)
     }
 
@@ -642,6 +672,19 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     }
 
     // MARK: Értesítések
+
+    static func authNotificationID(_ key: String) -> String { "auth-" + key }
+
+    /// MFA kérés: értesítés (a kérés ablaka nem lopja el a fókuszt). Kattintásra a kérés ablaka kerül fókuszba.
+    private func notifyAuthNeeded(_ prompt: AuthPrompt) {
+        guard Bundle.main.bundleIdentifier != nil else { return }
+        let content = UNMutableNotificationContent()
+        content.title = String(localized: "\(prompt.connectionName): authentication needed")
+        content.body = String(localized: "Click to enter the code or to sign in.")
+        content.userInfo = ["authPrompt": prompt.connectionID]
+        UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: Self.authNotificationID(prompt.connectionID),
+                                                                     content: content, trigger: nil))
+    }
 
     private func notify(_ event: ConnectionEvent) {
         guard Bundle.main.bundleIdentifier != nil else { return }
@@ -666,7 +709,13 @@ final class AppModel: NSObject, ObservableObject, UNUserNotificationCenterDelega
     nonisolated func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse,
                                             withCompletionHandler completionHandler: @escaping () -> Void) {
         let id = response.notification.request.content.userInfo["connectionID"] as? String
+        let authKey = response.notification.request.content.userInfo["authPrompt"] as? String
         Task { @MainActor in
+            if let authKey {
+                self.prompts.focus(authKey)
+                completionHandler()
+                return
+            }
             if let id, let uuid = UUID(uuidString: id), self.manager.connections.contains(where: { $0.id == uuid }) {
                 self.logTabRequest = uuid
             }

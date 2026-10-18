@@ -6,6 +6,27 @@ public enum ConnectionEvent: Equatable, Sendable {
     case dropped(connectionID: String, name: String)
 }
 
+/// A menü és a Kapcsolatok ablak egy sora: managed kapcsolat vagy (nem az app által kezelt) rendszer-VPN.
+public enum ConnectionItem: Identifiable, Equatable, Sendable {
+    case managed(Connection)
+    case system(SystemVPNService)
+
+    /// A `ConnectionManager.states` és a `ConnectionRanking` kulcsa.
+    public var id: String {
+        switch self {
+        case .managed(let c): return c.id.uuidString
+        case .system(let s): return s.id
+        }
+    }
+
+    public var name: String {
+        switch self {
+        case .managed(let c): return c.name
+        case .system(let s): return s.name
+        }
+    }
+}
+
 @MainActor
 public final class ConnectionManager: ObservableObject {
     @Published public private(set) var connections: [Connection] = []
@@ -22,11 +43,32 @@ public final class ConnectionManager: ObservableObject {
     public private(set) var installedNativeIDs: Set<UUID> = []
     /// Tesztekhez injektálható óra.
     public var now: () -> Date = Date.init
+    /// Kitűzések és használati pontszámok (spec 10e). Csak a manager metódusai módosítják, és mentik.
+    @Published public private(set) var ranking: ConnectionRanking
+    let rankingStore: ConnectionRankingStore?
 
     public let store: ConnectionStore
     public let secrets: SecretStore
     let mvpn: MvpnClient
     let native: NativeVPNController
+
+    // MARK: MFA (spec 10f)
+
+    /// A felület kódbekérője / webes megerősítője. Nil (nincs felület): minden kérés megszakítottnak számít.
+    public var promptHandler: ((AuthPrompt) async -> AuthPromptResult)?
+    /// A kapcsolat nyitott kérésének bezárása (bontáskor, vagy ha a csatlakozás közben véget ért).
+    public var dismissPrompt: ((String) -> Void)?
+    /// A közvetítő állapotfájljának olvasója (`/var/run/macvpn-ui/<id>.json`); tesztekhez injektálható.
+    public var authStateReader: (UUID) -> AuthUIState? = { AuthUIStateReader.read(id: $0) }
+    /// Az állapotfájl figyelése `mvpn up` (OpenVPN) közben.
+    public var authPollInterval: TimeInterval = 0.5
+    /// A rendszer-VPN-ek „kód a jelszó végén” beállítása (szolgáltatás-ID szerint).
+    @Published public private(set) var systemOTP: [String: OTPSetting]
+    let systemOTPStore: SystemOTPStore?
+    private var authWaits: [String: AuthWait] = [:]
+    private var authWatchers: [String: (id: UUID, task: Task<Void, Never>)] = [:]
+    /// A kérés lejárt (2 perc / a szerver határideje): a hiba szövege ezt mondja.
+    private var authTimedOut: Set<String> = []
 
     private enum Op {
         case connecting
@@ -53,17 +95,85 @@ public final class ConnectionManager: ObservableObject {
     private var failureStreak = 0
     /// `scutil --nc show` eredménye szolgáltatásonként (a kötéshez). A `reload` üríti.
     private var remoteAddresses: [String: String?] = [:]
+    /// A felhasználó által indított, még `connected`-et nem ért csatlakozások kulcsai. Az első átmenet
+    /// `.connected`-be 1 pont (`ranking.recordSuccess`), és a kulcs kikerül: a további refresh-ek, a nem a
+    /// felhasználó által indított (pl. a rendszer vagy más app általi) csatlakozások nem számítanak.
+    private var awaitingSuccess: Set<String> = []
+    /// Volt sikeres `reload`: addig a kapcsolatlista üres, ezért a sorrend bejegyzései nem törölhetők.
+    private var loaded = false
 
-    public init(store: ConnectionStore, secrets: SecretStore, mvpn: MvpnClient, native: NativeVPNController) {
+    public init(store: ConnectionStore, secrets: SecretStore, mvpn: MvpnClient, native: NativeVPNController,
+                rankingStore: ConnectionRankingStore? = nil, systemOTPStore: SystemOTPStore? = nil) {
         self.store = store
         self.secrets = secrets
         self.mvpn = mvpn
         self.native = native
+        self.rankingStore = rankingStore
+        self.ranking = rankingStore?.load() ?? ConnectionRanking()
+        self.systemOTPStore = systemOTPStore
+        self.systemOTP = systemOTPStore?.load() ?? [:]
     }
 
     public func reload() {
-        if let list = try? store.list() { connections = list }
+        if let list = try? store.list() {
+            connections = list
+            loaded = true
+        }
         remoteAddresses = [:]
+    }
+
+    // MARK: - Sorrend (kitűzés, használat)
+
+    /// A managed kapcsolatok és a rendszer-VPN-ek egy listában, a `ranking` szerinti sorrendben.
+    public var orderedItems: [ConnectionItem] {
+        let items = connections.map(ConnectionItem.managed) + systemServices.map(ConnectionItem.system)
+        let byID = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return ranking.order(ids: items.map(\.id), now: now(), name: { byID[$0]?.name ?? "" })
+            .compactMap { byID[$0] }
+    }
+
+    public var pinnedItems: [ConnectionItem] { orderedItems.filter { ranking.isPinned($0.id) } }
+    public var unpinnedItems: [ConnectionItem] { orderedItems.filter { !ranking.isPinned($0.id) } }
+
+    public func isPinned(_ id: String) -> Bool { ranking.isPinned(id) }
+
+    public func pin(_ id: String) {
+        ranking.pin(id)
+        saveRanking()
+    }
+
+    public func unpin(_ id: String) {
+        ranking.unpin(id)
+        saveRanking()
+    }
+
+    /// Húzás a kitűzött szakaszban (`List` `onMove`), a `pinnedItems` indexeivel.
+    public func movePinned(fromOffsets source: IndexSet, toOffset destination: Int) {
+        ranking.movePinned(visible: pinnedItems.map(\.id), fromOffsets: source, toOffset: destination)
+        saveRanking()
+    }
+
+    private func saveRanking() {
+        try? rankingStore?.save(ranking)
+    }
+
+    /// A felhasználó által indított csatlakozások kiértékelése a friss állapot alapján (lásd `awaitingSuccess`).
+    private func settleSuccesses() {
+        var changed = false
+        for key in awaitingSuccess {
+            switch states[key] {
+            case .connected?:
+                awaitingSuccess.remove(key)
+                ranking.recordSuccess(id: key, at: now())
+                changed = true
+            case .connecting?, .disconnecting?, .awaitingAuth?:
+                break
+            default:
+                // Hiba vagy bontott állapot folyamatban lévő művelet nélkül: ez a próbálkozás nem sikerült.
+                if ops[key] == nil { awaitingSuccess.remove(key) }
+            }
+        }
+        if changed { saveRanking() }
     }
 
     /// A kapcsolat legfrissebb (kötött azonosítójú) példánya.
@@ -222,7 +332,7 @@ public final class ConnectionManager: ObservableObject {
                 continue
             }
             switch ops[key] {
-            case .connecting?: next[key] = .connecting; continue
+            case .connecting?: next[key] = authWaits[key].map(ConnectionState.awaitingAuth) ?? .connecting; continue
             case .disconnecting?: next[key] = .disconnecting; continue
             default: break
             }
@@ -270,7 +380,7 @@ public final class ConnectionManager: ObservableObject {
                     continue
                 }
                 switch ops[s.id] {
-                case .connecting?: next[s.id] = .connecting; continue
+                case .connecting?: next[s.id] = authWaits[s.id].map(ConnectionState.awaitingAuth) ?? .connecting; continue
                 case .disconnecting?: next[s.id] = .disconnecting; continue
                 default: break
                 }
@@ -283,6 +393,11 @@ public final class ConnectionManager: ObservableObject {
                                      current: s.connectionState, nativeLike: true)
             }
             systemServices = unmanaged
+            // Törölt kapcsolatok és eltűnt rendszer-VPN-ek: csak teljes (sikeres) listázás után.
+            if loaded {
+                let keep = Set(connections.map(\.id.uuidString)).union(unmanaged.map(\.id))
+                if ranking.prune(keeping: keep) { saveRanking() }
+            }
         } else {
             for s in systemServices {
                 if !stale(s.id), case .awaitingNative(let started, _, let sid)? = ops[s.id],
@@ -295,6 +410,7 @@ public final class ConnectionManager: ObservableObject {
             }
         }
         states = next
+        settleSuccesses()
         let events = queuedEvents
         queuedEvents = []
         for event in events { onEvent?(event) }
@@ -341,6 +457,7 @@ public final class ConnectionManager: ObservableObject {
 
     private func failNative(_ key: String, _ name: String, reason: String) -> ConnectionState {
         setOp(key, nil)
+        awaitingSuccess.remove(key)
         queuedEvents.append(.failed(connectionID: key, name: name, reason: reason))
         return .failed(reason)
     }
@@ -351,6 +468,7 @@ public final class ConnectionManager: ObservableObject {
         let c = current(c)
         let key = c.id.uuidString
         wantDown.remove(key)
+        awaitingSuccess.insert(key)
         setOp(key, .connecting)
         states[key] = .connecting
         // Token: csak az a hívás írhatja a kulcsot, amelynek a művelete még a legfrissebb.
@@ -377,8 +495,13 @@ public final class ConnectionManager: ObservableObject {
                     // Nem tudni, melyik a miénk: a jelszót / PSK-t nem adjuk át egy esetleg idegen szolgáltatásnak.
                     throw MvpnError.failed(L10n.tr("More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.", name))
                 }
-                try await native.start(serviceID: service.id, kind: NativeKind(kind: c.kind),
-                                       secrets: secrets.secrets(for: c.id))
+                guard let prepared = try await codeSecrets(key: key, name: c.name, kind: c.kind, config: nil, otp: c.otp,
+                                                           base: secrets.secrets(for: c.id)) else {
+                    abandonConnect(key, name: c.name, token: token)
+                    return
+                }
+                guard keyEpoch[key] == token else { return }
+                try await native.start(serviceID: service.id, kind: NativeKind(kind: c.kind), secrets: prepared)
                 guard keyEpoch[key] == token else {
                     if wantDown.contains(key) {
                         try? await native.stop(serviceID: service.id)
@@ -391,11 +514,27 @@ public final class ConnectionManager: ObservableObject {
                 token = keyEpoch[key]
                 states[key] = .connecting
             } else {
-                if c.kind == .openvpn, let reason = Self.unacknowledgedRiskReason(c, config: try? store.loadConfig(c.id)) {
+                let config = c.kind == .openvpn ? try? store.loadConfig(c.id) : nil
+                if c.kind == .openvpn, let reason = Self.unacknowledgedRiskReason(c, config: config) {
                     throw MvpnError.failed(reason)
                 }
-                try await mvpn.up(kind: c.kind, id: c.id, secrets: secrets.secrets(for: c.id), debug: debug,
-                                  acceptRisky: c.kind == .openvpn ? c.acknowledgedRiskyDirectives : [])
+                // MFA: statikus challenge / „kód a jelszó végén” a csatlakozás előtt; OpenVPN-nél az `up` alatt a közvetítő
+                // állapotfájlját figyeljük (dinamikus challenge, webes hitelesítés).
+                guard let prepared = try await codeSecrets(key: key, name: c.name, kind: c.kind, config: config, otp: c.otp,
+                                                           base: secrets.secrets(for: c.id)) else {
+                    abandonConnect(key, name: c.name, token: token)
+                    return
+                }
+                guard keyEpoch[key] == token else { return }
+                let watch = c.kind == .openvpn ? startAuthWatch(c) : nil
+                do {
+                    try await mvpn.up(kind: c.kind, id: c.id, secrets: prepared, debug: debug,
+                                      acceptRisky: c.kind == .openvpn ? c.acknowledgedRiskyDirectives : [])
+                } catch {
+                    if let watch { stopAuthWatch(key, watch) }
+                    throw error
+                }
+                if let watch { stopAuthWatch(key, watch) }
                 guard keyEpoch[key] == token else {
                     // Közben a felhasználó bontott: a sikeres tunnelt le kell bontani. Újabb connect érintetlen marad.
                     if wantDown.contains(key) {
@@ -410,9 +549,11 @@ public final class ConnectionManager: ObservableObject {
             }
         } catch {
             guard keyEpoch[key] == token else { return }
-            let reason = error.localizedDescription
+            let reason = authTimedOut.remove(key) != nil ? Self.authTimeoutReason : error.localizedDescription
+            setAwaiting(key, nil)
             states[key] = .failed(reason)
             setOp(key, nil)
+            awaitingSuccess.remove(key)
             onEvent?(.failed(connectionID: key, name: c.name, reason: reason))
         }
     }
@@ -430,10 +571,20 @@ public final class ConnectionManager: ObservableObject {
     public func disconnect(_ c: Connection) async {
         let c = current(c)
         let key = c.id.uuidString
+        let wasConnecting: Bool
+        if case .connecting? = ops[key] { wasConnecting = true } else { wasConnecting = false }
         wantDown.insert(key)
+        awaitingSuccess.remove(key)
         setOp(key, .disconnecting)
         let token = keyEpoch[key]
+        authWaits[key] = nil
+        dismissPrompt?(key)
         states[key] = .disconnecting
+        // OpenVPN csatlakozás közben (akár hitelesítésre vár): a közvetítőn át megszakítjuk, így az `up` azonnal
+        // takarít és elengedi a zárat, a `down` nem várakozik rá. Ha nincs futó közvetítő, a hiba nem számít.
+        if c.kind == .openvpn, wasConnecting {
+            try? await mvpn.respond(id: c.id, kind: .cancel)
+        }
         do {
             if c.kind.isNative {
                 switch Self.match(c, in: try await native.list()) {
@@ -461,11 +612,22 @@ public final class ConnectionManager: ObservableObject {
     public func connectSystem(_ s: SystemVPNService) async {
         let key = s.id
         wantDown.remove(key)
+        awaitingSuccess.insert(key)
         setOp(key, .connecting)
         states[key] = .connecting
         let token = keyEpoch[key]
         do {
-            try await native.start(serviceID: s.id, kind: NativeKind(typeLabel: s.typeLabel), secrets: systemSecrets(for: s))
+            var secretsToUse = systemSecrets(for: s)
+            if s.supportsStoredSecrets {
+                guard let prepared = try await codeSecrets(key: key, name: s.name, kind: .l2tp, config: nil,
+                                                           otp: systemOTPSetting(for: s.id), base: secretsToUse) else {
+                    abandonConnect(key, name: s.name, token: token)
+                    return
+                }
+                guard keyEpoch[key] == token else { return }
+                secretsToUse = prepared
+            }
+            try await native.start(serviceID: s.id, kind: NativeKind(typeLabel: s.typeLabel), secrets: secretsToUse)
             guard keyEpoch[key] == token else {
                 if wantDown.contains(key) {
                     try? await native.stop(serviceID: s.id)
@@ -481,18 +643,144 @@ public final class ConnectionManager: ObservableObject {
             let reason = error.localizedDescription
             states[key] = .failed(reason)
             setOp(key, nil)
+            awaitingSuccess.remove(key)
             onEvent?(.failed(connectionID: key, name: s.name, reason: reason))
         }
     }
 
     public func disconnectSystem(_ s: SystemVPNService) async {
         wantDown.insert(s.id)
+        awaitingSuccess.remove(s.id)
         setOp(s.id, .disconnecting)
+        authWaits[s.id] = nil
+        dismissPrompt?(s.id)
         states[s.id] = .disconnecting
         try? await native.stop(serviceID: s.id)
         states[s.id] = .disconnected
         setOp(s.id, nil)
         await refresh()
+    }
+
+    // MARK: - MFA
+
+    static var authTimeoutReason: String { L10n.tr("Authentication was not completed in time") }
+
+    public func systemOTPSetting(for id: String) -> OTPSetting { systemOTP[id] ?? OTPSetting() }
+
+    public func setSystemOTP(_ setting: OTPSetting, for id: String) {
+        systemOTP[id] = setting.enabled ? setting : nil
+        try? systemOTPStore?.save(systemOTP)
+    }
+
+    /// A kapcsolat „hitelesítésre vár” állapota (nil: vissza `connecting`-be).
+    private func setAwaiting(_ key: String, _ wait: AuthWait?) {
+        authWaits[key] = wait
+        if let wait {
+            states[key] = .awaitingAuth(wait)
+        } else if case .awaitingAuth? = states[key] {
+            states[key] = .connecting
+        }
+    }
+
+    /// Kérés a felület felé; közben a kapcsolat „hitelesítésre vár”. Webes megnyitás után az is marad, amíg az `up` tart.
+    private func ask(_ key: String, _ name: String, _ kind: AuthPrompt.Kind, deadline: PromptDeadline) async -> AuthPromptResult {
+        guard let promptHandler else { return .cancelled }
+        let waitKind: AuthWait.Kind
+        if case .webAuth = kind { waitKind = .web } else { waitKind = .code }
+        setAwaiting(key, AuthWait(kind: waitKind, deadline: deadline.end))
+        let result = await promptHandler(AuthPrompt(connectionID: key, connectionName: name, kind: kind, deadline: deadline))
+        if waitKind == .code || result != .openedURL { setAwaiting(key, nil) }
+        if result == .timedOut { authTimedOut.insert(key) }
+        return result
+    }
+
+    /// Csatlakozás előtti kódkérés: OpenVPN statikus challenge (a config `static-challenge` sora szerint, SCRV1 vagy
+    /// concat), egyébként a „kód a jelszó végén” beállítás. A kód csak a visszaadott `Secrets`-ben él (stdin, illetve a
+    /// `SCNetworkConnection` opciói), nem tárolódik. nil: a felhasználó megszakította, vagy lejárt.
+    func codeSecrets(key: String, name: String, kind: VPNKind, config: String?, otp: OTPSetting,
+                     base: Secrets) async throws -> Secrets? {
+        if kind == .openvpn, let config, let challenge = MFA.staticChallenge(in: config) {
+            let result = await ask(key, name, .code(text: challenge.text, echo: challenge.echo, fromServer: false), deadline: PromptDeadline(start: now()))
+            guard case .code(let code) = result else { return nil }
+            return try MFA.applyStaticChallenge(challenge, code: code, to: base)
+        }
+        guard otp.enabled, kind != .wireguard else { return base }
+        let text = L10n.tr("Enter the one-time code. MacVPN appends it to the password for this connection.")
+        let result = await ask(key, name, .code(text: text, echo: true, fromServer: false), deadline: PromptDeadline(start: now()))
+        guard case .code(let code) = result else { return nil }
+        return try MFA.applyCode(code, separator: otp.separator, to: base, kind: kind)
+    }
+
+    /// A kódkérés megszakadt vagy lejárt: nincs csatlakozás. Megszakításnál `disconnected`, lejáratnál hiba.
+    private func abandonConnect(_ key: String, name: String, token: Int?) {
+        guard keyEpoch[key] == token else { return }
+        setAwaiting(key, nil)
+        setOp(key, nil)
+        awaitingSuccess.remove(key)
+        if authTimedOut.remove(key) != nil {
+            states[key] = .failed(Self.authTimeoutReason)
+            onEvent?(.failed(connectionID: key, name: name, reason: Self.authTimeoutReason))
+        } else {
+            states[key] = .disconnected
+        }
+    }
+
+    /// Az állapotfájl figyelése az OpenVPN `up` alatt. A visszaadott azonosítóval állítható le (egy újabb csatlakozás
+    /// figyelőjét egy késve végző `up` nem állíthatja le).
+    private func startAuthWatch(_ c: Connection) -> UUID {
+        let key = c.id.uuidString
+        authWatchers[key]?.task.cancel()
+        let id = UUID()
+        authWatchers[key] = (id, Task { [weak self] in await self?.watchAuth(c) })
+        return id
+    }
+
+    private func stopAuthWatch(_ key: String, _ id: UUID) {
+        guard authWatchers[key]?.id == id else { return }
+        authWatchers.removeValue(forKey: key)?.task.cancel()
+        dismissPrompt?(key)
+        setAwaiting(key, nil)
+    }
+
+    private func watchAuth(_ c: Connection) async {
+        var handled = -1
+        while !Task.isCancelled {
+            if let state = authStateReader(c.id), state.seq != handled {
+                handled = state.seq
+                await handleAuthState(state, c)
+            }
+            try? await Task.sleep(nanoseconds: UInt64(max(0.05, authPollInterval) * 1_000_000_000))
+        }
+    }
+
+    /// A közvetítő egy új állapota: kódbekérés (CRV1, CR_TEXT, statikus tartalék), webes hitelesítés, várakozás.
+    func handleAuthState(_ state: AuthUIState, _ c: Connection) async {
+        let key = c.id.uuidString
+        // Lejárt határidejű állapot (pl. egy összeomlott korábbi futás maradéka, amit a `mvpn up` még nem törölt): kihagyjuk,
+        // különben az azonnal lejáró kérés megszakítaná az új csatlakozást.
+        if let deadline = state.deadlineDate, deadline <= now() { return }
+        switch state.state {
+        case .challenge:
+            let deadline = PromptDeadline(start: now(), until: state.deadlineDate, maximum: MFA.codePromptTimeout)
+            let text = (state.text ?? "").isEmpty ? L10n.tr("The server asks for a code.") : (state.text ?? "")
+            let result = await ask(key, c.name, .code(text: text, echo: state.echo ?? false, fromServer: true), deadline: deadline)
+            guard !Task.isCancelled else { return }
+            if case .code(let code) = result {
+                try? await mvpn.respond(id: c.id, kind: state.method == .static ? .static : .crv1, response: code)
+            } else {
+                try? await mvpn.respond(id: c.id, kind: .cancel)
+            }
+        case .webauth:
+            guard let url = state.url.flatMap(WebAuthURL.validate) else { return }
+            let deadline = PromptDeadline(start: now(), until: state.deadlineDate, maximum: MFA.webAuthTimeout)
+            let result = await ask(key, c.name, .webAuth(url: url), deadline: deadline)
+            guard !Task.isCancelled else { return }
+            try? await mvpn.respond(id: c.id, kind: result == .openedURL ? .webauthAck : .cancel)
+        case .pending:
+            setAwaiting(key, AuthWait(kind: .web, deadline: state.deadlineDate))
+        case .failed, .cancelled, .done:
+            break
+        }
     }
 
     /// Aktív managed kapcsolatok bontása (kilépéskor).

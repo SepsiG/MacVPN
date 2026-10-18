@@ -83,7 +83,7 @@ MacVPN does not start automatically by default. To start it every time you log i
 
 You add connections in the **Connections** window. To open it, use the menu: **Manage Connections…** or **New Connection / Import…**.
 
-- The list is on the left. **My Connections** are the ones created in MacVPN. **System VPNs** are VPNs configured elsewhere in macOS. You can only start and stop those. For L2TP and Cisco IPsec system VPNs you can also store the shared secret in MacVPN (see [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco)).
+- The list is on the left: the connections created in MacVPN and the **system VPNs** (VPNs configured elsewhere in macOS, marked **System VPN** under their name) in one list, pinned ones on top under **Pinned** (see [5.1](#51-order-of-connections)). You can only start and stop system VPNs. For L2TP and Cisco IPsec system VPNs you can also store the shared secret in MacVPN (see [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco)).
 - From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec) or **Import from File…**.
 - The selected connection has two tabs on the right: **Settings** and **Log**.
 
@@ -179,13 +179,13 @@ You must approve the profile again after every change. When you delete a connect
 
 The profile file is written to a private temporary folder (only you can read it), not next to your connections. MacVPN deletes it once the VPN shows up in macOS, or at the latest the next time MacVPN starts. If you approve the profile later than that, click **Save and Install Profile** again. Older MacVPN versions kept a `profile.mobileconfig` (with the password) in the connection's folder; MacVPN deletes these when it starts.
 
-**Matching the macOS service.** Once the profile is installed, MacVPN remembers the ID of that macOS VPN service (a service with the same name and server address) and from then on connects, disconnects and shows the status by ID. A different VPN that happens to have the same name then appears under **System VPNs**. If MacVPN cannot tell which of several same-named services is its own, it does not connect (and does not pass the password) and shows: **More than one VPN service is named "<name>"…**. Rename or remove the other one in **System Settings → Network**.
+**Matching the macOS service.** Once the profile is installed, MacVPN remembers the ID of that macOS VPN service (a service with the same name and server address) and from then on connects, disconnects and shows the status by ID. A different VPN that happens to have the same name then appears in the list as a system VPN (marked **System VPN**). If MacVPN cannot tell which of several same-named services is its own, it does not connect (and does not pass the password) and shows: **More than one VPN service is named "<name>"…**. Rename or remove the other one in **System Settings → Network**.
 
 The **account name** is saved in the connection's settings file (`meta.json`) in plain text: it is not a secret. The password and the PSK are in the Keychain.
 
 ### 3.5 System VPNs: shared secret for L2TP / Cisco
 
-A VPN set up in System Settings (for example **Office L2TP**) appears under **System VPNs**. MacVPN does not change its settings. Sometimes macOS cannot read the shared secret of such a VPN when it is started from another app: the connection does not come up, and macOS may show a "server not reachable" message, although connecting from System Settings works.
+A VPN set up in System Settings (for example **Office L2TP**) appears in the list marked **System VPN**. MacVPN does not change its settings. Sometimes macOS cannot read the shared secret of such a VPN when it is started from another app: the connection does not come up, and macOS may show a "server not reachable" message, although connecting from System Settings works.
 
 For L2TP and Cisco IPsec system VPNs, the detail view has two fields:
 
@@ -267,12 +267,37 @@ A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` b
   - **green dot:** connected (with the IP address and the elapsed time)
   - **spinner:** connecting or disconnecting
   - **red dot:** error (with a short reason)
+  - **key icon:** waiting for authentication: a one-time code or a sign-in in the browser (see [section 5.2](#52-multi-factor-authentication-mfa))
   - **empty circle:** not connected
 - **From the Connections window:** the **Connect** / **Disconnect** button.
 - Several connections can be active at the same time.
 - If a tool is missing for a type, the connection is greyed out and shows **Missing tool**. Check the **System Status** window.
 - When a connection fails, a macOS notification appears ("…: connection failed", with the text **Open MacVPN for details**). The notification does not contain the error message itself, because notifications can be seen on the lock screen; the full reason is shown in MacVPN. Clicking it opens the connection's **Log** tab. You also get a notification if a live connection drops unexpectedly. There is no automatic reconnect.
 - **On quit**, if a connection is active, the app asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**. MacVPN recognizes connections that kept running on its next launch.
+
+### 5.1 Order of connections
+
+The menu and the list in the **Connections** window use the same order. Connections created in MacVPN and system VPNs are ranked together.
+
+- **Pinned connections come first**, in your order. To pin one, right-click it in the **Connections** window and choose **Pin to Top**; to remove it from the top, choose **Unpin**. Drag the pinned connections in the **Pinned** section to change their order. Pinned connections have a small pin icon, in the menu too.
+- **The others follow, most used first.** Every successful connect that you start in MacVPN adds 1 point. The points lose half of their value every 14 days, so a connection you used a lot last month falls behind one you use now. Only the moment the connection comes up counts: status checks while it stays up, and connections started outside MacVPN (for example in System Settings) do not. Connections with equal points (for example, new ones with no points) are listed by name.
+- The order is stored on this Mac in `~/Library/Application Support/MacVPN/connection-order.json`. It contains no secrets, and exports do not include it. When you delete a connection, or a system VPN disappears, its entry is removed.
+
+### 5.2 Multi-factor authentication (MFA)
+
+MacVPN handles one-time codes (OTP, TOTP, token PIN) and sign-in in the browser (SAML / SSO, push approval). A code is never stored and never written to the log.
+
+**The code window.** When a code is needed, a small window opens with the connection's name, the question from the server (or from the config), a **Code** field, **Cancel** and **Continue**. The field hides what you type unless the server asks to show it. The window expires after 2 minutes, and the connection then fails with **Authentication was not completed in time**. While MacVPN waits, the menu row shows **Waiting for authentication** and the menu bar icon becomes a key. The window does not take the keyboard away from the app you are using: you also get a notification ("…: authentication needed"); click the notification or the window to type the code. Text from the server is marked **The VPN server says:**. For about a second after it appears, the window ignores input, so a stray keypress cannot answer it. Disconnecting closes the window and stops the attempt.
+
+**OpenVPN: automatic.** Nothing to set up:
+
+- **Static challenge** (`static-challenge "…" 0|1` in the config): MacVPN asks for the code before connecting, with the text from the config, and sends it to the server together with the password (in the SCRV1 format, or simply appended if the config says `concat`).
+- **Challenge sent by the server** (dynamic challenge `CRV1`, or a text challenge): the code window opens during the connection, with the server's text.
+- **Sign-in in the browser** (`OPEN_URL`, `WEB_AUTH`: SAML, SSO, push): MacVPN shows the host of the address (in plain ASCII, lowercase) and the full address, and asks **Open in Browser** (it is not the default button: click it). Only `https://` addresses are opened; any other address is ignored. After you sign in (or approve the push on your phone), the connection comes up. MacVPN waits up to 5 minutes (or the server's shorter limit).
+
+**All types: code appended to the password.** Some servers expect the code typed after the password (for example `password123456` or `password,123456`). In the connection's settings, turn on **Ask for a one-time code at connect and append it to the password** and choose the **Separator**: none, `,` or `:`. It is available for OpenVPN, IKEv2, SSTP, L2TP and Cisco IPsec, and for system VPNs with a password saved in MacVPN (in their window under **Connections**). At connect, MacVPN asks for the code and sends password + separator + code. If no password is saved in MacVPN, the code alone is sent as the password. For SSTP the password with the code must not contain `"`, `\` or control characters. For an OpenVPN config with `static-challenge` the setting is not used, because the static challenge already carries the code.
+
+**How it works (OpenVPN).** MacVPN starts OpenVPN with its management interface on a socket that only root can reach. Only MacVPN's root helper (`mvpn-mgmt`) talks to it, with a fixed list of commands. The helper passes only the question, the `https` address and the state to the app (in `/var/run/macvpn-ui/<id>.json`, readable only by you), and your answer back to OpenVPN.
 
 ---
 
@@ -320,7 +345,7 @@ Message: **Authentication failed (AUTH_FAILED)**. The server rejected the userna
 
 - Check the **Username** and **Password** fields, then press **Save**.
 - If the account has expired or is locked, contact your provider.
-- If the server asks for a one-time code (OTP), MacVPN does not support that yet.
+- If the server asks for a one-time code, see [section 5.2](#52-multi-factor-authentication-mfa) and [section 7.11](#711-one-time-code-and-sign-in-in-the-browser-mfa).
 
 ### 7.2 `TLS handshake failed` / `TLS Error` (OpenVPN)
 
@@ -417,6 +442,17 @@ Message: **Authentication failed (wrong user name or password)**. Typical log li
 - **SSTP needs a password**: the password field is empty. Enter it in the form and save.
 - **sstpc not found (brew install sstp-client)**: install `sstp-client` from the **System Status** window.
 
+### 7.11 One-time code and sign-in in the browser (MFA)
+
+- **Authentication was not completed in time**: no code was entered within 2 minutes, or the sign-in in the browser did not finish within the time limit (at most 5 minutes). Connect again and answer sooner.
+- **Authentication cancelled**: you clicked **Cancel** in the code or browser window, or disconnected.
+- **Authentication failed**: the server rejected the code or the password. Codes expire quickly: use a fresh one. With the code appended to the password, check the **Separator** your provider expects.
+- **No browser window appears**: MacVPN opens only `https://` addresses with a plain ASCII host name (international names only in their `xn--` form, no `%` or `@` before the path). The log then shows `web authentication URL dropped (only https with a plain ASCII host is accepted)`. Ask your provider for such a sign-in address.
+- **The management bridge stopped**: MacVPN's root helper ended unexpectedly while signing in. Connect again; if it repeats, connect in debug mode and check the `[mgmt]` lines.
+- **No connection is waiting for authentication**: the attempt had already ended (time limit or error) before your answer arrived. Connect again.
+- **mvpn-mgmt not found**, or **Incomplete installation** in **System Status**: the root layer is from an older version. Click **Authorize** in **System Status** to update it.
+- The `[mgmt]` lines in the log are the helper's steps (for example `hold released`, `credentials sent`, `dynamic challenge received`). They never contain the code or the password, and for a sign-in address only its host is logged.
+
 ---
 
 ## 8. Updates
@@ -446,7 +482,7 @@ MacVPN looks for new versions on the GitHub Releases page: at launch, then every
 2. The confirmation dialog lists what will be removed:
    - `/usr/local/libexec/macvpn` (root scripts)
    - `/etc/sudoers.d/macvpn` (sudoers rule)
-   - `/var/run/macvpn` (runtime data)
+   - `/var/run/macvpn`, `/var/run/macvpn-ui` (runtime data)
    - `/var/log/macvpn` (connection logs)
 3. If you tick **Also delete user data (connections and Keychain passwords)**, your connections (`~/Library/Application Support/MacVPN`) and their passwords in the Keychain are deleted too, including the shared secrets saved for system VPNs.
 4. Click **Uninstall** and enter the admin password. MacVPN disconnects active connections first.
@@ -478,7 +514,7 @@ If MacVPN created `/etc/ppp/options` for SSTP (it leaves a marker when it does) 
 **Threat model.** MacVPN protects against dangerous *configs*: a downloaded or imported `.ovpn`, WireGuard or IKEv2 file cannot run commands, read or write arbitrary files as root, or fake a successful connection, because the root side checks every setting against an allowlist and decides only from root-only files. It does **not** protect against *programs already running in your user account*. Such a program can, in practice, become root: it can replace the Homebrew VPN tools (which your user can write) and then ask MacVPN's passwordless sudo rule to run them. Treat MacVPN like any tool that grants your account admin-level power, and only use it on a Mac where you are the administrator and trust the software running under your account.
 
 - **Unsigned app.** MacVPN is not signed with an Apple Developer ID and is not notarized. That is why you need the "Open Anyway" step on first launch. Only download it from the official [Releases](https://github.com/SepsiG/MacVPN/releases) page.
-- **Passwords.** Passwords and PSKs are stored in the macOS Keychain (service `local.macvpn.secrets`; items from older versions, stored under `macvpn`, are moved there automatically at launch). Usernames of the text-based types are in the Keychain too; the account name of L2TP / Cisco connections is in the connection's `meta.json` in plain text, as it is not a secret. Passwords and PSKs are masked (`***`) in the log, and exports do not contain them. Keys that are part of a config (WireGuard `PrivateKey`, OpenVPN `<key>` and similar) are only exported if you choose **Export With Keys**. The L2TP / Cisco profile contains the PSK (but not the password) and is deleted from disk once installed. User names, passwords and PSKs cannot contain line breaks or control characters (MacVPN refuses to save them). A saved log is created with `600` permissions. While an OpenVPN connection with a password is up, the username and password are also kept in a root-only file (`/var/run/macvpn/<id>/auth`, permissions `600` in a `700` directory), so OpenVPN can log in again when it reconnects. The file is deleted when you disconnect.
+- **Passwords.** Passwords and PSKs are stored in the macOS Keychain (service `local.macvpn.secrets`; items from older versions, stored under `macvpn`, are moved there automatically at launch). Usernames of the text-based types are in the Keychain too; the account name of L2TP / Cisco connections is in the connection's `meta.json` in plain text, as it is not a secret. Passwords and PSKs are masked (`***`) in the log, and exports do not contain them. Keys that are part of a config (WireGuard `PrivateKey`, OpenVPN `<key>` and similar) are only exported if you choose **Export With Keys**. The L2TP / Cisco profile contains the PSK (but not the password) and is deleted from disk once installed. User names, passwords and PSKs cannot contain line breaks or control characters (MacVPN refuses to save them). A saved log is created with `600` permissions. For OpenVPN, the username and password go to MacVPN's root helper (`mvpn-mgmt`) through a root-only file (permissions `600` in a `700` directory) that the helper deletes right after reading it. The helper keeps them in memory, so OpenVPN can log in again when it reconnects, and hands them to OpenVPN through its root-only management socket. One-time codes are never stored: they exist only in memory while connecting, and are masked in the log.
 - **Root layer integrity.** The installer copies the root scripts to a root-only staging folder and installs them only if their SHA-256 matches what the app computed just before asking for the admin password. It makes `/usr/local/libexec/macvpn` root-owned and not writable by others. If `/usr/local` or `/usr/local/libexec` is not root-owned or is writable by others, it stops with instructions instead of changing them (see [section 7.8](#78-other)). The sudoers rule starts `mvpn` with a clean environment (no `LANG`, `LC_*` or other variables from your session).
 - **Sudoers and Homebrew (known limitation).** To connect, MacVPN uses a sudoers rule to run the `/usr/local/libexec/macvpn/mvpn` script as root without a password, and that script runs the Homebrew tools (`openvpn`, `wg-quick`, `charon`, `sstpc`). The Homebrew directory (`/opt/homebrew`) is writable by your user. Malware running in your user account could replace those programs and gain root that way. Config filtering protects against accidental or imported dangerous settings, not against malware already running in your account. On a single-user Mac that you administer yourself, this is an acceptable risk. If it is not for you, do not enable the root layer, and use only L2TP / Cisco connections.
 - **SSTP password on the command line (known limitation).** The Homebrew `sstpc` computes the SSTP crypto binding keys from the password itself, so it only starts when the password is given on its command line (`--password`). MacVPN passes it there and never writes it into the log (`***`). `sstpc` masks its own command line right after reading it, but for that first moment other local users could see the password with `ps`. On a single-user Mac this is an acceptable risk. If it is not for you, do not use SSTP.

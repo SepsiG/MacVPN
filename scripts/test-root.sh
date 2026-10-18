@@ -5,9 +5,14 @@ cd "$(dirname "$0")/.."
 MVPN="$PWD/Resources/root/mvpn"
 SH=/bin/bash   # a rendszer bash 3.2-vel kell működnie (root alatt ez fut)
 T=$(mktemp -d)
-trap 'rm -rf "$T"' EXIT
+# MFA tesztek: rövid útvonal, mert a unix socket útvonala legfeljebb 104 bájt (a $TMPDIR alatti túl hosszú lenne).
+MR=$(mktemp -d /tmp/mvmfa.XXXXXX)
+trap 'rm -rf "$T" "$MR"' EXIT
 swift build --product mvpn-validate >/dev/null || { echo "mvpn-validate build sikertelen"; exit 1; }
+swift build --product mvpn-mgmt >/dev/null || { echo "mvpn-mgmt build sikertelen"; exit 1; }
 export MVPN_VALIDATOR="$PWD/.build/debug/mvpn-validate"
+export MVPN_MGMT="$PWD/.build/debug/mvpn-mgmt"
+export MVPN_UI_BASE="$T/ui"
 export MVPN_SRC_BASE="$T/src" MVPN_RUN_BASE="$T/run" MVPN_LOG_BASE="$T/log"
 mkdir -p "$T/emptybrew"
 mkdir -p "$MVPN_SRC_BASE"
@@ -179,7 +184,7 @@ OUT=$(printf 'pw=%%s! end\n' | MVPN_MASK_1='%s!' "$SH" "$MVPN" __mask)
 
 # Locale, verzió, charon: statikus ellenőrzések
 grep -q '^export LC_ALL=C' "$MVPN" && grep -q '^export LC_ALL=C' Resources/root/ovpn-dns && ok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben" || nok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben"
-[ "$("$SH" "$MVPN" version)" = 5 ] && [ "$(cat Resources/root/VERSION)" = 5 ] && ok "root verzió: 5" || nok "root verzió: 5"
+[ "$("$SH" "$MVPN" version)" = 6 ] && [ "$(cat Resources/root/VERSION)" = 6 ] && ok "root verzió: 6" || nok "root verzió: 6"
 OUT=$(printf 'Szép ÁRVÍZTŰRŐ\n' | env LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 MVPN_MASK_1=ŰR "$SH" "$MVPN" __mask)
 [ "$OUT" = "Szép ÁRVÍZT***Ő" ] && ok "mask felhasználói locale mellett is bájt-alapú" || nok "mask felhasználói locale mellett is bájt-alapú ($OUT)"
 grep -q 'pgrep -U 0 -x charon' "$MVPN" && ! grep -qE 'p(grep|kill) -x charon' "$MVPN" && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
@@ -444,7 +449,8 @@ DESC="up: openvpn hibával kilép → hiba"; expect_fail upt MVPN_BREW="$OB" "$S
 [ ! -e "$MVPN_RUN_BASE/$UID3" ] && ok "up openvpn hiba: nincs futási könyvtár" || nok "up openvpn hiba: nincs futási könyvtár"
 grep -q "^down $MVPN_RUN_BASE/$UID3\$" "$T/dns-restore.log" && ok "up openvpn hiba: DNS visszaállítva" || { nok "up openvpn hiba: DNS visszaállítva"; cat "$T/dns-restore.log"; }
 
-# Hamis openvpn, ami "felépül": a jelszófájl a down-ig megmarad (600, a futási könyvtár 700).
+# Hamis openvpn, ami "felépül". A felhasználónév és a jelszó a közvetítőn (mvpn-mgmt) át megy: a mgmt-creds fájlt a
+# közvetítő azonnal beolvassa és törli, jelszófájl (auth) nem marad; a kulcsjelszó (askpass) a down-ig megmarad.
 SB2="$T/ovpnok"; mkdir -p "$SB2/bin"
 cat >"$SB2/bin/openvpn" <<'FAKE'
 #!/bin/bash
@@ -456,15 +462,18 @@ chmod 755 "$SB2/bin/openvpn"
 UID4=$(new_conn "$GOOD_OVPN")
 printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yTitok77\n' | upt MVPN_BREW="$SB2" "$SH" "$MVPN" up openvpn "$UID4" >"$T/out" 2>&1 \
   && ok "up openvpn (hamis) sikeres" || { nok "up openvpn (hamis) sikeres"; cat "$T/out"; }
-[ -f "$MVPN_RUN_BASE/$UID4/auth" ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4/auth")" = 600 ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4")" = 700 ] \
-  && ok "auth fájl megmarad a felépülés után (600, könyvtár 700)" || { nok "auth fájl megmarad a felépülés után (600, könyvtár 700)"; ls -la "$MVPN_RUN_BASE/$UID4"; }
-[ "$(sed -n 2p "$MVPN_RUN_BASE/$UID4/auth" 2>/dev/null)" = Sup3rTitok ] && ok "auth fájl tartalma" || nok "auth fájl tartalma"
+for i in 1 2 3 4 5 6 7 8 9 10; do [ -e "$MVPN_RUN_BASE/$UID4/mgmt-creds" ] || break; sleep 0.2; done
+[ ! -e "$MVPN_RUN_BASE/$UID4/auth" ] && [ ! -e "$MVPN_RUN_BASE/$UID4/mgmt-creds" ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4")" = 700 ] \
+  && ok "nincs jelszófájl: a közvetítő beolvasta és törölte a mgmt-creds-et (könyvtár 700)" || { nok "nincs jelszófájl: a közvetítő beolvasta és törölte a mgmt-creds-et (könyvtár 700)"; ls -la "$MVPN_RUN_BASE/$UID4"; }
+ps -p "$(cat "$MVPN_RUN_BASE/$UID4/mgmt.pid" 2>/dev/null)" -o comm= 2>/dev/null | grep -q 'mvpn-mgmt$' && ok "a közvetítő fut a felépülés után" || nok "a közvetítő fut a felépülés után"
+UID4_MGMT=$(cat "$MVPN_RUN_BASE/$UID4/mgmt.pid" 2>/dev/null)
 grep -q 'Sup3rTitok' "$MVPN_LOG_BASE/$UID4.log" && nok "jelszó nem kerül a naplóba (valódi up)" || ok "jelszó nem kerül a naplóba (valódi up)"
 [ -f "$MVPN_RUN_BASE/$UID4/askpass" ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4/askpass")" = 600 ] \
   && [ "$(cat "$MVPN_RUN_BASE/$UID4/askpass")" = K3yTitok77 ] && ok "askpass fájl (600) a felépülés után" || nok "askpass fájl (600) a felépülés után"
 grep -q 'K3yTitok77' "$MVPN_LOG_BASE/$UID4.log" && nok "kulcsjelszó nem kerül a naplóba (valódi up)" || ok "kulcsjelszó nem kerül a naplóba (valódi up)"
 DESC="down a felépült kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$UID4"
-[ ! -e "$MVPN_RUN_BASE/$UID4" ] && ok "down után az auth fájl és a futási könyvtár törölve" || nok "down után az auth fájl és a futási könyvtár törölve"
+[ ! -e "$MVPN_RUN_BASE/$UID4" ] && ok "down után a futási könyvtár törölve" || nok "down után a futási könyvtár törölve"
+ps -p "$UID4_MGMT" -o comm= 2>/dev/null | grep -q 'mvpn-mgmt$' && nok "down után a közvetítő leállt" || ok "down után a közvetítő leállt"
 
 # OpenVPN: a felépülésről/hibáról csak a root-only $RUN/openvpn.log dönt; a felhasználói naplóba injektált sor nem számít.
 DID=$(new_conn "$GOOD_OVPN")
@@ -487,6 +496,16 @@ case "\$FAKE_OVPN_MODE" in
               printf '2026-10-17 00:00:02 ECHO-PULL:msg Initialization Sequence Completed\n' >>"\$L" ;;
   echoauth)   printf '2026-10-17 00:00:00 ECHO:msg AUTH_FAILED\n' >>"\$L"
               ( sleep 2; printf '2026-10-17 00:00:01 Initialization Sequence Completed\n' >>"\$L" ) </dev/null >/dev/null 2>&1 & ;;
+  mgmtlog)    printf '%s\n' "2026-10-17 00:00:00 MANAGEMENT: CMD 'state on'" "2026-10-17 00:00:00 MANAGEMENT: CMD 'hold release'" \
+                "2026-10-17 00:00:01 MANAGEMENT: CMD 'username \"Auth\" bob'" "2026-10-17 00:00:01 MANAGEMENT: CMD 'password [...]'" \
+                "2026-10-17 00:00:02 MANAGEMENT: CMD 'cr-response MTEyMjMz'" \
+                "2026-10-17 00:00:02 us=123456 SENT CONTROL [vpn.example.com]: 'CR_RESPONSE,MTEyMjMz' (status=1)" \
+                "2026-10-17 00:00:02 MANAGEMENT: CMD 'signal SIGUSR1'" "2026-10-17 00:00:02 MANAGEMENT: CMD 'version 3'" \
+                "2026-10-17 00:00:03 Initialization Sequence Completed" >>"\$L" ;;
+  mgmtexit)   printf '%s\n' "2026-10-17 00:00:00 KEEPLINE" "2026-10-17 00:00:01 MANAGEMENT: CMD 'cr-response MTEyMjMz'" >>"\$L"
+              kill \$! ;;
+  temp)       printf '2026-10-17 00:00:00 AUTH: Received control message: AUTH_FAILED,TEMP[backoff 2]:busy\n' >>"\$L"
+              ( sleep 2; printf '2026-10-17 00:00:03 Initialization Sequence Completed\n' >>"\$L" ) </dev/null >/dev/null 2>&1 & ;;
 esac
 exit 0
 FAKE
@@ -519,6 +538,30 @@ OID=$(new_conn "$GOOD_OVPN")
 OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=echoauth "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
 [ "$RC" = 0 ] && ok "openvpn: 'ECHO:msg AUTH_FAILED' nem hitelesítési hiba" || { nok "openvpn: 'ECHO:msg AUTH_FAILED' nem hitelesítési hiba"; echo "$OUT"; }
 DESC="openvpn: down az echoauth kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
+# A management parancsok naplósorai (OpenVPN 2.7: `MANAGEMENT: CMD '…'`, verb >= 4-nél `SENT CONTROL …: 'CR_RESPONSE,…'`)
+# a válaszkódot base64-ben hordozzák: egyik másolási úton sem kerülhetnek a felhasználói naplóba. Csak a state / hold /
+# version parancs sora marad.
+OID=$(new_conn "$GOOD_OVPN")
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=mgmtlog "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+UL="$MVPN_LOG_BASE/$OID.log"
+[ "$RC" = 0 ] && ! grep -q "MTEyMjMz\|CMD 'username\|CMD 'password\|CMD 'signal" "$UL" \
+  && grep -q "CMD 'state on'" "$UL" && grep -q "CMD 'hold release'" "$UL" && grep -q "CMD 'version 3'" "$UL" \
+  && ok "napló: a management parancsok (cr-response, CR_RESPONSE, username) nem kerülnek a felhasználói naplóba" \
+  || { nok "napló: a management parancsok (cr-response, CR_RESPONSE, username) nem kerülnek a felhasználói naplóba"; echo "$OUT"; cat "$UL"; }
+printf '%s\n' "2026-10-17 00:00:09 MANAGEMENT: CMD 'cr-response OTk5OTk5'" "2026-10-17 00:00:09 SENT CONTROL [vpn]: 'CR_RESPONSE,OTk5OTk5' (status=1)" \
+  "2026-10-17 00:00:09 STATUSMARK" >>"$MVPN_RUN_BASE/$OID/openvpn.log"
+"$SH" "$MVPN" status >/dev/null 2>&1
+grep -q STATUSMARK "$UL" && ! grep -q OTk5OTk5 "$UL" && ok "napló: a status-kori átmásolás is szűr" || { nok "napló: a status-kori átmásolás is szűr"; cat "$UL"; }
+DESC="openvpn: down a mgmtlog kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
+OID=$(new_conn "$GOOD_OVPN")
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=mgmtexit "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+[ "$RC" != 0 ] && case "$OUT" in *"openvpn exited: 2026-10-17 00:00:00 KEEPLINE"*) true ;; *) false ;; esac && ! grep -q MTEyMjMz "$MVPN_LOG_BASE/$OID.log" \
+  && ok "napló: az \"openvpn exited\" üzenet sem idéz management parancsot" || { nok "napló: az \"openvpn exited\" üzenet sem idéz management parancsot"; echo "$OUT"; }
+# AUTH_FAILED,TEMP: átmeneti szerverhiba, az OpenVPN újrapróbál (mint a közvetítőben): nem végleges.
+OID=$(new_conn "$GOOD_OVPN")
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=temp "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+[ "$RC" = 0 ] && ok "openvpn: AUTH_FAILED,TEMP nem végleges hiba" || { nok "openvpn: AUTH_FAILED,TEMP nem végleges hiba"; echo "$OUT"; }
+DESC="openvpn: down a temp kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
 # status: csak ECHO sorral a kapcsolat nem "connected".
 EB="$T/echostatus"; mkdir -p "$EB"; "$T/bin/openvpn" 30 & EP=$!
 E1=$(uuidgen); mkdir -p "$EB/$E1"; echo openvpn >"$EB/$E1/kind"; echo "$EP" >"$EB/$E1/pid"; echo utun5 >"$EB/$E1/iface"
@@ -546,6 +589,326 @@ MVPN_TEST_ALLOW_UP=1 MVPN_LIBEXEC="$FL" MVPN_BREW="$HB" "$SH" "$MVPN" up openvpn
 for i in 1 2 3 4 5 6 7 8 9 10; do [ -d "$MVPN_RUN_BASE/$UID6" ] && break; sleep 0.2; done
 sleep 0.5; kill -TERM "$W"; wait "$W"; RC=$?
 [ "$RC" = 143 ] && [ ! -e "$MVPN_RUN_BASE/$UID6" ] && ok "up SIGTERM: 143, nincs futási könyvtár" || { nok "up SIGTERM: 143, nincs futási könyvtár ($RC)"; ls -la "$MVPN_RUN_BASE/$UID6" 2>&1; }
+
+# ---------- MFA: management közvetítő (mvpn-mgmt) ----------
+# Hamis openvpn + hamis management szerver (perl, unix socket a futási könyvtárban): a valódi közvetítő a valódi
+# protokollt beszéli vele. A szerver minden kapott parancsot átiratba ír, így az engedélyezőlista ellenőrizhető.
+# A futási könyvtár itt rövid útvonalon ($MR) van (unix socket: legfeljebb 104 bájt).
+MB="$T/mfabrew"; mkdir -p "$MB/bin"
+cat >"$T/fakemgmt.pl" <<'PL'
+use strict; use warnings;
+use IO::Socket::UNIX; use IO::Select;
+my ($path, $log, $pid, $mode, $tr) = @ARGV;
+$SIG{ALRM} = sub { exit 3 }; alarm 120;
+unlink $path;
+my $srv = IO::Socket::UNIX->new(Type => SOCK_STREAM(), Local => $path, Listen => 1) or die "listen: $!";
+open(my $L, '>>', $log) or die; my $o = select($L); $| = 1; select($o);
+open(my $T, '>>', $tr) or die; $o = select($T); $| = 1; select($o);
+my $c = $srv->accept or die "accept: $!";
+$c->autoflush(1);
+my $sel = IO::Select->new($c);
+sub alive { kill 0, $pid }
+sub wr { print $c "$_[0]\r\n" }
+sub logl { print $L "2026-10-18 12:00:00 $_[0]\n" }
+# A közvetítő következő parancsa (átiratba írva, SUCCESS válasszal). Ha az openvpn (a sleep) leállt: kilépés.
+# sysread + saját puffer (a select és a pufferelt <$c> keverése elnyelné az egy csomagban érkező második sort).
+my $buf = '';
+sub nextline {
+  while (1) {
+    if ($buf =~ s/\A([^\n]*)\n//) { my $l = $1; $l =~ s/\r\z//; print $T "$l\n"; return $l }
+    return undef unless alive();
+    if ($sel->can_read(0.5)) { my $n = sysread($c, $buf, 4096, length $buf); return undef unless $n }
+  }
+}
+sub rd { my $l = nextline(); exit 0 unless defined $l; wr("SUCCESS: ok"); return $l }
+sub expect { my $want = shift; my $l = rd(); die "expected $want, got '$l'" unless $l =~ $want; return $l }
+sub hold { wr(">HOLD:Waiting for hold release:0"); expect(qr/^hold release$/) }
+sub creds { wr(">PASSWORD:Need 'Auth' username/password"); expect(qr/^username "Auth" /); expect(qr/^password "Auth" /) }
+sub done { logl("Initialization Sequence Completed"); wr(">STATE:1760000000,CONNECTED,SUCCESS,10.8.0.2,1.2.3.4,1194,,") }
+wr(">INFO:OpenVPN Management Interface Version 5 -- type 'help' for more info");
+expect(qr/^state on$/);
+# Titkos token és ECHO: a közvetítő nem adhatja tovább, és nem jelenthet felépülést.
+wr(">PASSWORD:Auth-Token:T0kenS3cretXYZ");
+wr(">ECHO:1760000000,Initialization Sequence Completed");
+hold();
+if ($mode eq 'plain') { creds(); done() }
+elsif ($mode eq 'crv1') {
+  creds();
+  logl("AUTH: Received control message: AUTH_FAILED,CRV1:R:st4te-ID:Ym9i:Enter PIN");
+  wr(">PASSWORD:Verification Failed: 'Auth' ['CRV1:R:st4te-ID:Ym9i:Enter PIN']");
+  hold(); creds(); done();
+}
+elsif ($mode eq 'inject') {
+  creds();
+  wr(">INFOMSG:OPEN_URL:javascript:alert(1)");
+  wr(">PASSWORD:Verification Failed: 'Auth' ['CRV1:R:stLONG:Ym9i:" . ('A' x 5000) . "']");
+  wr(">PASSWORD:Verification Failed: 'Auth' ['CRV1:E,R:st2:Ym9i:Enter\x1b[31m PIN\",\"state\":\"done\\n" . ('x' x 300) . "']");
+  wr("\",\"state\":\"done\",\"url\":\"https://evil.example.com\"}");
+  hold(); creds(); done();
+}
+elsif ($mode eq 'web') {
+  creds();
+  wr(">STATE:1760000000,AUTH_PENDING,timeout 30,,,,,");
+  wr(">INFOMSG:OPEN_URL:http://evil.example.com/login");
+  sleep 3;
+  wr(">INFOMSG:WEB_AUTH::https://sso.example.com/auth?session=abc");
+  sleep 3; done();
+}
+elsif ($mode eq 'crtext') {
+  creds(); wr(">INFOMSG:CR_TEXT:R,E:Enter the code from your app");
+  expect(qr/^cr-response [A-Za-z0-9+\/=]+$/); done();
+}
+elsif ($mode eq 'static') {
+  wr(">PASSWORD:Need 'Auth' username/password SC:1,Enter OTP");
+  expect(qr/^username "Auth" /); expect(qr/^password "Auth" /); done();
+}
+elsif ($mode eq 'authfail') {
+  creds(); logl("AUTH: Received control message: AUTH_FAILED");
+  wr(">PASSWORD:Verification Failed: 'Auth'");
+  wr(">HOLD:Waiting for hold release:5");
+  wr(">PASSWORD:Need 'Auth' username/password");
+  rd();
+}
+elsif ($mode eq 'cancel') {
+  creds(); wr(">PASSWORD:Verification Failed: 'Auth' ['CRV1:R:st:Ym9i:Enter PIN']"); hold();
+  wr(">PASSWORD:Need 'Auth' username/password"); rd();
+}
+elsif ($mode eq 'webloop') {
+  creds();
+  while (alive()) { wr(">INFOMSG:WEB_AUTH::https://sso.example.com/again"); sleep 1 }
+}
+elsif ($mode eq 'postconnect') { creds(); done(); sleep 1; wr(">INFOMSG:CR_TEXT:R:Enter the code again") }
+elsif ($mode eq 'wait') { creds(); wr(">STATE:1760000000,AUTH_PENDING,timeout 120,,,,,") }
+while (defined(nextline())) { }
+PL
+cat >"$MB/bin/openvpn" <<FAKE
+#!/bin/bash
+printf '%s\n' "\$@" >"$T/mfa-argv"
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    --log-append) L="\$2"; shift ;;
+    --writepid) P="\$2"; shift ;;
+    --management) S="\$2"; shift ;;
+  esac
+  shift
+done
+"$T/bin/openvpn" 120 </dev/null >/dev/null 2>&1 &
+echo \$! >"\$P"
+/usr/bin/perl "$T/fakemgmt.pl" "\$S" "\$L" "\$(cat "\$P")" "\$FAKE_MGMT_MODE" "$T/mgmt-transcript.\$FAKE_MGMT_MODE" </dev/null >>"$T/fakemgmt.err" 2>&1 &
+exit 0
+FAKE
+chmod 755 "$MB/bin/openvpn"
+MUI="$MR/ui"; MRUN="$MR/run"
+mfa_env() { env MVPN_TEST_ALLOW_UP=1 MVPN_TEST_ALLOW_DOWN=1 MVPN_LIBEXEC="$FL" MVPN_BREW="$MB" MVPN_RUN_BASE="$MRUN" MVPN_UI_BASE="$MUI" "$@"; }
+mfa_down() { mfa_env "$SH" "$MVPN" down openvpn "$1" </dev/null >"$T/out" 2>&1; }
+mfa_respond() { printf '%s' "$2" | env MVPN_RUN_BASE="$MRUN" MVPN_UI_BASE="$MUI" "$SH" "$MVPN" respond openvpn "$1" >"$T/out" 2>&1; }
+# ui <id> <mező>: az állapotfájl egy mezője (python json; hibás JSON: kilépés 1).
+ui() { python3 -c 'import json,sys
+d=json.load(open(sys.argv[1]))
+v=d.get(sys.argv[2])
+print("" if v is None else v)' "$MUI/$1.json" "$2" 2>/dev/null; }
+wait_ui() { local i; for i in $(seq 1 100); do [ "$(ui "$1" state)" = "$2" ] && return 0; sleep 0.2; done; return 1; }
+wait_gone() { local i; for i in $(seq 1 25); do [ -e "$1" ] || return 0; sleep 0.2; done; return 1; }
+ALLOWED='^(state on|hold release|username "Auth" ".*"|password "Auth" ".*"|cr-response [A-Za-z0-9+/=]+)$'
+allowlisted() { [ -s "$1" ] && ! grep -vE "$ALLOWED" "$1" >/dev/null; }
+
+# Dry-run: a management opciók a config után, puszta --auth-user-pass, a közvetítő argv-jében nincs titok.
+MD=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=Sup3rTitok\n' | "$SH" "$MVPN" up openvpn "$MD" --dry-run >"$T/mfa-dry.out" 2>&1
+grep -q -- "--verb 3 --management $MVPN_RUN_BASE/$MD.dryrun.[A-Za-z0-9]*/mgmt.sock unix --management-client-user root --management-hold --management-query-passwords --auth-retry interact --setenv IV_SSO openurl,webauth,crtext --auth-user-pass\$" "$T/mfa-dry.out" \
+  && ok "mfa dry-run: management opciók a config után, puszta --auth-user-pass" || { nok "mfa dry-run: management opciók a config után, puszta --auth-user-pass"; cat "$T/mfa-dry.out"; }
+grep -qF -- "mvpn-mgmt --id $MD --run $MVPN_RUN_BASE/$MD.dryrun." "$T/mfa-dry.out" && grep -qF -- "--ui $MVPN_UI_BASE --uid $(id -u) --gid $(id -g)" "$T/mfa-dry.out" \
+  && ok "mfa dry-run: a közvetítő indítása (argv-ben nincs titok)" || { nok "mfa dry-run: a közvetítő indítása (argv-ben nincs titok)"; cat "$T/mfa-dry.out"; }
+grep -q 'Sup3rTitok' "$T/mfa-dry.out" "$MVPN_LOG_BASE/$MD.log" && nok "mfa dry-run: a jelszó nem látszik" || ok "mfa dry-run: a jelszó nem látszik"
+for d in "management /tmp/s unix" "management-hold" "management-query-passwords" "management-client-user root"; do
+  DESC="management a configban tiltott (jelzéssel is): ${d%% *}"
+  expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\n'"$d")" --dry-run --accept-risky "${d%% *}"
+done
+DESC="static-challenge a configban engedett"
+expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nstatic-challenge "Enter OTP" 1')" --dry-run
+DESC="hiányzó mvpn-mgmt → hiba (valódi up)"
+expect_fail mfa_env MVPN_MGMT=/nonexistent FAKE_MGMT_MODE=plain "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")"
+
+# Sima felhasználónév/jelszó a managementen át; hold release; a jelszó-válasz; a UI könyvtár symlink-biztos.
+mkdir -p "$MR/uitarget"; ln -s "$MR/uitarget" "$MUI"
+P1=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=Pl4in"S3c\\ret\n' | mfa_env FAKE_MGMT_MODE=plain "$SH" "$MVPN" up openvpn "$P1" >"$T/out" 2>&1 \
+  && ok "mfa: sima hitelesítés a közvetítőn át" || { nok "mfa: sima hitelesítés a közvetítőn át"; cat "$T/out" "$T/fakemgmt.err"; }
+TR="$T/mgmt-transcript.plain"
+grep -qx 'hold release' "$TR" && ok "mfa: hold release" || { nok "mfa: hold release"; cat "$TR"; }
+grep -qx 'username "Auth" "bob"' "$TR" && grep -qxF 'password "Auth" "Pl4in\"S3c\\ret"' "$TR" \
+  && ok "mfa: username/password \"Auth\" válasz (idézve, escape-elve)" || { nok "mfa: username/password \"Auth\" válasz (idézve, escape-elve)"; cat "$TR"; }
+allowlisted "$TR" && ok "mfa: csak engedélyezőlistás parancsok (sima)" || { nok "mfa: csak engedélyezőlistás parancsok (sima)"; cat "$TR"; }
+[ ! -L "$MUI" ] && [ -d "$MUI" ] && [ "$(stat -f %Lp "$MUI")" = 755 ] && [ -z "$(ls -A "$MR/uitarget")" ] \
+  && ok "mfa: a UI könyvtár symlink helyén valódi 755-ös könyvtár" || { nok "mfa: a UI könyvtár symlink helyén valódi 755-ös könyvtár"; ls -la "$MR"; }
+wait_gone "$MUI/$P1.json" && ok "mfa: felépülés után nincs állapotfájl" || nok "mfa: felépülés után nincs állapotfájl"
+grep -q 'S3c' "$MVPN_LOG_BASE/$P1.log" && nok "mfa: a jelszó nincs a naplóban" || ok "mfa: a jelszó nincs a naplóban"
+grep -q 'T0kenS3cretXYZ' "$MVPN_LOG_BASE/$P1.log" && nok "mfa: az Auth-Token nincs a naplóban" || ok "mfa: az Auth-Token nincs a naplóban"
+grep -q '\[mgmt\] hold released' "$MVPN_LOG_BASE/$P1.log" && grep -q '\[mgmt\] credentials sent' "$MVPN_LOG_BASE/$P1.log" \
+  && ok "mfa: a közvetítő eseményei a naplóban (érték nélkül)" || { nok "mfa: a közvetítő eseményei a naplóban (érték nélkül)"; cat "$MVPN_LOG_BASE/$P1.log"; }
+P1M=$(cat "$MRUN/$P1/mgmt.pid" 2>/dev/null)
+mfa_down "$P1" && ok "mfa: down" || { nok "mfa: down"; cat "$T/out"; }
+[ ! -e "$MRUN/$P1" ] && [ ! -e "$MUI/$P1.json" ] && ! ps -p "$P1M" >/dev/null 2>&1 \
+  && ok "mfa: down után nincs futási könyvtár, állapotfájl és közvetítő" || nok "mfa: down után nincs futási könyvtár, állapotfájl és közvetítő"
+
+# CRV1 (dinamikus challenge): AUTH_FAILED,CRV1 nem hiba; a challenge az állapotfájlba kerül; a válasz a respond-dal.
+C1=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=CrvS3cret\n' | mfa_env FAKE_MGMT_MODE=crv1 "$SH" "$MVPN" up openvpn "$C1" >"$T/c1.out" 2>&1 & W=$!
+if wait_ui "$C1" challenge; then ok "crv1: challenge az állapotfájlban"; else nok "crv1: challenge az állapotfájlban"; cat "$T/c1.out"; fi
+[ "$(ui "$C1" method)" = crv1 ] && [ "$(ui "$C1" text)" = "Enter PIN" ] && [ "$(ui "$C1" echo)" = False ] \
+  && ok "crv1: szöveg és echo" || nok "crv1: szöveg és echo ($(cat "$MUI/$C1.json" 2>/dev/null))"
+[ "$(stat -f '%Lp %Su' "$MUI/$C1.json" 2>/dev/null)" = "600 $(id -un)" ] && ok "crv1: állapotfájl 600, a felhasználóé" || nok "crv1: állapotfájl 600, a felhasználóé"
+mfa_respond "$C1" $'kind=crv1\nresponse=987654\n' && ok "crv1: respond" || { nok "crv1: respond"; cat "$T/out"; }
+wait "$W" && ok "crv1: felépült a válasz után" || { nok "crv1: felépült a válasz után"; cat "$T/c1.out"; }
+TR="$T/mgmt-transcript.crv1"
+grep -qx 'password "Auth" "CRV1::st4te-ID::987654"' "$TR" && [ "$(grep -c '^username "Auth" "bob"$' "$TR")" = 2 ] \
+  && ok "crv1: CRV1::<state>::<válasz> a dekódolt felhasználónévvel" || { nok "crv1: CRV1::<state>::<válasz> a dekódolt felhasználónévvel"; cat "$TR"; }
+[ "$(grep -c '^hold release$' "$TR")" = 2 ] && ok "crv1: hold release az újraindítás után is" || nok "crv1: hold release az újraindítás után is"
+allowlisted "$TR" && ok "crv1: csak engedélyezőlistás parancsok" || { nok "crv1: csak engedélyezőlistás parancsok"; cat "$TR"; }
+grep -q '987654\|CrvS3cret' "$MVPN_LOG_BASE/$C1.log" && nok "crv1: kód és jelszó nincs a naplóban" || ok "crv1: kód és jelszó nincs a naplóban"
+grep -q 'kind: crv1' "$MVPN_LOG_BASE/$C1.log" && ok "crv1: a respond naplózva (érték nélkül)" || nok "crv1: a respond naplózva (érték nélkül)"
+mfa_down "$C1"
+
+# Injektálás a challenge szövegében: túl hosszú sor eldobva, vezérlőkarakter és JSON-szerű szöveg ártalmatlan,
+# a hosszú szöveg csonkolva, a "sortörés utáni" sor (nem > kezdetű) figyelmen kívül, javascript: URL eldobva.
+I1=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=InjS3cret\n' | mfa_env FAKE_MGMT_MODE=inject "$SH" "$MVPN" up openvpn "$I1" >"$T/i1.out" 2>&1 & W=$!
+wait_ui "$I1" challenge
+python3 -c 'import json,sys
+d=json.load(open(sys.argv[1])); t=d["text"]
+assert d["state"]=="challenge" and d.get("url") is None, d
+assert t.startswith("Enter") and len(t)<=201 and all(ord(c)>=32 for c in t), t
+assert "\x1b" not in t and "AAAA" not in t, t' "$MUI/$I1.json" 2>"$T/out" \
+  && ok "injektálás: tisztított, csonkolt szöveg, érvényes JSON, nincs URL" || { nok "injektálás: tisztított, csonkolt szöveg, érvényes JSON, nincs URL"; cat "$T/out" "$MUI/$I1.json"; }
+mfa_respond "$I1" $'kind=crv1\nresponse=111222\n'
+wait "$W" && grep -qx 'password "Auth" "CRV1::st2::111222"' "$T/mgmt-transcript.inject" \
+  && ok "injektálás: a túl hosszú sor eldobva, a válasz a második challenge-re ment" || { nok "injektálás: a túl hosszú sor eldobva, a válasz a második challenge-re ment"; cat "$T/i1.out" "$T/mgmt-transcript.inject"; }
+allowlisted "$T/mgmt-transcript.inject" && ok "injektálás: csak engedélyezőlistás parancsok" || nok "injektálás: csak engedélyezőlistás parancsok"
+mfa_down "$I1"
+
+# Webes hitelesítés: az http URL eldobva (pending, URL nélkül), a https URL megmarad; a naplóba csak a hoszt kerül.
+W1=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=WebS3cret\n' | mfa_env FAKE_MGMT_MODE=web "$SH" "$MVPN" up openvpn "$W1" >"$T/w1.out" 2>&1 & W=$!
+wait_ui "$W1" pending && [ -z "$(ui "$W1" url)" ] && ok "web: http URL eldobva (pending, URL nélkül)" || { nok "web: http URL eldobva (pending, URL nélkül)"; cat "$MUI/$W1.json"; }
+wait_ui "$W1" webauth && [ "$(ui "$W1" url)" = "https://sso.example.com/auth?session=abc" ] && [ -n "$(ui "$W1" deadline)" ] \
+  && ok "web: https URL az állapotfájlban, határidővel" || { nok "web: https URL az állapotfájlban, határidővel"; cat "$MUI/$W1.json"; }
+mfa_respond "$W1" $'kind=webauth-ack\nresponse=\n' && ok "web: webauth-ack" || { nok "web: webauth-ack"; cat "$T/out"; }
+wait "$W" && ok "web: felépült" || { nok "web: felépült"; cat "$T/w1.out"; }
+grep -q 'web authentication requested: sso.example.com' "$MVPN_LOG_BASE/$W1.log" && ! grep -q 'session=abc\|evil.example.com' "$MVPN_LOG_BASE/$W1.log" \
+  && ok "web: a naplóban csak a hoszt" || { nok "web: a naplóban csak a hoszt"; cat "$MVPN_LOG_BASE/$W1.log"; }
+mfa_down "$W1"
+
+# CR_TEXT: a válasz cr-response <base64> formában.
+X1=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=CrtS3cret\n' | mfa_env FAKE_MGMT_MODE=crtext "$SH" "$MVPN" up openvpn "$X1" >"$T/x1.out" 2>&1 & W=$!
+wait_ui "$X1" challenge && [ "$(ui "$X1" method)" = crtext ] && [ "$(ui "$X1" echo)" = True ] \
+  && ok "crtext: challenge (echo)" || nok "crtext: challenge (echo)"
+mfa_respond "$X1" $'kind=crv1\nresponse=112233\n'
+wait "$W" && grep -qx 'cr-response MTEyMjMz' "$T/mgmt-transcript.crtext" && ok "crtext: cr-response base64" || { nok "crtext: cr-response base64"; cat "$T/x1.out" "$T/mgmt-transcript.crtext"; }
+mfa_down "$X1"
+
+# Statikus challenge: az app SCRV1-be csomagolja (challenge=packed), a közvetítő változatlanul adja át; a kód maszkolva.
+S1=$(new_conn "$GOOD_OVPN"$'\nstatic-challenge "Enter OTP" 1')
+SCRV="SCRV1:$(printf StatPass | base64):$(printf 246810 | base64)"
+printf 'username=bob\npassword=%s\notp=246810\nchallenge=packed\n' "$SCRV" | mfa_env FAKE_MGMT_MODE=static "$SH" "$MVPN" up openvpn "$S1" >"$T/out" 2>&1 \
+  && grep -qx "password \"Auth\" \"$SCRV\"" "$T/mgmt-transcript.static" \
+  && ok "static: SCRV1 jelszó változatlanul" || { nok "static: SCRV1 jelszó változatlanul"; cat "$T/out" "$T/mgmt-transcript.static"; }
+[ "$SCRV" = "SCRV1:U3RhdFBhc3M=:MjQ2ODEw" ] && ok "static: SCRV1 formátum" || nok "static: SCRV1 formátum ($SCRV)"
+grep -q '246810\|U3RhdFBhc3M' "$MVPN_LOG_BASE/$S1.log" && nok "static: a kód és a jelszó nincs a naplóban" || ok "static: a kód és a jelszó nincs a naplóban"
+mfa_down "$S1"
+# Tartalék: csomagolatlan jelszó → a közvetítő kéri a kódot (static), és ő csomagol.
+S2=$(new_conn "$GOOD_OVPN")
+: >"$T/mgmt-transcript.static"
+printf 'username=bob\npassword=FallPass\n' | mfa_env FAKE_MGMT_MODE=static "$SH" "$MVPN" up openvpn "$S2" >"$T/s2.out" 2>&1 & W=$!
+wait_ui "$S2" challenge && [ "$(ui "$S2" method)" = static ] && [ "$(ui "$S2" text)" = "Enter OTP" ] && [ "$(ui "$S2" echo)" = True ] \
+  && ok "static tartalék: challenge az állapotfájlban" || nok "static tartalék: challenge az állapotfájlban"
+mfa_respond "$S2" $'kind=static\nresponse=135790\n'
+wait "$W" && grep -qx "password \"Auth\" \"SCRV1:$(printf FallPass | base64):$(printf 135790 | base64)\"" "$T/mgmt-transcript.static" \
+  && ok "static tartalék: a közvetítő SCRV1-be csomagolt" || { nok "static tartalék: a közvetítő SCRV1-be csomagolt"; cat "$T/s2.out" "$T/mgmt-transcript.static"; }
+mfa_down "$S2"
+
+# Végleges hitelesítési hiba: a közvetítő nem küld újra, leállítja az openvpn-t; az up takarít.
+A1=$(new_conn "$GOOD_OVPN")
+OUT=$(printf 'username=bob\npassword=BadS3cret\n' | mfa_env FAKE_MGMT_MODE=authfail "$SH" "$MVPN" up openvpn "$A1" 2>&1); RC=$?
+[ "$RC" != 0 ] && case "$OUT" in *"Authentication failed"*) true ;; *) false ;; esac \
+  && ok "authfail: hiba" || { nok "authfail: hiba"; echo "$OUT"; }
+[ "$(grep -c '^password "Auth"' "$T/mgmt-transcript.authfail")" = 1 ] && allowlisted "$T/mgmt-transcript.authfail" \
+  && ok "authfail: a jelszót nem küldte újra" || { nok "authfail: a jelszót nem küldte újra"; cat "$T/mgmt-transcript.authfail"; }
+[ ! -e "$MRUN/$A1" ] && [ ! -e "$MUI/$A1.json" ] && ! pgrep -f "mvpn-mgmt --id $A1" >/dev/null \
+  && ok "authfail: takarítás (futási könyvtár, állapotfájl, közvetítő)" || nok "authfail: takarítás (futási könyvtár, állapotfájl, közvetítő)"
+
+# Megszakítás a kódbekérőből (kind=cancel): az up "megszakítva" hibával és takarítással ér véget.
+K1=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=CanS3cret\n' | mfa_env FAKE_MGMT_MODE=cancel "$SH" "$MVPN" up openvpn "$K1" >"$T/k1.out" 2>&1 & W=$!
+wait_ui "$K1" challenge
+mfa_respond "$K1" $'kind=cancel\nresponse=\n'
+wait "$W"; RC=$?
+[ "$RC" != 0 ] && grep -q 'Authentication cancelled' "$T/k1.out" && [ ! -e "$MRUN/$K1" ] && [ ! -e "$MUI/$K1.json" ] \
+  && ok "cancel: megszakítva, takarítva" || { nok "cancel: megszakítva, takarítva ($RC)"; cat "$T/k1.out"; }
+pgrep -f "$T/bin/openvpn 120" >/dev/null && nok "mfa: nem maradt futó hamis openvpn" || ok "mfa: nem maradt futó hamis openvpn"
+for f in "$MVPN_LOG_BASE"/*.log "$MUI"/*; do [ -e "$f" ] || continue; cat "$f"; done >"$T/all-mfa"
+grep -q 'S3cret\|S3c\\ret\|987654\|111222\|112233\|246810\|135790\|T0kenS3cretXYZ' "$T/all-mfa" \
+  && nok "mfa: nincs titok vagy kód a naplókban és az állapotfájlokban" || ok "mfa: nincs titok vagy kód a naplókban és az állapotfájlokban"
+
+# mvpn respond validálás (hamis futási könyvtár + "mvpn-mgmt" nevű élő folyamat): csak a négy típus, ≤ 256 bájt,
+# vezérlőkarakter nélkül, legfeljebb két sor; a válaszfájl root (itt: a felhasználó) 0600, atomikus.
+RB="$MR/rrun"; RID=$(uuidgen); mkdir -p "$RB/$RID"; chmod 700 "$RB/$RID"; echo openvpn >"$RB/$RID/kind"
+mkdir -p "$T/mgmtsleep"; ln -s /bin/sleep "$T/mgmtsleep/mvpn-mgmt"; "$T/mgmtsleep/mvpn-mgmt" 60 & FMP=$!
+echo "$FMP" >"$RB/$RID/mgmt.pid"; sleep 0.2
+resp() { printf '%s' "$1" | env MVPN_RUN_BASE="$RB" "$SH" "$MVPN" respond "${2:-openvpn}" "${3:-$RID}" >"$T/out" 2>&1; }
+resp $'kind=crv1\nresponse=123456\n' && [ "$(cat "$RB/$RID/mgmt-resp")" = $'kind=crv1\nresponse=123456' ] && [ "$(stat -f %Lp "$RB/$RID/mgmt-resp")" = 600 ] \
+  && ok "respond: érvényes válasz átadva (0600)" || { nok "respond: érvényes válasz átadva (0600)"; cat "$T/out"; }
+grep -q '123456' "$MVPN_LOG_BASE/$RID.log" && nok "respond: az érték nincs a naplóban" || ok "respond: az érték nincs a naplóban"
+rm -f "$RB/$RID/mgmt-resp"
+resp $'kind=webauth-ack\nresponse=ignored\n' && [ "$(cat "$RB/$RID/mgmt-resp")" = $'kind=webauth-ack\nresponse=' ] \
+  && ok "respond: webauth-ack érték nélkül" || nok "respond: webauth-ack érték nélkül"
+rm -f "$RB/$RID/mgmt-resp"
+LONG=$(printf 'x%.0s' $(seq 1 257))
+for bad in $'kind=password\nresponse=x\n' $'kind=hold\nresponse=release\n' $'kind=raw\nresponse=signal SIGTERM\n' \
+           $'kind=CRV1\nresponse=1\n' $'kind=crv1\nresponse=12\x013\n' $'kind=crv1\nresponse=12\x7f3\n' "kind=crv1"$'\n'"response=$LONG"$'\n' \
+           $'kind=crv1\nresponse=1\nextra=1\n' $'kind=crv1\nresponse=1\nkind=crv1\n' $'response=1\n' '' $'kind=crv1 \nresponse=1\n'; do
+  if resp "$bad" || [ -e "$RB/$RID/mgmt-resp" ]; then nok "respond elutasítja: $(printf '%q' "$bad")"; rm -f "$RB/$RID/mgmt-resp"; else ok "respond elutasítja: $(printf '%q' "$bad" | cut -c1-60)"; fi
+done
+resp $'kind=crv1\nresponse=1\n' wireguard && nok "respond: csak openvpn" || ok "respond: csak openvpn"
+resp $'kind=crv1\nresponse=1\n' openvpn "../../etc" && nok "respond: érvénytelen id" || ok "respond: érvénytelen id"
+resp $'kind=crv1\nresponse=1\n' openvpn "$(uuidgen)" && nok "respond: nincs futó kapcsolat" || ok "respond: nincs futó kapcsolat"
+kill "$FMP" 2>/dev/null; wait "$FMP" 2>/dev/null
+resp $'kind=crv1\nresponse=1\n' && nok "respond: a közvetítő nem fut" || ok "respond: a közvetítő nem fut"
+[ ! -e "$RB/$RID/mgmt-resp" ] && ok "respond: hibás esetekben nincs válaszfájl" || nok "respond: hibás esetekben nincs válaszfájl"
+# A bash 3.2 a here-stringet (<<<) átmeneti fájlba írja: a kód nem mehet így át.
+sed -n '/^do_respond()/,/^}/p' "$MVPN" | grep -q '<<<' && nok "respond: nincs here-string (a kód nem kerül lemezre)" || ok "respond: nincs here-string (a kód nem kerül lemezre)"
+
+# Összesített várakozási korlát: az ismétlődő WEB_AUTH nem nyújtja a határidőt MFA_MAX fölé.
+WL=$(new_conn "$GOOD_OVPN"); START=$(date +%s)
+OUT=$(printf 'username=bob\npassword=LoopS3cret\n' | mfa_env MVPN_MFA_MAX=4 MVPN_UP_TIMEOUT=3 FAKE_MGMT_MODE=webloop "$SH" "$MVPN" up openvpn "$WL" 2>&1); RC=$?
+EL=$(( $(date +%s) - START ))
+[ "$RC" != 0 ] && [ "$EL" -le 20 ] && case "$OUT" in *"Timed out waiting for authentication"*) true ;; *) false ;; esac && [ ! -e "$MRUN/$WL" ] \
+  && ok "mfa: ismétlődő WEB_AUTH mellett is lejár a korlát ($EL mp)" || { nok "mfa: ismétlődő WEB_AUTH mellett is lejár a korlát ($EL mp)"; echo "$OUT"; }
+# Felépülés utáni challenge (újracsatlakozás, nincs figyelő app): a korlát után a közvetítő leállítja az openvpn-t.
+PC=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=PostS3cret\n' | mfa_env MVPN_MFA_MAX=3 FAKE_MGMT_MODE=postconnect "$SH" "$MVPN" up openvpn "$PC" >"$T/out" 2>&1 \
+  && ok "mfa: postconnect felépült" || { nok "mfa: postconnect felépült"; cat "$T/out"; }
+PCP=$(cat "$MRUN/$PC/pid" 2>/dev/null)
+for i in $(seq 1 75); do ps -p "$PCP" >/dev/null 2>&1 || break; sleep 0.2; done
+! ps -p "$PCP" >/dev/null 2>&1 && grep -q "timed out waiting for authentication" "$MVPN_LOG_BASE/$PC.log" \
+  && ok "mfa: felépülés utáni challenge a korlát után leállítja az openvpn-t" || { nok "mfa: felépülés utáni challenge a korlát után leállítja az openvpn-t"; cat "$MVPN_LOG_BASE/$PC.log"; }
+mfa_down "$PC"
+# A közvetítő leáll hitelesítés közben: az up nem vár a végtelenségig, hibával takarít.
+BK=$(new_conn "$GOOD_OVPN")
+printf 'username=bob\npassword=DeadS3cret\n' | mfa_env FAKE_MGMT_MODE=wait "$SH" "$MVPN" up openvpn "$BK" >"$T/bk.out" 2>&1 & W=$!
+wait_ui "$BK" pending
+kill -9 "$(cat "$MRUN/$BK/mgmt.pid")" 2>/dev/null
+wait "$W"; RC=$?
+[ "$RC" != 0 ] && grep -q 'The management bridge stopped' "$T/bk.out" && [ ! -e "$MRUN/$BK" ] \
+  && ok "mfa: leállt közvetítő → hiba és takarítás" || { nok "mfa: leállt közvetítő → hiba és takarítás ($RC)"; cat "$T/bk.out"; }
+# status: élő, még nem felépült openvpn halott közvetítővel → failed; közvetítő nélküli (régebbi réteg) futás → connecting.
+IB="$T/i2run"; mkdir -p "$IB"; "$T/bin/openvpn" 30 & IP=$!
+I2A=$(uuidgen); mkdir -p "$IB/$I2A"; echo openvpn >"$IB/$I2A/kind"; echo "$IP" >"$IB/$I2A/pid"; : >"$IB/$I2A/openvpn.log"; dead_pid >"$IB/$I2A/mgmt.pid"
+I2B=$(uuidgen); mkdir -p "$IB/$I2B"; echo openvpn >"$IB/$I2B/kind"; echo "$IP" >"$IB/$I2B/pid"; : >"$IB/$I2B/openvpn.log"
+SJ=$(MVPN_RUN_BASE="$IB" "$SH" "$MVPN" status)
+python3 -c 'import json,sys; d={x["id"]:x["state"] for x in json.loads(sys.argv[1])}; sys.exit(0 if d[sys.argv[2]]=="failed" and d[sys.argv[3]]=="connecting" else 1)' "$SJ" "$I2A" "$I2B" \
+  && ok "status: halott közvetítő mellett a még nem felépült openvpn failed" || { nok "status: halott közvetítő mellett a még nem felépült openvpn failed"; echo "$SJ"; }
+kill "$IP" 2>/dev/null; wait "$IP" 2>/dev/null
 
 # ---------- SSTP ----------
 # A jelszó a sstpc parancssorába kerül (a brew sstpc csak így indul, lásd mvpn), de a naplóba és a dry-run

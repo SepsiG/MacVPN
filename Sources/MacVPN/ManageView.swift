@@ -16,19 +16,17 @@ struct ManageView: View {
 
     var body: some View {
         NavigationSplitView {
+            // Egy rangsor (spec 10e): a kitűzöttek húzással rendezhetők, a többi a használat szerint.
             List(selection: selection) {
-                Section("My Connections") {
-                    ForEach(manager.connections) { c in
-                        ConnectionLabel(name: c.name, type: c.kind.displayName, state: manager.state(for: c.id.uuidString))
-                            .tag(c.id.uuidString)
+                let pinned = manager.pinnedItems
+                if !pinned.isEmpty {
+                    Section("Pinned") {
+                        ForEach(pinned) { item in row(item) }
+                            .onMove { manager.movePinned(fromOffsets: $0, toOffset: $1) }
                     }
                 }
-                if !manager.systemServices.isEmpty {
-                    Section("System VPNs") {
-                        ForEach(manager.systemServices) { s in
-                            ConnectionLabel(name: s.name, type: s.typeLabel, state: manager.state(for: s.id)).tag(s.id)
-                        }
-                    }
+                Section("Connections") {
+                    ForEach(manager.unpinnedItems) { item in row(item) }
                 }
             }
             .navigationSplitViewColumnWidth(min: 220, ideal: 250)
@@ -106,6 +104,27 @@ struct ManageView: View {
         }
     }
 
+    private func row(_ item: ConnectionItem) -> some View {
+        let pinned = manager.isPinned(item.id)
+        return Group {
+            switch item {
+            case .managed(let c):
+                ConnectionLabel(name: c.name, type: c.kind.displayName, state: manager.state(for: item.id), pinned: pinned)
+            case .system(let s):
+                ConnectionLabel(name: s.name, type: String(localized: "\(s.typeLabel) · System VPN"),
+                                state: manager.state(for: item.id), pinned: pinned)
+            }
+        }
+        .tag(item.id)
+        .contextMenu {
+            if pinned {
+                Button("Unpin") { manager.unpin(item.id) }
+            } else {
+                Button("Pin to Top") { manager.pin(item.id) }
+            }
+        }
+    }
+
     private func proceedPending() {
         switch model.pendingAction {
         case .closeWindow?:
@@ -153,12 +172,16 @@ struct ConnectionLabel: View {
     let name: String
     let type: String
     let state: ConnectionState
+    var pinned = false
 
     var body: some View {
         HStack {
             StatusDot(state: state)
             VStack(alignment: .leading) {
-                Text(name)
+                HStack(spacing: 4) {
+                    Text(name)
+                    if pinned { PinBadge() }
+                }
                 Text(type).font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -196,6 +219,13 @@ struct ConnectionDetailView: View {
             if case .failed(let reason) = state {
                 Label(reason, systemImage: "xmark.octagon.fill")
                     .foregroundStyle(.red)
+                    .font(.callout)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+            } else if case .awaitingAuth = state {
+                Label("Waiting for authentication", systemImage: "key.fill")
+                    .foregroundStyle(.orange)
                     .font(.callout)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal)
@@ -262,6 +292,7 @@ final class SystemSecretsDraft: ObservableObject {
     struct Fields: Equatable {
         var psk = ""
         var password = ""
+        var otp = OTPSetting()
     }
 
     @Published var fields = Fields() { didSet { reportDirty() } }
@@ -278,7 +309,8 @@ final class SystemSecretsDraft: ObservableObject {
         guard self.service == nil, service.supportsStoredSecrets else { return }
         self.model = model
         let s = model.manager.systemSecrets(for: service)
-        let loaded = Fields(psk: s.psk ?? "", password: s.password ?? "")
+        let loaded = Fields(psk: s.psk ?? "", password: s.password ?? "",
+                            otp: model.manager.systemOTPSetting(for: service.id))
         original = loaded
         self.service = service
         fields = loaded
@@ -287,7 +319,7 @@ final class SystemSecretsDraft: ObservableObject {
     @discardableResult
     func save() -> Bool {
         guard let service, let model else { return false }
-        error = model.saveSystemSecrets(service, psk: fields.psk, password: fields.password)
+        error = model.saveSystemSecrets(service, psk: fields.psk, password: fields.password, otp: fields.otp)
         guard error == nil else {
             saved = false
             return false
@@ -353,6 +385,9 @@ struct SystemServiceDetail: View {
                         Text("Stored in the MacVPN keychain and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").")
                             .font(.callout).foregroundStyle(.secondary)
                             .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    Section("One-time code (MFA)") {
+                        OTPSettingFields(setting: $draft.fields.otp)
                     }
                     Section {
                         if let error = draft.error { Text(error).foregroundStyle(.red) }

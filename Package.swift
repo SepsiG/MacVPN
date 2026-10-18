@@ -15,6 +15,8 @@ let package = Package(
         .target(name: "MacVPNCore"),
         .executableTarget(name: "MacVPN", dependencies: ["MacVPNCore"], exclude: ["Resources"]),
         .executableTarget(name: "mvpn-validate", dependencies: ["MacVPNCore"]),
+        // Root oldali OpenVPN management közvetítő (MFA, spec 10f).
+        .executableTarget(name: "mvpn-mgmt", dependencies: ["MacVPNCore"]),
         .testTarget(name: "MacVPNCoreTests", dependencies: ["MacVPNCore"]),
     ]
 )

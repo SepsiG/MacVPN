@@ -7,12 +7,14 @@ public struct SetupReport: Equatable, Sendable {
     public var installedRootVersion: String?
     public var bundledRootVersion: String?
     public var sudoWorks: Bool
+    /// A telepített root réteg hiányzó binárisai (pl. egy v5 réteg mellől a `mvpn-mgmt`): ilyenkor újratelepítés kell.
+    public var missingRootFiles: [String] = []
 
     public static let unknown = SetupReport(brewPrefix: nil, missingTools: [], installedRootVersion: nil,
                                             bundledRootVersion: nil, sudoWorks: false)
 
     public var rootOK: Bool {
-        sudoWorks && installedRootVersion != nil && installedRootVersion == bundledRootVersion
+        sudoWorks && installedRootVersion != nil && installedRootVersion == bundledRootVersion && missingRootFiles.isEmpty
     }
 
     public var isComplete: Bool { brewPrefix != nil && missingTools.isEmpty && rootOK }
@@ -34,6 +36,8 @@ public struct SetupChecker {
     ]
     public static let brewPackages = ["openvpn", "wireguard-tools", "strongswan", "sstp-client", "bash"]
     public static let brewPrefixes = ["/opt/homebrew", "/usr/local"]
+    /// A root réteg futtatható fájljai (`RootInstaller.rootFiles` a VERSION nélkül).
+    public static let rootExecutables = ["mvpn", "ovpn-dns", "mvpn-validate", "mvpn-mgmt"]
 
     let runner: CommandRunner
     let fileExists: (String) -> Bool
@@ -71,7 +75,9 @@ public struct SetupChecker {
         let installed = trim(readFile(MvpnClient.installDir + "/VERSION"))
         let bundled = trim(bundledRootDir.flatMap { readFile($0.appendingPathComponent("VERSION").path) })
         let sudo = (try? await runner.run("/usr/bin/sudo", MvpnClient.sudoArguments(["version"]), stdin: nil))?.exitCode == 0
+        // A futtatható root binárisok (a VERSION egyezése mellett is ellenőrizve: egy félbemaradt telepítés ellen).
+        let missingRoot = installed == nil ? [] : Self.rootExecutables.filter { !fileExists(MvpnClient.installDir + "/" + $0) }
         return SetupReport(brewPrefix: prefix, missingTools: missing, installedRootVersion: installed,
-                           bundledRootVersion: bundled, sudoWorks: sudo)
+                           bundledRootVersion: bundled, sudoWorks: sudo, missingRootFiles: missingRoot)
     }
 }

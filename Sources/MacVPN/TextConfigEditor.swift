@@ -15,6 +15,8 @@ final class TextConfigDraft: ObservableObject {
         /// A tudomásul vett kockázatos direktívák (OpenVPN). A négyzet akkor bejelölt, ha minden jelenlegi kockázatos
         /// direktíva benne van; bejelöléskor pontosan a jelenlegi halmaz lesz.
         var acknowledged: Set<String> = []
+        /// MFA: „kód a jelszó végén” (spec 10f).
+        var otp = OTPSetting()
     }
 
     @Published var fields = Fields() {
@@ -55,7 +57,7 @@ final class TextConfigDraft: ObservableObject {
                             text: (try? model.store.loadConfig(connection.id)) ?? "",
                             username: s.username ?? "", password: s.password ?? "", psk: s.psk ?? "",
                             keyPassword: s.keyPassword ?? "",
-                            acknowledged: Set(connection.acknowledgedRiskyDirectives))
+                            acknowledged: Set(connection.acknowledgedRiskyDirectives), otp: connection.otp)
         original = loaded
         self.connection = connection
         fields = loaded
@@ -70,7 +72,7 @@ final class TextConfigDraft: ObservableObject {
         issues = model.saveText(connection, name: fields.name, config: fields.text,
                                 secrets: Secrets(username: fields.username, password: fields.password, psk: fields.psk,
                                                  keyPassword: connection.kind == .openvpn ? fields.keyPassword : ""),
-                                acknowledgedRisky: acknowledged)
+                                acknowledgedRisky: acknowledged, otp: fields.otp)
         let ok = issues.isEmpty
         if ok {
             fields.acknowledged = acknowledged
@@ -133,6 +135,22 @@ struct TextConfigEditor: View {
                         if showsPSK { SecureField("Pre-shared key (PSK)", text: $draft.fields.psk) }
                     }
                     .textFieldStyle(.roundedBorder)
+                }
+                GroupBox("One-time code (MFA)") {
+                    VStack(alignment: .leading, spacing: 6) {
+                        if connection.kind == .openvpn, MFA.staticChallenge(in: draft.fields.text) != nil {
+                            Label("This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1).",
+                                  systemImage: "info.circle")
+                                .font(.callout)
+                        } else {
+                            OTPSettingFields(setting: $draft.fields.otp)
+                        }
+                        if connection.kind == .openvpn {
+                            Text("Codes and web sign-in requested by the server during the connection (challenge/response, SAML, push) are asked for automatically.")
+                                .font(.callout).foregroundStyle(.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
             HStack {

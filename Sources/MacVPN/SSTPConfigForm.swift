@@ -11,6 +11,7 @@ final class SSTPConfigDraft: ObservableObject {
         var name = ""
         var config = SSTPConfig()
         var password = ""
+        var otp = OTPSetting()
     }
 
     @Published var fields = Fields() { didSet { reportDirty() } }
@@ -29,7 +30,7 @@ final class SSTPConfigDraft: ObservableObject {
         self.model = model
         let text = (try? model.store.loadConfig(connection.id)) ?? ""
         let loaded = Fields(name: connection.name, config: SSTPConfig.parse(text),
-                            password: model.secrets.secrets(for: connection.id).password ?? "")
+                            password: model.secrets.secrets(for: connection.id).password ?? "", otp: connection.otp)
         original = loaded
         self.connection = connection
         fields = loaded
@@ -39,7 +40,8 @@ final class SSTPConfigDraft: ObservableObject {
     @discardableResult
     func save() -> Bool {
         guard let connection, let model else { return false }
-        issues = model.saveSSTP(connection, name: fields.name, config: fields.config, password: fields.password)
+        issues = model.saveSSTP(connection, name: fields.name, config: fields.config, password: fields.password,
+                                otp: fields.otp)
             .map(\.message)
         let ok = issues.isEmpty
         if ok { original = fields }
@@ -130,6 +132,9 @@ struct SSTPConfigForm: View {
                         .foregroundStyle(.red)
                         .font(.callout)
                 }
+            }
+            Section("One-time code (MFA)") {
+                OTPSettingFields(setting: $draft.fields.otp)
             }
             Section {
                 Toggle("Send all traffic over VPN", isOn: $draft.fields.config.routeAll)

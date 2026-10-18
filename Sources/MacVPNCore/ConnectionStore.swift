@@ -75,9 +75,9 @@ public final class ConnectionStore {
         let dir = directory(for: connection.id)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         try fm.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
-        try writePrivate(try encoder.encode(connection), to: metaURL(for: connection.id))
+        try Self.writePrivate(try encoder.encode(connection), to: metaURL(for: connection.id))
         if let config {
-            try writePrivate(Data(config.utf8), to: configURL(for: connection.id))
+            try Self.writePrivate(Data(config.utf8), to: configURL(for: connection.id))
         }
     }
 
@@ -106,7 +106,7 @@ public final class ConnectionStore {
 
     /// Temp fájl 0600-zal létrehozva (O_EXCL), fsync, majd rename és a könyvtár fsync-je: soha nincs tágabb jogú
     /// állapot, és áramszünet után sem marad üres / csonka meta.json vagy config.
-    private func writePrivate(_ data: Data, to url: URL) throws {
+    static func writePrivate(_ data: Data, to url: URL) throws {
         let dir = url.deletingLastPathComponent()
         let tmp = dir.appendingPathComponent(".tmp-\(UUID().uuidString)")
         let fd = open(tmp.path, O_CREAT | O_EXCL | O_WRONLY | O_NOFOLLOW, 0o600)
@@ -120,7 +120,7 @@ public final class ConnectionStore {
                 throw CocoaError(.fileWriteUnknown, userInfo: [NSFilePathErrorKey: url.path])
             }
         } catch {
-            try? fm.removeItem(at: tmp)
+            try? FileManager.default.removeItem(at: tmp)
             throw error
         }
         // A rename tartóssága; ha a könyvtár nem nyitható meg, az írás attól még sikeres.

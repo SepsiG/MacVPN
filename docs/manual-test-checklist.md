@@ -12,6 +12,7 @@ Előfeltétel: `scripts/build-dmg.sh` lefutott, `swift test` és `scripts/test-r
 - [ ] „Engedélyezés" → egy admin jelszókérés → zöld
 - [ ] `sudo -n /usr/local/libexec/macvpn/mvpn status` jelszó nélkül `[]`
 - [ ] A telepítő a `Contents/Resources/root/mvpn-validate` binárist is felmásolja, és a `sudo -n -u` alapú másolás rootként működik
+- [ ] A telepítő a `mvpn-mgmt` binárist is felmásolja (`root:wheel 755`, `cat /usr/local/libexec/macvpn/VERSION` = 6); v0.3.0 (root 5) rétegről indulva a Rendszerállapot frissítést kér
 - [ ] Régi/elakadt lock fájl (stale lock) nem blokkolja a telepítést vagy a műveleteket
 
 ## Kapcsolatok típusonként
@@ -48,7 +49,7 @@ Előfeltétel: `scripts/build-dmg.sh` lefutott, `swift test` és `scripts/test-r
 - [ ] Natív mentés után a profil a `$TMPDIR/macvpn-profile.XXXXXXXX/` alatt van (mappa 0700, fájl 0600), benne `SharedSecret`, de nincs `AuthPassword` / `XAuthPassword`; a `connections/<UUID>/` alatt nincs `profile.mobileconfig`; a jóváhagyás után (a szolgáltatás megjelenésekor) az ideiglenes mappa törlődik, a `meta.json`-ban megjelenik a `nativeServiceID`
 - [ ] Régi verzióból maradt `connections/<UUID>/profile.mobileconfig` és `$TMPDIR/macvpn-profile.*` mappa → az app indulásakor törlődik
 - [ ] Natív kapcsolat a Rendszerbeállításokból indítva → a macOS kéri a jelszót; MacVPN-ből indítva nem
-- [ ] Két azonos nevű L2TP szolgáltatás (az egyik nem a MacVPN-é, más szerverrel) → a MacVPN a sajátját köti (azonos szervercím), a másik a Rendszer VPN-ek között látszik; kötés nélkül (azonos szervercím sincs) a csatlakozás hibát ad („Több … nevű VPN szolgáltatás van…”), jelszót nem ad át
+- [ ] Két azonos nevű L2TP szolgáltatás (az egyik nem a MacVPN-é, más szerverrel) → a MacVPN a sajátját köti (azonos szervercím), a másik rendszer VPN-ként („· Rendszer-VPN”) látszik; kötés nélkül (azonos szervercím sincs) a csatlakozás hibát ad („Több … nevű VPN szolgáltatás van…”), jelszót nem ad át
 - [ ] Cisco IPsec: ugyanez csoportnévvel
 - [ ] Meglévő `Office L2TP` rendszer VPN indítása és bontása a menüből
 - [ ] L2TP (MacVPN-ben létrehozott) csatlakozás: a PSK-t a MacVPN in-process adja át (`SCNetworkConnectionStart`), a naplóban nincs `L2TP: incorrect user shared secret found`; a `ps`/argv-ben nincs PSK vagy jelszó
@@ -100,6 +101,35 @@ Előfeltétel: `scripts/build-dmg.sh` lefutott, `swift test` és `scripts/test-r
 - [ ] Szűrő (Parancsok / Hibák), keresés, Másolás, Mentés… működik; a mentett napló `600`-as jogosultságú; nem írható helyre mentve hibaablak jelenik meg
 - [ ] A naplóban sehol nem szerepel a jelszó vagy a PSK (`grep` a mentett naplóban)
 - [ ] Az OpenVPN napló `verb 5` mellett sem tartalmazza a jelszót (`grep` a jelszóra a teljes naplóban és a root logfájlban)
+
+## Kapcsolatok sorrendje
+- [ ] Friss telepítés (nincs `connection-order.json`): a menü és a Kapcsolatok ablak listája név szerint, a rendszer VPN-ek a sajátokkal egy listában („· Rendszer-VPN” / „· System VPN” jelöléssel)
+- [ ] Jobb klikk → **Kitűzés** / **Pin to Top**: a kapcsolat a **Kitűzött** részbe kerül, gombostű ikonnal az ablakban és a menüben; **Kitűzés megszüntetése** / **Unpin** visszateszi
+- [ ] Két kitűzött kapcsolat sorrendje húzással megfordítható; a menü is követi; újraindítás után megmarad
+- [ ] Egy nem kitűzött kapcsolathoz kétszer csatlakozva (és bontva) a többi nem kitűzött elé kerül; a fennálló kapcsolat pollingja nem viszi tovább előre
+- [ ] Rendszer VPN (pl. `Office L2TP`) a MacVPN-ből indítva szintén előrébb kerül; a Rendszerbeállításokból indítva nem
+- [ ] Kitűzött kapcsolat törlése után a `connection-order.json`-ból eltűnik a bejegyzése; a fájl jogai `600`
+- [ ] Export: a kitűzés és a pontszám nem kerül az exportba
+
+## MFA (valódi szerver kell)
+Előfeltétel: OpenVPN 2.6/2.7 szerver (pl. `openvpn-auth-*` plugin, `auth-user-pass-verify` script vagy OpenVPN Access Server), amely a lent jelölt módszert adja.
+- [ ] Sima felhasználónév/jelszó MFA nélkül: felépül; `sudo ls -l /var/run/macvpn/<id>/` → nincs `auth` és `mgmt-creds`, van `mgmt.sock` (`srwx------`, root); `ps -o comm= -p $(sudo cat /var/run/macvpn/<id>/mgmt.pid)` → `mvpn-mgmt`
+- [ ] Hálózatváltás / `ping-restart` / `auth-nocache` mellett az újracsatlakozás jelszókérés nélkül sikerül (a közvetítő a memóriából válaszol, a `hold release` újra megy)
+- [ ] **Statikus challenge** (`static-challenge "OTP" 1` a configban, szerveroldalon SCRV1-et értő ellenőrzés): csatlakozás előtt kódbekérő (látható mező), helyes kóddal felépül, rossz kóddal „Hitelesítési hiba”; `static-challenge … 0` → rejtett mező; `concat` formátummal is
+- [ ] **Dinamikus challenge (CRV1)**: a szerver `AUTH_FAILED,CRV1:R,E:…` választ ad → csatlakozás közben kódbekérő a szerver szövegével; helyes kóddal felépül; rossz kóddal hiba, és a szerver naplója szerint nincs ismételt próbálkozás
+- [ ] **CR_TEXT** (`client-pending-auth … CR_TEXT:R,E:…`): kódbekérő, `cr-response` után felépül
+- [ ] **Webes / SAML / push** (`OPEN_URL:https://…` vagy `WEB_AUTH::https://…`): az ablak a hosztot mutatja; „Megnyitás a böngészőben” → az alapértelmezett böngésző a helyes címmel; bejelentkezés után felépül; a menüsor addig „Hitelesítésre vár” (kulcs ikon); „Mégse” → „A hitelesítés megszakítva”, takarítás
+- [ ] Push jóváhagyás telefonon (pl. Duo / Microsoft Authenticator a szerver mögött): jóváhagyás után felépül, elutasítás után hiba
+- [ ] `http://` URL-t küldő szerver: nem nyílik böngésző, a naplóban `web authentication URL dropped (only https with a plain ASCII host is accepted)`, a szerver határideje után hiba
+- [ ] A kódbekérő megjelenésekor egy másik appban gépelve a leütések ott maradnak (a panel nem lesz kulcsablak); „…: hitelesítés szükséges” értesítés jön, rákattintva a panel fókuszt kap; a menüsor ikonja kulcs; az első másodpercben a mező és a gombok tiltottak; Enter nem nyitja meg a böngészőt
+- [ ] `WEB_AUTH::https://xn--pple-43d.com/…` → a megerősítő ablak `xn--pple-43d.com`-ot és a teljes ASCII címet mutatja (nem „аpple.com”-ot); `https://%D0%B0pple.com/` → eldobva
+- [ ] CR_TEXT válasz után `verb 4`-gyel (debug): a naplóban nincs `cr-response` és `CR_RESPONSE,` sor
+- [ ] Kódbekérő 2 percig érintetlen → bezárul, „A hitelesítés nem fejeződött be időben”; nincs futási könyvtár, nincs `/var/run/macvpn-ui/<id>.json`
+- [ ] Bontás a kódbekérő nyitva tartása közben: az ablak bezárul, a bontás pár másodperc alatt kész (nem várja ki a zárat)
+- [ ] `/var/run/macvpn-ui` `root:wheel 755`, a `<id>.json` a felhasználóé, `600`, benne nincs jelszó, kód, token; a naplóban (debug módban is, `verb 5`) nincs kód és jelszó, csak `[mgmt]` eseménysorok
+- [ ] **Kód a jelszó végén** (szerveroldalon jelszó+OTP-t váró RADIUS / LDAP): OpenVPN, IKEv2 (EAP), SSTP, L2TP, Cisco IPsec és egy rendszer-VPN mentett jelszóval; mindhárom elválasztóval (nincs, `,`, `:`); a kód nem kerül a Keychainbe és a `meta.json`-ba (csak `otp.enabled` / `otp.separator`)
+- [ ] L2TP: a kód-beállítás puszta módosítása nem nyit új profilt jóváhagyásra
+- [ ] SSTP: `"`-t tartalmazó kódnál hibaüzenet, nincs csatlakozás
 
 ## Hibák
 - [ ] Rossz jelszó (OpenVPN) → piros ikon, értesítés „AUTH_FAILED", kattintásra Napló

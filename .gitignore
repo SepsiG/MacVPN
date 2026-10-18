@@ -5,3 +5,4 @@ dist/
 .DS_Store
 Resources/root/mvpn-validate
 .vscode/
+Resources/root/mvpn-mgmt

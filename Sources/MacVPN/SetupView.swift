@@ -99,6 +99,10 @@ struct SetupView: View {
             let bundled = s.bundledRootVersion ?? "?"
             return String(localized: "Update required (\(installed) → \(bundled)). Asks for the admin password once.")
         }
+        if s.installedRootVersion != nil, !s.missingRootFiles.isEmpty {
+            let list = s.missingRootFiles.joined(separator: ", ")
+            return String(localized: "Incomplete installation (missing: \(list)). Reinstall: asks for the admin password once.")
+        }
         return String(localized: "Asks for the admin password once: installs the scripts in /usr/local/libexec/macvpn and the /etc/sudoers.d/macvpn rule.")
     }
 }

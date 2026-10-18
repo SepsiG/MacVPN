@@ -12,6 +12,8 @@ final class RootInstallerTests: XCTestCase {
         XCTAssertTrue(s.contains("DIR=/usr/local/libexec/macvpn"))
         XCTAssertTrue(s.contains("'alice ALL=(root) NOPASSWD: /usr/local/libexec/macvpn/mvpn'"))
         XCTAssertTrue(s.contains("\"$STAGE/mvpn-validate\" \"$DIR/mvpn-validate\""))
+        XCTAssertTrue(s.contains("install -o root -g wheel -m 755 \"$STAGE/mvpn-mgmt\" \"$DIR/mvpn-mgmt\""))
+        XCTAssertTrue(s.contains("stage '/Applications/MacVPN.app/Contents/Resources/root/mvpn-mgmt' mvpn-mgmt \(String(repeating: "a", count: 64))"))
         XCTAssertTrue(s.contains("visudo -c -f"))
         XCTAssertTrue(s.contains("install -o root -g wheel -m 440"))
         XCTAssertTrue(s.hasPrefix("#!/bin/bash\nset -euo pipefail\n"))
@@ -27,6 +29,11 @@ final class RootInstallerTests: XCTestCase {
         var hashes = Self.fakeHashes
         hashes["mvpn-validate"] = nil
         XCTAssertThrowsError(try RootInstaller.installScript(sourceDir: URL(fileURLWithPath: "/x"), user: "bob", hashes: hashes))
+        hashes = Self.fakeHashes
+        hashes["mvpn-mgmt"] = nil
+        XCTAssertThrowsError(try RootInstaller.installScript(sourceDir: URL(fileURLWithPath: "/x"), user: "bob", hashes: hashes))
+        hashes = Self.fakeHashes
+        hashes["mvpn-validate"] = nil
         hashes["mvpn-validate"] = "not-a-hash"
         XCTAssertThrowsError(try RootInstaller.installScript(sourceDir: URL(fileURLWithPath: "/x"), user: "bob", hashes: hashes))
     }
@@ -64,7 +71,7 @@ final class RootInstallerTests: XCTestCase {
         XCTAssertEqual(p.terminationStatus, 0, text)
     }
 
-    /// Négy root fájl egy átmeneti könyvtárban (a VERSION tartalma "4").
+    /// Az öt root fájl egy átmeneti könyvtárban (a VERSION tartalma "4").
     static func makeRootSource() throws -> URL {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("macvpn-rootsrc-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
@@ -133,6 +140,7 @@ final class RootInstallerTests: XCTestCase {
         let dir = r.root.appendingPathComponent("usr/local/libexec/macvpn")
         XCTAssertEqual(try String(contentsOf: dir.appendingPathComponent("VERSION"), encoding: .utf8), "4")
         XCTAssertTrue(FileManager.default.fileExists(atPath: dir.appendingPathComponent("mvpn-validate").path))
+        XCTAssertTrue(FileManager.default.isExecutableFile(atPath: dir.appendingPathComponent("mvpn-mgmt").path))
         // Csak a saját (0777-es) macvpn könyvtárat javítja; a szülőkhöz nem nyúl.
         XCTAssertEqual(r.output.components(separatedBy: "CHOWN").count - 1, 1, r.output)
         XCTAssertTrue(r.output.contains("CHOWN " + dir.path + "\n"), r.output)
@@ -229,12 +237,12 @@ final class RootUninstallerTests: XCTestCase {
         XCTAssertTrue(s.contains("echo 'Nem bontható kapcsolat:'\"$FAILED\" >&2"))
         // Törlés: a bontás után.
         let down = try XCTUnwrap(s.range(of: "down \"$kind\""))
-        for path in ["/etc/sudoers.d/macvpn", "/usr/local/libexec/macvpn /var/run/macvpn /var/log/macvpn"] {
+        for path in ["/etc/sudoers.d/macvpn", "/usr/local/libexec/macvpn /var/run/macvpn /var/run/macvpn-ui /var/log/macvpn"] {
             let r = try XCTUnwrap(s.range(of: path, range: down.upperBound..<s.endIndex), path)
             XCTAssertTrue(r.lowerBound > down.upperBound)
         }
         XCTAssertTrue(s.contains("/bin/rm -f /etc/sudoers.d/macvpn"))
-        XCTAssertTrue(s.contains("/bin/rm -rf /usr/local/libexec/macvpn /var/run/macvpn /var/log/macvpn"))
+        XCTAssertTrue(s.contains("/bin/rm -rf /usr/local/libexec/macvpn /var/run/macvpn /var/run/macvpn-ui /var/log/macvpn"))
     }
 
     func testUninstallScriptRejectsBadUser() {
@@ -310,7 +318,7 @@ final class RootUninstallerTests: XCTestCase {
         XCTAssertEqual(r.mvpnCalls, ["bob down openvpn 11111111-2222-3333-4444-555555555555 --lang hu",
                                      "bob down wireguard AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE --lang hu"])
         XCTAssertTrue(r.output.contains("RM -f /etc/sudoers.d/macvpn"), r.output)
-        XCTAssertTrue(r.output.contains("RM -rf /usr/local/libexec/macvpn /var/run/macvpn /var/log/macvpn"), r.output)
+        XCTAssertTrue(r.output.contains("RM -rf /usr/local/libexec/macvpn /var/run/macvpn /var/run/macvpn-ui /var/log/macvpn"), r.output)
     }
 
     /// A /etc/ppp/options csak a mvpn jelölője mellett, és csak üresen törlődik.

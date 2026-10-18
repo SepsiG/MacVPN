@@ -3,14 +3,22 @@
 # Telepítve: /usr/local/libexec/macvpn/mvpn (root:wheel 755), hívás: sudo -n (lásd /etc/sudoers.d/macvpn).
 #
 #   mvpn up     <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b]
-#                                                    (secrets a stdin-en: username=, password=, psk=, keypass=)
+#                                                    (secrets a stdin-en: username=, password=, psk=, keypass=, otp=,
+#                                                     challenge=packed)
 #   mvpn down   <openvpn|wireguard|strongswan|sstp> <id> [--dry-run]
+#   mvpn respond openvpn <id>                        (stdin: kind=crv1|static|webauth-ack|cancel, response=<érték>)
 #   mvpn status
 #   mvpn version
 # Bármelyik mellé: --lang <en|hu> (az üzenetek nyelve; hiányzó vagy ismeretlen érték: en). Az app a --lang-ot mindig
 # utolsóként adja, így egy régebbi telepített mvpn is értelmezi.
 # --accept-risky: (csak openvpn) a kapcsolatnál tudomásul vett RISKY direktívák neve, ^[a-z0-9-]+(,[a-z0-9-]+)*$;
 # változatlanul a mvpn-validate kapja. A FORBIDDEN szintet ez nem érinti: azt a validátor mindig elutasítja.
+#
+# MFA (spec 10f): az openvpn mindig management interfésszel indul (unix socket a root 0700-as futási könyvtárban),
+# amelynek egyetlen kliense a root oldali közvetítő (mvpn-mgmt). A felhasználónév és a jelszó a közvetítőn át megy
+# (root 0600 fájl, beolvasás után törölve); a challenge szövege és a webes URL a /var/run/macvpn-ui/<id>.json-ba
+# kerül (a felhasználóé, 0600); a választ a `mvpn respond` adja át a közvetítőnek (root 0600 fájl). A felépülésről
+# továbbra is csak a root-only openvpn.log dönt.
 #
 # A config-validálás szabályainak egyetlen forrása a Sources/MacVPNCore/Validators.swift; ezt a
 # root tulajdonú mvpn-validate bináris futtatja. Ez a script nem tartalmaz saját validálási szabályt.
@@ -26,7 +34,7 @@ export PATH="/usr/bin:/bin:/usr/sbin:/sbin"
 # Bájt-alapú, a felhasználó locale-jától független viselkedés (regex-tartományok, awk, sed, tr). A sudoers
 # (env_reset, !env_keep) sem engedi át a LANG/LC_* változókat; ez a mélységi védelem.
 export LC_ALL=C
-MVPN_VERSION="5"
+MVPN_VERSION="6"
 LIBEXEC="/usr/local/libexec/macvpn"
 RUN_BASE="/var/run/macvpn"
 LOG_BASE="/var/log/macvpn"
@@ -42,6 +50,8 @@ PPP_OPTIONS="/etc/ppp/options" # SSTP: a sstpc/pppd megköveteli (brew caveat), 
 ROUTE="/sbin/route"
 UP_TIMEOUT=30                 # OpenVPN/SSTP: ennyi mp alatt kell felépülnie a kapcsolatnak
 SSTP_TMP_DIRS="/private/tmp /var/run/sstpc"   # SSTP: ide írja a sstpc a saját sstp-pppd.XXXXXX opciófájlját
+UI_BASE="/var/run/macvpn-ui"  # MFA: a közvetítő állapotfájljai (<id>.json, a felhasználóé, 0600); root 755
+MFA_MAX=420                   # MFA: a hitelesítésre várás legfeljebb ennyivel nyújtja meg az UP_TIMEOUT-ot
 
 if [ "$(id -u)" != "0" ]; then
   TEST_MODE=1
@@ -58,6 +68,8 @@ if [ "$(id -u)" != "0" ]; then
   PPP_OPTIONS="${MVPN_PPP_OPTIONS:-$PPP_OPTIONS}"
   ROUTE="${MVPN_ROUTE:-$ROUTE}"
   SSTP_TMP_DIRS="${MVPN_SSTP_TMP:-$SSTP_TMP_DIRS}"
+  UI_BASE="${MVPN_UI_BASE:-$UI_BASE}"
+  [[ "$MVPN_MFA_MAX" =~ ^[0-9]+$ ]] && MFA_MAX="$MVPN_MFA_MAX"
 fi
 
 # A hívó pipe-jai: a stdin-t a read_secrets olvassa végig (up), utána minden háttérfolyamat
@@ -89,7 +101,7 @@ KIND="${ARGS[1]}"
 ID="${ARGS[2]}"
 LOG=""
 RUN=""
-S_USER=""; S_PASS=""; S_PSK=""; S_KEYPASS=""
+S_USER=""; S_PASS=""; S_PSK=""; S_KEYPASS=""; S_OTP=""; S_PACKED=0
 
 # ---------- üzenetek ----------
 # msg "<angol>" "<magyar>": a --lang szerinti változatot írja ki (sorvége nélkül). Az angol a forrás és a tartalék.
@@ -129,14 +141,14 @@ MASK_AWK='function add(v) { if (length(v) > 0) s[++n] = v }
          return out line
        }
        BEGIN { n = 0
-         for (i = 1; i <= 3; i++) add(ENVIRON["MVPN_MASK_" i])
+         for (i = 1; i <= 4; i++) add(ENVIRON["MVPN_MASK_" i])
          f = ENVIRON["MVPN_MASK_FILE"]
          if (f != "") { while ((getline v < f) > 0) add(v); close(f)
                         if (ENVIRON["MVPN_MASK_RM"] == "1") system("/bin/rm -f " f) } }
        { line = $0
          for (i = 1; i <= n; i++) line = maskone(line, s[i])
          print line; fflush() }'
-mask() { MVPN_MASK_1="$S_PASS" MVPN_MASK_2="$S_PSK" MVPN_MASK_3="$S_KEYPASS" awk "$MASK_AWK"; }
+mask() { MVPN_MASK_1="$S_PASS" MVPN_MASK_2="$S_PSK" MVPN_MASK_3="$S_KEYPASS" MVPN_MASK_4="$S_OTP" awk "$MASK_AWK"; }
 # mask_file <fájl>: beolvasás után az awk maga törli a fájlt (így egy SIGKILL-elt mvpn után sem marad meg).
 # A törlés system()-mel megy, ezért az útvonal csak szigorú karakterkészletű lehet.
 mask_file() {
@@ -177,6 +189,15 @@ run_direct() {
 # Döntést soha nem a kapcsolat naplójából hozunk, csak a root-only forrásból; ez csak a Napló fülnek szól.
 # nosecrets: a hívó nem ismeri a titkokat (status), így a mask semmit nem cserélne: helyette minden jelszó- vagy
 # hitelesítés-jellegű sor (pass, passwd, password, auth…) kimarad.
+# A management parancsok naplósorai a kódot hordozhatják (OpenVPN 2.7: `MANAGEMENT: CMD 'cr-response <b64>'`, verb >= 4-nél
+# `SENT CONTROL …: 'CR_RESPONSE,<b64>'`, és `MANAGEMENT: CMD 'username …'`): ezek egyetlen másolási úton sem kerülhetnek
+# a felhasználói naplóba vagy egy hibaüzenetbe. A `MANAGEMENT: CMD '…'` sorok közül csak a state / hold / version marad.
+log_safe() {
+  awk 'BEGIN { q = sprintf("%c", 39); cmd = "MANAGEMENT: CMD " q; keep = "^(state|hold|version)( [^" q "]*)?" q }
+       index($0, "CR_RESPONSE,") > 0 { next }
+       { p = index($0, cmd); if (p > 0 && substr($0, p + length(cmd)) !~ keep) next; print }'
+}
+
 flush_root_log() {
   local f="$1" prefix="$2" filter='^' off size
   [ "$3" = nosecrets ] && filter='[Pp][Aa][Ss][Ss]|[Aa][Uu][Tt][Hh]'
@@ -186,9 +207,9 @@ flush_root_log() {
   size=$(stat -f %z "$f" 2>/dev/null) || return 0
   [ "$size" -gt "$off" ] || return 0
   if [ "$filter" = '^' ]; then
-    tail -c +"$((off + 1))" "$f" | head -c "$((size - off))" | sed "s/^/$prefix/" | mask >>"$LOG"
+    tail -c +"$((off + 1))" "$f" | head -c "$((size - off))" | log_safe | sed "s/^/$prefix/" | mask >>"$LOG"
   else
-    tail -c +"$((off + 1))" "$f" | head -c "$((size - off))" | grep -Ev "$filter" | sed "s/^/$prefix/" | mask >>"$LOG"
+    tail -c +"$((off + 1))" "$f" | head -c "$((size - off))" | grep -Ev "$filter" | log_safe | sed "s/^/$prefix/" | mask >>"$LOG"
   fi
   printf '%s\n' "$size" >"$f.off"
 }
@@ -272,6 +293,8 @@ read_secrets() {
       password=*) S_PASS="${line#password=}" ;;
       psk=*)      S_PSK="${line#psk=}" ;;
       keypass=*)  S_KEYPASS="${line#keypass=}" ;;
+      otp=*)      S_OTP="${line#otp=}" ;;          # MFA kód: csak maszkoláshoz (a jelszóban már benne van)
+      challenge=packed) S_PACKED=1 ;;              # OpenVPN statikus challenge: a jelszó már SCRV1 / concat
     esac
   done
 }
@@ -485,24 +508,34 @@ snapshot() {
 # „With Errors …”). Így egy PUSH_REPLY-ban idézett szöveg sem számít.
 # --verb 4 felett (a --debug módunk --verb 5) az időbélyeg után " us=<mikroszekundum>" is áll (otime.c).
 OVPN_DONE_RE='^([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}( us=[0-9]+)? |[0-9]+[.][0-9]+ [0-9A-Fa-f]+ )?Initialization Sequence Completed( With Errors.*)?$'
-ovpn_log_real() { grep -v -E '(^|[ :])ECHO(-PULL)?:' "$1" 2>/dev/null; }
+ovpn_log_real() { grep -v -E '(^|[ :])ECHO(-PULL)?:' "$1" 2>/dev/null | log_safe; }
 ovpn_log_done() { ovpn_log_real "$1" | grep -q -E "$OVPN_DONE_RE"; }
 
 up_openvpn() {
   local ovpn verb=3 i olog="$RUN/openvpn.log"
   ovpn=$(find_tool openvpn) || die "$(msg "openvpn not found (brew install openvpn)" "Az openvpn nem található (brew install openvpn)")"
   [ "$DEBUG" = 1 ] && verb=5
+  [ "$DRY_RUN" = 1 ] || [ -x "$MGMT" ] || die "$(msg "mvpn-mgmt not found: $MGMT (reinstall the root layer in System Status)" "A mvpn-mgmt nem található: $MGMT (telepítsd újra a root réteget a Rendszerállapotban)")"
+  # Management (MFA, spec 10f): unix socket a root 0700-as futási könyvtárban, csak root kliens; induláskor és minden
+  # újraindításkor tart (hold), a felhasználónevet és a jelszót a managementen kéri (a közvetítő adja). Az
+  # --auth-retry interact a dinamikus challenge-hez (CRV1) kell; végleges hibánál a közvetítő leállítja az openvpn-t.
+  # Az IV_SSO jelzi a szervernek, hogy a kliens kezeli a webes (openurl, webauth) és a szöveges (crtext) hitelesítést.
+  # Mind a config után áll, így felülírja a config azonos direktíváit (a management* a configban amúgy is tiltott).
   local args=(--config "$RUN/config"
               --script-security 2
               --up "$LIBEXEC/ovpn-dns $RUN $LOG" --down "$LIBEXEC/ovpn-dns $RUN $LOG"
-              --writepid "$RUN/pid" --log-append "$olog" --daemon "mvpn-$ID" --verb "$verb")
-  # A jelszófájl a down-ig megmarad (root, 600, a 700-as futási könyvtárban): újracsatlakozáskor
-  # (ping-restart, hálózatváltás) az OpenVPN újraolvassa. Egy config-beli auth-nocache mellett az OpenVPN a
-  # memóriából törli a jelszót, ezért a fájlnak kell meglennie. A down (cleanup_openvpn) és minden sikertelen up törli.
+              --writepid "$RUN/pid" --log-append "$olog" --daemon "mvpn-$ID" --verb "$verb"
+              --management "$RUN/mgmt.sock" unix --management-client-user root
+              --management-hold --management-query-passwords
+              --auth-retry interact --setenv IV_SSO openurl,webauth,crtext)
+  # A felhasználónév és a jelszó nem fájlból megy az openvpn-nek (a fájlos út a dinamikus és a statikus challenge-et
+  # a konzolról kérdezné), hanem a közvetítőn át: root 0600-as fájl, amit a közvetítő beolvasás után azonnal töröl, és
+  # a memóriájában tart az újracsatlakozásokhoz (ping-restart, hálózatváltás, auth-nocache). A puszta --auth-user-pass
+  # a config után a config esetleges inline hitelesítő blokkját is felülírja (a managementen kérdez).
   if [ -n "$S_USER$S_PASS" ]; then
-    printf '%s\n%s\n' "$S_USER" "$S_PASS" >"$RUN/auth"
-    chmod 600 "$RUN/auth"
-    args+=(--auth-user-pass "$RUN/auth")
+    printf 'username=%s\npassword=%s\npacked=%s\n' "$S_USER" "$S_PASS" "$S_PACKED" >"$RUN/mgmt-creds"
+    chmod 600 "$RUN/mgmt-creds"
+    args+=(--auth-user-pass)
   fi
   # A privát kulcs (PKCS#12 / titkosított PEM) jelszava: ugyanúgy root 600-as fájl a down-ig (újracsatlakozáskor a
   # kulcs újraolvasásához kellhet). A parancssori --askpass a config után áll, így felülírja a config bármely askpass-át.
@@ -520,23 +553,149 @@ up_openvpn() {
   # direktíva argumentuma) a root tulajdonú, 700-as futási könyvtárhoz képest oldódnak fel, nem a hívó
   # munkakönyvtárához képest. A démonizálás után az OpenVPN chdir("/")-t hív: onnantól a relatív útvonalak a /-hez
   # képest értendők (ezért nem engedünk `/`-t és `..`-t a kockázatos argumentumokban sem).
+  prepare_ui
   cd "$RUN" || fail_openvpn "$(msg "Cannot enter the run directory" "A futási könyvtár nem érhető el")"
   run_direct "$ovpn" "${args[@]}" || fail_openvpn "$(msg "Starting openvpn failed" "Az openvpn indítása sikertelen")"
+  start_mgmt
   [ "$DRY_RUN" = 1 ] && return 0
-  for i in $(seq 1 "$UP_TIMEOUT"); do
+  # A várakozás alapból UP_TIMEOUT mp. Ha a közvetítő hitelesítésre vár (kód, webes bejelentkezés: `wait <unix idő>`
+  # a root-only mgmt-status-ban), a határidő addig (+15 mp a szerver válaszára) nő, de legfeljebb UP_TIMEOUT+MFA_MAX-ig.
+  local started deadline hard now st w
+  started=$(date +%s)
+  deadline=$((started + UP_TIMEOUT))
+  hard=$((started + UP_TIMEOUT + MFA_MAX))
+  while :; do
     sleep 1
     flush_root_log "$olog"
     if ovpn_log_done "$olog"; then
       return 0
     fi
-    if ovpn_log_real "$olog" | grep -q "AUTH_FAILED"; then
+    st=$(mgmt_status)
+    mgmt_fail "$st"
+    case "$st" in
+      "wait "*)
+        w=$(( ${st#wait } + 15 ))
+        [ "$w" -gt "$deadline" ] && deadline=$w
+        [ "$deadline" -gt "$hard" ] && deadline=$hard
+        ;;
+    esac
+    # A dinamikus challenge (AUTH_FAILED,CRV1:…) nem hiba: a közvetítő bekéri a választ, és az openvpn újrapróbálja.
+    # Az AUTH_FAILED,TEMP átmeneti szerverhiba: az openvpn várakozás után újrapróbál (mint a közvetítőben).
+    if ovpn_log_real "$olog" | grep "AUTH_FAILED" | grep -Eqv "AUTH_FAILED,(CRV1:|TEMP)"; then
       fail_openvpn "$(msg "Authentication failed (AUTH_FAILED)" "Hitelesítési hiba (AUTH_FAILED)")"
     fi
+    # A közvetítő nélkül az openvpn a hold / jelszókérés állapotában örökké várna.
+    if ! mgmt_alive "$(cat "$RUN/mgmt.pid" 2>/dev/null)"; then
+      mgmt_fail "$(mgmt_status)"
+      fail_openvpn "$(msg "The management bridge stopped (details in the log)" "A management közvetítő leállt (részletek a naplóban)")"
+    fi
     if [ -f "$RUN/pid" ] && ! ovpn_alive "$(cat "$RUN/pid" 2>/dev/null)"; then
+      # A közvetítő végleges hibánál / megszakításnál előbb az állapotot írja, aztán állítja le az openvpn-t.
+      mgmt_fail "$(mgmt_status)"
       fail_openvpn "$(msg "openvpn exited:" "Az openvpn kilépett:") $(ovpn_log_real "$olog" | grep -v '^[[:space:]]*$' | tail -1 | mask)"
     fi
+    now=$(date +%s)
+    [ "$now" -ge "$deadline" ] && break
   done
+  if [ "$deadline" -gt "$((started + UP_TIMEOUT))" ]; then
+    fail_openvpn "$(msg "Timed out waiting for authentication" "Időtúllépés: a hitelesítés nem fejeződött be időben")"
+  fi
   fail_openvpn "$(msg "Timed out: the connection was not established within $UP_TIMEOUT s" "Időtúllépés: $UP_TIMEOUT mp alatt nem épült fel a kapcsolat")"
+}
+
+# ---------- MFA: management közvetítő (mvpn-mgmt) ----------
+MGMT="$LIBEXEC/mvpn-mgmt"
+[ "$TEST_MODE" = 1 ] && MGMT="${MVPN_MGMT:-$MGMT}"
+
+# Az állapotfájlok könyvtára (/var/run/macvpn-ui): root tulajdonú, 755, így a felhasználó olvashatja a saját (0600-as,
+# a nevére írt) <id>.json-ját, de symlinket vagy más fájlt nem tehet bele. Symlink vagy nem könyvtár helyén újra létrejön.
+prepare_ui() {
+  [ "$DRY_RUN" = 1 ] && return 0
+  if [ -L "${UI_BASE:?}" ] || { [ -e "${UI_BASE:?}" ] && [ ! -d "${UI_BASE:?}" ]; }; then rm -f "${UI_BASE:?}"; fi
+  mkdir -p "$UI_BASE" && chmod 755 "$UI_BASE" || fail_openvpn "$(msg "Cannot create: $UI_BASE" "Nem hozható létre: $UI_BASE")"
+  [ "$TEST_MODE" = 0 ] && chown root:wheel "$UI_BASE"
+  rm -f "${UI_BASE:?}/${ID:?}.json"
+}
+
+# A közvetítő a háttérben (run_direct --bg): stdin /dev/null, kimenete (titok nélküli eseménysorok) a kapcsolat naplójába.
+# Az argv-ben nincs titok: a felhasználónév és a jelszó a $RUN/mgmt-creds fájlban van.
+start_mgmt() {
+  local uid gid
+  uid=$(id -u "$TARGET_USER" 2>/dev/null) && gid=$(id -g "$TARGET_USER" 2>/dev/null) ||
+    fail_openvpn "$(msg "Unknown user" "Ismeretlen felhasználó")"
+  run_direct --bg "$MGMT" --id "$ID" --run "$RUN" --ui "$UI_BASE" --uid "$uid" --gid "$gid" --max-wait "$MFA_MAX"
+  [ "$DRY_RUN" = 1 ] || printf '%s\n' "$!" >"$RUN/mgmt.pid"
+}
+
+# Él-e a közvetítő? (A név ellenőrzése a pid-újrahasznosítás ellen, mint az ovpn_alive.)
+mgmt_alive() {
+  [[ "$1" =~ ^[0-9]+$ ]] || return 1
+  ps -p "$1" -o stat=,comm= 2>/dev/null | awk '$1 !~ /^Z/ && $NF ~ /mvpn-mgmt$/ { f = 1 } END { exit !f }'
+}
+
+stop_mgmt() {
+  local pid i
+  pid=$(cat "$RUN/mgmt.pid" 2>/dev/null)
+  mgmt_alive "$pid" || return 0
+  log_cmd "kill $pid"
+  kill "$pid" 2>/dev/null
+  for i in 1 2 3 4 5 6 7 8 9 10; do mgmt_alive "$pid" || break; sleep 0.2; done
+  mgmt_alive "$pid" && kill -9 "$pid" 2>/dev/null
+  return 0
+}
+
+# A közvetítő végleges állapota (failed / cancelled) → sikertelen up a megfelelő üzenettel.
+mgmt_fail() {
+  case "$1" in
+    failed)    fail_openvpn "$(msg "Authentication failed" "Hitelesítési hiba")" ;;
+    cancelled) fail_openvpn "$(msg "Authentication cancelled" "A hitelesítés megszakítva")" ;;
+    timeout)   fail_openvpn "$(msg "Timed out waiting for authentication" "Időtúllépés: a hitelesítés nem fejeződött be időben")" ;;
+  esac
+  return 0
+}
+
+# A közvetítő root-only állapota a mvpn-nek: `wait <unix idő>`, `ok`, `failed` vagy `cancelled` (szigorú formátum).
+mgmt_status() {
+  local f="$RUN/mgmt-status" s
+  [ -f "$f" ] && [ ! -L "$f" ] || return 0
+  s=$(head -c 64 "$f" 2>/dev/null | head -1)
+  [[ "$s" =~ ^(wait\ [0-9]{1,12}|ok|failed|cancelled|timeout)$ ]] && printf '%s\n' "$s"
+  return 0
+}
+
+# mvpn respond openvpn <id>: a felhasználó válasza (kód, webes megnyitás nyugtázása, megszakítás) a közvetítőnek.
+# Stdin: kind=crv1|static|webauth-ack|cancel és response=<érték> (legfeljebb 256 bájt, vezérlőkarakter nélkül).
+# Nincs zár (az up tartja, amíg hitelesítésre vár). Az érték soha nem kerül a naplóba, csak a típusa.
+do_respond() {
+  local line k="" r="" n=0 tmp
+  RUN="$RUN_BASE/$ID"
+  open_log
+  if [ ! -d "$RUN" ] || [ -L "$RUN" ] || [ "$(cat "$RUN/kind" 2>/dev/null)" != openvpn ] ||
+     ! mgmt_alive "$(cat "$RUN/mgmt.pid" 2>/dev/null)"; then
+    die "$(msg "No connection is waiting for authentication" "Nincs hitelesítésre váró kapcsolat")"
+  fi
+  [ -t 0 ] && die "$(msg "Invalid response" "Érvénytelen válasz")"
+  # Közvetlenül a stdin-ről (a bash 3.2 a here-stringet átmeneti fájlba írná, a kód így lemezre kerülne).
+  while IFS= read -r line || [ -n "$line" ]; do
+    n=$((n + 1))
+    [ "$n" -le 2 ] && [ "${#line}" -le 300 ] || die "$(msg "Invalid response" "Érvénytelen válasz")"
+    case "$line" in
+      kind=*)     k="${line#kind=}" ;;
+      response=*) r="${line#response=}" ;;
+      *)          die "$(msg "Invalid response" "Érvénytelen válasz")" ;;
+    esac
+  done
+  case "$k" in
+    crv1|static) ;;
+    webauth-ack|cancel) r="" ;;
+    *) die "$(msg "Invalid response kind" "Érvénytelen választípus")" ;;
+  esac
+  [ "${#r}" -le 256 ] || die "$(msg "The response is too long (256 bytes at most)" "A válasz túl hosszú (legfeljebb 256 bájt)")"
+  [[ "$r" =~ [[:cntrl:]] ]] && die "$(msg "The response must not contain control characters" "A válaszban nem lehet vezérlőkarakter")"
+  tmp="$RUN/.mgmt-resp.$$"
+  printf 'kind=%s\nresponse=%s\n' "$k" "$r" >"$tmp" && chmod 600 "$tmp" && mv -f "$tmp" "$RUN/mgmt-resp" ||
+    { rm -f "${tmp:?}"; die "$(msg "Cannot pass the response" "A válasz nem adható át")"; }
+  log_step "$(msg "authentication response passed to the management bridge (kind: $k)" "hitelesítési válasz átadva a management közvetítőnek (típus: $k)")"
 }
 
 # Sikertelen up: folyamat leállítása, DNS visszaállítása, futási könyvtár törlése, kilépés.
@@ -568,7 +727,11 @@ cleanup_openvpn() {
   # Ha a down hook nem futott le (pl. kill -9), a DNS-t itt állítjuk vissza.
   [ -f "$RUN/dns-backup" ] && script_type=down "$LIBEXEC/ovpn-dns" "$RUN" "$LOG" </dev/null
   flush_root_log "$RUN/openvpn.log"
-  rm -f "$RUN/auth" "$RUN/askpass"
+  # A közvetítő az openvpn kilépésekor magától is kilép; a maradékát itt állítjuk le. A hitelesítési fájlok és a
+  # felhasználói állapotfájl törlődik (az auth a v5 és a korábbi root réteg jelszófájlja).
+  stop_mgmt
+  rm -f "$RUN/auth" "$RUN/askpass" "$RUN/mgmt-creds" "$RUN/mgmt-resp" "$RUN/mgmt-status"
+  rm -f "${UI_BASE:?}/${ID:?}.json"
   return "$rc"
 }
 
@@ -760,6 +923,7 @@ start_sstpc() {
   log_cmd "${shown[*]} &"
   if [ "$DRY_RUN" = 1 ]; then echo "DRY: ${shown[*]}"; return 0; fi
   printf '%s\n' "$S_PASS" >"$RUN/mask"
+  [ -n "$S_OTP" ] && printf '%s\n' "$S_OTP" >>"$RUN/mask"
   chmod 600 "$RUN/mask"
   ( "$@" </dev/null 2>&1 &
     printf '%s\n' "$!" >"$RUN/pid"
@@ -1001,6 +1165,9 @@ status_one() { # $1 = run dir → "state iface ip"
         # szabály él, élő (ellenőrzött) pid + iface fájl → connected. A v4 up az openvpn indítása előtt létrehozza a naplót.
         if [ -f "$d/iface" ] && { ovpn_completed "$d" || { [ ! -e "$d/openvpn.log" ] && [ ! -L "$d/openvpn.log" ]; }; }; then
           state="connected"
+        elif [ -f "$d/mgmt.pid" ] && ! mgmt_alive "$(cat "$d/mgmt.pid" 2>/dev/null)"; then
+          # A v6 réteg openvpn-je a közvetítő nélkül a hold / jelszókérés állapotában ragadna: hiba, hogy a takarítás lefusson.
+          state="failed"
         else
           state="connecting"
         fi
@@ -1125,6 +1292,11 @@ case "$CMD" in
   status)
     status_all
     ;;
+  respond)
+    [ "$KIND" = openvpn ] || die "$(msg "Usage: mvpn respond openvpn <id>" "Használat: mvpn respond openvpn <id>")"
+    validate_id "$ID"
+    do_respond
+    ;;
   up|down)
     validate_kind "$KIND"
     validate_id "$ID"
@@ -1165,10 +1337,10 @@ case "$CMD" in
     ;;
   __mask)
     [ "$TEST_MODE" = 1 ] || die "$(msg "Test mode only" "Csak tesztmódban")"
-    S_PASS="$MVPN_MASK_1"; S_PSK="$MVPN_MASK_2"; S_KEYPASS="$MVPN_MASK_3"
+    S_PASS="$MVPN_MASK_1"; S_PSK="$MVPN_MASK_2"; S_KEYPASS="$MVPN_MASK_3"; S_OTP="$MVPN_MASK_4"
     mask
     ;;
   *)
-    die "$(msg "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | status | version" "Használat: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | status | version")"
+    die "$(msg "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version" "Használat: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version")"
     ;;
 esac
