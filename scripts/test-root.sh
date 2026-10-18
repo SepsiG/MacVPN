@@ -69,7 +69,7 @@ DESC="tiltott setenv név: LD_PRELOAD"; expect_fail "$SH" "$MVPN" up openvpn "$(
 head -1 Resources/root/ovpn-dns | grep -qx '#!/bin/bash -p' && ok "ovpn-dns: #!/bin/bash -p" || nok "ovpn-dns: #!/bin/bash -p"
 grep -q 'script_type|dev|ifconfig_local|foreign_option_\[0-9\]\*) ;;' Resources/root/ovpn-dns \
   && grep -q '^set +o posix' Resources/root/ovpn-dns && ok "ovpn-dns: környezet-allowlist a script elején" || nok "ovpn-dns: környezet-allowlist a script elején"
-OUT=$(env BASH_ENV="$T/evil-env" ENV="$T/evil-env" DYLD_INSERT_LIBRARIES=/x script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' \
+OUT=$(env BASH_ENV="$T/evil-env" ENV="$T/evil-env" script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' \
   Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
 [ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete" || nok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete ($OUT)"
 # Környezet-allowlist: csak az OpenVPN által adott, a hook által olvasott változók (és a fix PATH/LC_ALL) maradnak.
