@@ -1854,7 +1854,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "macvpn-app"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "macvpn-app-core",
  "macvpn-core",
@@ -1868,19 +1868,28 @@ dependencies = [
 
 [[package]]
 name = "macvpn-app-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "libc",
+ "macvpn-control-client",
  "macvpn-core",
  "regex",
  "serde",
  "serde_json",
  "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "macvpn-control-client"
+version = "1.1.0"
+dependencies = [
+ "serde_json",
 ]
 
 [[package]]
 name = "macvpn-core"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.23.1",
  "ed25519-dalek",
@@ -1888,16 +1897,18 @@ dependencies = [
  "libc",
  "plist",
  "regex",
+ "serde",
  "serde_json",
  "sha2 0.11.1",
  "unicode-normalization",
  "unicode-segmentation",
  "uuid",
+ "zeroize",
 ]
 
 [[package]]
 name = "macvpn-platform-mac"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "block2",
  "core-foundation",
@@ -2013,7 +2024,7 @@ dependencies = [
 
 [[package]]
 name = "mvpn"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "libc",
  "macvpn-core",

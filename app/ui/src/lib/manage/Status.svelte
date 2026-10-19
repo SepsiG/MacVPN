@@ -19,13 +19,27 @@
 {/if}
 
 <style>
+  span {
+    font-size: var(--text-md);
+  }
   .unsaved {
-    color: var(--orange);
+    color: var(--state-busy-text);
+    font-weight: 500;
+  }
+  .unsaved::before {
+    content: '';
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--state-busy);
+    vertical-align: 1px;
   }
   .secondary {
     color: var(--secondary);
   }
   .ok {
-    color: var(--green);
+    color: var(--state-on-text);
   }
 </style>

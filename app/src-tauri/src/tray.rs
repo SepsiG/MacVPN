@@ -4,6 +4,7 @@
 //! Swift app's `menuBarSymbol` by `scripts/make-tray-icons.swift`.
 
 use macvpn_app_core::TrayIcon;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 use tauri::image::Image;
@@ -14,6 +15,22 @@ use crate::state::AppState;
 
 pub const TRAY_ID: &str = "main";
 pub const MENU_WINDOW: &str = "menu";
+/// Whether the popover is shown, kept by [`show_menu`] and [`hide_menu`] (read by the poller without a main
+/// thread round trip).
+static MENU_SHOWN: AtomicBool = AtomicBool::new(false);
+
+pub fn menu_shown() -> bool {
+    MENU_SHOWN.load(Ordering::SeqCst)
+}
+
+/// Hides the popover (every hide goes through here, so [`menu_shown`] stays true to the window).
+pub fn hide_menu(app: &AppHandle) {
+    MENU_SHOWN.store(false, Ordering::SeqCst);
+    if let Some(window) = app.get_webview_window(MENU_WINDOW) {
+        let _ = window.hide();
+    }
+}
+
 /// The popover's width (points); its height follows the content (`set_menu_height`).
 pub const MENU_WIDTH: f64 = 330.0;
 
@@ -92,7 +109,7 @@ const BLUR_CLICK_WINDOW: Duration = Duration::from_millis(300);
 fn toggle_menu(app: &AppHandle) {
     let Some(window) = app.get_webview_window(MENU_WINDOW) else { return };
     if window.is_visible().unwrap_or(false) {
-        let _ = window.hide();
+        hide_menu(app);
         return;
     }
     if let Some(state) = app.try_state::<Arc<AppState>>() {
@@ -122,6 +139,7 @@ pub fn show_menu(app: &AppHandle) {
         let _ = window.set_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
     }
     let _ = window.show();
+    MENU_SHOWN.store(true, Ordering::SeqCst);
     let _ = window.set_focus();
     if let Some(state) = state {
         state.poller.wake();
@@ -139,6 +157,6 @@ pub fn hide_on_blur(app: &AppHandle) {
         {
             *state.hidden_on_blur.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
         }
-        let _ = window.hide();
+        hide_menu(app);
     }
 }

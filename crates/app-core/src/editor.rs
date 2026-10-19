@@ -502,6 +502,8 @@ pub struct Draft {
     pub import_error: Option<String>,
     /// Which secret fields have a Keychain value (never the values themselves).
     pub stored: StoredSecrets,
+    /// System VPN: the service is no longer listed by macOS (the editor is read-only until it returns).
+    pub removed: bool,
 }
 
 impl Draft {
@@ -578,6 +580,7 @@ impl Draft {
             saved_at: None,
             import_error: None,
             stored,
+            removed: false,
         }
     }
 
@@ -802,6 +805,7 @@ impl Draft {
             has_stored: matches!(&self.original, EditorFields::System(o)
                 if self.stored.password || self.stored.psk || o.otp != OtpFields::default()),
             has_stored_secret: self.stored,
+            removed: self.removed,
         }
     }
 }
@@ -846,6 +850,8 @@ pub struct EditorView {
     /// Which secret fields have a stored value: the field is shown empty ("Saved — type to replace"), the value
     /// itself never leaves the backend.
     pub has_stored_secret: StoredSecrets,
+    /// System VPN: removed from macOS; the editor is read-only ("This VPN was removed from macOS").
+    pub removed: bool,
 }
 
 /// The editor key of a connection.

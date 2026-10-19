@@ -5,6 +5,7 @@
   import { onMount, tick } from 'svelte';
   import { api, onViewModel, type Notice, type UninstallResult, type ViewModel } from './api';
   import CheckRow from './CheckRow.svelte';
+  import Icon from './Icon.svelte';
   import { setLanguage, tr } from './l10n.svelte';
   import Modal from './manage/Modal.svelte';
   import './manage/manage.css';
@@ -61,78 +62,94 @@
 </script>
 
 <div class="manage setup">
-  <h1>{tr('System Status')}</h1>
-  <p class="secondary">
-    {tr('MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.')}
-  </p>
+  <header class="hero">
+    <span class="hero-icon" aria-hidden="true"><Icon name="status" /></span>
+    <div class="hero-text">
+      <h1>{tr('System Status')}</h1>
+      <p class="secondary">
+        {tr('MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.')}
+      </p>
+    </div>
+  </header>
   {#if vm?.statusError}
-    <p class="warning"><span aria-hidden="true">⚠</span> {vm.statusError}</p>
+    <p class="warning"><Icon name="warning" /><span>{vm.statusError}</span></p>
+  {/if}
+  {#if vm?.control.error}
+    <p class="warning control-error"><Icon name="warning" /><span>{vm.control.error}</span></p>
   {/if}
 
-  {#if setup?.homebrew && setup.tools && setup.root}
-    <CheckRow row={setup.homebrew} title={tr('Homebrew')}>
-      <button onclick={() => installHomebrew().catch(console.error)}>{tr('Install…')}</button>
-    </CheckRow>
-    <CheckRow row={setup.tools} title={tr('VPN tools')}>
-      <button disabled={!setup.canInstallTools} onclick={() => api.setupInstallTools().catch(console.error)}>
-        {setup.brewRunning ? tr('Installing…') : tr('Install')}
-      </button>
-    </CheckRow>
-    {#if setup.brewOutput}
-      <pre class="output" bind:this={output}>{setup.brewOutput}</pre>
+  <div class="card">
+    {#if setup?.homebrew && setup.tools && setup.root}
+      <CheckRow row={setup.homebrew} title={tr('Homebrew')}>
+        <button onclick={() => installHomebrew().catch(console.error)}>{tr('Install…')}</button>
+      </CheckRow>
+      <hr />
+      <CheckRow row={setup.tools} title={tr('VPN tools')}>
+        <button disabled={!setup.canInstallTools} onclick={() => api.setupInstallTools().catch(console.error)}>
+          {setup.brewRunning ? tr('Installing…') : tr('Install')}
+        </button>
+      </CheckRow>
+      {#if setup.brewOutput}
+        <pre class="output" bind:this={output}>{setup.brewOutput}</pre>
+      {/if}
+      <hr />
+      <CheckRow row={setup.root} title={tr('Permissions (root scripts + sudoers)')}>
+        <button disabled={setup.installingRoot} onclick={() => api.setupInstallRoot().catch(console.error)}>
+          {setup.installingRoot ? tr('Installing…') : tr('Authorize')}
+        </button>
+      </CheckRow>
+      {#if setup.upgradeNotice}
+        <p class="notice">{setup.upgradeNotice}</p>
+      {/if}
+      {#if setup.installError}
+        <p class="error">{setup.installError}</p>
+      {/if}
+      <hr class="full" />
     {/if}
-    <CheckRow row={setup.root} title={tr('Permissions (root scripts + sudoers)')}>
-      <button disabled={setup.installingRoot} onclick={() => api.setupInstallRoot().catch(console.error)}>
-        {setup.installingRoot ? tr('Installing…') : tr('Authorize')}
-      </button>
-    </CheckRow>
-    {#if setup.upgradeNotice}
-      <p class="notice">{setup.upgradeNotice}</p>
-    {/if}
-    {#if setup.installError}
-      <p class="error">{setup.installError}</p>
-    {/if}
-  {/if}
-
-  <div class="line">
-    <span class="caption">{tr('L2TP and Cisco IPsec work without these.')}</span>
-    <span class="spacer"></span>
-    <button onclick={() => api.setupCheck().catch(console.error)}>{tr('Check Again')}</button>
+    <div class="line">
+      <span class="caption">{tr('L2TP and Cisco IPsec work without these.')}</span>
+      <span class="spacer"></span>
+      <button onclick={() => api.setupCheck().catch(console.error)}><Icon name="refresh" />{tr('Check Again')}</button>
+    </div>
   </div>
 
-  <hr />
   {#if vm?.loginItem}
-    <label class="check">
-      <input
-        type="checkbox"
-        checked={vm.loginItem.isOn}
-        disabled={!vm.loginItem.canToggle}
-        onchange={(e) => setLaunchAtLogin(e).catch(console.error)}
-      />
-      {tr('Launch at Login')}
-    </label>
-    {#if vm.loginItem.note}
-      <p class="caption indent">{vm.loginItem.note}</p>
-    {/if}
-    {#if vm.loginItem.showsOpenSettings}
-      <div class="indent">
-        <button onclick={() => api.openLoginItemsSettings().catch(console.error)}>{tr('Open Login Items Settings…')}</button>
-      </div>
-    {/if}
+    <div class="card">
+      <label class="check login">
+        <span>{tr('Launch at Login')}</span>
+        <input
+          type="checkbox"
+          class="switch"
+          role="switch"
+          checked={vm.loginItem.isOn}
+          disabled={!vm.loginItem.canToggle}
+          onchange={(e) => setLaunchAtLogin(e).catch(console.error)}
+        />
+      </label>
+      {#if vm.loginItem.note}
+        <p class="caption">{vm.loginItem.note}</p>
+      {/if}
+      {#if vm.loginItem.showsOpenSettings}
+        <div>
+          <button onclick={() => api.openLoginItemsSettings().catch(console.error)}>{tr('Open Login Items Settings…')}</button>
+        </div>
+      {/if}
+    </div>
   {/if}
 
-  <hr />
-  <div class="line">
-    <span class="caption">{tr('Removes the root scripts, the sudoers rule and the logs; optionally your connections too.')}</span>
-    <span class="spacer"></span>
-    <button
-      class="destructive uninstall"
-      disabled={(setup?.uninstalling ?? false) || (setup?.installingRoot ?? false)}
-      onclick={() => {
-        removeUserData = false;
-        confirmUninstall = true;
-      }}>{tr('Uninstall MacVPN…')}</button
-    >
+  <div class="card danger">
+    <div class="line">
+      <span class="caption">{tr('Removes the root scripts, the sudoers rule and the logs; optionally your connections too.')}</span>
+      <span class="spacer"></span>
+      <button
+        class="destructive uninstall"
+        disabled={(setup?.uninstalling ?? false) || (setup?.installingRoot ?? false)}
+        onclick={() => {
+          removeUserData = false;
+          confirmUninstall = true;
+        }}>{tr('Uninstall MacVPN…')}</button
+      >
+    </div>
   </div>
 </div>
 
@@ -165,14 +182,46 @@
   .setup {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 20px;
+    gap: var(--space-5);
+    padding: var(--space-7) var(--space-7) var(--space-8);
     height: 100vh;
     box-sizing: border-box;
     overflow: auto;
   }
+  .hero {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    margin-bottom: 2px;
+  }
+  .hero-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    color: #fff;
+    background: linear-gradient(180deg, var(--vpn-ikev2), var(--vpn-ikev2-2));
+    box-shadow:
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.25),
+      0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  .hero-icon :global(.icon) {
+    width: 22px;
+    height: 22px;
+    stroke-width: 1.7;
+  }
+  .hero-text {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
   h1 {
-    font-size: 17px;
+    font-size: var(--text-xl);
+    font-weight: 650;
+    letter-spacing: -0.01em;
     margin: 0;
   }
   p {
@@ -182,41 +231,80 @@
   .caption {
     color: var(--secondary);
   }
+  .hero .secondary {
+    font-size: var(--text-md);
+  }
   .caption {
-    font-size: 11px;
+    font-size: var(--text-sm);
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: 14px 16px;
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
   }
   .warning {
-    font-size: 12px;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: 10px 12px;
+    border-radius: var(--radius-card);
+    background: var(--state-busy-soft);
+    font-size: var(--text-md);
   }
-  .warning span {
-    color: var(--orange);
+  .warning :global(.icon) {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    color: var(--state-busy);
   }
   .notice {
-    color: var(--orange);
-    font-size: 12px;
-    margin-left: 28px;
+    color: var(--state-busy-text);
+    font-size: var(--text-md);
+    margin-left: 36px;
   }
   .error {
-    color: var(--red);
+    color: var(--state-fail-text);
     white-space: pre-wrap;
+    margin-left: 36px;
   }
   .output {
-    margin: 0 0 0 28px;
-    height: 160px;
+    margin: 0 0 0 36px;
+    height: 150px;
     overflow: auto;
-    padding: 6px;
-    border-radius: 6px;
-    background: var(--text-background);
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 10px 12px;
+    border-radius: var(--radius-control);
+    background: var(--code-background);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    font: 11px / 1.5 var(--mono);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     -webkit-user-select: text;
     user-select: text;
   }
+  hr {
+    border: none;
+    border-top: 1px solid var(--separator);
+    margin: 0 0 0 36px;
+  }
+  hr.full {
+    margin-left: 0;
+  }
   .line {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--space-4);
+  }
+  .line button :global(.icon) {
+    width: 13px;
+    height: 13px;
+    color: var(--secondary);
   }
   .spacer {
     flex: 1;
@@ -224,21 +312,16 @@
   .uninstall {
     flex: none;
   }
-  hr {
-    border: none;
-    border-top: 1px solid var(--separator);
-    margin: 0;
-    width: 100%;
-  }
   .check {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
   }
-  .indent {
-    margin-left: 22px;
+  .login {
+    justify-content: space-between;
+    font-weight: 500;
   }
   .accessory {
-    margin: 0 0 14px;
+    margin: 0 0 16px;
   }
 </style>

@@ -81,8 +81,47 @@ fn table_matches_the_swift_core_table() {
     }
 }
 
-/// The `app` texts of the Rust UI that the Swift app did not have.
-const RUST_ONLY_APP_TEXTS: [&str; 2] = ["Saved — type to replace", "Remove saved password"];
+/// The `app` texts of the Rust UI that the Swift app did not have (from 1.1.0: the control API's pairing window and
+/// Paired apps section, the live system VPN list, the credential prompt window).
+const RUST_ONLY_APP_TEXTS: &[&str] = &[
+    "Saved — type to replace",
+    "Remove saved password",
+    "Connecting…",
+    "Disconnecting…",
+    "Allow an App to Control VPNs?",
+    "An app on this Mac asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.",
+    "Name (self-reported)",
+    "Executable",
+    "Connections it may use",
+    "There are no connections to allow.",
+    "Deny",
+    "Allow",
+    "Paired apps",
+    "Allow other apps to control VPNs",
+    "Programs on this Mac that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.",
+    "Revoke",
+    "Path changed",
+    "This app was started from another location: %@. Revoke it and pair it again to use the new copy.",
+    "Last used: %@",
+    "Never used",
+    "Paired: %@",
+    "Allowed connections",
+    "Held by %@",
+    "No paired apps yet. An app asks for pairing while this is on.",
+    "Activity",
+    "No activity yet.",
+    "Revoke %@?",
+    "The app can no longer control VPNs, and its open sessions end now. Connections that only it brought up are disconnected.",
+    "Could not change the allowed connections: %@",
+    "Could not revoke %@: %@",
+    // 1.1: the live system VPN list.
+    "This VPN was removed from macOS",
+    // 1.1: the credential prompt.
+    "Credentials needed",
+    "Stored in the macOS Keychain",
+    "Not ready yet. Wait a moment, then click Connect again.",
+    "MacVPN did not accept these values. Check them and try again.",
+];
 
 /// The app part of `strings.json` equals the String Catalog (`Localizable.xcstrings`): every key, translated.
 /// (`legacy/swift`, removed after 1.0.0 together with this test.)

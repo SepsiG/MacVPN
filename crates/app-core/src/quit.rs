@@ -14,6 +14,7 @@
 //! - `Uninstall`: after the uninstaller's final message; only unsaved changes are asked about (the root layer is
 //!   gone, there is nothing to disconnect).
 
+use macvpn_core::l10n::{self, Arg};
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError};
@@ -35,6 +36,18 @@ pub enum QuitStep {
     Unsaved,
     /// "There are active VPN connections".
     ActiveConnections,
+}
+
+/// The note under "There are active VPN connections" naming the apps that hold connections through the control
+/// API (`ControlServer::holder_names`); `None` when no app does.
+pub fn lease_holders_note(names: &[String]) -> Option<String> {
+    if names.is_empty() {
+        return None;
+    }
+    Some(l10n::tr(
+        "Used by other apps through MacVPN: %@. Quitting ends their sessions.",
+        &[Arg::Str(&names.join(", "))],
+    ))
 }
 
 /// What the app does next.
@@ -358,6 +371,19 @@ impl UpdateQuit {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lease_holders_are_named_in_the_quit_note() {
+        assert_eq!(lease_holders_note(&[]), None);
+        let note = l10n::with_language(l10n::AppLanguage::En, || {
+            lease_holders_note(&["Remote Desktop".into(), "Backup".into()])
+        })
+        .unwrap();
+        assert!(note.contains("Remote Desktop, Backup"), "{note}");
+        let hu = l10n::with_language(l10n::AppLanguage::Hu, || lease_holders_note(&["Remote Desktop".into()])).unwrap();
+        assert!(hu.contains("Remote Desktop"), "{hu}");
+        assert_ne!(hu, note);
+    }
 
     #[test]
     fn outcomes_stay_bounded_on_every_path() {

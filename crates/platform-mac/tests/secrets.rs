@@ -138,6 +138,41 @@ fn on_ci() -> bool {
     std::env::var_os("CI").is_some()
 }
 
+/// A throwaway service name of this test process (parallel runs, e.g. two worktrees, never share items).
+fn test_service(name: &str) -> String {
+    format!("{name}.{}", std::process::id())
+}
+
+/// The real Keychain store over throwaway services; every item of both services is removed when it drops, also
+/// after a failed assertion.
+struct ScratchKeychain {
+    store: KeychainSecretStore<SystemKeychain>,
+    service: String,
+    legacy: String,
+}
+
+impl ScratchKeychain {
+    fn new(service: &str, legacy: &str) -> Self {
+        let (service, legacy) = (test_service(service), test_service(legacy));
+        ScratchKeychain {
+            store: KeychainSecretStore::with_services(&service, &legacy, SystemKeychain),
+            service,
+            legacy,
+        }
+    }
+}
+
+impl Drop for ScratchKeychain {
+    fn drop(&mut self) {
+        self.store.remove_all();
+        for service in [&self.service, &self.legacy] {
+            for account in SystemKeychain.accounts(service) {
+                SystemKeychain.delete(service, &account);
+            }
+        }
+    }
+}
+
 /// The real Keychain, with throwaway service names. Skipped on CI (the runner's keychain may be locked).
 #[test]
 fn keychain() {
@@ -145,7 +180,10 @@ fn keychain() {
         eprintln!("skipped on CI: the keychain is not reliably available");
         return;
     }
-    exercise(&KeychainSecretStore::with_services("local.macvpn.tests", "macvpn.tests.legacy", SystemKeychain));
+    let scratch = ScratchKeychain::new("local.macvpn.tests", "macvpn.tests.legacy");
+    exercise(&scratch.store);
+    drop(scratch);
+    assert!(SystemKeychain.accounts(&test_service("local.macvpn.tests")).is_empty());
 }
 
 #[test]
@@ -154,17 +192,18 @@ fn keychain_migration() {
         eprintln!("skipped on CI: the keychain is not reliably available");
         return;
     }
-    let store = KeychainSecretStore::with_services("local.macvpn.tests.new", "macvpn.tests.old", SystemKeychain);
+    let scratch = ScratchKeychain::new("local.macvpn.tests.new", "macvpn.tests.old");
+    let (store, old) = (&scratch.store, scratch.legacy.clone());
     let id = Uuid::new_v4();
     let account = format!("{}.password", uuid_string(&id));
-    assert!(SystemKeychain.write(b"pw", "macvpn.tests.old", &account));
+    assert!(SystemKeychain.write(b"pw", &old, &account));
     assert_eq!(store.migrate_legacy_items(), 1);
     assert_eq!(store.get(&id, SecretField::Password).as_deref(), Some("pw"));
-    assert_eq!(SystemKeychain.read("macvpn.tests.old", &account), None);
+    assert_eq!(SystemKeychain.read(&old, &account), None);
     assert_eq!(store.migrate_legacy_items(), 0);
     // Update-then-add: a second write updates the item in place.
     store.set("pw2", &id, SecretField::Password);
     assert_eq!(store.get(&id, SecretField::Password).as_deref(), Some("pw2"));
     store.remove_all();
-    assert!(SystemKeychain.accounts("local.macvpn.tests.new").is_empty());
+    assert!(SystemKeychain.accounts(&scratch.service).is_empty());
 }

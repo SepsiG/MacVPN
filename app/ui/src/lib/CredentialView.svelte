@@ -1,0 +1,212 @@
+<script lang="ts">
+  // The credential prompt as its window shows it (the window's logic is in CredentialPrompt.svelte): the
+  // connection's name, the re-prompt's "Sign-in failed" line, only the asked fields (the user name as text,
+  // pre-filled when one is stored; the others as password fields), "Save" (ticked by default) and Connect /
+  // Cancel. There is no form and no default button: Return in a field does nothing, Connect needs a click (or Space
+  // on the focused button), and it works only once the input lock passed and every field has a value.
+  import type { CredentialField, CredentialPromptView } from './api';
+  import { canConnect, isSecretField, orderedFields } from './credentials';
+  import Icon from './Icon.svelte';
+  import { tr } from './l10n.svelte';
+  import { countdown } from './prompt';
+
+  let {
+    prompt,
+    values = $bindable({}),
+    save = $bindable(true),
+    armed,
+    left,
+    error = null,
+    onconnect,
+    oncancel,
+  }: {
+    prompt: CredentialPromptView;
+    values?: Partial<Record<CredentialField, string>>;
+    save?: boolean;
+    armed: boolean;
+    left: number;
+    /// Why the last answer was not taken (`tooEarly` or `rejected`); cleared by the window on the next input.
+    error?: 'tooEarly' | 'rejected' | null;
+    onconnect: () => void;
+    oncancel: () => void;
+  } = $props();
+
+  const fields = $derived(orderedFields(prompt.fields));
+
+  /// A field's label (the editors' texts).
+  function label(field: CredentialField): string {
+    switch (field) {
+      case 'username':
+        return tr('Username');
+      case 'password':
+        return tr('Password');
+      case 'psk':
+        return tr('Shared secret (PSK)');
+      case 'keyPassword':
+        return tr('Private key password');
+    }
+  }
+  const ready = $derived(canConnect(fields, values, armed));
+</script>
+
+<div class="manage credentials">
+  <h1>
+    <span class="bubble" aria-hidden="true"><Icon name="key" /></span>
+    {tr('Credentials needed')}
+  </h1>
+  <p class="name">{prompt.connectionName}</p>
+  {#if prompt.message}
+    <p class="banner warn retry" role="alert"><Icon name="warning" /><span>{prompt.message}</span></p>
+  {/if}
+  <div class="card">
+    {#each fields as field (field)}
+      <label class="field">
+        <span class="caption">{label(field)}</span>
+        <input
+          data-field={field}
+          type={isSecretField(field) ? 'password' : 'text'}
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+          disabled={!armed}
+          value={values[field] ?? ''}
+          oninput={(e) => (values = { ...values, [field]: e.currentTarget.value })}
+        />
+      </label>
+    {/each}
+  </div>
+  {#if error}
+    <p class="caption refused" role="alert">
+      {error === 'tooEarly'
+        ? tr('Not ready yet. Wait a moment, then click Connect again.')
+        : tr('MacVPN did not accept these values. Check them and try again.')}
+    </p>
+  {/if}
+  <label class="save">
+    <input type="checkbox" bind:checked={save} disabled={!armed} />
+    <span>
+      {tr('Save')}
+      <span class="caption hint">{tr('Stored in the macOS Keychain')}</span>
+    </span>
+  </label>
+  <div class="buttons">
+    <p class="caption expires">{tr('Expires in %@', countdown(left))}</p>
+    <button type="button" class="cancel" onclick={oncancel}>{tr('Cancel')}</button>
+    <button type="button" class="connect" disabled={!ready} onclick={() => ready && onconnect()}>{tr('Connect')}</button>
+  </div>
+</div>
+
+<style>
+  .credentials {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: 18px var(--space-7) var(--space-7);
+    height: 100vh;
+    box-sizing: border-box;
+    overflow: auto;
+  }
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    font-size: var(--text-lg);
+    font-weight: 600;
+    margin: 0;
+  }
+  .bubble {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-icon);
+    color: #fff;
+    background: linear-gradient(180deg, var(--state-busy), color-mix(in srgb, var(--state-busy) 82%, #000));
+    box-shadow:
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.25),
+      0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  .bubble :global(.icon) {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.7;
+  }
+  p {
+    margin: 0;
+  }
+  .name {
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+  .caption {
+    font-size: var(--text-sm);
+    color: var(--secondary);
+    font-variant-numeric: tabular-nums;
+  }
+  .banner {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: 8px 12px;
+    border-radius: var(--radius-control);
+    overflow-wrap: anywhere;
+  }
+  .banner :global(.icon) {
+    flex: none;
+    margin-top: 1px;
+    width: 14px;
+    height: 14px;
+  }
+  .banner.warn {
+    background: var(--state-fail-soft);
+    color: var(--state-fail-text);
+  }
+  .card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+    padding: var(--space-5);
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+  }
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .field input {
+    min-height: 28px;
+  }
+  .refused {
+    color: var(--state-fail-text);
+  }
+  .save {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    padding: 0 2px;
+  }
+  .save > span {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+  }
+  .buttons {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-3);
+    margin-top: auto;
+  }
+  .expires {
+    margin-right: auto;
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-sunken);
+  }
+</style>

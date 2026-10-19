@@ -12,6 +12,7 @@ use crate::validators::openvpn::OpenVPNValidator;
 use crate::validators::sstp::SSTPConfig;
 use serde_json::{Map, Number, Value};
 use uuid::Uuid;
+use zeroize::{Zeroize, Zeroizing};
 
 /// OpenVPN `static-challenge "<text>" <echo> [scrv1|concat]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,55 +94,84 @@ pub fn has_control(s: &str) -> bool {
 
 /// `SCRV1:<base64 password>:<base64 code>` (OpenVPN management-notes, "Static protocol").
 pub fn scrv1(password: &str, code: &str) -> String {
-    format!(
-        "SCRV1:{}:{}",
-        crate::swift_base64::encode(password.as_bytes()),
-        crate::swift_base64::encode(code.as_bytes())
-    )
+    // Built in one exact allocation, the base64 temporaries wiped (no unwiped copy of the password is freed).
+    let password = Zeroizing::new(crate::swift_base64::encode(password.as_bytes()));
+    let code = Zeroizing::new(crate::swift_base64::encode(code.as_bytes()));
+    let mut out = String::with_capacity("SCRV1:".len() + password.len() + 1 + code.len());
+    out.push_str("SCRV1:");
+    out.push_str(&password);
+    out.push(':');
+    out.push_str(&code);
+    out
 }
 
 /// The static challenge password in the config's format (`scrv1`: SCRV1, `concat`: password + code).
 pub fn static_challenge_password(password: &str, code: &str, format: ChallengeFormat) -> String {
     match format {
-        ChallengeFormat::Concat => format!("{password}{code}"),
+        ChallengeFormat::Concat => concat(&[password, code]),
         ChallengeFormat::Scrv1 => scrv1(password, code),
     }
 }
 
 /// Password + separator + code. With an empty password only the code (no separator).
 pub fn append_code(password: &str, code: &str, separator: OTPSeparator) -> String {
-    if password.is_empty() { code.to_string() } else { format!("{password}{}{code}", separator.string()) }
+    if password.is_empty() { code.to_string() } else { concat(&[password, separator.string(), code]) }
+}
+
+/// The parts in one exact allocation (a growing `String` would free unwiped copies of a secret).
+fn concat(parts: &[&str]) -> String {
+    let mut out = String::with_capacity(parts.iter().map(|p| p.len()).sum());
+    for part in parts {
+        out.push_str(part);
+    }
+    out
+}
+
+/// A copy of `secrets` whose password is `password`; the copied old password is wiped, not just dropped.
+fn with_password(secrets: &Secrets, password: &str) -> Zeroizing<Secrets> {
+    let mut out = Zeroizing::new(secrets.clone());
+    out.password.zeroize();
+    out.password = Some(password.to_string());
+    out
 }
 
 /// Applies "code appended to the password" per kind: for the root kinds (OpenVPN, strongSwan EAP, SSTP) the stdin
 /// password, for native L2TP / Cisco IPsec and system VPNs the `SCNetworkConnection` options' password. The SSTP
 /// password rule (no `"`, `\`, control character) applies to the combined password too.
-pub fn apply_code(code: &str, separator: OTPSeparator, secrets: &Secrets, kind: VPNKind) -> Result<Secrets, MFAError> {
+pub fn apply_code(
+    code: &str,
+    separator: OTPSeparator,
+    secrets: &Secrets,
+    kind: VPNKind,
+) -> Result<Zeroizing<Secrets>, MFAError> {
     if !is_valid_code(code, false) {
         return Err(MFAError::InvalidCode);
     }
-    let mut out = secrets.clone();
-    let combined = append_code(secrets.password.as_deref().unwrap_or(""), code, separator);
+    let combined = Zeroizing::new(append_code(secrets.password.as_deref().unwrap_or(""), code, separator));
     if kind == VPNKind::Sstp && !SSTPConfig::is_acceptable_password(&combined) {
         return Err(MFAError::SstpPassword);
     }
-    out.password = Some(combined);
+    let mut out = with_password(secrets, &combined);
     out.one_time_code = Some(code.to_string());
     Ok(out)
 }
 
 /// OpenVPN static challenge: the password packed in the config's format, and `mvpn` is told (`challenge=packed`)
 /// so the bridge passes it unchanged in the management `password "Auth"` answer.
-pub fn apply_static_challenge(challenge: &StaticChallenge, code: &str, secrets: &Secrets) -> Result<Secrets, MFAError> {
+pub fn apply_static_challenge(
+    challenge: &StaticChallenge,
+    code: &str,
+    secrets: &Secrets,
+) -> Result<Zeroizing<Secrets>, MFAError> {
     if !is_valid_code(code, true) {
         return Err(MFAError::InvalidCode);
     }
-    let mut out = secrets.clone();
-    let packed = static_challenge_password(secrets.password.as_deref().unwrap_or(""), code, challenge.format);
+    let packed =
+        Zeroizing::new(static_challenge_password(secrets.password.as_deref().unwrap_or(""), code, challenge.format));
     if packed.len() > crate::management::MAX_VALUE_BYTES {
         return Err(MFAError::TooLong);
     }
-    out.password = Some(packed);
+    let mut out = with_password(secrets, &packed);
     out.challenge_packed = true;
     if !code.is_empty() {
         out.one_time_code = Some(code.to_string());

@@ -4,6 +4,7 @@
   // install's quit step, and the previous update's notice at launch.
   import { onMount } from 'svelte';
   import { api, onViewModel, type QuitChoice, type ViewModel } from './api';
+  import Icon from './Icon.svelte';
   import { setLanguage, tr } from './l10n.svelte';
   import Modal from './manage/Modal.svelte';
   import './manage/manage.css';
@@ -52,8 +53,13 @@
 
 <div class="manage update">
   {#if release && update}
-    <h1>{tr('Update available: %@', release.tag)}</h1>
-    <p class="secondary">{tr('Installed version: %@', update.currentVersion)}</p>
+    <header class="hero">
+      <span class="hero-icon" aria-hidden="true"><Icon name="download" /></span>
+      <div class="hero-text">
+        <h1>{tr('Update available: %@', release.tag)}</h1>
+        <p class="secondary">{tr('Installed version: %@', update.currentVersion)}</p>
+      </div>
+    </header>
     <div class="notes">
       {#each segments as s, i (i)}{#if s.code}<code>{s.text}</code>{:else}<span class:bold={s.bold} class:italic={s.italic} class:strike={s.strike}>{s.text}</span>{/if}{/each}
     </div>
@@ -77,8 +83,13 @@
       </button>
     </div>
   {:else if update}
-    <h1>{tr('No update available')}</h1>
-    <p class="secondary">{tr('The installed version (%@) is the latest.', update.currentVersion)}</p>
+    <header class="hero">
+      <span class="hero-icon latest" aria-hidden="true"><Icon name="check" /></span>
+      <div class="hero-text">
+        <h1>{tr('No update available')}</h1>
+        <p class="secondary">{tr('The installed version (%@) is the latest.', update.currentVersion)}</p>
+      </div>
+    </header>
     <div class="line">
       <span class="spacer"></span>
       <button onclick={close}>{tr('Close')}</button>
@@ -89,7 +100,7 @@
 {#if askingQuit}
   <Modal
     title={tr('There are active VPN connections')}
-    message={tr('Disconnect them before quitting?')}
+    message={vm?.quitNote ? `${tr('Disconnect them before quitting?')}\n\n${vm.quitNote}` : tr('Disconnect them before quitting?')}
     buttons={[
       { label: tr('Cancel'), kind: 'cancel', action: () => answering || answer('cancel').catch(console.error) },
       { label: tr('Quit, Keep Them Running'), action: () => answering || answer('keepRunning').catch(console.error) },
@@ -108,13 +119,48 @@
   .update {
     display: flex;
     flex-direction: column;
-    gap: 14px;
-    padding: 20px;
+    gap: var(--space-5);
+    padding: var(--space-7);
     height: 100vh;
     box-sizing: border-box;
   }
+  .hero {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  .hero-icon {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    color: #fff;
+    background: linear-gradient(180deg, var(--vpn-openvpn), var(--vpn-openvpn-2));
+    box-shadow:
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.25),
+      0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  .hero-icon.latest {
+    background: linear-gradient(180deg, var(--state-on), color-mix(in srgb, var(--state-on) 80%, #000));
+  }
+  .hero-icon :global(.icon) {
+    width: 22px;
+    height: 22px;
+    stroke-width: 1.8;
+  }
+  .hero-text {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
   h1 {
-    font-size: 17px;
+    font-size: var(--text-xl);
+    font-weight: 650;
+    letter-spacing: -0.01em;
     margin: 0;
   }
   p {
@@ -125,10 +171,13 @@
     color: var(--secondary);
   }
   .caption {
-    font-size: 11px;
+    font-size: var(--text-sm);
   }
   .error {
-    color: var(--red);
+    padding: 8px 12px;
+    border-radius: var(--radius-control);
+    background: var(--state-fail-soft);
+    color: var(--state-fail-text);
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
@@ -136,9 +185,13 @@
     flex: 1;
     min-height: 120px;
     overflow: auto;
-    padding: 8px;
-    border-radius: 6px;
-    background: var(--text-background);
+    padding: 14px 16px;
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    line-height: 1.5;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     -webkit-user-select: text;
@@ -154,30 +207,41 @@
     text-decoration: line-through;
   }
   code {
-    font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 1px 5px;
+    border-radius: var(--radius-xs);
+    background: var(--surface-sunken);
+    font: 11.5px var(--mono);
   }
   .line {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-3);
   }
   .spacer {
     flex: 1;
   }
   .stage {
-    font-size: 12px;
+    font-size: var(--text-md);
   }
   .link {
+    min-height: 0;
     border: none;
     background: none;
+    box-shadow: none;
     padding: 0;
-    color: var(--accent);
+    color: var(--accent-text);
+    font-weight: 400;
+  }
+  .manage .link:hover:not(:disabled),
+  .manage .link:active:not(:disabled) {
+    background: none;
+    text-decoration: underline;
   }
   .spinner {
     width: 12px;
     height: 12px;
     border: 2px solid var(--separator);
-    border-top-color: var(--secondary);
+    border-top-color: var(--accent);
     border-radius: 50%;
     animation: spin 0.8s linear infinite;
   }

@@ -162,6 +162,27 @@ fn capture_with(cmd: &Cmd, mode: EnvMode, max: usize, merge: bool) -> Option<(bo
     Some((status.success(), out))
 }
 
+/// [`capture`] for the tests that run a real child. On a heavily loaded Mac a child forked from the (large, many-
+/// threaded) test binary is now and then killed with SIGKILL before it writes anything (seen as `ok == false` with
+/// empty output, or a failed spawn). That says nothing about the command, so such a run is repeated, at most 5
+/// times. A child that writes anything, or exits successfully, is returned as is: a real regression (wrong output,
+/// a failing command) still fails the test.
+#[cfg(test)]
+pub(crate) fn capture_settled(cmd: &Cmd, mode: EnvMode, max: usize) -> (bool, Vec<u8>) {
+    let mut last = None;
+    for attempt in 0..5 {
+        if attempt > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(50 * attempt));
+        }
+        match capture(cmd, mode, max) {
+            Some((false, out)) if out.is_empty() => last = Some((false, out)),
+            Some(done) => return done,
+            None => {}
+        }
+    }
+    last.unwrap_or_else(|| panic!("{} could not be started", cmd.display()))
+}
+
 /// Runs a command with stdin `/dev/null` and stdout/stderr discarded; its exit success.
 pub fn quiet(cmd: &Cmd, mode: EnvMode) -> bool {
     cmd.command(mode)
@@ -213,16 +234,17 @@ mod tests {
             e,
             vec![("LC_ALL".into(), Some("C".into())), ("PATH".into(), Some("/usr/bin:/bin:/usr/sbin:/sbin".into()))]
         );
-        assert!(capture(&Cmd::new("/usr/bin/env"), EnvMode::Minimal, 4096).is_some_and(|(ok, out)| {
-            let s = String::from_utf8_lossy(&out);
-            ok && s.lines().count() == 2 && s.contains("PATH=/usr/bin:/bin:/usr/sbin:/sbin") && s.contains("LC_ALL=C")
-        }));
+        let (ok, out) = capture_settled(&Cmd::new("/usr/bin/env"), EnvMode::Minimal, 4096);
+        assert!(ok);
+        let mut lines: Vec<String> = String::from_utf8_lossy(&out).lines().map(String::from).collect();
+        lines.sort();
+        assert_eq!(lines, ["LC_ALL=C", "PATH=/usr/bin:/bin:/usr/sbin:/sbin"]);
     }
 
     #[test]
     fn empty_mode_passes_only_explicit_variables() {
         let cmd = Cmd::new("/usr/bin/env").env("script_type", "up");
-        let (ok, out) = capture(&cmd, EnvMode::Empty, 4096).unwrap();
+        let (ok, out) = capture_settled(&cmd, EnvMode::Empty, 4096);
         assert!(ok);
         assert_eq!(String::from_utf8_lossy(&out), "script_type=up\n");
     }

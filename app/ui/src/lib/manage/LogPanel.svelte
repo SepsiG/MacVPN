@@ -4,6 +4,7 @@
   import { onDestroy, onMount, tick, untrack } from 'svelte';
   import { api, onLogLines, type Choice, type LogFilter, type LogLineView, type Notice } from '../api';
   import { tr } from '../l10n.svelte';
+  import Icon from '../Icon.svelte';
   import { applyChunk, visibleLines } from '../logview';
 
   let { id, filters, onnotice }: { id: string; filters: Choice<LogFilter>[]; onnotice: (n: Notice) => void } = $props();
@@ -55,10 +56,13 @@
         </button>
       {/each}
     </div>
-    <input class="search" type="search" placeholder={tr('Search')} aria-label={tr('Search')} bind:value={search} />
+    <span class="search-field">
+      <Icon name="search" />
+      <input class="search" type="search" placeholder={tr('Search')} aria-label={tr('Search')} bind:value={search} />
+    </span>
     <label class="check"><input type="checkbox" bind:checked={follow} onchange={scrollToEnd} />{tr('Follow')}</label>
-    <button onclick={() => api.logCopy(filter, search).catch(console.error)}>{tr('Copy')}</button>
-    <button onclick={() => save().catch(console.error)}>{tr('Save…')}</button>
+    <button onclick={() => api.logCopy(filter, search).catch(console.error)}><Icon name="copy" />{tr('Copy')}</button>
+    <button onclick={() => save().catch(console.error)}><Icon name="save" />{tr('Save…')}</button>
   </div>
   <div class="lines" bind:this={scroller}>
     {#each visible as line, i (i)}
@@ -71,26 +75,67 @@
   .log {
     display: flex;
     flex-direction: column;
+    gap: var(--space-4);
     height: 100%;
     min-height: 0;
+    box-sizing: border-box;
+    padding: var(--space-4) var(--space-7) var(--space-7);
   }
   .toolbar {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
-    padding: 8px;
-    border-bottom: 1px solid var(--separator);
+    gap: var(--space-3);
+  }
+  .toolbar .segmented :global(button) {
+    padding: 2px 11px;
+  }
+  .toolbar button :global(.icon) {
+    width: 13px;
+    height: 13px;
+    color: var(--secondary);
+  }
+  .search-field {
+    position: relative;
+    flex: 1 1 150px;
+    min-width: 150px;
+    display: flex;
+  }
+  .search-field :global(.icon) {
+    position: absolute;
+    left: 9px;
+    top: 50%;
+    width: 13px;
+    height: 13px;
+    margin-top: -6.5px;
+    color: var(--tertiary);
+    pointer-events: none;
   }
   .search {
     flex: 1;
-    min-width: 80px;
+    min-width: 0;
+  }
+  .search-field .search {
+    padding-left: 27px;
+  }
+  .toolbar .check {
+    align-items: center;
+    gap: 5px;
+    white-space: nowrap;
+  }
+  .toolbar .check input {
+    margin: 0;
   }
   .lines {
     flex: 1;
     overflow: auto;
-    padding: 8px;
-    background: var(--text-background);
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    padding: 10px 12px;
+    border-radius: var(--radius-card);
+    background: var(--code-background);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    font: 11px / 1.55 var(--mono);
     -webkit-user-select: text;
     user-select: text;
     cursor: text;
@@ -104,13 +149,13 @@
     font-weight: 700;
   }
   .step {
-    color: var(--blue);
+    color: var(--accent-text);
   }
   .command {
     color: var(--purple);
   }
   .error {
-    color: var(--red);
+    color: var(--state-fail-text);
   }
   .output {
     color: var(--secondary);

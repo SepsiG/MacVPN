@@ -68,8 +68,8 @@ fn disconnect_and_quit_stops_managed_and_system_connections() {
 
 #[test]
 fn poll_interval_is_3s_active_30s_idle() {
-    assert_eq!(poll_interval(true), 3.0);
-    assert_eq!(poll_interval(false), 30.0);
+    assert_eq!(poll_interval(true, false, true), 3.0);
+    assert_eq!(poll_interval(false, false, true), 30.0);
     assert_eq!(POLL_TICK, Duration::from_secs(1));
 }
 
@@ -82,6 +82,8 @@ fn simulate(active: impl Fn(f64) -> bool, seconds: f64, wake_at: &[f64]) -> Vec<
     poller.run(
         || refreshes.borrow_mut().push(now()),
         || active(now()),
+        || false,
+        || true,
         &clock,
         || {
             clock.advance(1.0);
@@ -126,6 +128,8 @@ fn clock_jump_after_sleep_refreshes() {
     poller.run(
         || count.set(count.get() + 1),
         || false,
+        || false,
+        || true,
         &clock,
         || {
             ticks.set(ticks.get() + 1);
@@ -169,7 +173,7 @@ fn poller_loop_refreshes_the_manager_until_stopped() {
         let (m, p) = (m.clone(), poller.clone());
         std::thread::spawn(move || {
             let clock = macvpn_app_core::deps::SystemClock;
-            p.run(|| m.refresh(), || m.has_active(), &clock, || p.wait(Duration::from_millis(10)));
+            p.run(|| m.refresh(), || m.has_active(), || false, || true, &clock, || p.wait(Duration::from_millis(10)));
         })
     };
     std::thread::sleep(Duration::from_millis(50));

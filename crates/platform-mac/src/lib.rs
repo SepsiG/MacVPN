@@ -1,16 +1,17 @@
 //! MacVPN macOS platform layer (port of the macOS-specific parts of the Swift `MacVPNCore` and `MacVPN`):
 //! Keychain, native VPN (SCNetworkConnection + scutil), launch at login (SMAppService + LaunchAgent), the root
 //! installer / uninstaller, the update installer, Homebrew, the process runner, the `mvpn` client and the setup
-//! check. The core's locale hooks (collation, preferred languages) are installed by [`install_core_hooks`].
+//! check, and the system VPN change watcher. The core's locale hooks (collation, preferred languages) are installed by [`install_core_hooks`].
 //!
-//! `unsafe` code is confined to the small FFI modules `sys`, `cf`, `keychain_ffi`, `sc_ffi`, `preferences`,
-//! `smappservice_ffi`, `dialogs`, `notifications` and `app_hooks`, each with an audit note and a `SAFETY` comment
+//! `unsafe` code is confined to the small FFI modules `sys`, `control_socket`, `cf`, `keychain_ffi`, `sc_ffi`, `sc_watch`,
+//! `preferences`, `smappservice_ffi`, `dialogs`, `notifications` and `app_hooks`, each with an audit note and a `SAFETY` comment
 //! per block.
 
 pub mod app_hooks;
 pub mod brew;
 mod cf;
 pub mod command;
+pub mod control_socket;
 pub mod dialogs;
 pub mod http;
 mod keychain_ffi;
@@ -23,6 +24,7 @@ pub mod preferences;
 pub mod profile_staging;
 pub mod root_installer;
 mod sc_ffi;
+pub mod sc_watch;
 pub mod secrets;
 pub mod setup_checker;
 mod smappservice_ffi;

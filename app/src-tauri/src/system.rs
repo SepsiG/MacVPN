@@ -235,7 +235,7 @@ impl UninstallSystem for Uninstaller<'_> {
     }
 
     fn stop_polling(&self) {
-        self.0.poller.stop();
+        self.0.stop_polling();
     }
 
     fn unregister_login_item(&self) -> Result<(), String> {

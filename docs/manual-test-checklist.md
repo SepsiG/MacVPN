@@ -1,15 +1,15 @@
-# MacVPN – kézi tesztlista (1.0.0, Rust/Tauri)
+# MacVPN – kézi tesztlista (1.1.0, Rust/Tauri)
 
-Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.0.0.dmg`), zöld: `cargo test --workspace`,
+Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.1.0.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
-a régi updater elfogadási próbája (lásd lent, „Frissítés v0.4.0 → v1.0.0”).
+az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
 
-## 1.0.0: csomag és aláírás
-- [ ] `plutil -p dist/MacVPN.app/Contents/Info.plist`: `CFBundleIdentifier` `local.macvpn`, `CFBundleName` / `CFBundleDisplayName` `MacVPN`, `CFBundleExecutable` `MacVPN`, `CFBundleShortVersionString` = `CFBundleVersion` = `1.0.0`, `LSMinimumSystemVersion` `14.0`, `LSUIElement` true, `CFBundleDevelopmentRegion` `en`, `CFBundleLocalizations` `[en, hu]`, `MacVPNUpdateRepo` `SepsiG/MacVPN`, `MacVPNUpdateRepoID` `1422472799`, `CFBundleIconFile` `AppIcon`
+## 1.1.0: csomag és aláírás
+- [ ] `plutil -p dist/MacVPN.app/Contents/Info.plist`: `CFBundleIdentifier` `local.macvpn`, `CFBundleName` / `CFBundleDisplayName` `MacVPN`, `CFBundleExecutable` `MacVPN`, `CFBundleShortVersionString` = `CFBundleVersion` = `1.1.0`, `LSMinimumSystemVersion` `14.0`, `LSUIElement` true, `CFBundleDevelopmentRegion` `en`, `CFBundleLocalizations` `[en, hu]`, `MacVPNUpdateRepo` `SepsiG/MacVPN`, `MacVPNUpdateRepoID` `1422472799`, `CFBundleIconFile` `AppIcon`
 - [ ] `lipo -archs` a `Contents/MacOS/MacVPN`-re és a `Contents/Resources/root/mvpn`-re: `x86_64 arm64`; a `Contents/Resources/root` alatt csak `mvpn` és `VERSION` (7)
 - [ ] `codesign --verify --strict --verbose=2 dist/MacVPN.app` sikeres; `codesign -dv …/root/mvpn` → `flags=…(adhoc,runtime)`
-- [ ] Intel Macen (vagy `arch -x86_64`) is elindul az app; a Finder az ikont mutatja; a Dockban nem jelenik meg (LSUIElement)
+- [ ] Intel Macen (vagy `arch -x86_64`) is elindul az app; a Finder az ikont mutatja; ablak nélkül a Dockban nem jelenik meg (LSUIElement; ablakkal lásd „1.1: Dock ikon”)
 - [ ] Rendszerbeállítások → Általános → Nyelv és régió → Alkalmazások: a MacVPN-hez magyar / angol választható, és az app újraindítás után azt használja
 
 ## Telepítés tiszta állapotból
@@ -122,6 +122,50 @@ a régi updater elfogadási próbája (lásd lent, „Frissítés v0.4.0 → v1.
 - [ ] Kitűzött kapcsolat törlése után a `connection-order.json`-ból eltűnik a bejegyzése; a fájl jogai `600`
 - [ ] Export: a kitűzés és a pontszám nem kerül az exportba
 
+## 1.1: élő rendszer-VPN lista
+A figyelő (SCPreferences) valódi VPN-változásokon még nincs igazolva (`docs/superpowers/spikes/2026-10-19-live-system-list.md`): addig a lassabb lekérdezés is fut. Minden lépés macOS 14-en és 15-ön, ha lehet 10-ből 10-szer.
+- [ ] `cargo test -p macvpn-platform-mac --test sc_watch -- --ignored --nocapture`, közben a Rendszerbeállítások → VPN-ben L2TP és IKEv2 VPN felvétele, átnevezése, törlése: minden lépésre kb. 1 s-on belül kiír egy sort (a késést írd a spike fájlba)
+- [ ] Nyitott menü mellett VPN felvétele / átnevezése / törlése a Rendszerbeállításokban: a sor kb. 1 s-on belül megjelenik / átnevezve látszik / eltűnik, a menü újranyitása nélkül
+- [ ] Nyitott Kapcsolatok ablakban egy rendszer VPN kiválasztva, majd törölve a Rendszerbeállításokban: a részletező megmarad, „Ezt a VPN-t eltávolították a macOS-ből” / „This VPN was removed from macOS” sáv, minden mező és a Csatlakozás / Mentés / Mentett titkok törlése gomb tiltva; másik kapcsolatot kiválasztva eltűnik
+- [ ] Nyitott Kapcsolatok ablak mellett új VPN felvétele a Rendszerbeállításokban: a sora újranyitás nélkül megjelenik
+- [ ] Egy MacVPN-ből mentett L2TP profil telepítése és eltávolítása után a lista követi a változást
+- [ ] Zárt menü és ablakok mellett 10 perc tétlenség: legfeljebb 30 s-onként egy `scutil --nc list` (pl. `sudo fs_usage -w -f exec | grep scutil`), nincs pörgés
+- [ ] Ha a figyelő mind a 10 próbán megbízható volt, `WATCHER_TRUSTED` (`crates/app-core/src/live.rs`) átállítható `true`-ra
+
+## 1.1: vezérlő API (párosított appok)
+A Remote Desktop app helyett a példakliens is megfelel: `cargo build -p macvpn-control-client`, `BIN=$PWD/target/debug/macvpn-control-client` (a párosítás ehhez az útvonalhoz kötődik). A token sose kerüljön az argv-be: `MACVPN_TOKEN` vagy stdin. Előtte: egy OpenVPN kapcsolat MFA-val (pl. `static-challenge` vagy CRV1 szerver), egy másik, egyszerű kapcsolat (pl. WireGuard).
+- [ ] Alapállapot: Kapcsolatok → **Párosított appok** / **Paired apps**, a kapcsoló ki; `ls ~/Library/Application\ Support/MacVPN/control/` → nincs `macvpn.sock`; `$BIN list` → érthető hiba (nincs socket)
+- [ ] Bekapcsolás → `ls -la ~/Library/Application\ Support/MacVPN/control/`: a mappa `drwx------`, a `macvpn.sock` `srw-------`, a felhasználóé
+- [ ] `$BIN pair "Remote Desktop teszt"` → a párosító ablak nem lopja el a fókuszt (egy másik appban gépelve a leütések ott maradnak), az első másodpercben nem kattintható, nincs alapértelmezett gomb (Enter nem enged); „Név (a program saját megnevezése)”, a `$BIN` teljes útvonala monospace-szel, kapcsolatonként egy üres négyzet; az **Engedélyezés** csak bejelölt kapcsolatnál aktív
+- [ ] A két kapcsolatot bejelölve **Engedélyezés** → a token egyszer, a stdoutra; a Párosított appok listában a név, az útvonal, „Még nem használta”, „Párosítva: …”, az engedélyezett kapcsolatok; a **Tevékenység** listában a párosítás; a naplókban (`~/Library/Logs`, debug kimenet) nincs token
+- [ ] Ablak bezárása / **Elutasítás** → a kliens `denied`; 3 elutasítás után 10 percig minden párosítás `denied`
+- [ ] Token a Keychainbe: `security add-generic-password -U -s local.test.macvpn-client -a control-token -w` (a jelszót a `security` kéri be), utána `export MACVPN_TOKEN="$(security find-generic-password -s local.test.macvpn-client -a control-token -w)"`
+- [ ] `$BIN list` → csak a két engedélyezett kapcsolat (id, állapot, típus, név); egy engedélyezésből kivett kapcsolat azonnal eltűnik a listából
+- [ ] **OpenVPN `up` MFA-val:** `$BIN hold <openvpn-id>` → `connecting`, majd `waiting_for_mfa`; a MacVPN a saját kódbekérő ablakát nyitja (a kliens nem látja a kérdést és a kódot); helyes kóddal `connected`; a menüben és a Kapcsolatok ablakban a kártyán „Használja: Remote Desktop teszt” / „Held by …”
+- [ ] **A kliens kilép → a VPN lebomlik:** Ctrl-C (vagy Ctrl-D) a `hold`-ban → pár másodpercen belül `disconnected`, a menü szerint bontva; ugyanez `kill -9 <kliens pid>`-del (összeomlás)
+- [ ] **Már fennálló kapcsolat fennmarad:** a WireGuard kapcsolatot a menüből felépítve `$BIN hold <wg-id>` → azonnal `connected`; Ctrl-C után a VPN fent marad, nincs „Használja” felirat
+- [ ] Két `hold` ugyanarra a kapcsolatra (két terminál) → az első kilépése után fent marad, a második után lebomlik
+- [ ] A felhasználó bontja a menüből a `hold` alatt → a kliens `disconnecting` / `disconnected` eseményt kap, kilép 1-es kóddal; a MacVPN nem csatlakozik újra
+- [ ] Hitelesítő adat kell (mentett jelszó nélküli OpenVPN): `hold` → `waiting_for_credentials`; Mégse → `credentials_cancelled`
+- [ ] Kilépés a MacVPN-ből `hold` alatt → a kilépési kérdés megnevezi az appot („Más appok is használják a MacVPN-en keresztül: …”); a kliens `closing` eseményt kap `app_quitting` okkal
+- [ ] **Visszavonás:** `hold` alatt **Visszavonás** → megerősítés után a kliens kapcsolata azonnal megszakad, a csak általa felépített VPN lebomlik; utána `$BIN list` → `unauthorized` (kb. 1 s késleltetéssel); a lista üres, a Tevékenységben ott a visszavonás
+- [ ] Útvonalváltás: a binárist máshová másolva (`cp $BIN /tmp/mcc && MACVPN_TOKEN=… /tmp/mcc list`) → `unauthorized`; az eredeti útvonalon újrafordítva működik
+- [ ] **A beállítás kikapcsolása:** `hold` alatt a kapcsoló ki → a kliens `closing` (`disabled`) eseményt kap, a csak általa tartott VPN lebomlik; `ls ~/Library/Application\ Support/MacVPN/control/` → nincs `macvpn.sock`; `$BIN list` → hiba; visszakapcsolva a régi token újra működik
+- [ ] Másik felhasználóként (`sudo -u <másik> …`) a socket nem érhető el
+- [ ] Angol felülettel (`-AppleLanguages '(en)'`) a párosító ablak és a Párosított appok szövegei angolul
+
+## 1.1: Dock ikon
+- [ ] Indulás után (ablak nélkül) nincs Dock ikon, a Cmd+Tab listában sincs MacVPN
+- [ ] Kapcsolatok / Rendszerállapot / Frissítés ablak megnyitása → megjelenik a Dock ikon, Cmd+Tabbal elérhető; az ikonra kattintva a nyitott ablak előjön (új ablak nem nyílik)
+- [ ] Két ablak nyitva, az egyik bezárva → az ikon marad; az utolsó bezárásakor eltűnik; minimalizált ablakkal is helyes
+- [ ] A kódbekérő, a hitelesítőadat-bekérő és a párosító ablak nem hoz elő Dock ikont, és nem lopja el a fókuszt
+- [ ] Gyors egymás utáni nyitás/zárás után az ikon állapota a valóságot követi
+
+## 1.1: kártyás felület
+- [ ] Menü: minden kapcsolat kártya (típusbuborék, név, típus és állapot, kapcsoló: kapcsolódva zöld, csatlakozás közben borostyánsárga); a csempék (Új kapcsolat / Import…, Kapcsolatok kezelése…, Rendszerállapot), a lenyitható Beállítások csoport, a Súgó és a Kilépés működik; sok kapcsolatnál a lista görget, a menü nem lóg ki a képernyőről
+- [ ] Világos és sötét módban is olvasható; „Mozgás csökkentése” mellett nincs animáció
+- [ ] Kapcsolatok ablak, Rendszerállapot, Frissítés, kódbekérő: a kártyás megjelenés, a funkciók változatlanok; billentyűzettel (Tab) a fókuszkeret látszik
+
 ## MFA (valódi szerver kell)
 Előfeltétel: OpenVPN 2.6/2.7 szerver (pl. `openvpn-auth-*` plugin, `auth-user-pass-verify` script vagy OpenVPN Access Server), amely a lent jelölt módszert adja.
 - [ ] Sima felhasználónév/jelszó MFA nélkül: felépül; `sudo ls -l /var/run/macvpn/<id>/` → nincs `auth` és `mgmt-creds`, van `mgmt.sock` (`srwx------`, root); `ps -o args= -p $(sudo cat /var/run/macvpn/<id>/mgmt.pid)` → `mvpn-mgmt …` (a `mvpn` bináris, `mvpn-mgmt` néven indítva)
@@ -141,6 +185,17 @@ Előfeltétel: OpenVPN 2.6/2.7 szerver (pl. `openvpn-auth-*` plugin, `auth-user-
 - [ ] **Kód a jelszó végén** (szerveroldalon jelszó+OTP-t váró RADIUS / LDAP): OpenVPN, IKEv2 (EAP), SSTP, L2TP, Cisco IPsec és egy rendszer-VPN mentett jelszóval; mindhárom elválasztóval (nincs, `,`, `:`); a kód nem kerül a Keychainbe és a `meta.json`-ba (csak `otp.enabled` / `otp.separator`)
 - [ ] L2TP: a kód-beállítás puszta módosítása nem nyit új profilt jóváhagyásra
 - [ ] SSTP: `"`-t tartalmazó kódnál hibaüzenet, nincs csatlakozás
+
+## 1.1: hitelesítő adatok bekérése (valódi OpenVPN szerver kell)
+- [ ] Valódi OpenVPN config `auth-user-pass` sorral (fájlnév és inline blokk nélkül), mentett felhasználónév és jelszó nélkül: csatlakozáskor „Hitelesítő adatok szükségesek” ablak csak a felhasználónév és jelszó mezővel; Csatlakozás, Mentés bepipálva → felépül; a következő csatlakozás már nem kérdez
+- [ ] Rossz jelszó → egyszer újra kérdez a „Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót” sorral (a felhasználónév kitöltve) → helyes jelszóval felépül, és csak a helyes jelszó kerül a Keychainbe; második rossz jelszó → a szokásos hiba és értesítés, harmadik ablak nincs
+- [ ] Mentés pipa nélkül → felépül, de a Keychainben nincs új elem; legközelebb újra kérdez
+- [ ] Mégse (és Escape, és az ablak bezárása) → nincs hiba, nincs értesítés; a sor „Nincs csatlakozva”
+- [ ] Az ablak megjelenésekor egy másik appban gépelve a leütések ott maradnak; „…: hitelesítő adatok szükségesek” értesítés jön, rákattintva az ablak fókuszt kap; az első másodpercben a mezők tiltottak; Enter a mezőkben nem küld
+- [ ] Bontás nyitott ablak mellett → az ablak bezárul, nincs `up`
+- [ ] Vezérlő API kliens `up`-ja nyitott ablak mellett → `waiting_for_credentials` esemény; Mégse → `credentials_cancelled`
+- [ ] Debug módban (`verb 5`) a naplóban nincs felhasználónév és jelszó
+- [ ] Rendszer VPN (L2TP) mentett PSK nélkül → nincs ablak (a macOS profilja dönt)
 
 ## Hibák
 - [ ] Rossz jelszó (OpenVPN) → piros ikon, értesítés „AUTH_FAILED", kattintásra Napló
@@ -201,30 +256,33 @@ Előfeltétel: OpenVPN 2.6/2.7 szerver (pl. `openvpn-auth-*` plugin, `auth-user-
 - [ ] Az admin jelszókérés megszakítása → „Az eltávolítás megszakítva", semmi nem törlődik
 - [ ] Bekapcsolt „Indítás bejelentkezéskor” mellett eltávolítás → a MacVPN eltűnik a Bejelentkezési elemek közül, a `~/Library/LaunchAgents/local.macvpn.launcher.plist` is törlődik; kikapcsolt állapotnál nincs változás
 
-## Frissítés v0.4.0 → v1.0.0 (Swift → Rust)
+## Frissítés v1.0.0 → v1.1.0
 
-Automatikus előpróba (a kiadás előtt, a karbantartó gépén, a valódi kulcs nélkül): a v0.4.0 updater kódja
-(`git archive v0.4.0 Sources/MacVPNCore`) egy harnessbe fordítva lefut a `dist/MacVPN-1.0.0.dmg`-n (release.yml
-szerinti `.sha256`, `sign-release.sh --dry-run` aláírás eldobható kulccsal; a harness másolatában csak az elsődleges
-nyilvános kulcs van kicserélve): kiadás-JSON és URL-szabály, felajánlás (24 órás késleltetéssel is), letöltés +
-SHA-256 + Ed25519, `hdiutil attach`, `verifyApp` (bundle ID, a tag verziója, symlinkek, `codesign --verify
---strict`), és a v0.4.0 segédscript egy sandbox Applications mappában (megvárja az appot, cserél, `done`, takarít;
-az `open` csonk). Ellenőrzés: az idegen kulccsal készült aláírást és a tagtől eltérő verziót elutasítja.
+Előpróba a kész appon (a kiadás előtt): az 1.0.0-s updater (`crates/platform-mac/src/update_installer.rs`, `verify_bundle` és `verify_app` a `v1.0.0` tagen) ugyanezeket nézi a csatolt DMG-ben:
 
-A valódi frissítés csak a közzététel után próbálható (a v0.4.0 app a `releases/latest`-et kérdezi, a draftot nem
-látja, és csak a beágyazott kulcsokkal aláírt kiadást fogadja el). Közvetlenül a `scripts/sign-release.sh v1.0.0`
-után, egy 0.4.0-s telepítésen:
+```
+hdiutil attach -nobrowse -readonly -mountpoint /tmp/macvpn-rc dist/MacVPN-1.1.0.dmg
+A=/tmp/macvpn-rc/MacVPN.app
+plutil -extract CFBundleIdentifier raw "$A/Contents/Info.plist"          # local.macvpn
+plutil -extract CFBundleShortVersionString raw "$A/Contents/Info.plist"  # 1.1.0
+codesign --verify --strict --deep --verbose=2 "$A"                        # valid on disk, satisfies its Designated Requirement
+find "$A" -type l                                                         # üres: nincs symlink
+codesign -dv "$A" 2>&1 | grep flags                                      # flags=0x10002(adhoc,runtime)
+codesign -dv "$A/Contents/Resources/root/mvpn" 2>&1 | grep flags         # flags=0x10002(adhoc,runtime)
+codesign -d --entitlements - --xml "$A" 2>/dev/null | wc -c               # 0: nincs entitlement
+hdiutil detach /tmp/macvpn-rc
+```
 
-- [ ] Előkészítés: `/Applications/MacVPN.app` a v0.4.0 (`defaults read /Applications/MacVPN.app/Contents/Info.plist CFBundleShortVersionString` → `0.4.0`), a root réteg 6, legalább egy kapcsolat típusonként, egy kitűzött kapcsolat, egy rendszer VPN OTP-beállítással, bekapcsolt „Indítás bejelentkezéskor”. Biztonsági mentés: `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-0.4.0` és `defaults export local.macvpn ~/MacVPN-backup-0.4.0/defaults.plist`
-- [ ] A tesztgépen a „Csak a legalább 24 órája megjelent frissítések felajánlása” legyen kikapcsolva (a felhasználók többsége így is csak 24 óra múlva kapja meg, ha bekapcsolta)
-- [ ] v0.4.0 menü → „Frissítések keresése most” → „Frissítés elérhető: v1.0.0”; a Frissítés ablakban a kiadási jegyzet
-- [ ] Egy aktív VPN kapcsolattal „Letöltés és telepítés” → a lépések (hely, letöltés, csatolás, ellenőrzés, előkészítés) után a kilépési kérdés; „fussanak tovább” → a v0.4.0 kilép, pár másodpercen belül az 1.0.0 elindul (menüsor ikon), a futó kapcsolat aktívként látszik
-- [ ] `defaults read /Applications/MacVPN.app/Contents/Info.plist CFBundleShortVersionString` → `1.0.0`; `codesign --verify --strict /Applications/MacVPN.app` sikeres; `xattr -l /Applications/MacVPN.app` → nincs `com.apple.quarantine`; az Applications mappában nincs `.MacVPN.app.update-*` / `.old-*`
-- [ ] `tail ~/Library/Caches/MacVPN/update.log`: az utolsó blokk `=== … update: /Volumes/MacVPN/MacVPN.app -> /Applications/MacVPN.app ===` és `done`; az 1.0.0 nem jelez „Az előző frissítés nem fejeződött be” hibát; a DMG le van választva (`hdiutil info`)
-- [ ] Keychain: a macOS egyszer rákérdezhet a `local.macvpn.secrets` elemekre (az új ad-hoc aláírás miatt); „Mindig engedélyezés” csak akkor, ha a kérdés a MacVPN-től jön (`/Applications/MacVPN.app`); utána minden kapcsolatnál „Mentve – írj be újat a cseréhez” látszik, és csatlakozáskor nincs újabb kérdés
-- [ ] Adatok: minden kapcsolat megvan ugyanazzal a névvel, a kitűzés és a sorrend megmaradt, a rendszer VPN OTP-beállítása megmaradt; típusonként egy csatlakozás és bontás sikerül
-- [ ] Beállítások: a „Frissítések automatikus keresése” és a 24 órás késleltetés értéke a régi; az „Indítás bejelentkezéskor” bekapcsolva marad (kijelentkezés / bejelentkezés után az 1.0.0 indul)
-- [ ] Rendszerállapot: a root réteg „Frissítés szükséges” (6 → 7); „Engedélyezés” → egy admin jelszó → zöld; `ls /usr/local/libexec/macvpn` → `VERSION mvpn`; `sudo -n /usr/local/libexec/macvpn/mvpn version` → `7`; a régi `ovpn-dns`, `mvpn-validate`, `mvpn-mgmt` nincs meg
-- [ ] Értesítések: a csatlakozás / megszakadás értesítései megjelennek (ha a macOS újra engedélyt kér, az a MacVPN-től jön)
-- [ ] Nyelv: magyar rendszernyelvnél a teljes felület magyar, `-AppleLanguages '(en)'`-nel angol
-- [ ] Hiba esetén: a segédscript visszaállítja a régi appot (`update.log`: „old app restored”); a kiadást azonnal vissza kell vonni (törlés vagy egy javított kiadás „latest”-té tétele), a 0.4.0 DMG kézzel újratelepíthető, az adatok a mentésből visszamásolhatók
+A `scripts/build-dmg.sh` kimenetében a „release gate (no debug-only code in the app binary)” lépés hiba nélkül fut le.
+
+A valódi frissítés csak a közzététel után próbálható (az 1.0.0 a `releases/latest`-et kérdezi, és csak aláírt kiadást fogad el). Közvetlenül a `scripts/sign-release.sh v1.1.0` után, egy 1.0.0-s telepítésen:
+
+- [ ] Előkészítés: `/Applications/MacVPN.app` az 1.0.0 (`defaults read /Applications/MacVPN.app/Contents/Info.plist CFBundleShortVersionString` → `1.0.0`), root réteg 7, legalább egy kapcsolat típusonként, egy kitűzött kapcsolat, egy rendszer VPN OTP-beállítással, bekapcsolt „Indítás bejelentkezéskor”; a 24 órás késleltetés kikapcsolva. Biztonsági mentés: `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.0.0`
+- [ ] 1.0.0 menü → „Frissítések keresése most” → „Frissítés elérhető: v1.1.0”; a Frissítés ablakban a kiadási jegyzet
+- [ ] Egy aktív VPN kapcsolattal „Letöltés és telepítés” → a lépések után a kilépési kérdés; „fussanak tovább” → az 1.0.0 kilép, pár másodpercen belül az 1.1.0 indul, a futó kapcsolat aktívként látszik
+- [ ] `defaults read /Applications/MacVPN.app/Contents/Info.plist CFBundleShortVersionString` → `1.1.0`; `codesign --verify --strict /Applications/MacVPN.app` sikeres; nincs `com.apple.quarantine`; az Applications mappában nincs `.MacVPN.app.update-*` / `.old-*`; `tail ~/Library/Caches/MacVPN/update.log` → `done`
+- [ ] Keychain: a macOS egyszer rákérdezhet (új ad-hoc aláírás); „Mindig engedélyezés” csak a `/Applications/MacVPN.app` MacVPN-nek; utána nincs újabb kérdés
+- [ ] Adatok és beállítások megmaradtak (kapcsolatok, kitűzés, sorrend, OTP-beállítás, frissítési beállítások, „Indítás bejelentkezéskor”); a „Más appok vezérelhetik a VPN-eket” kikapcsolva indul
+- [ ] Rendszerállapot: a root réteg zöld („Telepítve (verzió 7)”), nem kér admin jelszót
+- [ ] Az új kártyás menü, a Dock ikon és a Párosított appok szakasz megjelenik; típusonként egy csatlakozás és bontás sikerül
+- [ ] Hiba esetén: a segédscript visszaállítja a régi appot (`update.log`: „old app restored”); a kiadást azonnal vissza kell vonni, az 1.0.0 DMG kézzel újratelepíthető

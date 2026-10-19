@@ -15,21 +15,23 @@
 </script>
 
 <div class="form">
-  <label class="field"><span>{tr('Name')}</span><input type="text" bind:value={fields.name} /></label>
-  <label class="field"><span>{tr('Server')}</span><input type="text" autocomplete="off" bind:value={fields.server} /></label>
-  <label class="field"><span>{tr('Account name')}</span><input type="text" autocomplete="off" bind:value={fields.account} /></label>
-  <label class="field">
-    <span>{tr('Password')}</span>
-    <SecretField label={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
-  </label>
-  <label class="field">
-    <span>{tr('Pre-shared key (PSK)')}</span>
-    <SecretField label={tr('Pre-shared key (PSK)')} stored={view?.hasStoredSecret.psk ?? false} bind:value={fields.psk} />
-  </label>
-  {#if kind === 'cisco'}
-    <label class="field"><span>{tr('Group name')}</span><input type="text" autocomplete="off" bind:value={fields.groupName} /></label>
-  {/if}
-  <label class="check"><input type="checkbox" bind:checked={fields.sendAllTraffic} />{tr('Send all traffic over VPN')}</label>
+  <section>
+    <label class="field"><span>{tr('Name')}</span><input type="text" bind:value={fields.name} /></label>
+    <label class="field"><span>{tr('Server')}</span><input type="text" autocomplete="off" bind:value={fields.server} /></label>
+    <label class="field"><span>{tr('Account name')}</span><input type="text" autocomplete="off" bind:value={fields.account} /></label>
+    <label class="field">
+      <span>{tr('Password')}</span>
+      <SecretField label={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
+    </label>
+    <label class="field">
+      <span>{tr('Pre-shared key (PSK)')}</span>
+      <SecretField label={tr('Pre-shared key (PSK)')} stored={view?.hasStoredSecret.psk ?? false} bind:value={fields.psk} />
+    </label>
+    {#if kind === 'cisco'}
+      <label class="field"><span>{tr('Group name')}</span><input type="text" autocomplete="off" bind:value={fields.groupName} /></label>
+    {/if}
+    <label class="check"><input type="checkbox" bind:checked={fields.sendAllTraffic} />{tr('Send all traffic over VPN')}</label>
+  </section>
   <section>
     <h2>{tr('One-time code (MFA)')}</h2>
     <OtpFields bind:otp={fields.otp} />

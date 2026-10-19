@@ -1,26 +1,14 @@
 <script lang="ts">
+  // One connection of the menu as a card: the type's icon bubble with the state badge, the name (with the pin),
+  // the type and state line, and the switch.
   import type { Row } from './api';
   import { tr } from './l10n.svelte';
-  import { uptime } from './format';
-  import StatusDot from './StatusDot.svelte';
+  import { statusLine, statusText } from './status';
+  import TypeIcon from './TypeIcon.svelte';
 
   let { row, now, onToggle }: { row: Row; now: number; onToggle: (row: Row, debug: boolean) => void } = $props();
 
-  const subtitle = $derived.by(() => {
-    switch (row.state) {
-      case 'connected': {
-        const parts = [row.typeLabel, row.ip].filter((p): p is string => !!p);
-        if (row.since !== null) parts.push(uptime(row.since, now));
-        return parts.join(' · ');
-      }
-      case 'failed':
-        return `${row.typeLabel} · ${row.reason}`;
-      case 'awaitingAuth':
-        return tr('%@ · Waiting for authentication', row.typeLabel);
-      default:
-        return row.available ? row.typeLabel : tr('%@ · Missing tool', row.typeLabel);
-    }
-  });
+  const line = $derived(statusLine(row, now));
 
   // Option-click (or Option + Space / Return) on the switch: connect in debug mode.
   function click(event: MouseEvent) {
@@ -28,8 +16,8 @@
   }
 </script>
 
-<div class="row" class:unavailable={!row.available}>
-  <StatusDot state={row.state} />
+<div class="card {line.tone}" class:unavailable={!row.available}>
+  <TypeIcon kind={row.kind} state={row.state} />
   <div class="text">
     <div class="name">
       <span class="label">{row.name}</span>
@@ -39,7 +27,12 @@
         </svg>
       {/if}
     </div>
-    <div class="subtitle" title={subtitle}>{subtitle}</div>
+    <div class="subtitle" title={statusText(line)}>
+      <span class="type">{line.type}</span>{#if line.status}<span class="dot" aria-hidden="true">·</span><span class="status">{line.status}</span>{/if}
+    </div>
+    {#if row.heldBy.length > 0}
+      <div class="held">{tr('Held by %@', row.heldBy.join(', '))}</div>
+    {/if}
   </div>
   <button
     class="switch"
@@ -55,13 +48,33 @@
 </div>
 
 <style>
-  .row {
+  .card {
+    --badge-ring: var(--surface);
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 4px 8px;
+    gap: var(--space-4);
+    min-height: 34px;
+    padding: 9px 10px 9px 10px;
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    transition:
+      background-color var(--duration) var(--ease),
+      outline-color var(--duration) var(--ease);
   }
-  .unavailable {
+  .card.on {
+    outline-color: color-mix(in srgb, var(--state-on) 45%, transparent);
+  }
+  .card.busy {
+    outline-color: color-mix(in srgb, var(--state-busy) 35%, transparent);
+  }
+  .card.fail {
+    outline-color: color-mix(in srgb, var(--state-fail) 35%, transparent);
+  }
+  .unavailable .text,
+  .unavailable :global(.bubble) {
     opacity: 0.5;
   }
   .text {
@@ -71,8 +84,9 @@
   .name {
     display: flex;
     align-items: center;
-    gap: 4px;
-    font-weight: 500;
+    gap: 5px;
+    font-weight: 600;
+    line-height: 17px;
   }
   .label {
     overflow: hidden;
@@ -83,49 +97,106 @@
     width: 10px;
     height: 10px;
     flex: none;
-    color: var(--secondary);
+    color: var(--tertiary);
   }
   .subtitle {
-    font-size: 11px;
+    display: flex;
+    min-width: 0;
+    margin-top: 1px;
+    font-size: var(--text-sm);
+    line-height: 14px;
     color: var(--secondary);
+    white-space: nowrap;
+  }
+  .type {
+    flex: 0 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .held {
+    margin-top: 2px;
+    font-size: var(--text-xs);
+    line-height: 13px;
+    font-weight: 600;
+    color: var(--state-on-text);
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .dot {
+    flex: none;
+    padding: 0 4px;
+  }
+  .status {
+    flex: 0 0 auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .on .status {
+    color: var(--state-on-text);
+  }
+  .busy .status {
+    color: var(--state-busy-text);
+  }
+  .fail .status {
+    color: var(--state-fail-text);
+  }
+
   .switch {
     flex: none;
     position: relative;
-    width: 26px;
-    height: 15px;
+    width: 34px;
+    height: 20px;
     padding: 0;
     border: none;
-    border-radius: 8px;
+    border-radius: var(--radius-pill);
     background: var(--switch-off);
-    cursor: default;
-    transition: background-color 0.15s;
+    transition:
+      background-color var(--duration) var(--ease),
+      box-shadow var(--duration) var(--ease);
   }
-  .switch.on {
+  .switch:not(:disabled):hover {
+    background: color-mix(in srgb, var(--switch-off) 100%, var(--text) 8%);
+  }
+  .switch.on,
+  .switch.on:not(:disabled):hover {
     background: var(--accent);
   }
-  .switch:disabled {
-    opacity: 0.5;
+  .on .switch.on,
+  .on .switch.on:not(:disabled):hover {
+    background: var(--state-on);
   }
-  .switch:focus-visible {
-    outline: 2px solid var(--accent);
-    outline-offset: 1px;
+  .busy .switch.on,
+  .busy .switch.on:not(:disabled):hover {
+    background: var(--state-busy);
+  }
+  .switch:disabled {
+    opacity: 0.45;
   }
   .knob {
     position: absolute;
-    top: 1.5px;
-    left: 1.5px;
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
+    top: 2px;
+    left: 2px;
+    width: 16px;
+    height: 16px;
+    border-radius: var(--radius-pill);
     background: #fff;
-    box-shadow: 0 0.5px 1.5px rgba(0, 0, 0, 0.3);
-    transition: transform 0.15s;
+    box-shadow: var(--shadow-knob);
+    transition:
+      transform var(--duration) var(--ease),
+      width var(--duration) var(--ease);
   }
   .switch.on .knob {
+    transform: translateX(14px);
+  }
+  .switch:not(:disabled):active .knob {
+    width: 19px;
+  }
+  .switch.on:not(:disabled):active .knob {
     transform: translateX(11px);
   }
 </style>

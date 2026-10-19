@@ -10,12 +10,16 @@
 
 pub mod app;
 pub mod connections;
+pub mod control;
+pub mod credential_prompt;
 pub mod deps;
 pub mod editor;
 pub mod import_export;
+pub mod live;
 pub mod logs;
 pub mod manager;
 pub mod notify;
+pub mod pairing;
 pub mod prompt;
 pub mod questions;
 pub mod quit;
@@ -23,5 +27,5 @@ pub mod setup;
 pub mod updates;
 pub mod view_model;
 
-pub use manager::{ConnectionEvent, ConnectionItem, ConnectionManager, Dependencies, ManagerSnapshot};
+pub use manager::{ConnectionEvent, ConnectionItem, ConnectionManager, Dependencies, DisconnectCause, ManagerSnapshot};
 pub use view_model::{LoginItemView, RowState, RowView, TrayIcon, ViewModel};

@@ -10,7 +10,8 @@
     stored,
     label,
     placeholder = '',
-  }: { value: SecretInput; stored: boolean; label: string; placeholder?: string } = $props();
+    disabled = false,
+  }: { value: SecretInput; stored: boolean; label: string; placeholder?: string; disabled?: boolean } = $props();
 
   let removed = $state(false);
   // Back to "keep" (a save, a reload): a later Remove starts over.
@@ -31,9 +32,9 @@
 </script>
 
 <span class="secret">
-  <input type="password" autocomplete="off" aria-label={label} placeholder={shown} value={value ?? ''} oninput={input} />
+  <input type="password" autocomplete="off" aria-label={label} placeholder={shown} value={value ?? ''} oninput={input} {disabled} />
   {#if stored && value === null && !removed}
-    <button class="remove" type="button" onclick={remove}>{tr('Remove saved password')}</button>
+    <button class="remove" type="button" onclick={remove} {disabled}>{tr('Remove saved password')}</button>
   {/if}
 </span>
 
@@ -50,6 +51,9 @@
   }
   .remove {
     flex: none;
-    font-size: 11px;
+    min-height: 24px;
+    padding: 2px 10px;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
   }
 </style>

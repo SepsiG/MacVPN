@@ -46,6 +46,10 @@
       "hu": "%@: sikertelen csatlakozás",
       "scope": "app"
     },
+    "%@: credentials needed": {
+      "hu": "%@: hitelesítő adatok szükségesek",
+      "scope": "core-rust"
+    },
     "%@: the connection dropped": {
       "hu": "%@: a kapcsolat megszakadt",
       "scope": "app"
@@ -82,6 +86,10 @@
       "hu": "Mentés előtt vedd tudomásul a kockázatos beállításokat (jelöld be a négyzetet): %@",
       "scope": "core"
     },
+    "Activity": {
+      "hu": "Tevékenység",
+      "scope": "app"
+    },
     "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.": {
       "hu": "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn, /var/run/macvpn-ui (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak.",
       "scope": "app"
@@ -94,6 +102,22 @@
       "hu": "Minden eszköz megvan",
       "scope": "app"
     },
+    "Allow": {
+      "hu": "Engedélyezés",
+      "scope": "app"
+    },
+    "Allow an App to Control VPNs?": {
+      "hu": "Engedélyezed, hogy egy app vezérelje a VPN-eket?",
+      "scope": "app"
+    },
+    "Allow other apps to control VPNs": {
+      "hu": "Más appok vezérelhetik a VPN-eket",
+      "scope": "app"
+    },
+    "Allowed connections": {
+      "hu": "Engedélyezett kapcsolatok",
+      "scope": "app"
+    },
     "Allows routing that can bypass or loop the tunnel": {
       "hu": "Olyan útválasztást enged, amely megkerülheti vagy hurokba viheti a tunnelt",
       "scope": "core"
@@ -101,6 +125,14 @@
     "Also delete user data (connections and Keychain passwords)": {
       "hu": "A felhasználói adatok törlése is (kapcsolatok és Keychain jelszavak)",
       "scope": "app"
+    },
+    "An app on this Mac asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.": {
+      "hu": "Egy app ezen a Macen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne.",
+      "scope": "app"
+    },
+    "Another copy of MacVPN already lets other apps control VPNs.": {
+      "hu": "A MacVPN egy másik példánya már engedi, hogy más appok vezéreljék a VPN-eket.",
+      "scope": "core-rust"
     },
     "Another operation is already running on this connection (lock: %@)": {
       "hu": "A kapcsolaton már fut egy művelet (zár: %@)",
@@ -294,6 +326,10 @@
       "hu": "Kattints a kód megadásához vagy a bejelentkezéshez.",
       "scope": "app"
     },
+    "Click to enter the user name or password.": {
+      "hu": "Kattints a felhasználónév vagy a jelszó megadásához.",
+      "scope": "core-rust"
+    },
     "Click to see the log.": {
       "hu": "Kattints a naplóért.",
       "scope": "app"
@@ -326,8 +362,16 @@
       "hu": "Csatlakozás debug módban",
       "scope": "app"
     },
+    "Connecting…": {
+      "hu": "Csatlakozás…",
+      "scope": "app"
+    },
     "Connections": {
       "hu": "Kapcsolatok",
+      "scope": "app"
+    },
+    "Connections it may use": {
+      "hu": "Használható kapcsolatok",
       "scope": "app"
     },
     "Continue": {
@@ -346,6 +390,10 @@
       "hu": "A config másolása sikertelen",
       "scope": "mvpn"
     },
+    "Could not change the allowed connections: %@": {
+      "hu": "Nem sikerült módosítani az engedélyezett kapcsolatokat: %@",
+      "scope": "app"
+    },
     "Could not disconnect:": {
       "hu": "Nem bontható kapcsolat:",
       "scope": "core"
@@ -357,6 +405,14 @@
     "Could not remove %@: %@": {
       "hu": "A(z) %@ nem törölhető: %@",
       "scope": "core"
+    },
+    "Could not revoke %@: %@": {
+      "hu": "Nem sikerült visszavonni: %@ (%@)",
+      "scope": "app"
+    },
+    "Could not save the audit log": {
+      "hu": "Nem sikerült menteni a naplót",
+      "scope": "core-rust"
     },
     "Could not save the log": {
       "hu": "A napló nem menthető",
@@ -378,6 +434,10 @@
       "hu": "A(z) %@ nem írható: %@",
       "scope": "core"
     },
+    "Credentials needed": {
+      "hu": "Hitelesítő adatok szükségesek",
+      "scope": "app"
+    },
     "Custom CA file": {
       "hu": "Saját CA fájl",
       "scope": "app"
@@ -392,6 +452,10 @@
     },
     "Delete %@?": {
       "hu": "Törlöd: %@?",
+      "scope": "app"
+    },
+    "Deny": {
+      "hu": "Elutasítás",
       "scope": "app"
     },
     "Directive not allowed in a <connection> block: %@": {
@@ -420,6 +484,14 @@
     },
     "Disconnect them before quitting?": {
       "hu": "Leállítsam őket kilépés előtt?",
+      "scope": "app"
+    },
+    "Disconnected in MacVPN": {
+      "hu": "Bontva a MacVPN-ben",
+      "scope": "core-rust"
+    },
+    "Disconnecting…": {
+      "hu": "Bontás…",
       "scope": "app"
     },
     "Done.": {
@@ -469,6 +541,10 @@
     "Exactly one [Interface] section is required": {
       "hu": "Pontosan egy [Interface] szakasz kell",
       "scope": "core"
+    },
+    "Executable": {
+      "hu": "Futtatható fájl",
+      "scope": "app"
     },
     "Expires in %@": {
       "hu": "Lejár: %@",
@@ -520,6 +596,10 @@
     },
     "Group name": {
       "hu": "Csoportnév (group name)",
+      "scope": "app"
+    },
+    "Held by %@": {
+      "hu": "Használja: %@",
       "scope": "app"
     },
     "Help": {
@@ -710,6 +790,10 @@
       "hu": "L2TP és Cisco IPsec ezek nélkül is működik.",
       "scope": "app"
     },
+    "Last used: %@": {
+      "hu": "Utoljára használva: %@",
+      "scope": "app"
+    },
     "Later": {
       "hu": "Később",
       "scope": "app"
@@ -732,6 +816,10 @@
     },
     "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items.": {
       "hu": "A MacVPN-t nem sikerült eltávolítani a bejelentkezési elemek közül. A Rendszerbeállítások → Általános → Bejelentkezési elemek alatt távolíthatod el.",
+      "scope": "app"
+    },
+    "MacVPN did not accept these values. Check them and try again.": {
+      "hu": "A MacVPN nem fogadta el ezeket az adatokat. Ellenőrizd őket, és próbáld újra.",
       "scope": "app"
     },
     "MacVPN has been uninstalled": {
@@ -794,8 +882,16 @@
       "hu": "Név",
       "scope": "app"
     },
+    "Name (self-reported)": {
+      "hu": "Név (a program saját megnevezése)",
+      "scope": "app"
+    },
     "Native connections only have a log when connected in debug mode.": {
       "hu": "Natív kapcsolatnál csak debug csatlakozáskor van napló.",
+      "scope": "app"
+    },
+    "Never used": {
+      "hu": "Még nem használta",
       "scope": "app"
     },
     "New": {
@@ -814,6 +910,10 @@
       "hu": "Nincs betöltött CA tanúsítvány",
       "scope": "app"
     },
+    "No activity yet.": {
+      "hu": "Még nincs tevékenység.",
+      "scope": "app"
+    },
     "No child name found": {
       "hu": "Nem található child név",
       "scope": "mvpn"
@@ -828,6 +928,10 @@
     },
     "No connections yet": {
       "hu": "Még nincs kapcsolat",
+      "scope": "app"
+    },
+    "No paired apps yet. An app asks for pairing while this is on.": {
+      "hu": "Még nincs párosított app. Amíg ez be van kapcsolva, egy app párosítást kérhet.",
       "scope": "app"
     },
     "No release available (HTTP 404)": {
@@ -856,6 +960,10 @@
     },
     "Not installed. The installer runs in Terminal and asks for an administrator password.": {
       "hu": "Nincs telepítve. A telepítő Terminálban fut és rendszergazdai jelszót kér.",
+      "scope": "app"
+    },
+    "Not ready yet. Wait a moment, then click Connect again.": {
+      "hu": "Még nem kész. Várj egy pillanatot, majd kattints újra a Csatlakozás gombra.",
       "scope": "app"
     },
     "Not supported on macOS (Windows or Linux only)": {
@@ -918,6 +1026,30 @@
       "hu": "Vagy húzz ide egy .ovpn / .conf / .sstp fájlt.",
       "scope": "app"
     },
+    "Other apps cannot control VPNs: %@ is not a folder that MacVPN can use.": {
+      "hu": "Más appok nem vezérelhetik a VPN-eket: a(z) %@ nem olyan mappa, amelyet a MacVPN használhat.",
+      "scope": "core-rust"
+    },
+    "Other apps cannot control VPNs: MacVPN has no access to %@.": {
+      "hu": "Más appok nem vezérelhetik a VPN-eket: a MacVPN nem fér hozzá ehhez: %@.",
+      "scope": "core-rust"
+    },
+    "Other apps cannot control VPNs: the folder %@ cannot be used.": {
+      "hu": "Más appok nem vezérelhetik a VPN-eket: a(z) %@ mappa nem használható.",
+      "scope": "core-rust"
+    },
+    "Other apps cannot control VPNs: the list of paired apps (%@) cannot be read.": {
+      "hu": "Más appok nem vezérelhetik a VPN-eket: a párosított appok listája (%@) nem olvasható.",
+      "scope": "core-rust"
+    },
+    "Paired apps": {
+      "hu": "Párosított appok",
+      "scope": "app"
+    },
+    "Paired: %@": {
+      "hu": "Párosítva: %@",
+      "scope": "app"
+    },
     "Password": {
       "hu": "Jelszó",
       "scope": "app"
@@ -928,6 +1060,10 @@
     },
     "Passwords and the PSK are not included in the export.": {
       "hu": "A jelszavak és a PSK nem kerülnek az exportba.",
+      "scope": "app"
+    },
+    "Path changed": {
+      "hu": "Megváltozott az útvonal",
       "scope": "app"
     },
     "Permissions (root scripts + sudoers)": {
@@ -962,6 +1098,10 @@
       "hu": "Profil megnyitva, hagyd jóvá a Rendszerbeállításokban.",
       "scope": "app"
     },
+    "Programs on this Mac that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.": {
+      "hu": "Az ezen a Macen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak.",
+      "scope": "app"
+    },
     "Quit MacVPN": {
       "hu": "Kilépés",
       "scope": "app"
@@ -992,6 +1132,14 @@
     },
     "Removes the root scripts, the sudoers rule and the logs; optionally your connections too.": {
       "hu": "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is.",
+      "scope": "app"
+    },
+    "Revoke": {
+      "hu": "Visszavonás",
+      "scope": "app"
+    },
+    "Revoke %@?": {
+      "hu": "Visszavonod: %@?",
       "scope": "app"
     },
     "Risky directive, acknowledgement required: %@": {
@@ -1106,6 +1254,10 @@
       "hu": "Bejelentkezés a böngészőben",
       "scope": "app"
     },
+    "Sign-in failed — check the username and password": {
+      "hu": "Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót",
+      "scope": "core-rust"
+    },
     "Standalone mode: OpenVPN prints information or exits instead of connecting": {
       "hu": "Önálló mód: az OpenVPN kapcsolódás helyett információt ír ki vagy kilép",
       "scope": "core"
@@ -1116,6 +1268,10 @@
     },
     "Stored in the MacVPN keychain and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").": {
       "hu": "A MacVPN kulcskarikájában tárolódik, és csatlakozáskor a macOS megkapja. Akkor kell, ha a macOS magától nem tudja kiolvasni a közös kulcsot („incorrect user shared secret”).",
+      "scope": "app"
+    },
+    "Stored in the macOS Keychain": {
+      "hu": "A macOS Keychainben tárolva",
       "scope": "app"
     },
     "System CA": {
@@ -1148,6 +1304,10 @@
     },
     "The VPN server says:": {
       "hu": "A VPN-szerver üzenete:",
+      "scope": "app"
+    },
+    "The app can no longer control VPNs, and its open sessions end now. Connections that only it brought up are disconnected.": {
+      "hu": "Az app többé nem vezérelheti a VPN-eket, és a nyitott munkamenetei most véget érnek. Azok a kapcsolatok, amelyeket csak ő épített fel, bontásra kerülnek.",
       "scope": "app"
     },
     "The app on the disk image is not accepted: %@": {
@@ -1350,6 +1510,18 @@
       "hu": "Aktív VPN kapcsolatok vannak",
       "scope": "app"
     },
+    "There are no connections to allow.": {
+      "hu": "Nincs engedélyezhető kapcsolat.",
+      "scope": "app"
+    },
+    "This VPN was removed from macOS": {
+      "hu": "Ezt a VPN-t eltávolították a macOS-ből",
+      "scope": "app"
+    },
+    "This app was started from another location: %@. Revoke it and pair it again to use the new copy.": {
+      "hu": "Ezt az appot más helyről indították: %@. Az új példány használatához vond vissza, és párosítsd újra.",
+      "scope": "app"
+    },
     "This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1).": {
       "hu": "Ez a config static-challenge-et használ: a MacVPN csatlakozáskor bekéri a kódot, és a jelszóval együtt küldi (SCRV1).",
       "scope": "app"
@@ -1493,6 +1665,10 @@
     "Use the server's DNS": {
       "hu": "A szerver DNS-ének használata",
       "scope": "app"
+    },
+    "Used by other apps through MacVPN: %@. Quitting ends their sessions.": {
+      "hu": "Más appok is használják a MacVPN-en keresztül: %@. A kilépés megszakítja a munkamenetüket.",
+      "scope": "core-rust"
     },
     "Username": {
       "hu": "Felhasználónév",

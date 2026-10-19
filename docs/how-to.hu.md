@@ -2,7 +2,7 @@
 
 [English version](how-to.en.md)
 
-Rövid, lépésenkénti leírások a MacVPN 1.0-hoz. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
+Rövid, lépésenkénti leírások a MacVPN 1.1-hez. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
 
 ## Tartalom
 
@@ -68,12 +68,18 @@ Részletek: [útmutató, 3.](user-guide.hu.md#3-kapcsolatok-felvétele-típusonk
 ## 4. Csatlakozás és bontás
 
 1. Kattints a menüsorban a pajzsra.
-2. Kattints a kapcsolat melletti kapcsolóra. Csatlakozás közben forgó jel látszik; ha felépült, zöld pont, az IP-cím és az eltelt idő.
+2. Kattints a kapcsolat kártyáján a kapcsolóra. Csatlakozás közben a kapcsoló és a típusbuborék jelvénye borostyánsárga, a kártyán **Csatlakozás…** áll; ha felépült, zöldre váltanak, és a kártyán az IP-cím és az eltelt idő látszik.
 3. Bontáshoz kattints újra a kapcsolóra.
 
-A Kapcsolatok ablakban a **Csatlakozás** / **Bontás** gomb is használható. Egyszerre több kapcsolat is aktív lehet. A piros pont hibát jelez; mellette a rövid ok, és értesítés is jön.
+A Kapcsolatok ablakban a **Csatlakozás** / **Bontás** gomb is használható. Egyszerre több kapcsolat is aktív lehet. A piros jelvény hibát jelez; a rövid ok a kártyán látszik, és értesítés is jön. A kártyán a **Használja: …** felirat azt jelenti, hogy egy párosított app tartja fenn a VPN-t ([útmutató, 5.4](user-guide.hu.md#54-párosított-appok-vezérlő-api)).
 
 Ha aktív kapcsolattal lépsz ki, a MacVPN megkérdezi: **Leállítás és kilépés**, **Kilépés, fussanak tovább** vagy **Mégse**.
+
+**Ha egy jelszó nincs elmentve,** a MacVPN csatlakozás előtt bekéri egy **Hitelesítő adatok szükségesek** ablakban (csak a hiányzó mezőket). Kattints az ablakra (nem veszi el a billentyűzetet a használt apptól), írd be az adatokat, és kattints a **Csatlakozás** gombra; az Enter nem csinál semmit. Bepipált **Mentés** mellett az adatok a sikeres csatlakozás után a macOS Keychainbe kerülnek. Ha a szerver elutasítja őket, az ablak egyszer újra kérdez. A **Mégse** hiba nélkül leállítja a csatlakozást.
+
+**Csatlakozás a jelszó mentése nélkül:** a **Csatlakozás** előtt vedd ki a pipát a **Mentés** elől a **Hitelesítő adatok szükségesek** ablakban. Az adatok csak erre a csatlakozásra érvényesek, a MacVPN legközelebb újra kérdez. Ha egy korábban elmentett jelszót akarsz újra bekéretni, nyisd meg a kapcsolatot a Kapcsolatok ablakban, és használd a **Mentett jelszó törlése** (vagy **Mentett titkok törlése**) gombot.
+
+Részletek: [felhasználói kézikönyv, 5.3](user-guide.hu.md#53-hitelesítő-adatok-bekérése-csatlakozáskor).
 
 ## 5. Kód vagy bejelentkezés kérése (MFA)
 

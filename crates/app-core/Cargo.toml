@@ -17,8 +17,11 @@ workspace = true
 libc = "0.2.191"
 macvpn-core = { path = "../core" }
 serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
 uuid = { version = "1.26.1", features = ["v4"] }
+zeroize = "1.9.1"
 
 [dev-dependencies]
+# The control API example client, driven against the real server in `tests/control_example_client.rs`.
+macvpn-control-client = { path = "../../examples/macvpn-control-client" }
 regex = "1.13.1"
-serde_json = "1.0.154"

@@ -121,27 +121,29 @@ fn installer_streams_output_with_minimal_environment() {
 }
 
 /// `brew install` has a time limit (30 min); past it the child is stopped and reaped, and the footer reports it.
+/// Robust under load: the limit is a few seconds (bash reaches its first line well within it), and the stop is
+/// measured against it with generous slack – never before the limit, and long before the 120 s the script (and its
+/// background grandchild, which keeps the pipe open) would run.
 #[test]
 fn installer_stops_brew_after_the_time_limit() {
     assert_eq!(BrewInstaller::TIMEOUT, std::time::Duration::from_secs(1800));
+    let limit = std::time::Duration::from_secs(3);
     let dir = Scratch::new("brew-timeout");
     let brew = dir.join("brew");
     // A background grandchild keeps the pipe open too: the runner must not wait for it.
-    std::fs::write(&brew, "#!/bin/bash\necho started\n/bin/sleep 30 &\n/bin/sleep 30\n").unwrap();
+    std::fs::write(&brew, "#!/bin/bash\necho started\n/bin/sleep 120 &\n/bin/sleep 120\n").unwrap();
     common::chmod(&brew, 0o755);
     let mut output = String::new();
     let start = std::time::Instant::now();
     let status = with_language(AppLanguage::En, || {
-        BrewInstaller::run_for_tests(
-            &brew.to_string_lossy(),
-            "/opt/homebrew",
-            &BTreeMap::new(),
-            std::time::Duration::from_millis(500),
-            |s| output.push_str(s),
-        )
+        BrewInstaller::run_for_tests(&brew.to_string_lossy(), "/opt/homebrew", &BTreeMap::new(), limit, |s| {
+            output.push_str(s)
+        })
     })
     .unwrap();
-    assert!(start.elapsed() < std::time::Duration::from_secs(5), "{:?}", start.elapsed());
+    let elapsed = start.elapsed();
+    assert!(elapsed >= limit, "stopped before the limit: {elapsed:?}");
+    assert!(elapsed < limit + std::time::Duration::from_secs(60), "not stopped at the limit: {elapsed:?}");
     assert_eq!(status, 15, "SIGTERM");
     assert!(output.contains("started\n"), "{output}");
     assert!(output.ends_with("\n✗ brew error (15)\n"), "{output}");

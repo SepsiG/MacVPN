@@ -2,10 +2,12 @@
   // A managed connection's detail (the Swift `ConnectionDetailView`): the header with connect / debug / export /
   // delete, the failure or authentication line, and the Settings and Log tabs (both stay mounted, so switching
   // tab, or a forced switch to the Log, keeps the editing).
-  import { untrack } from 'svelte';
+  import { onMount, untrack } from 'svelte';
   import { api, type Choice, type Kind, type LogFilter, type ManageView, type Notice, type Report, type Row } from '../api';
   import { tr } from '../l10n.svelte';
-  import StatusDot from '../StatusDot.svelte';
+  import Icon from '../Icon.svelte';
+  import { statusLine } from '../status';
+  import TypeIcon from '../TypeIcon.svelte';
   import EditorHost from './EditorHost.svelte';
   import LogPanel from './LogPanel.svelte';
   import Modal from './Modal.svelte';
@@ -23,6 +25,15 @@
   let tab = $state<'settings' | 'log'>('settings');
   let confirmDelete = $state(false);
   let exportWarning = $state<Report | null>(null);
+  let now = $state(Date.now());
+  const line = $derived(statusLine(row, now));
+  /// A failure or the wait for authentication has its own banner below the header.
+  const headerStatus = $derived(row.state === 'failed' || row.state === 'awaitingAuth' ? null : line.status);
+
+  onMount(() => {
+    const timer = setInterval(() => (now = Date.now()), 1000);
+    return () => clearInterval(timer);
+  });
 
   // One-time requests: the Settings tab after a failed save comes first, then the Log tab of a debug connect.
   $effect(() => {
@@ -54,29 +65,40 @@
 
 <div class="detail">
   <div class="header">
-    <StatusDot state={row.state} />
+    <TypeIcon kind={row.kind} state={row.state} size="lg" />
     <div class="title">
       <h1>{row.name}</h1>
-      <span class="secondary">{row.typeLabel}</span>
+      <span class="subtitle {line.tone}">
+        <span class="secondary">{line.type}</span>{#if headerStatus}<span class="secondary dot" aria-hidden="true">·</span><span class="status">{headerStatus}</span>{/if}
+      </span>
+      {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
     </div>
-    <span class="spacer"></span>
-    <button onclick={toggle} disabled={!row.available || row.state === 'disconnecting'}>
-      {row.switchOn ? tr('Disconnect') : tr('Connect')}
-    </button>
-    <button onclick={() => api.connect(id, true).catch(console.error)} disabled={row.switchOn || !row.available}>
-      {tr('Connect in Debug Mode')}
-    </button>
-    <button class="icon" title={tr('Export… (passwords are never included)')} aria-label={tr('Export… (passwords are never included)')} onclick={() => startExport().catch(console.error)}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1l3 3-.9.9L8.6 3.4V10H7.4V3.4L5.9 4.9 5 4zM3 7h2.5v1.2H4.2v5.6h7.6V8.2h-1.3V7H13v8H3z" fill="currentColor" /></svg>
-    </button>
-    <button class="icon destructive" title={tr('Delete')} aria-label={tr('Delete')} onclick={() => (confirmDelete = true)}>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 1h4l.5 1H14v1.2H2V2h3.5zM3.2 4.4h9.6l-.7 10.6H3.9zm2.3 1.4l.3 7.8h1.1L6.6 5.8zm3.9 0l-.3 7.8h1.1l.3-7.8z" fill="currentColor" /></svg>
-    </button>
+    <div class="actions">
+      <button class:primary={!row.switchOn} onclick={toggle} disabled={!row.available || row.state === 'disconnecting'}>
+        <Icon name={row.switchOn ? 'stop' : 'play'} />
+        {row.switchOn ? tr('Disconnect') : tr('Connect')}
+      </button>
+      <button
+        class="icon"
+        title={tr('Connect in Debug Mode')}
+        aria-label={tr('Connect in Debug Mode')}
+        onclick={() => api.connect(id, true).catch(console.error)}
+        disabled={row.switchOn || !row.available}
+      >
+        <Icon name="bug" />
+      </button>
+      <button class="icon" title={tr('Export… (passwords are never included)')} aria-label={tr('Export… (passwords are never included)')} onclick={() => startExport().catch(console.error)}>
+        <Icon name="export" />
+      </button>
+      <button class="icon destructive" title={tr('Delete')} aria-label={tr('Delete')} onclick={() => (confirmDelete = true)}>
+        <Icon name="trash" />
+      </button>
+    </div>
   </div>
   {#if row.state === 'failed'}
-    <p class="banner error">{row.reason}</p>
+    <p class="banner error"><Icon name="warning" /><span>{row.reason}</span></p>
   {:else if row.state === 'awaitingAuth'}
-    <p class="banner warn">{tr('Waiting for authentication')}</p>
+    <p class="banner warn"><Icon name="key" /><span>{tr('Waiting for authentication')}</span></p>
   {/if}
   <div class="tabs segmented" role="tablist">
     <button role="tab" aria-selected={tab === 'settings'} class:on={tab === 'settings'} onclick={() => (tab = 'settings')}>
@@ -134,29 +156,102 @@
     min-height: 0;
   }
   .header {
+    --badge-ring: var(--background);
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 10px;
-    padding: 14px 16px;
+    gap: var(--space-5);
+    padding: 18px var(--space-7) 14px;
   }
   .title {
     display: flex;
     flex-direction: column;
+    gap: 1px;
     min-width: 0;
+    flex: 1 1 140px;
   }
   h1 {
-    font-size: 15px;
+    font-size: var(--text-xl);
+    font-weight: 650;
+    letter-spacing: -0.01em;
     margin: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .held {
+    align-self: flex-start;
+    margin-top: 3px;
+    padding: 1px 8px;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    color: var(--state-on-text);
+    background: var(--state-on-soft);
+  }
+  .subtitle {
+    font-size: var(--text-md);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .dot {
+    padding: 0 5px;
+  }
+  .status {
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+  }
+  .on .status {
+    color: var(--state-on-text);
+  }
+  .busy .status {
+    color: var(--state-busy-text);
+  }
+  .fail .status {
+    color: var(--state-fail-text);
+  }
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: none;
+  }
+  .actions button {
+    flex: none;
+  }
+  .actions :global(svg.icon) {
+    width: 12px;
+    height: 12px;
+  }
+  .actions button.icon :global(svg.icon) {
+    width: 15px;
+    height: 15px;
+  }
   .banner {
-    margin: 0 16px 8px;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+    margin: 0 var(--space-7) var(--space-5);
+    padding: 8px 12px;
+    border-radius: var(--radius-control);
+    overflow-wrap: anywhere;
+  }
+  .banner :global(.icon) {
+    margin-top: 1px;
+    width: 14px;
+    height: 14px;
+  }
+  .banner.error {
+    background: var(--state-fail-soft);
+  }
+  .banner.warn {
+    background: var(--state-busy-soft);
   }
   .tabs {
-    margin: 0 16px 8px;
-    align-self: stretch;
+    align-self: flex-start;
+    margin: 0 var(--space-7) var(--space-2);
+    min-width: 240px;
   }
   .tabs button {
     flex: 1;
@@ -165,7 +260,6 @@
     position: relative;
     flex: 1;
     min-height: 0;
-    border-top: 1px solid var(--separator);
   }
   .pane {
     position: absolute;

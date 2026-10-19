@@ -1,103 +1,191 @@
-/* The Connections window's shared form styles (macOS-like controls under the app's colours). */
+/* The windows' shared controls and form layout (Connections, System Status, Update, the prompts, the alerts),
+   over the design tokens of app.css: 8 px controls, 12 px cards, soft shadows, focus rings. */
 
+/* Text fields, the config text and the pop-up menus. */
 .manage input[type='text'],
 .manage input[type='password'],
 .manage input[type='search'],
 .manage textarea,
 .manage select,
-.alert input {
+.alert input:not([type='checkbox']) {
+  box-sizing: border-box;
+  min-height: 28px;
   font: inherit;
   color: inherit;
   background: var(--field);
   border: 1px solid var(--field-border);
-  border-radius: 5px;
-  padding: 4px 6px;
+  border-radius: var(--radius-control);
+  padding: 4px 9px;
   -webkit-user-select: text;
   user-select: text;
   cursor: text;
+  transition:
+    border-color var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease);
+}
+
+.manage input::placeholder,
+.manage textarea::placeholder {
+  color: var(--tertiary);
+}
+
+.manage input[type='search'] {
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: var(--radius-pill);
+  padding-left: 12px;
 }
 
 .manage select {
+  -webkit-appearance: menulist-button;
+  appearance: menulist-button;
   cursor: default;
-  padding: 3px 4px;
+  padding: 3px 6px;
 }
 
-.manage input:focus-visible,
-.manage textarea:focus-visible,
-.manage select:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 0;
+.manage input:focus,
+.manage textarea:focus,
+.manage select:focus-visible,
+.alert input:not([type='checkbox']):focus {
+  border-color: var(--focus-border);
+  box-shadow: var(--focus-ring);
 }
 
+.manage input:disabled,
+.manage textarea:disabled,
+.manage select:disabled {
+  opacity: 0.55;
+}
+
+/* Buttons: a raised surface; `primary` filled with the accent, `destructive` red text, `icon` square. */
 .manage button,
 .alert button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  box-sizing: border-box;
+  min-height: 28px;
   font: inherit;
-  color: inherit;
-  padding: 3px 10px;
-  border-radius: 5px;
-  border: 1px solid var(--field-border);
-  background: var(--button);
+  font-weight: 500;
+  color: var(--text);
+  padding: 4px 12px;
+  border-radius: var(--radius-control);
+  border: none;
+  background: var(--surface);
+  box-shadow: var(--shadow-control);
+  white-space: nowrap;
+  transition:
+    background-color var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease),
+    color var(--duration) var(--ease);
+}
+
+.manage button:hover:not(:disabled),
+.alert button:hover:not(:disabled) {
+  background: var(--surface-hover);
+}
+
+.manage button:active:not(:disabled),
+.alert button:active:not(:disabled) {
+  background: var(--surface-pressed);
+}
+
+.manage button:focus-visible,
+.alert button:focus-visible {
+  box-shadow: var(--shadow-control), var(--focus-ring);
 }
 
 .manage button:disabled,
 .alert button:disabled {
-  opacity: 0.5;
+  opacity: 0.45;
 }
 
 .manage button.primary,
 .alert button.primary {
   background: var(--accent);
-  border-color: var(--accent);
-  color: #fff;
+  color: var(--on-accent);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--accent) 30%, transparent),
+    inset 0 0.5px 0 rgba(255, 255, 255, 0.2);
+}
+
+.manage button.primary:hover:not(:disabled),
+.alert button.primary:hover:not(:disabled) {
+  background: var(--accent-hover);
+}
+
+.manage button.primary:active:not(:disabled),
+.alert button.primary:active:not(:disabled) {
+  background: var(--accent-pressed);
+}
+
+.manage button.primary:focus-visible,
+.alert button.primary:focus-visible {
+  box-shadow: var(--focus-ring);
 }
 
 .manage button.icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 3px 6px;
+  width: 28px;
+  padding: 0;
 }
 
 .manage button.icon svg {
-  width: 14px;
-  height: 14px;
+  width: 15px;
+  height: 15px;
 }
 
 .manage button.destructive,
 .alert button.destructive {
-  color: var(--red);
+  color: var(--state-fail-text);
 }
 
+.manage button.destructive:hover:not(:disabled),
+.alert button.destructive:hover:not(:disabled) {
+  background: var(--state-fail-soft);
+}
+
+/* A segmented control (tabs, filters): a sunken track, the chosen segment raised. */
 .manage .segmented {
   display: inline-flex;
-  border: 1px solid var(--field-border);
-  border-radius: 6px;
-  overflow: hidden;
-  background: var(--button);
+  gap: 2px;
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--surface-sunken);
 }
 
 .manage .segmented button {
-  border: none;
-  border-radius: 0;
+  min-height: 24px;
+  padding: 2px 14px;
+  border-radius: 7px;
   background: transparent;
-  padding: 3px 12px;
+  box-shadow: none;
+  color: var(--secondary);
 }
 
-.manage .segmented button + button {
-  border-left: 1px solid var(--field-border);
+.manage .segmented button:hover:not(:disabled):not(.on) {
+  background: var(--fill-hover);
+  color: var(--text);
 }
 
-.manage .segmented button.on {
-  background: var(--accent);
-  color: #fff;
+.manage .segmented button.on,
+.manage .segmented button.on:hover:not(:disabled) {
+  background: var(--segment-on);
+  color: var(--text);
+  box-shadow: var(--shadow-control);
 }
 
+.manage .segmented button:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* The editors. */
 .manage .editor,
 .manage .form {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 16px;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-7) var(--space-7);
 }
 
 .manage .wide {
@@ -109,55 +197,76 @@
   box-sizing: border-box;
   width: 100%;
   min-height: 220px;
+  padding: 10px 12px;
   resize: vertical;
-  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  border-radius: var(--radius-card);
+  background: var(--code-background);
+  font: 12px / 1.5 var(--mono);
   white-space: pre;
 }
 
 .manage .config.invalid {
-  border-color: var(--red);
+  border-color: color-mix(in srgb, var(--state-fail) 70%, transparent);
 }
 
 .manage .issues {
   margin: 0;
-  padding: 0;
+  padding: 8px 12px;
   list-style: none;
-  color: var(--red);
-  font-size: 12px;
+  border-radius: var(--radius-control);
+  background: var(--state-fail-soft);
+  color: var(--state-fail-text);
+  font-size: var(--text-md);
 }
 
-.manage .issues li::before {
-  content: '✕ ';
-}
-
-.manage fieldset {
-  border: 1px solid var(--separator);
-  border-radius: 8px;
-  padding: 8px 10px 10px;
-  margin: 0;
+.manage .issues li {
   display: flex;
-  flex-direction: column;
   gap: 6px;
 }
 
-.manage legend {
-  font-size: 12px;
-  font-weight: 600;
-  padding: 0 4px;
+.manage .issues li + li {
+  margin-top: 3px;
 }
 
+.manage .issues li::before {
+  content: '✕';
+  flex: none;
+  font-weight: 700;
+}
+
+/* Groups as cards; a fieldset's legend is the card's heading (placed inside, not on the border). */
+.manage fieldset,
 .manage section {
-  border: 1px solid var(--separator);
-  border-radius: 8px;
-  padding: 10px;
+  position: relative;
+  min-width: 0;
+  margin: 0;
+  padding: var(--space-5) 14px 14px;
+  border: none;
+  border-radius: var(--radius-card);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  outline: 1px solid var(--border);
+  outline-offset: -1px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  background: var(--group);
+  gap: var(--space-3);
 }
 
+.manage fieldset {
+  padding-top: 38px;
+}
+
+.manage legend {
+  position: absolute;
+  top: var(--space-5);
+  left: 14px;
+  right: 14px;
+  padding: 0;
+}
+
+.manage legend,
 .manage section h2 {
-  font-size: 12px;
+  font-size: var(--text-md);
   font-weight: 600;
   margin: 0;
 }
@@ -166,16 +275,21 @@
   display: grid;
   grid-template-columns: minmax(120px, 34%) 1fr;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-4);
+}
+
+.manage .field > span:first-child {
+  color: var(--secondary);
 }
 
 .manage .check {
   display: flex;
   align-items: flex-start;
-  gap: 6px;
+  gap: var(--space-3);
 }
 
 .manage .check input {
+  flex: none;
   margin: 2px 0 0;
 }
 
@@ -190,32 +304,48 @@
 .manage .warn,
 .manage .ok {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-md);
 }
 
 .manage .error {
-  color: var(--red);
+  color: var(--state-fail-text);
 }
 
 .manage .warn {
-  color: var(--orange);
+  color: var(--state-busy-text);
 }
 
 .manage .ok {
-  color: var(--green);
+  color: var(--state-on-text);
 }
 
 .manage .pad {
-  padding: 16px;
+  padding: var(--space-6);
 }
 
 .manage .footer,
 .manage .row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--space-3);
 }
 
 .manage .spacer {
   flex: 1;
+}
+
+/* Scroll bars: slim, over the content's background. */
+.manage ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.manage ::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  border-radius: 5px;
+  background: var(--fill-pressed) padding-box;
+}
+
+.manage ::-webkit-scrollbar-corner {
+  background: transparent;
 }

@@ -121,7 +121,9 @@ impl<'a> MvpnClient<'a> {
         accept_risky: &[String],
     ) -> Result<(), ClientError> {
         let args = Self::up_arguments(kind, id, debug, accept_risky);
-        check(self.sudo(&args, Some(&secrets.stdin_payload()), Some(self.up_runner))?)
+        // Wiped once `sudo` has it (the binding outlives the call).
+        let payload = secrets.stdin_payload();
+        check(self.sudo(&args, Some(payload.as_str()), Some(self.up_runner))?)
     }
 
     pub fn up_arguments(kind: VPNKind, id: &Uuid, debug: bool, accept_risky: &[String]) -> Vec<String> {

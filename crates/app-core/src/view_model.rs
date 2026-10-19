@@ -2,13 +2,19 @@
 //! with their state, the status error line, the tray icon state and the open MFA prompts.
 
 use crate::connections::ManageView;
+use crate::credential_prompt::CredentialPromptView;
 use crate::manager::{ConnectionItem, ManagerSnapshot};
+use crate::pairing::PairingView;
 use crate::prompt::PromptView;
 use crate::quit::QuitQuestion;
 use crate::setup::SetupView;
 use crate::updates::UpdateView;
+use macvpn_core::control::protocol::escape_unsafe_text;
+use macvpn_core::control::registry::PairedClient;
 use macvpn_core::models::{AuthWaitKind, ConnectionState, VPNKind, uuid_string};
 use serde::Serialize;
+use std::collections::{BTreeMap, HashMap};
+use uuid::Uuid;
 
 /// The menu bar icon (the Swift `menuBarSymbol`): template glyphs, the system tints them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -53,7 +59,7 @@ pub enum RowState {
         reason: String,
     },
     AwaitingAuth {
-        /// `code` or `web`.
+        /// `code`, `web` or `credentials`.
         wait: &'static str,
         deadline: Option<f64>,
     },
@@ -73,6 +79,7 @@ impl From<&ConnectionState> for RowState {
                 wait: match wait.kind {
                     AuthWaitKind::Code => "code",
                     AuthWaitKind::Web => "web",
+                    AuthWaitKind::Credentials => "credentials",
                 },
                 deadline: wait.deadline.map(|d| d.time_interval_since_1970()),
             },
@@ -103,6 +110,8 @@ pub struct RowView {
     pub switch_on: bool,
     /// The switch can be used (available, and not disconnecting).
     pub switch_enabled: bool,
+    /// The paired apps holding the connection through the control API ("Held by …"), sorted.
+    pub held_by: Vec<String>,
 }
 
 /// "Launch at Login" (the platform layer's `LoginItemState`, mapped by the app).
@@ -139,6 +148,75 @@ pub struct ViewModel {
     /// A quit question being asked (the active-connections question is shown by the menu, and for an update by
     /// the Update window).
     pub quit: Option<QuitQuestion>,
+    /// Under the active-connections question: the apps whose sessions quitting ends (`quit::lease_holders_note`).
+    pub quit_note: Option<String>,
+    /// The control API: the setting, the paired apps, the audit lines.
+    pub control: ControlView,
+    /// The open pairing requests (each in its `pair-<id>` window).
+    pub pairings: Vec<PairingView>,
+    /// The open credential prompts (each in its `cred-<id>` window). Never a typed value.
+    pub credential_prompts: Vec<CredentialPromptView>,
+}
+
+/// A paired app in the Connections window's "Paired apps" section. Never the token or its hash.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PairedAppView {
+    pub id: String,
+    /// Self-reported at pairing.
+    pub name: String,
+    /// The pinned executable path.
+    pub executable: String,
+    /// The connection keys it may use.
+    pub allowed: Vec<String>,
+    /// Unix time (seconds).
+    pub created: f64,
+    pub last_used: Option<f64>,
+    /// The token was last presented from this other executable (the user re-pairs).
+    pub path_changed: Option<String>,
+}
+
+impl PairedAppView {
+    pub fn new(client: &PairedClient, path_changed: Option<&String>) -> Self {
+        PairedAppView {
+            id: uuid_string(&client.id),
+            name: client.name.clone(),
+            executable: escape_unsafe_text(&client.executable),
+            allowed: client.allowed.clone(),
+            created: client.created.time_interval_since_1970(),
+            last_used: client.last_used.map(|d| d.time_interval_since_1970()),
+            path_changed: path_changed.map(|p| escape_unsafe_text(p)),
+        }
+    }
+}
+
+/// The control API's part of the view model.
+#[derive(Debug, Clone, PartialEq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ControlView {
+    /// "Allow other apps to control VPNs" is on.
+    pub enabled: bool,
+    /// The server is running.
+    pub running: bool,
+    /// Why the server could not start (translated), while the setting is on.
+    pub error: Option<String>,
+    pub clients: Vec<PairedAppView>,
+    /// The latest audit lines ("Control API"), oldest first.
+    pub activity: Vec<String>,
+}
+
+impl ControlView {
+    pub fn build(
+        enabled: bool,
+        running: bool,
+        error: Option<String>,
+        clients: &[PairedClient],
+        path_changes: &HashMap<Uuid, String>,
+        activity: Vec<String>,
+    ) -> ControlView {
+        let clients = clients.iter().map(|c| PairedAppView::new(c, path_changes.get(&c.id))).collect();
+        ControlView { enabled, running, error, clients, activity }
+    }
 }
 
 impl ViewModel {
@@ -176,6 +254,7 @@ impl ViewModel {
                     state: RowState::from(state),
                     switch_on: state.is_active(),
                     switch_enabled: available && *state != ConnectionState::Disconnecting,
+                    held_by: Vec::new(),
                 }
             })
             .collect();
@@ -192,6 +271,17 @@ impl ViewModel {
             manage: ManageView::default(),
             setup: SetupView::default(),
             quit: None,
+            quit_note: None,
+            control: ControlView::default(),
+            pairings: Vec::new(),
+            credential_prompts: Vec::new(),
+        }
+    }
+
+    /// The "Held by …" labels: the lease holder names per connection key (`ControlServer::holders`).
+    pub fn set_holders(&mut self, holders: &BTreeMap<String, Vec<String>>) {
+        for row in &mut self.rows {
+            row.held_by = holders.get(&row.id).cloned().unwrap_or_default();
         }
     }
 }

@@ -78,7 +78,12 @@ mod tests {
     fn own_process_is_alive_and_malformed_pids_are_not() {
         let me = std::process::id().to_string();
         assert!(exists(&me));
-        assert!(comm(&me).is_some());
+        // `comm` runs `ps`; under heavy load its child can be SIGKILLed before it runs (see `exec::capture_settled`),
+        // so a missing answer is asked again a few times. A `comm` that never answers still fails.
+        assert!((0..5).any(|i| {
+            std::thread::sleep(std::time::Duration::from_millis(50 * i));
+            comm(&me).is_some()
+        }));
         assert!(!alive_as("12a", "x"));
         assert!(!alive_as("", "x"));
         assert!(!exists("x"));

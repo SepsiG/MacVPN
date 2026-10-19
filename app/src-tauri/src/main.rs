@@ -7,10 +7,14 @@
 //! because the platform calls are synchronous.
 
 mod commands;
+mod control;
+mod credentials;
 mod dialogs;
+mod dock;
 mod manage;
 mod navigation;
 mod notifications;
+mod pairing;
 mod platform;
 mod prompts;
 #[cfg(debug_assertions)]
@@ -22,8 +26,10 @@ mod update_window;
 
 use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, MemoryPreferences, POLL_TICK, Poller, PreferenceStore};
 use macvpn_app_core::connections::ConnectionsModel;
+use macvpn_app_core::credential_prompt::CredentialBroker;
 use macvpn_app_core::deps::{SecretReader, SecretWriter, SystemClock};
 use macvpn_app_core::editor::EditorDeps;
+use macvpn_app_core::live::{LiveReload, WATCHER_TRUSTED};
 use macvpn_app_core::logs::{NativeLogCollector, NativeLogs};
 use macvpn_app_core::prompt::PromptBroker;
 use macvpn_app_core::quit::{QuitAction, QuitGuard, QuitOrigin};
@@ -38,7 +44,7 @@ use macvpn_platform_mac::app_hooks::{self, TerminateReply};
 use macvpn_platform_mac::profile_staging::{self, StagedProfiles};
 use macvpn_platform_mac::secrets::{InMemoryKeychain, KeychainSecretStore};
 use macvpn_platform_mac::setup_checker::SetupReport;
-use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
@@ -73,11 +79,20 @@ fn secrets(env: &Environment) -> (Secrets, Box<dyn FnOnce() + Send>) {
 
 fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) -> Arc<AppState> {
     let support = env.application_support();
-    let mut deps =
-        Dependencies::new(store.clone(), secrets.reader.clone(), Arc::new(Root::new()), Arc::new(Native::new()));
+    let root: Arc<dyn macvpn_app_core::deps::RootClient> = Arc::new(Root::new());
+    // The smoke run never reaches the root helper: its connects go to a stand-in (debug builds only).
+    #[cfg(debug_assertions)]
+    let root = smoke::fake_root(&env).unwrap_or(root);
+    let native: Arc<dyn macvpn_app_core::deps::NativeController> = Arc::new(Native::new());
+    // The smoke run's system VPN list is a stand-in the driver changes (debug builds only).
+    #[cfg(debug_assertions)]
+    let native = smoke::fake_native(&env).unwrap_or(native);
+    let mut deps = Dependencies::new(store.clone(), secrets.reader.clone(), root, native);
     deps.ranking_store = Some(Arc::new(ConnectionRankingStore::new(ConnectionRankingStore::default_path(&support))));
     deps.system_otp_store = Some(Arc::new(SystemOTPStore::new(SystemOTPStore::default_path(&support))));
     deps.auth_state = Arc::new(AuthStateFiles { uid: macvpn_platform_mac::system::user_id() });
+    // "Save" in the credential prompt writes to the same store as the editors (in the sandbox: in memory).
+    deps.secret_writer = Some(secrets.writer.clone());
     // The Swift app's UserDefaults domain; the sandbox keeps them in memory.
     let prefs: Arc<dyn PreferenceStore> =
         if env.sandbox { Arc::new(MemoryPreferences::new()) } else { Arc::new(Preferences(CFPreferencesStore::app())) };
@@ -128,7 +143,11 @@ fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) 
         dialog_open: AtomicBool::new(false),
         manager,
         broker: Arc::new(PromptBroker::new()),
+        credential_broker: Arc::new(CredentialBroker::new()),
         poller: Arc::new(Poller::new()),
+        live: Arc::new(LiveReload::new()),
+        watcher: Mutex::new(None),
+        live_trusted: AtomicBool::new(false),
         publisher: Arc::new(Publisher::default()),
         setup: RwLock::new(SetupReport::unknown()),
         setup_checked: AtomicBool::new(false),
@@ -139,15 +158,24 @@ fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) 
         env,
         quit: Arc::new(QuitGuard::new()),
         prompt_tracker: Mutex::default(),
+        credential_tracker: Mutex::default(),
         tray_anchor: Mutex::new(None),
         hidden_on_blur: Mutex::new(None),
+        control: control::ControlApp::new(&support),
+        pairing_windows: pairing::PairingWindows::default(),
     })
 }
 
 /// Hooks the manager and the prompt broker to the UI.
 fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
+    // After every manager change (a refresh among them): the Connections window learns which system VPNs are
+    // gone (a removed one's editor turns read-only).
     let publisher = state.publisher.clone();
-    state.manager.set_on_change(move || publisher.mark());
+    let connections = state.connections.clone();
+    state.manager.set_on_change(move || {
+        connections.system_services_changed();
+        publisher.mark();
+    });
     let publisher = state.publisher.clone();
     state.broker.set_on_change(move || publisher.mark());
     let publisher = state.publisher.clone();
@@ -156,6 +184,10 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
     state.connections.set_on_change(move || publisher.mark());
     let publisher = state.publisher.clone();
     state.quit.set_on_change(move || publisher.mark());
+    let publisher = state.publisher.clone();
+    state.control.pairing.set_on_change(move || publisher.mark());
+    // The control API's manager listeners, once (a started server plugs its notifier into the relay).
+    state.control.attach(&state.manager);
     // A staged native profile is deleted once its service is listed (the Swift `stagedProfiles.servicesSeen`).
     let staged = state.staged_profiles.clone();
     state.manager.set_on_native_services_seen(move |ids| {
@@ -165,6 +197,12 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
     state.manager.set_prompt_handler(move |prompt| broker.present(prompt, Date::now()));
     let broker = state.broker.clone();
     state.manager.set_dismiss_prompt(move |key| broker.dismiss(key));
+    let publisher = state.publisher.clone();
+    state.credential_broker.set_on_change(move || publisher.mark());
+    let broker = state.credential_broker.clone();
+    state.manager.set_credential_handler(move |prompt| broker.present(prompt, Date::now()));
+    let broker = state.credential_broker.clone();
+    state.manager.set_dismiss_credentials(move |key| broker.dismiss(key));
     // Failures and drops: a notification (bundle only; generic text) and the UI event.
     let handle = app.clone();
     let notifying = state.clone();
@@ -177,7 +215,10 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
 /// The steps after the Swift `AppModel.init` part (reload, setup check, …, polling), off the main thread.
 fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep) {
     match step {
-        LaunchStep::ReloadConnections => state.manager.reload(),
+        LaunchStep::ReloadConnections => {
+            state.manager.reload();
+            start_live_list(state);
+        }
         LaunchStep::CheckSetup => {
             state.refresh_login_item();
             let complete = system::check(state).is_complete();
@@ -215,6 +256,8 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                     state.poller.run(
                         || manager.refresh(),
                         || manager.has_active(),
+                        window_open,
+                        || state.live_trusted.load(Ordering::SeqCst),
                         &SystemClock,
                         || state.poller.wait(POLL_TICK),
                     );
@@ -223,6 +266,35 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
         }
         LaunchStep::MigrateKeychain | LaunchStep::SweepStagedProfiles | LaunchStep::RemoveLegacyProfiles => {}
     }
+}
+
+/// The live system VPN list: the debounced reload thread (it wakes the poller) and, outside the sandbox, the
+/// SystemConfiguration watcher feeding it. Without a watcher (it failed, or the sandbox) the poll fallback's
+/// faster pace with a window open keeps the list current; the smoke run triggers the reload itself.
+fn start_live_list(state: &Arc<AppState>) {
+    let live = state.live.clone();
+    let poller = state.poller.clone();
+    std::thread::Builder::new()
+        .name("macvpn-live".into())
+        .spawn(move || live.run(|| poller.wake()))
+        .expect("live reload thread");
+    if state.env.sandbox {
+        return;
+    }
+    let live = state.live.clone();
+    match macvpn_platform_mac::sc_watch::SystemVpnWatcher::start(move || live.trigger()) {
+        Ok(watcher) => {
+            *state.watcher.lock().unwrap_or_else(PoisonError::into_inner) = Some(watcher);
+            state.live_trusted.store(WATCHER_TRUSTED, Ordering::SeqCst);
+        }
+        Err(e) => eprintln!("MacVPN: the system VPN watcher did not start ({e}); polling instead"),
+    }
+}
+
+/// A MacVPN window is shown (Connections, System Status, Update – visible and not minimized – or the menu
+/// popover): the poll fallback's faster pace. Read from flags kept on the main thread, no round trip to it.
+fn window_open() -> bool {
+    dock::windows_shown() || tray::menu_shown()
 }
 
 /// `applicationShouldTerminate:` (logout, restart, shutdown, a quit Apple Event): the same quit questions. With
@@ -235,8 +307,16 @@ fn system_terminate_request(app: &AppHandle) -> TerminateReply {
     let unsaved = state.connections.has_unsaved_changes();
     match state.quit.request(QuitOrigin::System, unsaved, state.manager.has_active()).0 {
         QuitAction::Finished { proceed: true, .. } => {
+            if state.control.is_running() {
+                // The control server stops first (its clients get `app_quitting`), off the main thread; then the
+                // waiting system gets its yes (`commands::terminate`).
+                state.quit.set_system_waiting();
+                let app = app.clone();
+                std::thread::spawn(move || commands::terminate(&app, &state));
+                return TerminateReply::Later;
+            }
             state.quit.confirm();
-            state.poller.stop();
+            state.stop_polling();
             TerminateReply::Now
         }
         QuitAction::Finished { proceed: false, .. } => TerminateReply::Cancel,
@@ -355,14 +435,40 @@ fn main() {
             update_window::update_dismiss_notice,
             prompts::answer_prompt,
             prompts::prompt_ready,
+            credentials::answer_credentials,
+            credentials::credentials_ready,
+            pairing::pairing_answer,
+            pairing::pairing_ready,
+            control::control_set_enabled,
+            control::control_set_allowed,
+            control::control_revoke,
+            control::control_audit_save,
         ])
         .on_window_event(|window, event| {
+            // The last real window gone: the Dock icon goes too.
+            if let WindowEvent::Destroyed = event
+                && dock::counts(window.label())
+            {
+                dock::sync(window.app_handle());
+            }
+            // Shown, hidden, minimized or restored: the poll fallback's "a window is open" (main thread here).
+            if dock::counts(window.label()) {
+                dock::track_shown(window.app_handle());
+            }
             if window.label() == manage::MANAGE_WINDOW {
                 manage::on_window_event(window, event);
                 return;
             }
             if prompts::is_prompt_window(window.label()) {
                 prompts::on_window_event(window, event);
+                return;
+            }
+            if credentials::is_credential_window(window.label()) {
+                credentials::on_window_event(window, event);
+                return;
+            }
+            if pairing::is_pairing_window(window.label()) {
+                pairing::on_window_event(window, event);
                 return;
             }
             if window.label() == update_window::UPDATE_WINDOW {
@@ -381,7 +487,7 @@ fn main() {
                 // The popover is never closed (Cmd+W), only hidden.
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
-                    let _ = window.hide();
+                    tray::hide_menu(window.app_handle());
                 }
                 _ => {}
             }
@@ -409,6 +515,8 @@ fn main() {
                 for step in &LAUNCH_SEQUENCE[3..] {
                     run_late_launch_step(&handle, &state, *step);
                 }
+                // The control API, once the connections and the system status are known.
+                control::launch(&state);
             })?;
             Ok(())
         })
@@ -418,10 +526,12 @@ fn main() {
             std::process::exit(1);
         });
 
-    app.run(|_, event| {
+    app.run(|app, event| match event {
         // Closing the last window does not quit a menu bar app; only `app.exit` (the quit flow) does.
-        if let RunEvent::ExitRequested { code: None, api, .. } = event {
-            api.prevent_exit();
-        }
+        RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
+        // A click on the Dock icon (shown while a window is open): that window comes forward; nothing opens.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => dock::reopen(app),
+        _ => {}
     });
 }

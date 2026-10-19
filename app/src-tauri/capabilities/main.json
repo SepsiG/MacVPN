@@ -50,6 +50,10 @@
     "allow-quit-after-uninstall",
     "allow-update-install",
     "allow-update-open-page",
-    "allow-update-dismiss-notice"
+    "allow-update-dismiss-notice",
+    "allow-control-set-enabled",
+    "allow-control-set-allowed",
+    "allow-control-revoke",
+    "allow-control-audit-save"
   ]
 }

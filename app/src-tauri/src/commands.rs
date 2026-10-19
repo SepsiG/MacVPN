@@ -169,9 +169,7 @@ pub async fn open_window(app: AppHandle, name: String) -> Result<(), String> {
 
 pub fn open(app: &AppHandle, name: &str) -> Result<(), String> {
     let title = window_title(name)?;
-    if let Some(menu) = app.get_webview_window(MENU_WINDOW) {
-        let _ = menu.hide();
-    }
+    crate::tray::hide_menu(app);
     let window = match app.get_webview_window(name) {
         Some(window) => window,
         None => {
@@ -184,6 +182,8 @@ pub fn open(app: &AppHandle, name: &str) -> Result<(), String> {
                 .title(l10n::tr(title, &[]))
                 .inner_size(width, height)
                 .center()
+                // Shown below, after the Dock icon.
+                .visible(false)
                 .on_navigation(crate::navigation::is_allowed);
             // The Connections window as the Swift one: at least 720 × 420 (a list next to a readable detail).
             let builder = match name {
@@ -193,6 +193,9 @@ pub fn open(app: &AppHandle, name: &str) -> Result<(), String> {
             builder.build().map_err(|e| e.to_string())?
         }
     };
+    // The Dock icon first (queued on the main thread before the show and the focus below), so the app activates
+    // as a regular app with its menu bar.
+    crate::dock::sync(app);
     let _ = window.show();
     let _ = window.unminimize();
     window.set_focus().map_err(|e| e.to_string())
@@ -263,9 +266,7 @@ pub async fn open_login_items_settings(state: Shared<'_>) -> Result<(), String> 
 #[tauri::command]
 pub async fn open_user_guide(app: AppHandle, state: Shared<'_>) -> Result<(), String> {
     let url = user_guide_url(state.env.repo().as_deref(), l10n::AppLanguage::current()).ok_or("refused URL")?;
-    if let Some(menu) = app.get_webview_window(MENU_WINDOW) {
-        let _ = menu.hide();
-    }
+    crate::tray::hide_menu(&app);
     tauri::async_runtime::spawn_blocking(move || crate::platform::open_github_url(&url))
         .await
         .map_err(|e| e.to_string())?
@@ -289,11 +290,37 @@ pub async fn quit(app: AppHandle, state: Shared<'_>, choice: Option<String>) -> 
         return Err("no question".into());
     }
     let shared = state.inner().clone();
-    let proceed = tauri::async_runtime::spawn_blocking(move || resolve_active_connections(&shared.manager, answer))
-        .await
-        .map_err(|e| e.to_string())?;
-    let action = state.quit.active_answered(proceed).ok_or("no question")?;
-    Ok(handle_quit(&app, &state, action))
+    let (proceed, stopped) = tauri::async_runtime::spawn_blocking(move || {
+        // "Disconnect and Quit": the control API detaches first (its clients get `app_quitting`, their leases end
+        // without a disconnect of their own), so no lease release races the disconnects. "Quit, Keep Them Running"
+        // disconnects nothing: the API stops when the quit really happens (`terminate`).
+        let stopped = stops_before_answer(answer) && crate::control::stop_before_disconnect(&shared);
+        (resolve_active_connections(&shared.manager, answer), stopped)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let reply = match state.quit.active_answered(proceed) {
+        Some(action) => Ok(handle_quit(&app, &state, action)),
+        None => Err("no question".to_string()),
+    };
+    // The quit did not happen (yet): the API comes back. An update that goes on stops it again when it quits.
+    if stopped && resumes_after(reply.as_deref().ok()) {
+        let shared = state.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || crate::control::resume_after_quit(&shared));
+    }
+    reply
+}
+
+/// The control API stops before this answer is carried out ("Disconnect and Quit" only: its disconnects must not
+/// race the leases' own).
+pub fn stops_before_answer(answer: ActiveConnectionsAnswer) -> bool {
+    answer == ActiveConnectionsAnswer::DisconnectAndQuit
+}
+
+/// After the quit command's `reply` (`None`: an error), a control API stopped before the answer starts again unless
+/// the app is terminating.
+pub fn resumes_after(reply: Option<&str>) -> bool {
+    reply != Some("terminating")
 }
 
 /// A quit request from `origin` (the Swift `QuitPolicy` + `applicationShouldTerminate` + `confirmQuit`): the
@@ -374,16 +401,31 @@ pub fn handle_quit(app: &AppHandle, state: &AppState, action: QuitAction) -> &'s
     }
 }
 
-/// Quits now, without asking again. A system terminate request waiting for the answer gets yes (AppKit then
-/// terminates the app); otherwise the event loop is stopped.
+/// Quits now, without asking again. A running control server is stopped first (`StopMode::Detach`, on a worker
+/// thread: this may run on the main thread). A system terminate request waiting for the answer gets yes (AppKit
+/// then terminates the app); otherwise the event loop is stopped.
 pub fn terminate(app: &AppHandle, state: &AppState) {
     state.quit.confirm();
-    state.poller.stop();
-    if state.quit.take_system_waiting() {
-        reply_to_system(app, true);
-    } else {
-        app.exit(0);
+    state.stop_polling();
+    let finish = |app: &AppHandle, state: &AppState| {
+        if state.quit.take_system_waiting() {
+            reply_to_system(app, true);
+        } else {
+            app.exit(0);
+        }
+    };
+    state.control.begin_quit();
+    if state.control.is_running()
+        && let Some(shared) = app.try_state::<Arc<AppState>>()
+    {
+        let (app, shared) = (app.clone(), shared.inner().clone());
+        std::thread::spawn(move || {
+            crate::control::stop_for_quit(&shared);
+            finish(&app, &shared);
+        });
+        return;
     }
+    finish(app, state);
 }
 
 fn reply_to_system(app: &AppHandle, terminate: bool) {
@@ -442,6 +484,19 @@ mod tests {
         assert!(parse_quit_choice("now").is_err());
     }
 
+    /// Only "Disconnect and Quit" stops the control API before the answer; a quit that then does not terminate
+    /// (cancelled, an update going on or staying, an error) starts it again.
+    #[test]
+    fn the_control_api_survives_a_quit_that_does_not_happen() {
+        assert!(stops_before_answer(ActiveConnectionsAnswer::DisconnectAndQuit));
+        assert!(!stops_before_answer(ActiveConnectionsAnswer::KeepRunning));
+        assert!(!stops_before_answer(ActiveConnectionsAnswer::Cancel));
+        assert!(!resumes_after(Some("terminating")));
+        for reply in [Some("update"), Some("cancelled"), Some("ask"), Some("unsaved"), None] {
+            assert!(resumes_after(reply), "{reply:?}");
+        }
+    }
+
     #[test]
     fn update_options() {
         assert_eq!(parse_update_option("autoCheck"), Ok(UpdateOption::AutoCheck));
@@ -450,8 +505,9 @@ mod tests {
         assert!(parse_update_option("").is_err());
     }
 
-    /// Every command is granted exactly where it is used: the prompt windows only signal and answer their prompt and read
-    /// the view model; the other windows get everything else; nothing but listening to events from the core.
+    /// Every command is granted exactly where it is used: the prompt, credential and pairing windows only signal and
+    /// answer their own prompt / pairing and read the view model; the other windows get everything else; nothing but listening to
+    /// events from the core. The build list, the capabilities and `generate_handler!` name the same commands.
     #[test]
     fn capabilities_grant_exactly_the_commands() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -466,8 +522,31 @@ mod tests {
         let permissions = |v: &serde_json::Value| -> Vec<String> {
             v["permissions"].as_array().unwrap().iter().map(|p| p.as_str().unwrap().to_string()).collect()
         };
-        let (main, prompt) = (read("main.json"), read("prompt.json"));
+        let (main, prompt, pairing) = (read("main.json"), read("prompt.json"), read("pairing.json"));
+        let credentials = read("credentials.json");
+        assert_eq!(credentials["windows"], serde_json::json!(["cred-*"]));
+        assert_eq!(
+            permissions(&credentials),
+            [
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "allow-get-view-model",
+                "allow-answer-credentials",
+                "allow-credentials-ready"
+            ]
+        );
         assert_eq!(prompt["windows"], serde_json::json!(["prompt-*"]));
+        assert_eq!(pairing["windows"], serde_json::json!(["pair-*"]));
+        assert_eq!(
+            permissions(&pairing),
+            [
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "allow-get-view-model",
+                "allow-pairing-answer",
+                "allow-pairing-ready"
+            ]
+        );
         assert_eq!(
             permissions(&prompt),
             [
@@ -481,8 +560,16 @@ mod tests {
         let main_permissions = permissions(&main);
         for command in &commands {
             let in_main = main_permissions.contains(command);
-            let prompt_only = ["allow-answer-prompt", "allow-prompt-ready"].contains(&command.as_str());
-            assert_eq!(in_main, !prompt_only, "{command}");
+            let window_only = [
+                "allow-answer-prompt",
+                "allow-prompt-ready",
+                "allow-pairing-answer",
+                "allow-pairing-ready",
+                "allow-answer-credentials",
+                "allow-credentials-ready",
+            ]
+            .contains(&command.as_str());
+            assert_eq!(in_main, !window_only, "{command}");
         }
         for permission in &main_permissions {
             assert!(
@@ -492,7 +579,25 @@ mod tests {
         }
         let config: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(dir.join("tauri.conf.json")).unwrap()).unwrap();
-        assert_eq!(config["app"]["security"]["capabilities"], serde_json::json!(["main", "prompt"]));
+        assert_eq!(
+            config["app"]["security"]["capabilities"],
+            serde_json::json!(["main", "prompt", "pairing", "credentials"])
+        );
+        // The command list, the generated permissions and the handler agree.
+        let main_rs = std::fs::read_to_string(dir.join("src/main.rs")).unwrap();
+        let handler = &main_rs[main_rs.find("generate_handler![").unwrap()..];
+        let handler = &handler[..handler.find("])").unwrap()];
+        let handled: Vec<String> = handler
+            .split(|c: char| c == ',' || c == '[' || c.is_whitespace())
+            .filter_map(|s| s.rsplit("::").next())
+            .filter(|s| !s.is_empty() && *s != "generate_handler!")
+            .map(|c| format!("allow-{}", c.replace('_', "-")))
+            .collect();
+        let mut sorted_handled = handled.clone();
+        sorted_handled.sort();
+        let mut sorted_commands = commands.clone();
+        sorted_commands.sort();
+        assert_eq!(sorted_handled, sorted_commands);
         let csp = &config["app"]["security"]["csp"];
         assert_eq!(csp["default-src"], "'self'");
         assert_eq!(csp["script-src"], "'self'");

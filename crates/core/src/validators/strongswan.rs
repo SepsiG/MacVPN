@@ -254,7 +254,7 @@ impl ConfigValidator for StrongSwanValidator {
             if line.is_empty() {
                 continue;
             }
-            let mut scanner = LineScanner { bytes: line.as_bytes(), line: line_no, i: 0, error: None };
+            let mut scanner = LineScanner { bytes: line.as_bytes(), line: line_no, i: 0, error: None, on_key: None };
             scanner.run(&mut stack, &mut has_connections, &mut has_children);
             if let Some(message) = scanner.error {
                 issues.push(ValidationIssue::new(line_no, message));
@@ -273,12 +273,17 @@ impl ConfigValidator for StrongSwanValidator {
     }
 }
 
+/// See [`LineScanner::on_key`].
+type KeyVisitor<'a> = dyn FnMut(Context, &str, &[String]) + 'a;
+
 /// Byte-level processing of one line (comment removed, even quotes, no backslash); the first error is kept.
 struct LineScanner<'a> {
     bytes: &'a [u8],
     line: i64,
     i: usize,
     error: Option<String>,
+    /// Called with every accepted `key = value` (its section's context, the key and the value items).
+    on_key: Option<&'a mut KeyVisitor<'a>>,
 }
 
 impl LineScanner<'_> {
@@ -390,6 +395,9 @@ impl LineScanner<'_> {
                 self.recover(stack);
                 return;
             };
+            if key_ok && let Some(on_key) = self.on_key.as_mut() {
+                on_key(context, &name, &items);
+            }
             if items.iter().any(|item| swift_str::contains(&ascii_lowercased(item), "file:")) {
                 self.fail(l10n::tr("Forbidden: file: URI", &[]));
             } else if key_ok && FILE_NAME_KEYS.contains(&name.as_str()) {
@@ -468,6 +476,35 @@ impl LineScanner<'_> {
 }
 
 impl StrongSwanValidator {
+    /// The `auth` values of the connections' `local…` sections (comments removed, parsed like
+    /// [`ConfigValidator::validate`]; keys in rejected sections are skipped).
+    pub(crate) fn local_auth_values(text: &str) -> Vec<String> {
+        let mut values = Vec::new();
+        let mut stack: Vec<(Context, i64)> = Vec::new();
+        let (mut has_connections, mut has_children) = (false, false);
+        let mut collect = |context: Context, key: &str, items: &[String]| {
+            if context == Context::Local && key == "auth" {
+                values.push(items.join(" "));
+            }
+        };
+        for (line_no, raw_line) in numbered_lines(text) {
+            if has_control_character(raw_line)
+                || raw_line.as_bytes().contains(&0x5C)
+                || raw_line.bytes().filter(|&b| b == 0x22).count() % 2 != 0
+            {
+                continue;
+            }
+            let line = strip_comment(raw_line);
+            if line.is_empty() {
+                continue;
+            }
+            let mut scanner =
+                LineScanner { bytes: line.as_bytes(), line: line_no, i: 0, error: None, on_key: Some(&mut collect) };
+            scanner.run(&mut stack, &mut has_connections, &mut has_children);
+        }
+        values
+    }
+
     /// The first connection and the first child name (for `swanctl --initiate --child`).
     pub fn names(text: &str) -> Option<(String, String)> {
         static HEADER: LazyLock<Regex> =

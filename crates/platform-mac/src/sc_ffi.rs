@@ -1,6 +1,8 @@
 //! In-process `SCNetworkConnection` start/stop (the `SystemConfigurationDriver` of `NativeVPN.swift`).
 //! `system-configuration-sys` has no `SCNetworkConnection` bindings, so the five functions are declared here.
 //!
+//! The `SCPreferences` notification functions of the system VPN watcher (`sc_watch`) are declared here too.
+//!
 //! Audit notes: the connection object returned by `SCNetworkConnectionCreateWithServiceID` is owned (+1) and
 //! released when the wrapper drops; no callout or context is registered (both null), so nothing calls back into
 //! Rust. The options dictionary is built from owned Core Foundation objects and only borrowed for the call.
@@ -9,8 +11,9 @@
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
-use core_foundation_sys::base::{Boolean, CFAllocatorRef, CFTypeRef};
+use core_foundation_sys::base::{Boolean, CFAllocatorRef, CFIndex, CFTypeRef};
 use core_foundation_sys::dictionary::CFDictionaryRef;
+use core_foundation_sys::runloop::CFRunLoopRef;
 use core_foundation_sys::string::CFStringRef;
 use macvpn_core::native::NativeStartOptions;
 use std::ffi::{CStr, c_char, c_int, c_void};
@@ -27,6 +30,47 @@ unsafe extern "C" {
     fn SCNetworkConnectionStop(connection: CFTypeRef, force_disconnect: Boolean) -> Boolean;
     fn SCError() -> c_int;
     fn SCErrorString(status: c_int) -> *const c_char;
+    pub(crate) fn SCPreferencesCreate(
+        allocator: CFAllocatorRef,
+        name: CFStringRef,
+        prefs_id: CFStringRef,
+    ) -> SCPreferencesRef;
+    pub(crate) fn SCPreferencesSetCallback(
+        prefs: SCPreferencesRef,
+        callout: Option<SCPreferencesCallBack>,
+        context: *mut SCPreferencesContext,
+    ) -> Boolean;
+    pub(crate) fn SCPreferencesScheduleWithRunLoop(
+        prefs: SCPreferencesRef,
+        run_loop: CFRunLoopRef,
+        mode: CFStringRef,
+    ) -> Boolean;
+    pub(crate) fn SCPreferencesUnscheduleFromRunLoop(
+        prefs: SCPreferencesRef,
+        run_loop: CFRunLoopRef,
+        mode: CFStringRef,
+    ) -> Boolean;
+}
+
+/// An `SCPreferencesRef` (a CF object: released with `CFRelease`).
+pub(crate) type SCPreferencesRef = CFTypeRef;
+
+/// `kSCPreferencesNotificationCommit`: new preferences were saved.
+pub(crate) const PREFERENCES_NOTIFICATION_COMMIT: u32 = 1 << 0;
+/// `kSCPreferencesNotificationApply`: the saved preferences are applied to the running system.
+pub(crate) const PREFERENCES_NOTIFICATION_APPLY: u32 = 1 << 1;
+
+/// `SCPreferencesCallBack(prefs, notificationType, info)`.
+pub(crate) type SCPreferencesCallBack = extern "C" fn(prefs: SCPreferencesRef, notification: u32, info: *mut c_void);
+
+/// `SCPreferencesContext` (version 0); `retain` / `release` / `copyDescription` are not used (null).
+#[repr(C)]
+pub(crate) struct SCPreferencesContext {
+    pub version: CFIndex,
+    pub info: *mut c_void,
+    pub retain: *const c_void,
+    pub release: *const c_void,
+    pub copy_description: *const c_void,
 }
 
 /// `"<SCErrorString> (<code>)"` of the last SystemConfiguration error.

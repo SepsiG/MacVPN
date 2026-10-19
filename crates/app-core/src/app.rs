@@ -15,12 +15,22 @@ use std::time::Duration;
 /// With an active (or connecting) connection every 3 s, otherwise every 30 s.
 pub const ACTIVE_POLL_INTERVAL: f64 = 3.0;
 pub const IDLE_POLL_INTERVAL: f64 = 30.0;
+/// The poll fallback of the live system VPN list: without a (trusted) change watcher, every 5 s while a MacVPN
+/// window (the menu popover, Connections, System Status, Update) is open.
+pub const WINDOW_POLL_INTERVAL: f64 = 5.0;
 /// The interval is re-evaluated this often: a new connect (`connecting` is active too) switches to the fast pace
 /// at once instead of waiting out the 30 s.
 pub const POLL_TICK: Duration = Duration::from_secs(1);
 
-pub fn poll_interval(has_active: bool) -> f64 {
-    if has_active { ACTIVE_POLL_INTERVAL } else { IDLE_POLL_INTERVAL }
+/// `live`: a trusted watcher reports system VPN changes (the pace is then the same with a window open).
+pub fn poll_interval(has_active: bool, window_open: bool, live: bool) -> f64 {
+    if has_active {
+        ACTIVE_POLL_INTERVAL
+    } else if window_open && !live {
+        WINDOW_POLL_INTERVAL
+    } else {
+        IDLE_POLL_INTERVAL
+    }
 }
 
 /// What one wait between two interval checks ended with.
@@ -82,10 +92,13 @@ impl Poller {
     }
 
     /// The loop; returns when stopped. `tick` waits between two interval checks ([`Self::wait`] in the app).
+    /// `window_open` and `live` feed [`poll_interval`]'s poll fallback.
     pub fn run(
         &self,
         refresh: impl Fn(),
         has_active: impl Fn() -> bool,
+        window_open: impl Fn() -> bool,
+        live: impl Fn() -> bool,
         clock: &dyn Clock,
         mut tick: impl FnMut() -> Tick,
     ) {
@@ -96,7 +109,7 @@ impl Poller {
                 if self.is_stopped() {
                     return;
                 }
-                if clock.now().time_interval_since(started) >= poll_interval(has_active()) {
+                if clock.now().time_interval_since(started) >= poll_interval(has_active(), window_open(), live()) {
                     break;
                 }
                 match tick() {

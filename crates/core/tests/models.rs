@@ -58,16 +58,16 @@ fn secrets_stdin_payload_skips_empty_and_strips_newlines() {
         psk: Some(String::new()),
         ..Default::default()
     };
-    assert_eq!(s.stdin_payload(), "username=bob\npassword=pw\n");
-    assert_eq!(Secrets::default().stdin_payload(), "");
+    assert_eq!(s.stdin_payload().as_str(), "username=bob\npassword=pw\n");
+    assert_eq!(Secrets::default().stdin_payload().as_str(), "");
     let crlf = Secrets { password: Some("a\r\nb".into()), ..Default::default() };
-    assert_eq!(crlf.stdin_payload(), "password=ab\n");
+    assert_eq!(crlf.stdin_payload().as_str(), "password=ab\n");
     // Stricter than Swift (whose replacingOccurrences keeps a line break a combining mark follows): every line
     // break goes, so a value cannot add a `key=value` line.
     let marked = Secrets { password: Some("pw\n\u{301}keypass=x".into()), ..Default::default() };
-    assert_eq!(marked.stdin_payload(), "password=pw\u{301}keypass=x\n");
+    assert_eq!(marked.stdin_payload().as_str(), "password=pw\u{301}keypass=x\n");
     let zwj = Secrets { password: Some("a\r\u{200D}\n\u{903}b\r\u{301}".into()), ..Default::default() };
-    assert_eq!(zwj.stdin_payload(), "password=a\u{200D}\u{903}b\u{301}\n");
+    assert_eq!(zwj.stdin_payload().as_str(), "password=a\u{200D}\u{903}b\u{301}\n");
 }
 
 #[test]
@@ -115,7 +115,7 @@ fn key_password_secret() {
         key_password: Some("k".into()),
         ..Default::default()
     };
-    assert_eq!(s.stdin_payload(), "username=u\npassword=p\nkeypass=k\n");
+    assert_eq!(s.stdin_payload().as_str(), "username=u\npassword=p\nkeypass=k\n");
     assert!(Secrets { key_password: Some("a\nb".into()), ..Default::default() }.input_error().is_some());
     assert!(Secrets { key_password: Some("a\u{7F}b".into()), ..Default::default() }.input_error().is_some());
     assert!(Secrets { key_password: Some("ok pass".into()), ..Default::default() }.input_error().is_none());
@@ -130,7 +130,10 @@ fn otp_and_challenge_in_payload() {
         challenge_packed: true,
         ..Default::default()
     };
-    assert_eq!(s.stdin_payload(), "username=bob\npassword=SCRV1:U3RhdFBhc3M=:MjQ2ODEw\notp=246810\nchallenge=packed\n");
+    assert_eq!(
+        s.stdin_payload().as_str(),
+        "username=bob\npassword=SCRV1:U3RhdFBhc3M=:MjQ2ODEw\notp=246810\nchallenge=packed\n"
+    );
 }
 
 /// `MFATests.testOTPSettingBackwardCompatible`.
@@ -175,4 +178,49 @@ fn uuid_strings_like_foundation() {
     ] {
         assert!(parse_uuid(bad).is_none(), "{bad}");
     }
+}
+
+#[test]
+fn secrets_debug_is_redacted() {
+    let s = Secrets {
+        username: Some("alice-user".into()),
+        password: Some("hunter2-secret".into()),
+        psk: Some(String::new()),
+        one_time_code: Some("424242".into()),
+        ..Secrets::default()
+    };
+    let text = format!("{s:?}");
+    for secret in ["alice-user", "hunter2-secret", "424242"] {
+        assert!(!text.contains(secret), "{text}");
+    }
+    assert!(text.contains("password"), "{text}");
+}
+
+#[test]
+fn stdin_payload_is_zeroizing_and_never_reallocates() {
+    let s = Secrets {
+        username: Some("bob".into()),
+        password: Some("p\r\nw".into()),
+        psk: Some("\n".into()),
+        challenge_packed: true,
+        ..Secrets::default()
+    };
+    let payload: zeroize::Zeroizing<String> = s.stdin_payload();
+    assert_eq!(payload.as_str(), "username=bob\npassword=pw\nchallenge=packed\n");
+    // Built in one allocation of the right size: no freed, unwiped intermediate buffer.
+    assert_eq!(payload.capacity(), payload.len());
+}
+
+#[test]
+fn zeroizing_secrets_count_their_wiped_values() {
+    let before = macvpn_core::models::wiped_secret_values();
+    {
+        let _s = zeroize::Zeroizing::new(Secrets {
+            username: Some("u".into()),
+            password: Some("p".into()),
+            psk: Some(String::new()),
+            ..Secrets::default()
+        });
+    }
+    assert_eq!(macvpn_core::models::wiped_secret_values() - before, 2);
 }

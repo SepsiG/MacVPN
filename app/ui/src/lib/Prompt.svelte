@@ -8,6 +8,7 @@
   import { onMount } from 'svelte';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, onViewModel, type PromptAction, type ViewModel } from './api';
+  import Icon from './Icon.svelte';
   import { setLanguage, tr } from './l10n.svelte';
   import './manage/manage.css';
   import { countdown, isValidCode, promptIdOfLabel } from './prompt';
@@ -83,13 +84,15 @@
 <div class="manage prompt">
   {#if prompt && prompt.kind === 'code'}
     <h1>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M10.5 1a4.5 4.5 0 00-4.3 5.8L1 12v3h3v-1.5h1.5V12H7l1.2-1.2A4.5 4.5 0 1010.5 1zm1 2.5a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4z" fill="currentColor" /></svg>
+      <span class="bubble key" aria-hidden="true"><Icon name="key" /></span>
       {tr('One-time code')}
     </h1>
-    {#if prompt.fromServer}
-      <p class="caption">{tr('The VPN server says:')}</p>
-    {/if}
-    <p class="text">{prompt.text}</p>
+    <div class="message">
+      {#if prompt.fromServer}
+        <p class="caption">{tr('The VPN server says:')}</p>
+      {/if}
+      <p class="text">{prompt.text}</p>
+    </div>
     <input
       class="code"
       bind:this={field}
@@ -107,21 +110,23 @@
         }
       }}
     />
-    <p class="caption">{tr('Expires in %@', countdown(left))}</p>
     <div class="buttons">
+      <p class="caption expires">{tr('Expires in %@', countdown(left))}</p>
       <button onclick={() => finish('cancel').catch(console.error)}>{tr('Cancel')}</button>
-      <button class="continue" disabled={!valid || !armed} onclick={submit}>{tr('Continue')}</button>
+      <button class="continue primary" disabled={!valid || !armed} onclick={submit}>{tr('Continue')}</button>
     </div>
   {:else if prompt && prompt.kind === 'webAuth'}
     <h1>
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm4.9 6.3h-2.1a11 11 0 00-.8-3.9 5.6 5.6 0 012.9 3.9zM8 2.5c.6.8 1.2 2.4 1.4 4.8H6.6C6.8 4.9 7.4 3.3 8 2.5zM6 3.4a11 11 0 00-.8 3.9H3.1A5.6 5.6 0 016 3.4zM3.1 8.7h2.1c.1 1.5.4 2.8.8 3.9a5.6 5.6 0 01-2.9-3.9zM8 13.5c-.6-.8-1.2-2.4-1.4-4.8h2.8c-.2 2.4-.8 4-1.4 4.8zm2 -.9c.4-1.1.7-2.4.8-3.9h2.1a5.6 5.6 0 01-2.9 3.9z" fill="currentColor" /></svg>
+      <span class="bubble web" aria-hidden="true"><Icon name="globe" /></span>
       {tr('Sign in in the browser')}
     </h1>
-    <p>{tr('The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:')}</p>
-    <p class="host">{prompt.host}</p>
-    <p class="url">{prompt.url}</p>
-    <p class="caption">{tr('Expires in %@', countdown(left))}</p>
+    <p class="intro">{tr('The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:')}</p>
+    <div class="message">
+      <p class="host">{prompt.host}</p>
+      <p class="url">{prompt.url}</p>
+    </div>
     <div class="buttons">
+      <p class="caption expires">{tr('Expires in %@', countdown(left))}</p>
       <button onclick={() => finish('cancel').catch(console.error)}>{tr('Cancel')}</button>
       <button class="open" disabled={!armed} onclick={() => armed && finish('openUrl').catch(console.error)}>{tr('Open in Browser')}</button>
     </div>
@@ -132,8 +137,8 @@
   .prompt {
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 18px 20px;
+    gap: var(--space-4);
+    padding: 18px var(--space-7) var(--space-7);
     height: 100vh;
     box-sizing: border-box;
     overflow: auto;
@@ -141,21 +146,53 @@
   h1 {
     display: flex;
     align-items: center;
-    gap: 6px;
-    font-size: 14px;
+    gap: var(--space-4);
+    font-size: var(--text-lg);
+    font-weight: 600;
     margin: 0;
   }
-  h1 svg {
-    width: 15px;
-    height: 15px;
+  .bubble {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border-radius: var(--radius-icon);
+    color: #fff;
+    box-shadow:
+      inset 0 0.5px 0 rgba(255, 255, 255, 0.25),
+      0 1px 2px rgba(0, 0, 0, 0.12);
+  }
+  .bubble :global(.icon) {
+    width: 16px;
+    height: 16px;
+    stroke-width: 1.7;
+  }
+  .key {
+    background: linear-gradient(180deg, var(--state-busy), color-mix(in srgb, var(--state-busy) 82%, #000));
+  }
+  .web {
+    background: linear-gradient(180deg, var(--vpn-openvpn), var(--vpn-openvpn-2));
   }
   p {
     margin: 0;
   }
   .caption {
-    font-size: 11px;
+    font-size: var(--text-sm);
     color: var(--secondary);
     font-variant-numeric: tabular-nums;
+  }
+  .message {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border-radius: var(--radius-control);
+    background: var(--surface-sunken);
+  }
+  .intro {
+    color: var(--secondary);
   }
   .text,
   .host,
@@ -166,10 +203,10 @@
     user-select: text;
   }
   .host {
-    font: 700 13px ui-monospace, SFMono-Regular, Menlo, monospace;
+    font: 700 14px var(--mono);
   }
   .url {
-    font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+    font: 11px / 1.4 var(--mono);
     color: var(--secondary);
     word-break: break-all;
     display: -webkit-box;
@@ -178,10 +215,27 @@
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
+  .code {
+    min-height: 36px;
+    font: 500 16px var(--mono);
+    letter-spacing: 0.12em;
+    text-align: center;
+  }
+  .code::placeholder {
+    font-family: var(--font);
+    letter-spacing: 0;
+  }
   .buttons {
     display: flex;
+    align-items: center;
     justify-content: flex-end;
-    gap: 8px;
+    gap: var(--space-3);
     margin-top: auto;
+  }
+  .expires {
+    margin-right: auto;
+    padding: 3px 9px;
+    border-radius: var(--radius-pill);
+    background: var(--surface-sunken);
   }
 </style>

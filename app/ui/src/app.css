@@ -1,53 +1,198 @@
+/* MacVPN's design tokens and base styles (every window). Light values first, dark ones under
+   prefers-color-scheme. The older names (--panel, --field, …) stay as aliases of the tokens. */
+
 :root {
   color-scheme: light dark;
+
+  /* Type. */
+  --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, monospace;
+  --text-xs: 10.5px;
+  --text-sm: 11px;
+  --text-md: 12px;
+  --text-base: 13px;
+  --text-lg: 15px;
+  --text-xl: 17px;
+
+  /* Spacing (a 4 px grid). */
+  --space-1: 4px;
+  --space-2: 6px;
+  --space-3: 8px;
+  --space-4: 10px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+
+  /* Radii: controls 8, cards 12, panels and dialogs 14. */
+  --radius-xs: 5px;
+  --radius-sm: 6px;
+  --radius-control: 8px;
+  --radius-icon: 8px;
+  --radius-card: 12px;
+  --radius-panel: 14px;
+  --radius-pill: 999px;
+
+  /* Motion. */
+  --ease: cubic-bezier(0.25, 0.1, 0.25, 1);
+  --duration: 0.16s;
+
+  /* Surfaces. */
+  --background: #f2f2f6;
+  --surface: #ffffff;
+  --surface-hover: #f8f8fb;
+  --surface-pressed: #ededf1;
+  --surface-sunken: rgba(118, 118, 128, 0.1);
+  --sidebar: #e9e9ee;
+  --border: rgba(0, 0, 0, 0.07);
+  --border-strong: rgba(0, 0, 0, 0.14);
+  --separator: rgba(60, 60, 67, 0.12);
+  --fill-hover: rgba(118, 118, 128, 0.12);
+  --fill-pressed: rgba(118, 118, 128, 0.2);
+
+  /* Text. */
   --text: #1d1d1f;
-  --secondary: rgba(60, 60, 67, 0.6);
-  --tertiary: rgba(60, 60, 67, 0.3);
-  --separator: rgba(60, 60, 67, 0.18);
-  --hover: rgba(0, 122, 255, 0.15);
-  --background: #f5f5f7;
-  --button: #ffffff;
-  --switch-off: rgba(120, 120, 128, 0.32);
+  --secondary: rgba(60, 60, 67, 0.68);
+  --tertiary: rgba(60, 60, 67, 0.42);
+  --on-accent: #ffffff;
+
+  /* Accent and focus. */
   --accent: #007aff;
-  --green: #34c759;
-  --red: #ff3b30;
-  --orange: #ff9500;
+  --accent-hover: #0a6fe6;
+  --accent-pressed: #0062cc;
+  --accent-soft: rgba(0, 122, 255, 0.1);
+  --accent-text: #0066d6;
+  --focus-ring: 0 0 0 3px rgba(0, 122, 255, 0.32);
+  --focus-border: rgba(0, 122, 255, 0.75);
+
+  /* State: connected, connecting / awaiting auth, failed, disconnected. */
+  --state-on: #34c759;
+  --state-on-text: #1f8a3b;
+  --state-on-soft: rgba(52, 199, 89, 0.13);
+  --state-busy: #ff9f0a;
+  --state-busy-text: #b35c00;
+  --state-busy-soft: rgba(255, 159, 10, 0.14);
+  --state-busy-glow: rgba(255, 159, 10, 0.55);
+  --state-fail: #ff3b30;
+  --state-fail-text: #d1241a;
+  --state-fail-soft: rgba(255, 59, 48, 0.1);
+  --state-off: #aeaeb2;
+
+  /* VPN types (icon bubbles): two stops of a soft vertical gradient each. */
+  --vpn-openvpn: #2f8cff;
+  --vpn-openvpn-2: #0a6cf0;
+  --vpn-wireguard: #7a6cf0;
+  --vpn-wireguard-2: #5a4bd8;
+  --vpn-ikev2: #22b5c9;
+  --vpn-ikev2-2: #1294a8;
+  --vpn-l2tp: #c160e0;
+  --vpn-l2tp-2: #9d3fc2;
+  --vpn-cisco: #b08d63;
+  --vpn-cisco-2: #8f6e46;
+  --vpn-sstp: #ec5a92;
+  --vpn-sstp-2: #cf3a76;
+  --vpn-system: #9a9aa2;
+  --vpn-system-2: #74747c;
+
+  /* Shadows. */
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 1px rgba(0, 0, 0, 0.03);
+  --shadow-raised: 0 4px 12px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-control: 0 0.5px 1px rgba(0, 0, 0, 0.12), 0 0 0 0.5px rgba(0, 0, 0, 0.06);
+  --shadow-popover: 0 14px 40px rgba(0, 0, 0, 0.18), 0 2px 8px rgba(0, 0, 0, 0.08);
+  --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.22), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+
+  /* Controls. */
+  --field: #ffffff;
+  --field-border: rgba(0, 0, 0, 0.13);
+  --switch-off: rgba(120, 120, 128, 0.26);
+  --segment-on: #ffffff;
+  --code-background: #fbfbfd;
+  --backdrop: rgba(0, 0, 0, 0.2);
+
+  /* Aliases of the earlier names. */
+  --panel: var(--surface);
+  --button: var(--surface);
+  --hover: var(--fill-hover);
+  --selection: var(--surface);
+  --group: var(--surface);
+  --text-background: var(--code-background);
+  --focus: rgba(0, 122, 255, 0.5);
+  --green: var(--state-on);
+  --red: var(--state-fail);
+  --orange: var(--state-busy);
   --blue: #007aff;
   --purple: #af52de;
-  --panel: #ffffff;
-  --sidebar: #ebebed;
-  --selection: rgba(0, 0, 0, 0.1);
-  --field: #ffffff;
-  --field-border: rgba(0, 0, 0, 0.18);
-  --focus: rgba(0, 122, 255, 0.5);
-  --group: rgba(0, 0, 0, 0.025);
-  --text-background: #ffffff;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
+    --background: #1c1c1e;
+    --surface: #2a2a2d;
+    --surface-hover: #313134;
+    --surface-pressed: #38383b;
+    --surface-sunken: rgba(118, 118, 128, 0.22);
+    --sidebar: #232326;
+    --border: rgba(255, 255, 255, 0.07);
+    --border-strong: rgba(255, 255, 255, 0.14);
+    --separator: rgba(255, 255, 255, 0.09);
+    --fill-hover: rgba(255, 255, 255, 0.07);
+    --fill-pressed: rgba(255, 255, 255, 0.12);
+
     --text: #f5f5f7;
-    --secondary: rgba(235, 235, 245, 0.6);
-    --tertiary: rgba(235, 235, 245, 0.3);
-    --separator: rgba(84, 84, 88, 0.6);
-    --hover: rgba(10, 132, 255, 0.25);
-    --background: #2b2b2d;
-    --button: #3a3a3c;
-    --switch-off: rgba(120, 120, 128, 0.36);
+    --secondary: rgba(235, 235, 245, 0.62);
+    --tertiary: rgba(235, 235, 245, 0.36);
+
     --accent: #0a84ff;
-    --green: #30d158;
-    --red: #ff453a;
-    --orange: #ff9f0a;
+    --accent-hover: #2b95ff;
+    --accent-pressed: #0070e0;
+    --accent-soft: rgba(10, 132, 255, 0.2);
+    --accent-text: #5aaeff;
+    --focus-ring: 0 0 0 3px rgba(10, 132, 255, 0.45);
+    --focus-border: rgba(64, 156, 255, 0.9);
+
+    --state-on: #30d158;
+    --state-on-text: #4cdb73;
+    --state-on-soft: rgba(48, 209, 88, 0.16);
+    --state-busy: #ffa424;
+    --state-busy-text: #ffb64d;
+    --state-busy-soft: rgba(255, 164, 36, 0.16);
+    --state-busy-glow: rgba(255, 164, 36, 0.6);
+    --state-fail: #ff453a;
+    --state-fail-text: #ff6b62;
+    --state-fail-soft: rgba(255, 69, 58, 0.16);
+    --state-off: #6e6e73;
+
+    --vpn-openvpn: #3d97ff;
+    --vpn-openvpn-2: #1a74e8;
+    --vpn-wireguard: #887bf5;
+    --vpn-wireguard-2: #6656de;
+    --vpn-ikev2: #2fc0d4;
+    --vpn-ikev2-2: #1a9db1;
+    --vpn-l2tp: #c96ee6;
+    --vpn-l2tp-2: #a54bc9;
+    --vpn-cisco: #bb9a70;
+    --vpn-cisco-2: #977650;
+    --vpn-sstp: #f06a9c;
+    --vpn-sstp-2: #d44a80;
+    --vpn-system: #8e8e96;
+    --vpn-system-2: #6a6a72;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.05);
+    --shadow-raised: 0 6px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);
+    --shadow-control: 0 0.5px 1px rgba(0, 0, 0, 0.4), inset 0 0.5px 0 rgba(255, 255, 255, 0.07);
+    --shadow-popover: 0 16px 48px rgba(0, 0, 0, 0.5), 0 0 0 0.5px rgba(255, 255, 255, 0.1);
+    --shadow-knob: 0 1px 2px rgba(0, 0, 0, 0.4);
+
+    --field: #1f1f22;
+    --field-border: rgba(255, 255, 255, 0.13);
+    --switch-off: rgba(120, 120, 128, 0.4);
+    --segment-on: #5b5b60;
+    --code-background: #18181a;
+    --backdrop: rgba(0, 0, 0, 0.45);
+
+    --focus: rgba(10, 132, 255, 0.6);
     --blue: #0a84ff;
     --purple: #bf5af2;
-    --panel: #323234;
-    --sidebar: #262628;
-    --selection: rgba(255, 255, 255, 0.12);
-    --field: #1e1e1e;
-    --field-border: rgba(255, 255, 255, 0.16);
-    --focus: rgba(10, 132, 255, 0.6);
-    --group: rgba(255, 255, 255, 0.03);
-    --text-background: #1e1e1e;
   }
 }
 
@@ -56,7 +201,8 @@ body {
   margin: 0;
   background: var(--background);
   color: var(--text);
-  font: 13px -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  font: var(--text-base) / 1.35 var(--font);
+  -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   user-select: none;
   cursor: default;
@@ -65,4 +211,124 @@ body {
 
 button {
   cursor: default;
+  -webkit-tap-highlight-color: transparent;
+}
+
+input[type='radio'] {
+  accent-color: var(--accent);
+}
+
+/* Checkboxes: a rounded box, filled with the accent and a drawn tick when on. */
+input[type='checkbox']:not(.switch) {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  position: relative;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  border-radius: 5px;
+  border: 1px solid var(--field-border);
+  background: var(--field);
+  box-shadow: inset 0 0.5px 1px rgba(0, 0, 0, 0.06);
+  transition:
+    background-color var(--duration) var(--ease),
+    border-color var(--duration) var(--ease);
+}
+
+input[type='checkbox']:not(.switch):checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+input[type='checkbox']:not(.switch):checked::before {
+  content: '';
+  position: absolute;
+  left: 4.5px;
+  top: 1.5px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+input[type='checkbox']:not(.switch):disabled {
+  opacity: 0.45;
+}
+
+:focus-visible {
+  outline: none;
+}
+
+/* A visible focus ring for every focusable control (keyboard focus only). */
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+/* A switch made of a checkbox (`<input type="checkbox" class="switch">`): the macOS settings look. */
+input.switch {
+  -webkit-appearance: none;
+  appearance: none;
+  flex: none;
+  position: relative;
+  width: 30px;
+  height: 18px;
+  margin: 0;
+  border-radius: var(--radius-pill);
+  background: var(--switch-off);
+  transition: background-color var(--duration) var(--ease);
+}
+
+input.switch::before {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: var(--shadow-knob);
+  transition: transform var(--duration) var(--ease);
+}
+
+input.switch:checked {
+  background: var(--accent);
+}
+
+input.switch:checked::before {
+  transform: translateX(12px);
+}
+
+input.switch:disabled {
+  opacity: 0.45;
+}
+
+/* Text for screen readers only. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
 }

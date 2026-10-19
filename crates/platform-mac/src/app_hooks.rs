@@ -83,6 +83,17 @@ pub fn activate_app() {
     }
 }
 
+/// Whether the app is a regular app (Dock icon, Cmd+Tab) rather than an accessory one: `NSApp.activationPolicy`.
+/// For the smoke test (debug builds only). Main thread only; `None` elsewhere.
+#[cfg(debug_assertions)]
+pub fn activation_policy_is_regular() -> Option<bool> {
+    let mtm = MainThreadMarker::new()?;
+    Some(
+        NSApplication::sharedApplication(mtm).activationPolicy()
+            == objc2_app_kit::NSApplicationActivationPolicy::Regular,
+    )
+}
+
 /// Shows `window` (an `NSWindow *`) above the others without making it key or activating the app. Main thread
 /// only; a null pointer does nothing.
 pub fn order_front_regardless(window: *mut c_void) {

@@ -1,15 +1,20 @@
 <script lang="ts">
   // A system VPN not created by MacVPN: connect / disconnect, and for L2TP / Cisco IPsec the PSK / password kept
-  // in MacVPN's keychain with the one-time code setting (the Swift `SystemServiceDetail`).
+  // in MacVPN's keychain with the one-time code setting (the Swift `SystemServiceDetail`). A VPN removed from
+  // macOS while shown (the selection's `selectedRemoved`, or the editor's own `removed`) stays, read-only, under a
+  // banner, until another row is selected or it returns. Its saved secrets can still be forgotten.
   import { onDestroy, onMount, untrack } from 'svelte';
   import { api, type Row, type SystemFields } from '../api';
   import { tr } from '../l10n.svelte';
+  import Icon from '../Icon.svelte';
+  import TypeIcon from '../TypeIcon.svelte';
   import { EditorSession } from './session.svelte';
+  import { forgetDisabled } from './live';
   import OtpFields from './OtpFields.svelte';
   import SecretField from './SecretField.svelte';
   import Status from './Status.svelte';
 
-  let { row, epoch }: { row: Row; epoch: number } = $props();
+  let { row, epoch, selectedRemoved = false }: { row: Row; epoch: number; selectedRemoved?: boolean } = $props();
 
   const session = untrack(() => (row.storedSecrets ? new EditorSession(row.id) : null));
 
@@ -23,6 +28,7 @@
   });
   const fields = $derived(session?.fields as SystemFields | null);
   const view = $derived(session?.view ?? null);
+  const removed = $derived(selectedRemoved || (view?.removed ?? false));
 
   $effect(() => {
     if (session?.fields) {
@@ -43,12 +49,21 @@
 
 <div class="system">
   <div class="intro">
-    <h1>{row.name}</h1>
-    <p class="secondary">{tr('%@ · system VPN (not created by MacVPN)', row.typeLabel)}</p>
-    <p>{tr('This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.')}</p>
-    <div>
-      <button onclick={toggle} disabled={row.state === 'disconnecting'}>{row.switchOn ? tr('Disconnect') : tr('Connect')}</button>
+    <div class="head">
+      <TypeIcon kind={null} state={row.state} size="lg" />
+      <div class="title">
+        <h1>{row.name}</h1>
+        <p class="secondary">{tr('%@ · system VPN (not created by MacVPN)', row.typeLabel)}</p>
+      </div>
+      <button class:primary={!row.switchOn} onclick={toggle} disabled={removed || row.state === 'disconnecting'}>{row.switchOn ? tr('Disconnect') : tr('Connect')}</button>
     </div>
+    {#if removed}
+      <div class="removed" role="status">
+        <Icon name="warning" />
+        <span>{tr('This VPN was removed from macOS')}</span>
+      </div>
+    {/if}
+    <p class="about">{tr('This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.')}</p>
     {#if row.state === 'failed'}
       <p class="error">{row.reason}</p>
     {/if}
@@ -58,7 +73,12 @@
       <section>
         <label class="field">
           <span>{tr('Shared secret (PSK)')}</span>
-          <SecretField label={tr('Shared secret (PSK)')} stored={view?.hasStoredSecret.psk ?? false} bind:value={fields.psk} />
+          <SecretField
+            label={tr('Shared secret (PSK)')}
+            stored={view?.hasStoredSecret.psk ?? false}
+            bind:value={fields.psk}
+            disabled={removed}
+          />
         </label>
         <label class="field">
           <span>{tr('Password (optional, if not saved in macOS)')}</span>
@@ -66,6 +86,7 @@
             label={tr('Password (optional, if not saved in macOS)')}
             stored={view?.hasStoredSecret.password ?? false}
             bind:value={fields.password}
+            disabled={removed}
           />
         </label>
         <p class="note">
@@ -74,7 +95,7 @@
       </section>
       <section>
         <h2>{tr('One-time code (MFA)')}</h2>
-        <OtpFields bind:otp={fields.otp} />
+        <OtpFields bind:otp={fields.otp} disabled={removed} />
       </section>
       <section>
         {#if view?.error}
@@ -82,11 +103,11 @@
         {/if}
         <Status dirty={view?.dirty ?? false} savedText={view?.saved ? tr('Saved') : null} />
         <div class="footer">
-          <button class="destructive" disabled={!view?.hasStored && !view?.dirty} onclick={() => session.forget().catch(console.error)}>
+          <button class="destructive" disabled={forgetDisabled(removed, view)} onclick={() => session.forget().catch(console.error)}>
             {tr('Forget saved secrets')}
           </button>
           <span class="spacer"></span>
-          <button class="primary" disabled={!view?.dirty} onclick={() => session.save().catch(console.error)}>{tr('Save')}</button>
+          <button class="primary" disabled={removed || !view?.dirty} onclick={() => session.save().catch(console.error)}>{tr('Save')}</button>
         </div>
       </section>
     </div>
@@ -99,16 +120,57 @@
     height: 100%;
   }
   .intro {
-    padding: 16px 16px 0;
+    --badge-ring: var(--background);
+    padding: 18px var(--space-7) 0;
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--space-5);
+  }
+  .head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-5);
+  }
+  .title {
+    flex: 1;
+    min-width: 0;
   }
   h1 {
-    font-size: 15px;
+    font-size: var(--text-xl);
+    font-weight: 650;
+    letter-spacing: -0.01em;
     margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .intro p {
     margin: 0;
+  }
+  .title p {
+    font-size: var(--text-md);
+  }
+  .removed {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 10px 12px;
+    border-radius: var(--radius-card);
+    background: var(--state-busy-soft);
+    font-size: var(--text-md);
+    font-weight: 500;
+  }
+  .removed :global(.icon) {
+    flex: none;
+    width: 15px;
+    height: 15px;
+    color: var(--state-busy);
+  }
+  .about {
+    padding: 10px 12px;
+    border-radius: var(--radius-control);
+    background: var(--surface-sunken);
+    color: var(--secondary);
+    font-size: var(--text-md);
   }
 </style>

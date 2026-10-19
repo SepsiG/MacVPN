@@ -196,7 +196,7 @@ pub fn close_inherited_fds(command: &mut std::process::Command) {
 
 #[cfg(test)]
 mod tests {
-    use crate::exec::{Cmd, EnvMode, capture};
+    use crate::exec::{Cmd, EnvMode, capture_settled};
     use std::os::fd::AsRawFd;
 
     /// The reviewer's probe: an fd of this process without close-on-exec must not reach a child.
@@ -210,7 +210,7 @@ mod tests {
         // done in the forked child, so they add nothing.
         let probe =
             "for i in $(/usr/bin/seq 3 255); do /usr/bin/stat /dev/fd/$i >/dev/null 2>&1 && echo $i; done; exit 0";
-        let (ok, out) = capture(&Cmd::new("/bin/bash").args(["-c", probe]), EnvMode::Minimal, 4096).unwrap();
+        let (ok, out) = capture_settled(&Cmd::new("/bin/bash").args(["-c", probe]), EnvMode::Minimal, 4096);
         // SAFETY: closes the fd made above, owned by this test only.
         unsafe { libc::close(leaked) };
         assert!(ok);

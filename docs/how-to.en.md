@@ -2,7 +2,7 @@
 
 [Magyar változat](how-to.hu.md)
 
-Short step-by-step instructions for MacVPN 1.0. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
+Short step-by-step instructions for MacVPN 1.1. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
 
 ## Contents
 
@@ -68,12 +68,18 @@ Details: [user guide, 3](user-guide.en.md#3-adding-connections-by-type) and [4](
 ## 4. Connect and disconnect
 
 1. Click the shield in the menu bar.
-2. Click the switch next to the connection. A spinner shows while it connects; a green dot, the IP address and the elapsed time show when it is up.
+2. Click the switch on the connection's card. While it connects, the switch and the badge on the type bubble are amber and the card says **Connecting…**; when it is up, they turn green and the card shows the IP address and the elapsed time.
 3. Click the switch again to disconnect.
 
-You can also use **Connect** / **Disconnect** in the Connections window. Several connections can be active at once. A red dot means an error; the short reason is next to it, and a notification tells you too.
+You can also use **Connect** / **Disconnect** in the Connections window. Several connections can be active at once. A red badge means an error; the short reason is on the card, and a notification tells you too. **Held by …** on a card means a paired app keeps that VPN up ([user guide, 5.4](user-guide.en.md#54-paired-apps-control-api)).
 
 When you quit with active connections, MacVPN asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**.
+
+**If a password is not saved,** MacVPN asks for it in a **Credentials needed** window before connecting (only the missing fields). Click the window (it does not take the keyboard from your current app), type, and click **Connect**; Return does nothing. With **Save** ticked, the values go into the macOS Keychain once the connection is up. If the server rejects them, the window asks once more. **Cancel** stops the connect without an error.
+
+**Connect without storing the password:** untick **Save** in the **Credentials needed** window before clicking **Connect**. The values are used for this connect only, and MacVPN asks again next time. To make it ask again for a password you saved earlier, open the connection in the Connections window and use **Remove saved password** (or **Forget saved secrets**).
+
+Details: [user guide, 5.3](user-guide.en.md#53-credentials-asked-when-connecting).
 
 ## 5. Answer a code or sign-in prompt (MFA)
 

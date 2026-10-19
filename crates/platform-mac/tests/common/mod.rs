@@ -75,3 +75,17 @@ pub fn getuid() -> u32 {
     let out = Command::new("/usr/bin/id").arg("-u").output().unwrap();
     String::from_utf8_lossy(&out.stdout).trim().parse().unwrap()
 }
+
+/// A scratch directory with a short name (`<temp>/mc<8 hex>`), for Unix socket paths: `sun_path` holds only
+/// 104 bytes, and the UUID-named [`Scratch`] plus a socket name would not fit. Falls back to `/tmp` when
+/// `$TMPDIR` is so long that `<dir>/control/macvpn.sock` would not fit either.
+pub fn short_scratch() -> Scratch {
+    let id = uuid::Uuid::new_v4().simple().to_string();
+    let name = format!("mc{}", &id[..8]);
+    let mut dir = std::env::temp_dir().join(&name);
+    if dir.join("control/macvpn.sock").as_os_str().len() >= 104 {
+        dir = std::path::Path::new("/tmp").join(&name);
+    }
+    std::fs::create_dir(&dir).expect("short scratch dir");
+    Scratch(dir)
+}

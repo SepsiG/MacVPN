@@ -1,0 +1,22 @@
+[package]
+name = "macvpn-control-client"
+description = "A minimal client of MacVPN's local control API, written to be copied into other apps"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "macvpn_control_client"
+
+[[bin]]
+name = "macvpn-control-client"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+# std + serde_json only, so the client is easy to copy. No Keychain crate here: see the README.
+[dependencies]
+serde_json = "1.0.154"

@@ -85,6 +85,88 @@ fn view_model_rows_follow_the_order_and_availability() {
 }
 
 #[test]
+fn held_by_labels_follow_the_lease_holders() {
+    let f = Fixture::new(AppLanguage::En);
+    let a = Connection::new("Office", VPNKind::Openvpn);
+    let b = Connection::new("Lab", VPNKind::Openvpn);
+    f.store.save(&a, Some("remote x\n")).unwrap();
+    f.store.save(&b, Some("remote x\n")).unwrap();
+    let m = f.manager();
+    m.reload();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    assert!(vm.rows.iter().all(|r| r.held_by.is_empty()));
+    let holders = std::collections::BTreeMap::from([(
+        uuid_string(&a.id),
+        vec!["Backup".to_string(), "Remote Desktop".to_string()],
+    )]);
+    vm.set_holders(&holders);
+    let office = vm.rows.iter().find(|r| r.name == "Office").unwrap();
+    assert_eq!(office.held_by, ["Backup", "Remote Desktop"]);
+    assert!(vm.rows.iter().find(|r| r.name == "Lab").unwrap().held_by.is_empty());
+    let json = serde_json::to_value(&vm).unwrap();
+    assert!(
+        json["rows"].as_array().unwrap().iter().any(|r| r["heldBy"] == serde_json::json!(["Backup", "Remote Desktop"]))
+    );
+    // Nothing held any more: the labels go.
+    vm.set_holders(&Default::default());
+    assert!(vm.rows.iter().all(|r| r.held_by.is_empty()));
+}
+
+/// The paired apps reach the UI without their token hash (and the token never exists here).
+#[test]
+fn control_view_never_carries_the_token_or_its_hash() {
+    use macvpn_app_core::view_model::ControlView;
+    use macvpn_core::control::registry::{PairedClient, new_token};
+    let token = new_token([7; 32]);
+    let mut client = PairedClient::new(
+        uuid::Uuid::new_v4(),
+        "Remote Desktop".into(),
+        &token,
+        "/Applications/Remote Desktop.app/Contents/MacOS/Remote Desktop".into(),
+        vec!["38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4".into()],
+        Date::from_time_interval_since_1970(1_800_000_000.0),
+    );
+    client.last_used = Some(Date::from_time_interval_since_1970(1_800_000_100.0));
+    let changes = std::collections::HashMap::from([(client.id, "/tmp/rd".to_string())]);
+    let view = ControlView::build(true, true, None, std::slice::from_ref(&client), &changes, vec!["hello".into()]);
+    let json = serde_json::to_string(&view).unwrap();
+    assert!(!json.contains(&token));
+    assert!(!json.contains(&client.token_sha256));
+    let value: serde_json::Value = serde_json::from_str(&json).unwrap();
+    let app = &value["clients"][0];
+    let mut keys: Vec<&String> = app.as_object().unwrap().keys().collect();
+    keys.sort();
+    assert_eq!(keys, ["allowed", "created", "executable", "id", "lastUsed", "name", "pathChanged"]);
+    assert_eq!(app["pathChanged"], "/tmp/rd");
+    assert_eq!(app["lastUsed"], 1_800_000_100.0);
+    assert_eq!(value["enabled"], true);
+    assert_eq!(value["activity"], serde_json::json!(["hello"]));
+}
+
+/// Defence in depth: a pinned path (from an older registry) or a "path changed" note with a control or format
+/// character reaches the UI escaped, never raw.
+#[test]
+fn control_view_escapes_control_and_format_characters_in_paths() {
+    use macvpn_app_core::view_model::ControlView;
+    use macvpn_core::control::registry::{PairedClient, new_token};
+    let client = PairedClient::new(
+        uuid::Uuid::new_v4(),
+        "Remote Desktop".into(),
+        &new_token([7; 32]),
+        "/tmp/a\nb".into(),
+        vec![],
+        Date::from_time_interval_since_1970(1_800_000_000.0),
+    );
+    let changes = std::collections::HashMap::from([(client.id, "/tmp/evil\u{202E}ppa.exe".to_string())]);
+    let view = ControlView::build(true, true, None, std::slice::from_ref(&client), &changes, vec![]);
+    assert_eq!(view.clients[0].executable, "/tmp/a\\u{a}b");
+    assert_eq!(view.clients[0].path_changed.as_deref(), Some("/tmp/evil\\u{202e}ppa.exe"));
+    let normal = PairedClient { executable: "/Applications/X.app/Contents/MacOS/X".into(), ..client };
+    let view = ControlView::build(true, true, None, std::slice::from_ref(&normal), &Default::default(), vec![]);
+    assert_eq!(view.clients[0].executable, "/Applications/X.app/Contents/MacOS/X");
+}
+
+#[test]
 fn row_state_serialization() {
     let json = |s: &ConnectionState| serde_json::to_value(RowState::from(s)).unwrap();
     assert_eq!(json(&ConnectionState::Failed("nope".into())), serde_json::json!({"state": "failed", "reason": "nope"}));

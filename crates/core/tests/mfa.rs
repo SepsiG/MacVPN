@@ -59,7 +59,10 @@ fn apply_static_challenge_packs() {
     assert_eq!(s.password.as_deref(), Some("SCRV1:U3RhdFBhc3M=:MjQ2ODEw"));
     assert!(s.challenge_packed);
     assert_eq!(s.one_time_code.as_deref(), Some("246810"));
-    assert_eq!(s.stdin_payload(), "username=bob\npassword=SCRV1:U3RhdFBhc3M=:MjQ2ODEw\notp=246810\nchallenge=packed\n");
+    assert_eq!(
+        s.stdin_payload().as_str(),
+        "username=bob\npassword=SCRV1:U3RhdFBhc3M=:MjQ2ODEw\notp=246810\nchallenge=packed\n"
+    );
     let concat = StaticChallenge { text: "x".into(), echo: false, format: ChallengeFormat::Concat };
     assert_eq!(apply_static_challenge(&concat, "1", &secrets("bob", "p")).unwrap().password.as_deref(), Some("p1"));
     let only_password = |p: &str| Secrets { password: Some(p.into()), ..Default::default() };
@@ -95,7 +98,7 @@ fn apply_code_for_each_kind() {
     }
     // Root kinds: stdin; the code separately too (only for masking).
     let root = apply_code("777", OTPSeparator::Colon, &base, VPNKind::Strongswan).unwrap();
-    assert_eq!(root.stdin_payload(), "username=bob\npassword=pw:777\npsk=k\notp=777\n");
+    assert_eq!(root.stdin_payload().as_str(), "username=bob\npassword=pw:777\npsk=k\notp=777\n");
     // Native L2TP / Cisco IPsec: in the SCNetworkConnection options.
     let l2tp = apply_code("999", OTPSeparator::None, &base, VPNKind::L2tp).unwrap();
     let options = native::start_options(NativeKind::L2tp, &l2tp).unwrap();

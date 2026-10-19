@@ -14,7 +14,10 @@
 
 use crate::deps::{
     AuthStateReader, Clock, ConnectionRepository, NativeController, NoAuthState, RankingPersistence, RootClient,
-    SecretField, SecretReader, SystemClock, SystemOTPPersistence, SystemService,
+    SecretField, SecretReader, SecretWriter, SystemClock, SystemOTPPersistence, SystemService,
+};
+use macvpn_core::credentials::{
+    self, CredentialAnswer, CredentialField, CredentialPrompt, CredentialValues, RequiredFields,
 };
 use macvpn_core::date::Date;
 use macvpn_core::l10n::{self, Arg};
@@ -34,6 +37,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock, Weak};
 use std::time::Duration;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// A failure or a drop, reported to the UI (notifications) after the new state is visible.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -126,8 +130,43 @@ pub fn auth_timeout_reason() -> String {
     l10n::tr("Authentication was not completed in time", &[])
 }
 
+/// The failure reason after the user cancelled (or declined) an MFA prompt during `up`.
+pub fn auth_cancelled_reason() -> String {
+    l10n::tr("Authentication cancelled", &[])
+}
+
 fn timed_out() -> String {
     l10n::tr("Timed out", &[])
+}
+
+fn secret_field(field: CredentialField) -> SecretField {
+    match field {
+        CredentialField::Username => SecretField::Username,
+        CredentialField::Password => SecretField::Password,
+        CredentialField::Psk => SecretField::Psk,
+        CredentialField::KeyPassword => SecretField::KeyPassword,
+    }
+}
+
+fn stored_value(secrets: &Secrets, field: CredentialField) -> Option<&str> {
+    match field {
+        CredentialField::Username => secrets.username.as_deref(),
+        CredentialField::Password => secrets.password.as_deref(),
+        CredentialField::Psk => secrets.psk.as_deref(),
+        CredentialField::KeyPassword => secrets.key_password.as_deref(),
+    }
+}
+
+/// The re-prompt after a sign-in failure: the required user name and password again, plus a required PSK / key
+/// password that is not stored (a stored one is not asked again).
+fn retry_fields(required: &RequiredFields, stored: &Secrets) -> Vec<CredentialField> {
+    let missing = credentials::missing(required, stored);
+    required
+        .fields
+        .iter()
+        .copied()
+        .filter(|f| matches!(f, CredentialField::Username | CredentialField::Password) || missing.contains(f))
+        .collect()
 }
 
 /// OpenVPN: the error message if the config has risky directives that are not acknowledged (the root layer would
@@ -157,7 +196,23 @@ pub type ServicesSeenHook = Arc<dyn Fn(&HashSet<Uuid>) + Send + Sync>;
 /// Blocks until the user answered (or the prompt was dismissed / timed out).
 pub type PromptHandler = Arc<dyn Fn(AuthPrompt) -> AuthPromptResult + Send + Sync>;
 pub type DismissHook = Arc<dyn Fn(&str) + Send + Sync>;
+/// Blocks until the user answered the credential prompt (or it was dismissed / expired: `Cancelled`).
+pub type CredentialHandler = Arc<dyn Fn(CredentialPrompt) -> CredentialAnswer + Send + Sync>;
 pub type ChangeHook = Arc<dyn Fn() + Send + Sync>;
+/// A connection's state changed (its key and the new state).
+pub type StateListener = Arc<dyn Fn(&str, &ConnectionState) + Send + Sync>;
+/// The user disconnected a connection by hand (its key).
+pub type UserDisconnectListener = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// Why a connection is disconnected. Only [`DisconnectCause::User`] reaches the user-disconnect listeners: the
+/// control API treats it as "the user wins" and ends every lease on the connection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisconnectCause {
+    /// The user asked for it (the menu, the Connections window, the quit question, deleting the connection).
+    User,
+    /// The control API's last lease on the connection ended.
+    Lease,
+}
 
 #[derive(Default, Clone)]
 struct Hooks {
@@ -165,7 +220,11 @@ struct Hooks {
     on_native_services_seen: Option<ServicesSeenHook>,
     prompt_handler: Option<PromptHandler>,
     dismiss_prompt: Option<DismissHook>,
+    credential_handler: Option<CredentialHandler>,
+    dismiss_credentials: Option<DismissHook>,
     on_change: Option<ChangeHook>,
+    state_listeners: Vec<StateListener>,
+    user_disconnect_listeners: Vec<UserDisconnectListener>,
 }
 
 /// The manager's dependencies.
@@ -179,10 +238,12 @@ pub struct Dependencies {
     pub system_otp_store: Option<Arc<dyn SystemOTPPersistence>>,
     pub auth_state: Arc<dyn AuthStateReader>,
     pub clock: Arc<dyn Clock>,
+    /// Where "Save" of the credential prompt writes, once the connection is up (`None`: nothing is saved).
+    pub secret_writer: Option<Arc<dyn SecretWriter>>,
 }
 
 impl Dependencies {
-    /// No ranking / system OTP persistence, no MFA state file, the system clock.
+    /// No ranking / system OTP persistence, no MFA state file, the system clock, no credential saving.
     pub fn new(
         store: Arc<dyn ConnectionRepository>,
         secrets: Arc<dyn SecretReader>,
@@ -198,6 +259,7 @@ impl Dependencies {
             system_otp_store: None,
             auth_state: Arc::new(NoAuthState),
             clock: Arc::new(SystemClock),
+            secret_writer: None,
         }
     }
 }
@@ -207,11 +269,34 @@ struct Watcher {
     stop: Arc<AtomicBool>,
 }
 
+/// The values typed into the credential prompt with "Save" ticked, written once the connect reached `connected`
+/// (never before: a wrong password is never stored). Dropping it wipes the values.
+struct PendingSave {
+    id: Uuid,
+    values: CredentialValues,
+    /// Each typed field's stored value when the prompt was answered (empty: none). A field whose stored value
+    /// changed meanwhile (the editor saved it during the connect) is not overwritten: the editor wins.
+    prior: Vec<(CredentialField, Zeroizing<String>)>,
+    /// A managed native connection: a typed user name also becomes its `native.account`, if the account is still
+    /// the one it was when the prompt was answered (`prior_account`).
+    native: bool,
+    prior_account: String,
+}
+
+/// What [`ConnectionManager::credential_secrets`] gives the connect path. The secrets are wiped on drop, so an
+/// early return (or a panic) never leaves them behind.
+struct Prepared {
+    secrets: Zeroizing<Secrets>,
+    save: Option<PendingSave>,
+}
+
 #[derive(Default)]
 struct Inner {
     connections: Vec<Connection>,
     /// Only the system VPNs the app does not manage.
     system_services: Vec<SystemService>,
+    /// Every service ID of the last successful listing, managed ones included.
+    listed_service_ids: HashSet<String>,
     states: HashMap<String, ConnectionState>,
     /// Set after several consecutive failed status queries.
     status_error: Option<String>,
@@ -223,6 +308,8 @@ struct Inner {
     auth_watchers: HashMap<String, Watcher>,
     /// The prompt expired (2 minutes / the server's deadline): the error text says so.
     auth_timed_out: HashSet<String>,
+    /// The user cancelled (or declined) a prompt during this connect: a failing `up` says so.
+    auth_cancelled: HashSet<String>,
     ops: HashMap<String, Op>,
     /// The user last asked to disconnect (a new connect clears it): a late successful up must be torn down.
     want_down: HashSet<String>,
@@ -239,6 +326,15 @@ struct Inner {
     awaiting_success: HashSet<String>,
     /// A `reload` succeeded: before that the list is empty, so ranking entries must not be pruned.
     loaded: bool,
+    /// Credential prompt values to save when the key's connect reaches `connected` (see [`PendingSave`]).
+    pending_saves: HashMap<String, PendingSave>,
+    /// Pending saves whose connect has just connected: written by the refresh, outside the lock.
+    ready_saves: Vec<PendingSave>,
+    /// Deleted connections ([`ConnectionManager::forget_saves`]): no "Save" is ever written for them.
+    forgotten: HashSet<Uuid>,
+    /// The key's last connect ended because the credential prompt was cancelled or expired (a new connect clears
+    /// it). The control API reports it as `credentials_cancelled`.
+    credentials_cancelled: HashSet<String>,
 }
 
 impl Inner {
@@ -408,10 +504,15 @@ pub struct ConnectionManager {
     deps: Dependencies,
     inner: Mutex<Inner>,
     hooks: RwLock<Hooks>,
+    /// The states last delivered to the state listeners. Locked while the listeners run, so every listener sees
+    /// the changes in order.
+    published: Mutex<HashMap<String, ConnectionState>>,
     this: Weak<ConnectionManager>,
     /// The state file is read this often during an OpenVPN `up` (milliseconds).
     auth_poll_millis: AtomicU64,
     next_watch_id: AtomicU64,
+    /// "Save" writer threads running, and their end.
+    saves_in_flight: Arc<(Mutex<usize>, std::sync::Condvar)>,
 }
 
 impl ConnectionManager {
@@ -422,9 +523,11 @@ impl ConnectionManager {
             deps,
             inner: Mutex::new(Inner { ranking, system_otp, ..Inner::default() }),
             hooks: RwLock::new(Hooks::default()),
+            published: Mutex::new(HashMap::new()),
             this: this.clone(),
             auth_poll_millis: AtomicU64::new(500),
             next_watch_id: AtomicU64::new(1),
+            saves_in_flight: Arc::default(),
         })
     }
 
@@ -458,9 +561,39 @@ impl ConnectionManager {
         self.set_hooks(|h| h.dismiss_prompt = Some(Arc::new(hook)));
     }
 
+    /// The UI's credential window. Without one (no UI) nothing is asked: the connect goes on with the stored
+    /// secrets, exactly as before the prompt existed.
+    pub fn set_credential_handler(&self, hook: impl Fn(CredentialPrompt) -> CredentialAnswer + Send + Sync + 'static) {
+        self.set_hooks(|h| h.credential_handler = Some(Arc::new(hook)));
+    }
+
+    /// Closes the connection's open credential prompt (on disconnect).
+    pub fn set_dismiss_credentials(&self, hook: impl Fn(&str) + Send + Sync + 'static) {
+        self.set_hooks(|h| h.dismiss_credentials = Some(Arc::new(hook)));
+    }
+
     /// Something the UI shows may have changed (the Swift `objectWillChange`).
     pub fn set_on_change(&self, hook: impl Fn() + Send + Sync + 'static) {
         self.set_hooks(|h| h.on_change = Some(Arc::new(hook)));
+    }
+
+    /// Called for every connection whose state changed, with the new state, right after the change is published
+    /// (where [`Self::set_on_change`]'s hook runs). Several states set within one atomic section arrive as the last
+    /// one; a key that disappears arrives as `Disconnected`. Listeners run one change at a time, in order, on the
+    /// thread that made the change, under a lock: a listener must return quickly and must not call back into the
+    /// manager.
+    pub fn add_state_listener(&self, f: impl Fn(&str, &ConnectionState) + Send + Sync + 'static) {
+        let mut published = self.published.lock().unwrap_or_else(PoisonError::into_inner);
+        if self.hooks().state_listeners.is_empty() {
+            *published = self.read(|i| i.states.clone());
+        }
+        self.set_hooks(|h| h.state_listeners.push(Arc::new(f)));
+    }
+
+    /// Called with the key when the user disconnects a connection ([`DisconnectCause::User`]), before its state
+    /// changes; never for a disconnect on behalf of a lease.
+    pub fn add_user_disconnect_listener(&self, f: impl Fn(&str) + Send + Sync + 'static) {
+        self.set_hooks(|h| h.user_disconnect_listeners.push(Arc::new(f)));
     }
 
     pub fn set_auth_poll_interval(&self, interval: Duration) {
@@ -484,9 +617,53 @@ impl ConnectionManager {
         }
     }
 
+    /// Closes the connection's open credential prompt (the user disconnected).
+    fn dismiss_credentials(&self, key: &str) {
+        if let Some(hook) = self.hooks().dismiss_credentials {
+            hook(key);
+        }
+    }
+
     fn changed(&self) {
-        if let Some(hook) = self.hooks().on_change {
+        let hooks = self.hooks();
+        if let Some(hook) = &hooks.on_change {
             hook();
+        }
+        if !hooks.state_listeners.is_empty() {
+            self.publish_states(&hooks.state_listeners);
+        }
+    }
+
+    /// Delivers the per-key changes since the last delivery to the state listeners.
+    fn publish_states(&self, listeners: &[StateListener]) {
+        let mut published = self.published.lock().unwrap_or_else(PoisonError::into_inner);
+        let current = self.read(|i| i.states.clone());
+        let mut changes: Vec<(String, ConnectionState)> = current
+            .iter()
+            .filter(|(key, state)| published.get(*key) != Some(*state))
+            .map(|(key, state)| (key.clone(), state.clone()))
+            .collect();
+        changes.extend(
+            published
+                .iter()
+                .filter(|(key, state)| !current.contains_key(*key) && **state != ConnectionState::Disconnected)
+                .map(|(key, _)| (key.clone(), ConnectionState::Disconnected)),
+        );
+        changes.sort_by(|a, b| a.0.cmp(&b.0));
+        *published = current;
+        for (key, state) in &changes {
+            for listener in listeners {
+                listener(key, state);
+            }
+        }
+    }
+
+    fn user_disconnected(&self, key: &str, cause: DisconnectCause) {
+        if cause != DisconnectCause::User {
+            return;
+        }
+        for listener in self.hooks().user_disconnect_listeners {
+            listener(key);
         }
     }
 
@@ -525,6 +702,11 @@ impl ConnectionManager {
 
     pub fn system_services(&self) -> Vec<SystemService> {
         self.read(|i| i.system_services.clone())
+    }
+
+    /// Every service ID macOS listed at the last successful listing (managed native ones included).
+    pub fn listed_service_ids(&self) -> HashSet<String> {
+        self.read(|i| i.listed_service_ids.clone())
     }
 
     pub fn states(&self) -> HashMap<String, ConnectionState> {
@@ -658,6 +840,9 @@ impl ConnectionManager {
                     i.awaiting_success.remove(&key);
                     i.ranking.record_success(&key, now);
                     changed = true;
+                    if let Some(save) = i.pending_saves.remove(&key) {
+                        i.ready_saves.push(save);
+                    }
                 }
                 Some(
                     ConnectionState::Connecting | ConnectionState::Disconnecting | ConnectionState::AwaitingAuth(_),
@@ -666,6 +851,7 @@ impl ConnectionManager {
                     // Failed or disconnected without an operation in flight: this attempt did not succeed.
                     if !i.ops.contains_key(&key) {
                         i.awaiting_success.remove(&key);
+                        i.pending_saves.remove(&key);
                     }
                 }
             }
@@ -903,6 +1089,7 @@ impl ConnectionManager {
                     next.insert(s.id.clone(), resolved);
                 }
                 i.system_services = unmanaged;
+                i.listed_service_ids = services.iter().map(|s| s.id.clone()).collect();
                 // Deleted connections and vanished system VPNs: only after a full (successful) listing.
                 if i.loaded {
                     let keep: HashSet<String> = i
@@ -940,6 +1127,8 @@ impl ConnectionManager {
             let seen = services.as_ref().map(|_| i.installed_native_ids.clone());
             Some((events, seen, to_stop))
         });
+        let saves = std::mem::take(&mut self.lock().ready_saves);
+        self.write_saves(saves);
         let Some((events, seen, to_stop)) = applied else { return };
         self.emit(events);
         if let Some(seen) = seen
@@ -983,6 +1172,9 @@ impl ConnectionManager {
             let c = i.current(c);
             let key = uuid_string(&c.id);
             i.want_down.remove(&key);
+            i.auth_cancelled.remove(&key);
+            i.credentials_cancelled.remove(&key);
+            i.pending_saves.remove(&key);
             i.awaiting_success.insert(key.clone());
             i.set_op(&key, Some(Op::Connecting));
             i.states.insert(key.clone(), ConnectionState::Connecting);
@@ -1000,11 +1192,19 @@ impl ConnectionManager {
                 if i.key_epoch(&key) != token {
                     return None;
                 }
-                let reason = if i.auth_timed_out.remove(&key) { auth_timeout_reason() } else { error };
+                let cancelled = i.auth_cancelled.remove(&key);
+                let reason = if i.auth_timed_out.remove(&key) {
+                    auth_timeout_reason()
+                } else if cancelled {
+                    auth_cancelled_reason()
+                } else {
+                    error
+                };
                 i.set_awaiting(&key, None);
                 i.states.insert(key.clone(), ConnectionState::Failed(reason.clone()));
                 i.set_op(&key, None);
                 i.awaiting_success.remove(&key);
+                i.pending_saves.remove(&key);
                 Some(ConnectionEvent::Failed { connection_id: key.clone(), name: c.name.clone(), reason })
             });
             self.emit(event.into_iter().collect());
@@ -1038,15 +1238,27 @@ impl ConnectionManager {
                 ));
             }
         };
-        let base = self.deps.secrets.secrets(&c.id);
-        let Some(prepared) = self.code_secrets(key, &c.name, c.kind, None, c.otp, base)? else {
+        let base = Zeroizing::new(self.deps.secrets.secrets(&c.id));
+        let account = c.native.as_ref().map(|n| n.account.clone()).filter(|a| !a.is_empty());
+        let required = credentials::required_fields(c.kind, None);
+        let Some(typed) = self.credential_secrets(key, &c.name, &c.id, c.kind, &required, account, base, false) else {
             self.abandon_connect(key, &c.name, *token);
             return Ok(());
         };
+        if !self.keep_save(key, *token, typed.save) {
+            return Ok(());
+        }
+        let Some(prepared) = self.code_secrets(key, &c.name, c.kind, None, c.otp, &typed.secrets)? else {
+            self.abandon_connect(key, &c.name, *token);
+            return Ok(());
+        };
+        drop(typed.secrets);
         if self.read(|i| i.key_epoch(key)) != *token {
             return Ok(());
         }
-        self.deps.native.start(&service.id, NativeKind::from_kind(c.kind), &prepared)?;
+        let started = self.deps.native.start(&service.id, NativeKind::from_kind(c.kind), &prepared);
+        drop(prepared);
+        started?;
         let now = self.now();
         let late = self.mutate(|i| {
             if i.key_epoch(key) != *token {
@@ -1071,30 +1283,67 @@ impl ConnectionManager {
     }
 
     fn connect_root(&self, c: &Connection, key: &str, token: u64, debug: bool) -> Result<(), String> {
-        let config = if c.kind == VPNKind::Openvpn { self.deps.store.load_config(&c.id).ok() } else { None };
+        let config = if matches!(c.kind, VPNKind::Openvpn | VPNKind::Strongswan) {
+            self.deps.store.load_config(&c.id).ok()
+        } else {
+            None
+        };
         if c.kind == VPNKind::Openvpn
             && let Some(reason) = unacknowledged_risk_reason(c, config.as_deref())
         {
             return Err(reason);
         }
-        // MFA: static challenge / "code after the password" before connecting; for OpenVPN the bridge's state
-        // file is watched during `up` (dynamic challenge, web authentication).
-        let base = self.deps.secrets.secrets(&c.id);
-        let Some(prepared) = self.code_secrets(key, &c.name, c.kind, config.as_deref(), c.otp, base)? else {
-            self.abandon_connect(key, &c.name, token);
-            return Ok(());
-        };
-        if self.read(|i| i.key_epoch(key)) != token {
-            return Ok(());
+        let required = credentials::required_fields(c.kind, config.as_deref());
+        let mut retry = false;
+        loop {
+            // Credentials first (the missing ones; after a sign-in failure the user name and password again),
+            // then the MFA static challenge / "code after the password"; for OpenVPN the bridge's state file is
+            // watched during `up` (dynamic challenge, web authentication).
+            let base = Zeroizing::new(self.deps.secrets.secrets(&c.id));
+            let Some(typed) = self.credential_secrets(key, &c.name, &c.id, c.kind, &required, None, base, retry) else {
+                self.abandon_connect(key, &c.name, token);
+                return Ok(());
+            };
+            if !self.keep_save(key, token, typed.save) {
+                return Ok(());
+            }
+            let Some(prepared) = self.code_secrets(key, &c.name, c.kind, config.as_deref(), c.otp, &typed.secrets)?
+            else {
+                self.abandon_connect(key, &c.name, token);
+                return Ok(());
+            };
+            drop(typed.secrets);
+            if self.read(|i| i.key_epoch(key)) != token {
+                return Ok(());
+            }
+            let watch = (c.kind == VPNKind::Openvpn).then(|| self.start_auth_watch(c));
+            let accept_risky =
+                if c.kind == VPNKind::Openvpn { c.acknowledged_risky_directives.clone() } else { Vec::new() };
+            let up = self.deps.root.up(c.kind, &c.id, &prepared, debug, &accept_risky);
+            drop(prepared);
+            if let Some(watch) = watch {
+                self.stop_auth_watch(key, watch);
+            }
+            match up {
+                // A wrong user name or password: asked again once (never in a loop), if anything can be asked.
+                Err(message)
+                    if !retry
+                        && credentials::is_sign_in_failure(&message)
+                        && !retry_fields(&required, &Zeroizing::new(self.deps.secrets.secrets(&c.id))).is_empty()
+                        && self.hooks().credential_handler.is_some()
+                        && self.read(|i| i.key_epoch(key)) == token =>
+                {
+                    self.mutate(|i| {
+                        i.pending_saves.remove(key);
+                    });
+                    retry = true;
+                }
+                other => {
+                    other?;
+                    break;
+                }
+            }
         }
-        let watch = (c.kind == VPNKind::Openvpn).then(|| self.start_auth_watch(c));
-        let accept_risky =
-            if c.kind == VPNKind::Openvpn { c.acknowledged_risky_directives.clone() } else { Vec::new() };
-        let up = self.deps.root.up(c.kind, &c.id, &prepared, debug, &accept_risky);
-        if let Some(watch) = watch {
-            self.stop_auth_watch(key, watch);
-        }
-        up?;
         let late = self.mutate(|i| {
             if i.key_epoch(key) != token {
                 return Some(i.want_down.contains(key));
@@ -1116,13 +1365,20 @@ impl ConnectionManager {
         Ok(())
     }
 
+    /// A disconnect the user asked for ([`DisconnectCause::User`]).
     pub fn disconnect(&self, c: &Connection) {
+        self.disconnect_for(c, DisconnectCause::User);
+    }
+
+    pub fn disconnect_for(&self, c: &Connection, cause: DisconnectCause) {
+        self.user_disconnected(&uuid_string(&c.id), cause);
         let (c, key, was_connecting, token) = self.mutate(|i| {
             let c = i.current(c);
             let key = uuid_string(&c.id);
             let was_connecting = matches!(i.ops.get(&key), Some(Op::Connecting));
             i.want_down.insert(key.clone());
             i.awaiting_success.remove(&key);
+            i.pending_saves.remove(&key);
             i.set_op(&key, Some(Op::Disconnecting));
             let token = i.key_epoch(&key);
             i.auth_waits.remove(&key);
@@ -1130,6 +1386,7 @@ impl ConnectionManager {
             (c, key, was_connecting, token)
         });
         self.dismiss(&key);
+        self.dismiss_credentials(&key);
         // OpenVPN while connecting (even waiting for authentication): cancelled through the bridge, so `up` cleans
         // up and releases the lock at once, and `down` does not wait for it. Without a running bridge the error
         // does not matter.
@@ -1169,16 +1426,17 @@ impl ConnectionManager {
         let key = s.id.clone();
         let token = self.mutate(|i| {
             i.want_down.remove(&key);
+            i.auth_cancelled.remove(&key);
             i.awaiting_success.insert(key.clone());
             i.set_op(&key, Some(Op::Connecting));
             i.states.insert(key.clone(), ConnectionState::Connecting);
             i.key_epoch(&key)
         });
         let result = (|| -> Result<(), String> {
-            let mut secrets = self.system_secrets(s);
+            let mut secrets = Zeroizing::new(self.system_secrets(s));
             if s.supports_stored_secrets() {
                 let otp = self.system_otp_setting(&s.id);
-                let Some(prepared) = self.code_secrets(&key, &s.name, VPNKind::L2tp, None, otp, secrets)? else {
+                let Some(prepared) = self.code_secrets(&key, &s.name, VPNKind::L2tp, None, otp, &secrets)? else {
                     self.abandon_connect(&key, &s.name, token);
                     return Ok(());
                 };
@@ -1209,11 +1467,12 @@ impl ConnectionManager {
             }
             Ok(())
         })();
-        if let Err(reason) = result {
+        if let Err(error) = result {
             let event = self.mutate(|i| {
                 if i.key_epoch(&key) != token {
                     return None;
                 }
+                let reason = if i.auth_cancelled.remove(&key) { auth_cancelled_reason() } else { error };
                 i.states.insert(key.clone(), ConnectionState::Failed(reason.clone()));
                 i.set_op(&key, None);
                 i.awaiting_success.remove(&key);
@@ -1223,7 +1482,13 @@ impl ConnectionManager {
         }
     }
 
+    /// A disconnect the user asked for ([`DisconnectCause::User`]).
     pub fn disconnect_system(&self, s: &SystemService) {
+        self.disconnect_system_for(s, DisconnectCause::User);
+    }
+
+    pub fn disconnect_system_for(&self, s: &SystemService, cause: DisconnectCause) {
+        self.user_disconnected(&s.id, cause);
         self.mutate(|i| {
             i.want_down.insert(s.id.clone());
             i.awaiting_success.remove(&s.id);
@@ -1305,8 +1570,194 @@ impl ConnectionManager {
             if result == AuthPromptResult::TimedOut {
                 i.auth_timed_out.insert(key.to_string());
             }
+            if result == AuthPromptResult::Cancelled && !stop.is_some_and(|s| s.load(Ordering::SeqCst)) {
+                i.auth_cancelled.insert(key.to_string());
+            }
         });
         result
+    }
+
+    // MARK: - Credentials
+
+    /// The credential prompt; meanwhile the connection is "waiting for credentials". `None`: cancelled, dismissed
+    /// or expired.
+    fn ask_credentials(&self, prompt: CredentialPrompt) -> Option<(CredentialValues, bool)> {
+        let handler = self.hooks().credential_handler?;
+        let key = prompt.connection_id.clone();
+        let deadline = prompt.deadline.end();
+        let asked = self.mutate(|i| {
+            // The user disconnected (or the connect ended) before the prompt opened: nothing is asked.
+            if i.ops.get(&key) != Some(&Op::Connecting) {
+                return false;
+            }
+            i.set_awaiting(&key, Some(AuthWait { kind: AuthWaitKind::Credentials, deadline: Some(deadline) }));
+            true
+        });
+        if !asked {
+            return None;
+        }
+        let answer = handler(prompt);
+        let cancelled = matches!(answer, CredentialAnswer::Cancelled);
+        self.mutate(|i| {
+            i.set_awaiting(&key, None);
+            if cancelled {
+                i.credentials_cancelled.insert(key.clone());
+            }
+        });
+        match answer {
+            CredentialAnswer::Provided { values, save } => Some((values, save)),
+            CredentialAnswer::Cancelled => None,
+        }
+    }
+
+    /// The stored secrets with the asked credentials over them. Asks for the missing required fields (`retry`:
+    /// after a sign-in failure, the user name and password again, plus a missing PSK / key password); nothing to
+    /// ask, or no credential window: the stored secrets as they are. `native_account`: a managed native
+    /// connection's account, which counts as its user name. `None`: the prompt was cancelled.
+    #[allow(clippy::too_many_arguments)]
+    fn credential_secrets(
+        &self,
+        key: &str,
+        name: &str,
+        id: &Uuid,
+        kind: VPNKind,
+        required: &RequiredFields,
+        native_account: Option<String>,
+        base: Zeroizing<Secrets>,
+        retry: bool,
+    ) -> Option<Prepared> {
+        let mut stored = base.clone();
+        if stored.username.as_deref().unwrap_or("").is_empty() {
+            stored.username.clone_from(&native_account);
+        }
+        let fields = if retry { retry_fields(required, &stored) } else { credentials::missing(required, &stored) };
+        let username = stored.username.clone().filter(|u| !u.is_empty());
+        drop(stored);
+        if fields.is_empty() || self.hooks().credential_handler.is_none() {
+            return Some(Prepared { secrets: base, save: None });
+        }
+        let prompt = CredentialPrompt {
+            connection_id: key.to_string(),
+            connection_name: name.to_string(),
+            kind,
+            fields,
+            username,
+            retry,
+            deadline: PromptDeadline::new(self.now()),
+        };
+        let (values, save) = self.ask_credentials(prompt)?;
+        let secrets = credentials::apply(&values, &base);
+        let save = save.then(|| {
+            let prior = values
+                .fields()
+                .into_iter()
+                .map(|f| (f, Zeroizing::new(stored_value(&base, f).unwrap_or_default().to_string())))
+                .collect();
+            PendingSave {
+                id: *id,
+                values,
+                prior,
+                native: kind.is_native(),
+                prior_account: native_account.unwrap_or_default(),
+            }
+        });
+        Some(Prepared { secrets, save })
+    }
+
+    /// Keeps the "Save" values until the connect is up. False: the connect is no longer the latest (the user
+    /// disconnected or connected again meanwhile); the values are dropped.
+    fn keep_save(&self, key: &str, token: u64, save: Option<PendingSave>) -> bool {
+        self.mutate(|i| {
+            if i.key_epoch(key) != token {
+                return false;
+            }
+            match save {
+                Some(save) => i.pending_saves.insert(key.to_string(), save),
+                None => i.pending_saves.remove(key),
+            };
+            true
+        })
+    }
+
+    /// Writes the values of connects that came up (outside the lock). A failing write is not reported: the
+    /// connection is up, and the prompt asks again next time.
+    fn write_saves(&self, saves: Vec<PendingSave>) {
+        if saves.is_empty() {
+            return;
+        }
+        let (Some(writer), Some(this)) = (self.deps.secret_writer.clone(), self.this.upgrade()) else { return };
+        // Off the refresh / poller thread: a Keychain write can wait for the user (a macOS access prompt).
+        *self.saves_in_flight.0.lock().unwrap_or_else(PoisonError::into_inner) += 1;
+        let spawned = std::thread::Builder::new().name("macvpn-cred-save".into()).spawn(move || {
+            for save in saves {
+                this.write_save(writer.as_ref(), &save);
+            }
+            let (count, done) = &*this.saves_in_flight;
+            *count.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+            done.notify_all();
+        });
+        if spawned.is_err() {
+            let (count, done) = &*self.saves_in_flight;
+            *count.lock().unwrap_or_else(PoisonError::into_inner) -= 1;
+            done.notify_all();
+        }
+    }
+
+    fn write_save(&self, writer: &dyn SecretWriter, save: &PendingSave) {
+        // A deleted connection never gets its items back (`forget_saves` marks it before the Keychain items go).
+        if !self.read(|i| !i.forgotten.contains(&save.id) && i.connections.iter().any(|c| c.id == save.id)) {
+            return;
+        }
+        for (field, prior) in &save.prior {
+            let Some(value) = save.values.get(*field) else { continue };
+            let target = secret_field(*field);
+            let current = Zeroizing::new(self.deps.secrets.get(&save.id, target).unwrap_or_default());
+            if *current == **prior {
+                writer.set(value, &save.id, target);
+            }
+        }
+        let Some(account) = save.values.get(CredentialField::Username).filter(|_| save.native) else { return };
+        // The freshly stored meta, patched (never the cached copy: an edit made during the connect stays).
+        let Ok(list) = self.deps.store.list() else { return };
+        let Some(mut fresh) = list.into_iter().find(|c| c.id == save.id) else { return };
+        let Some(native) = fresh.native.as_mut() else { return };
+        if native.account != save.prior_account {
+            return;
+        }
+        native.account = account.to_string();
+        if self.deps.store.save(&fresh, None).is_ok() {
+            self.mutate(|i| {
+                if let Some(native) = i.connections.iter_mut().find(|c| c.id == save.id).and_then(|c| c.native.as_mut())
+                {
+                    native.account = account.to_string();
+                }
+            });
+        }
+    }
+
+    /// The key's last connect ended because its credential prompt was cancelled or expired.
+    pub fn credentials_cancelled(&self, key: &str) -> bool {
+        self.read(|i| i.credentials_cancelled.contains(key))
+    }
+
+    /// Waits until the "Save" writes started so far are done.
+    pub fn flush_saves(&self) {
+        let (count, done) = &*self.saves_in_flight;
+        let mut n = count.lock().unwrap_or_else(PoisonError::into_inner);
+        while *n > 0 {
+            n = done.wait(n).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// The connection is being deleted: its pending "Save" values are dropped, a write in progress finishes
+    /// first, and no later write happens. Call before deleting its Keychain items.
+    pub fn forget_saves(&self, id: &Uuid) {
+        self.mutate(|i| {
+            i.forgotten.insert(*id);
+            i.pending_saves.retain(|_, s| s.id != *id);
+            i.ready_saves.retain(|s| s.id != *id);
+        });
+        self.flush_saves();
     }
 
     /// The code asked before connecting: the OpenVPN static challenge (by the config's `static-challenge` line,
@@ -1319,8 +1770,8 @@ impl ConnectionManager {
         kind: VPNKind,
         config: Option<&str>,
         otp: OTPSetting,
-        base: Secrets,
-    ) -> Result<Option<Secrets>, String> {
+        base: &Secrets,
+    ) -> Result<Option<Zeroizing<Secrets>>, String> {
         if kind == VPNKind::Openvpn
             && let Some(challenge) = config.and_then(mfa::static_challenge)
         {
@@ -1330,17 +1781,19 @@ impl ConnectionManager {
             else {
                 return Ok(None);
             };
-            return mfa::apply_static_challenge(&challenge, &code, &base).map(Some).map_err(|e| e.message());
+            let code = Zeroizing::new(code);
+            return mfa::apply_static_challenge(&challenge, &code, base).map(Some).map_err(|e| e.message());
         }
         if !otp.enabled || kind == VPNKind::Wireguard {
-            return Ok(Some(base));
+            return Ok(Some(Zeroizing::new(base.clone())));
         }
         let text = l10n::tr("Enter the one-time code. MacVPN appends it to the password for this connection.", &[]);
         let prompt = AuthPromptKind::Code { text, echo: true, from_server: false };
         let AuthPromptResult::Code(code) = self.ask(key, name, prompt, PromptDeadline::new(self.now()), None) else {
             return Ok(None);
         };
-        mfa::apply_code(&code, otp.separator, &base, kind).map(Some).map_err(|e| e.message())
+        let code = Zeroizing::new(code);
+        mfa::apply_code(&code, otp.separator, base, kind).map(Some).map_err(|e| e.message())
     }
 
     /// The code prompt was cancelled or expired: no connect. Cancelled: `disconnected`; expired: failure.
@@ -1352,6 +1805,7 @@ impl ConnectionManager {
             i.set_awaiting(key, None);
             i.set_op(key, None);
             i.awaiting_success.remove(key);
+            i.auth_cancelled.remove(key);
             if i.auth_timed_out.remove(key) {
                 i.states.insert(key.to_string(), ConnectionState::Failed(auth_timeout_reason()));
                 Some(ConnectionEvent::Failed {

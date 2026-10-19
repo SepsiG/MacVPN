@@ -12,7 +12,7 @@ use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
 use macvpn_core::models::{Connection, NativeSettings, VPNKind, ValidationIssue, uuid_string};
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use uuid::Uuid;
@@ -104,6 +104,8 @@ pub struct ManageView {
     pub kinds: Vec<Choice>,
     /// The Log tab's filter (`all`, `commands`, `errors`) with their titles.
     pub log_filters: Vec<Choice>,
+    /// The selected system VPN was removed from macOS: the selection (and its detail) stays, read-only.
+    pub selected_removed: bool,
 }
 
 /// A value with its (translated) title.
@@ -127,6 +129,10 @@ struct WindowState {
     /// The imported connections' validation problems: the editor shows them on its first load (one-time).
     import_issues: HashMap<Uuid, Vec<ValidationIssue>>,
     editors_epoch: u64,
+    /// The system VPN service IDs of the last listing ([`ConnectionsModel::services_changed`]).
+    known_services: HashSet<String>,
+    /// System VPNs that were listed and are gone, kept only while selected or edited.
+    removed_services: HashSet<String>,
 }
 
 impl WindowState {
@@ -136,12 +142,15 @@ impl WindowState {
         self.editors_epoch += 1;
     }
 
+    /// A removed system VPN's draft does not count: it cannot be saved, so it must not raise "Unsaved Changes"
+    /// (it stays in memory and counts again if the VPN returns).
     fn has_unsaved(&self) -> bool {
-        self.drafts.values().any(Draft::is_dirty)
+        self.drafts.values().any(|d| d.is_dirty() && !d.removed)
     }
 
     fn dirty_ids(&self) -> Vec<String> {
-        let mut ids: Vec<String> = self.drafts.iter().filter(|(_, d)| d.is_dirty()).map(|(k, _)| k.clone()).collect();
+        let mut ids: Vec<String> =
+            self.drafts.iter().filter(|(_, d)| d.is_dirty() && !d.removed).map(|(k, _)| k.clone()).collect();
         ids.sort();
         ids
     }
@@ -153,6 +162,8 @@ pub struct ConnectionsModel {
     questions: Arc<QuestionBroker>,
     /// One import at a time (a dialog's and a drop's files are not interleaved).
     importing: Mutex<()>,
+    /// [`Self::system_services_changed`] one at a time.
+    services_sync: Mutex<()>,
     on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
@@ -163,6 +174,7 @@ impl ConnectionsModel {
             state: Mutex::default(),
             questions: Arc::new(QuestionBroker::new()),
             importing: Mutex::new(()),
+            services_sync: Mutex::new(()),
             on_change: Mutex::new(None),
         }
     }
@@ -211,6 +223,7 @@ impl ConnectionsModel {
                 .into_iter()
                 .map(|f| Choice { value: f.raw_value(), title: f.title() })
                 .collect(),
+            selected_removed: s.selected.as_ref().is_some_and(|k| s.removed_services.contains(k)),
         }
     }
 
@@ -425,6 +438,9 @@ impl ConnectionsModel {
     /// Saves one draft outside the lock. `None`: no such draft; `Err`: the message.
     fn save_draft(&self, key: &str) -> Option<Result<(), String>> {
         let mut draft = self.lock().drafts.get(key).cloned()?;
+        if draft.removed {
+            return Some(Err(removed_message()));
+        }
         let before = draft.fields.clone();
         let result = draft.save_reporting_error(&self.deps);
         {
@@ -433,7 +449,10 @@ impl ConnectionsModel {
                 // Edits that arrived while saving are kept (still unsaved then).
                 let edited = current.fields != before;
                 let fields = current.fields.clone();
+                // A refresh meanwhile may have marked it removed: that mark stays.
+                let removed = current.removed;
                 *current = draft;
+                current.removed = removed;
                 if edited {
                     current.fields = fields;
                 }
@@ -489,8 +508,11 @@ impl ConnectionsModel {
             Target::Connection(c) => self.lock().import_issues.remove(&c.id).unwrap_or_default(),
             Target::System(_) => Vec::new(),
         };
-        let loaded = Draft::load(&self.deps, target, issues);
-        let view = self.lock().drafts.entry(key.to_string()).or_insert(loaded).view(key);
+        let mut loaded = Draft::load(&self.deps, target, issues);
+        let mut s = self.lock();
+        // A refresh while loading may have found the service gone.
+        loaded.removed = matches!(loaded.target, Target::System(_)) && s.removed_services.contains(key);
+        let view = s.drafts.entry(key.to_string()).or_insert(loaded).view(key);
         Ok(view)
     }
 
@@ -507,6 +529,9 @@ impl ConnectionsModel {
     /// The editor's fields after a change in the UI.
     pub fn update_editor(&self, key: &str, fields: EditorFields) -> Result<EditorView, String> {
         self.with_draft(key, |d| {
+            if d.removed {
+                return Err(removed_message());
+            }
             d.update(fields)?;
             Ok(d.view(key))
         })
@@ -519,12 +544,15 @@ impl ConnectionsModel {
         self.with_draft(key, |d| Ok(d.view(key)))
     }
 
-    /// "Forget saved secrets" (system VPN).
+    /// "Forget saved secrets" (system VPN). Allowed on a removed VPN too: deleting is not editing.
     pub fn forget_secrets(&self, key: &str) -> Result<EditorView, String> {
         let mut draft = self.lock().drafts.get(key).cloned().ok_or("no editor")?;
         draft.forget(&self.deps);
         self.with_draft(key, |d| {
+            // A refresh meanwhile may have changed the removed mark: the current one stays.
+            let removed = d.removed;
             *d = draft;
+            d.removed = removed;
             Ok(d.view(key))
         })
     }
@@ -535,6 +563,44 @@ impl ConnectionsModel {
             d.import_ca(text);
             Ok(d.view(key))
         })
+    }
+
+    // MARK: - Live system VPN list
+
+    /// After a refresh: `present` are the system VPN service IDs listed now. A shown system VPN (selected, or with
+    /// an open editor) that was listed before and is gone is marked removed: its editor is read-only and the
+    /// selection stays. Listed again with the same ID, it is editable again with its draft. Managed connections
+    /// are never marked. Stored secrets are not deleted (the service may return).
+    pub fn services_changed(&self, present: &HashSet<String>) {
+        let changed = {
+            let mut s = self.lock();
+            let mut removed: HashSet<String> = s.removed_services.clone();
+            removed.extend(s.known_services.difference(present).cloned());
+            let shown = |k: &String| s.selected.as_ref() == Some(k) || s.drafts.contains_key(k);
+            removed.retain(|k| !present.contains(k) && shown(k));
+            let mut changed = removed != s.removed_services;
+            for (key, draft) in &mut s.drafts {
+                let gone = matches!(draft.target, Target::System(_)) && removed.contains(key);
+                if draft.removed != gone {
+                    draft.removed = gone;
+                    changed = true;
+                }
+            }
+            s.removed_services = removed;
+            s.known_services.clone_from(present);
+            changed
+        };
+        if changed {
+            self.changed();
+        }
+    }
+
+    /// [`Self::services_changed`] with every service macOS lists now, managed ones included (a service a managed
+    /// connection takes over is not gone). The app calls it on every manager change; the calls are serialized, so
+    /// an older listing never overwrites a newer one.
+    pub fn system_services_changed(&self) {
+        let _one_at_a_time = self.services_sync.lock().unwrap_or_else(PoisonError::into_inner);
+        self.services_changed(&self.deps.manager.listed_service_ids());
     }
 
     // MARK: - Create, import, delete
@@ -589,6 +655,8 @@ impl ConnectionsModel {
             s.drafts.remove(&key);
             s.import_issues.remove(id);
         }
+        // No "Save" of a connect still in flight may bring its Keychain items back.
+        self.deps.manager.forget_saves(id);
         let _ = self.deps.store.delete(id);
         self.deps.secret_writer.delete_all(id);
         self.deps.manager.reload();
@@ -606,4 +674,9 @@ impl ConnectionsModel {
     pub fn draft_fields(&self) -> BTreeMap<String, EditorFields> {
         self.lock().drafts.iter().map(|(k, d)| (k.clone(), d.fields.clone())).collect()
     }
+}
+
+/// "This VPN was removed from macOS": the refusal of a removed system VPN's editor.
+pub fn removed_message() -> String {
+    l10n::tr("This VPN was removed from macOS", &[])
 }

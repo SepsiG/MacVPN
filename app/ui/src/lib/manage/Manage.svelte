@@ -5,22 +5,39 @@
   import { onMount } from 'svelte';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
   import { api, onImportReport, onViewModel, type Notice, type Report, type UnsavedChoice, type ViewModel } from '../api';
+  import Icon from '../Icon.svelte';
   import { setLanguage, tr } from '../l10n.svelte';
   import './manage.css';
   import Detail from './Detail.svelte';
   import Modal from './Modal.svelte';
+  import PairedApps from './PairedApps.svelte';
   import { flushActive } from './session.svelte';
   import Sidebar from './Sidebar.svelte';
   import SystemDetail from './SystemDetail.svelte';
+  import { removedRow, shownRow } from './live';
+  import type { Row } from '../api';
 
   let vm = $state<ViewModel | null>(null);
   let report = $state<Report | null>(null);
   let notice = $state<Notice | null>(null);
   let dropping = $state(false);
   let resolving = $state(false);
+  /// The Paired apps section is shown (in place of a connection: the selection is cleared first).
+  let showPaired = $state(false);
 
   const selected = $derived(vm?.manage.selected ?? null);
-  const row = $derived(vm?.rows.find((r) => r.id === selected) ?? null);
+  /// The selected system VPN was removed from macOS: its last row stays shown (read-only).
+  const removed = $derived(vm?.manage.selectedRemoved ?? false);
+  /// The last row seen for the selection (what a removed VPN's detail keeps showing).
+  let lastRow = $state<Row | null>(null);
+  const listed = $derived(vm?.rows.find((r) => r.id === selected) ?? null);
+  $effect(() => {
+    if (listed) lastRow = listed;
+  });
+  const row = $derived.by(() => {
+    const shown = shownRow(vm?.rows ?? [], selected, removed, lastRow);
+    return shown && shown !== listed ? removedRow(shown) : shown;
+  });
 
   function apply(next: ViewModel) {
     setLanguage(next.language);
@@ -48,7 +65,15 @@
 
   async function select(id: string) {
     await flushActive();
+    showPaired = false;
     await api.selectConnection(id);
+  }
+
+  async function openPaired() {
+    await flushActive();
+    showPaired = true;
+    // Through the unsaved-changes check, like any selection change.
+    await api.selectConnection(null);
   }
 
   async function importFiles() {
@@ -80,26 +105,31 @@
     kinds={vm?.manage.kinds ?? []}
     onselect={(id) => select(id).catch(console.error)}
     onimport={() => importFiles().catch(console.error)}
+    paired={showPaired && !selected}
+    pairedCount={vm?.control.clients.length ?? 0}
+    onpaired={() => openPaired().catch(console.error)}
   />
   <main class="main">
     {#if vm?.statusError}
       <div class="status-error">
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l7 12.5H1z M7.3 6v4.2h1.4V6z M7.3 11.2v1.4h1.4v-1.4z" fill="currentColor" fill-rule="evenodd" /></svg>
+        <Icon name="warning" />
         <span>{vm.statusError}</span>
         <button onclick={() => api.openWindow('setup').catch(console.error)}>{tr('System Status')}</button>
       </div>
     {/if}
-    {#if row && row.managed && row.kind}
+    {#if showPaired && !selected && vm}
+      <PairedApps control={vm.control} rows={vm.rows} />
+    {:else if row && row.managed && row.kind}
       {#key row.id}
         <Detail {row} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} />
       {/key}
     {:else if row}
       {#key row.id}
-        <SystemDetail {row} epoch={vm!.manage.editorsEpoch} />
+        <SystemDetail {row} epoch={vm!.manage.editorsEpoch} selectedRemoved={removed} />
       {/key}
     {:else}
       <div class="empty">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2a10 10 0 100 20 10 10 0 000-20zm0 1.6c1 0 2.2 1.6 2.9 4.4H9.1C9.8 5.2 11 3.6 12 3.6zM8.6 4.3C8.1 5.3 7.7 6.6 7.5 8H4.6a8.4 8.4 0 014-3.7zm6.8 0a8.4 8.4 0 014 3.7h-2.9c-.2-1.4-.6-2.7-1.1-3.7zM3.9 9.6h3.4a20 20 0 000 4.8H3.9a8.4 8.4 0 010-4.8zm5 0h6.2a18 18 0 010 4.8H8.9a18 18 0 010-4.8zm7.8 0h3.4a8.4 8.4 0 010 4.8h-3.4a20 20 0 000-4.8zM4.6 16h2.9c.2 1.4.6 2.7 1.1 3.7a8.4 8.4 0 01-4-3.7zm4.5 0h5.8c-.7 2.8-1.9 4.4-2.9 4.4S9.8 18.8 9.1 16zm7.4 0h2.9a8.4 8.4 0 01-4 3.7c.5-1 .9-2.3 1.1-3.7z" fill="currentColor" /></svg>
+        <span class="empty-icon"><Icon name="globe" /></span>
         <h1>{tr('Select a Connection')}</h1>
         <p>{tr('Or drop an .ovpn / .conf / .sstp file here.')}</p>
       </div>
@@ -142,9 +172,10 @@
   .manage.dropping::after {
     content: '';
     position: fixed;
-    inset: 4px;
-    border: 3px solid var(--accent);
-    border-radius: 8px;
+    inset: 6px;
+    border: 2px dashed var(--accent);
+    border-radius: var(--radius-panel);
+    background: var(--accent-soft);
     pointer-events: none;
   }
   .main {
@@ -152,37 +183,54 @@
     flex-direction: column;
     min-width: 0;
     min-height: 0;
+    background: var(--background);
   }
   .status-error {
     display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 10px;
-    background: rgba(255, 149, 0, 0.12);
-    font-size: 12px;
+    gap: var(--space-3);
+    margin: var(--space-5) var(--space-7) 0;
+    padding: 8px 8px 8px 12px;
+    border-radius: var(--radius-card);
+    background: var(--state-busy-soft);
+    font-size: var(--text-md);
   }
-  .status-error svg {
-    width: 14px;
-    height: 14px;
-    flex: none;
-    color: var(--orange);
+  .status-error :global(.icon) {
+    width: 15px;
+    height: 15px;
+    color: var(--state-busy);
   }
   .status-error span {
     flex: 1;
   }
   .empty {
     margin: auto;
+    padding: 28px 36px;
+    max-width: 320px;
     text-align: center;
     color: var(--secondary);
+    border: 1.5px dashed var(--border-strong);
+    border-radius: 18px;
   }
-  .empty svg {
-    width: 40px;
-    height: 40px;
+  .empty-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .empty-icon :global(.icon) {
+    width: 26px;
+    height: 26px;
   }
   .empty h1 {
-    font-size: 17px;
+    font-size: var(--text-lg);
+    font-weight: 600;
     color: var(--text);
-    margin: 8px 0 4px;
+    margin: 12px 0 4px;
   }
   .empty p {
     margin: 0;

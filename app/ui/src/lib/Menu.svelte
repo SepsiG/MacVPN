@@ -10,6 +10,7 @@
     type WindowName,
   } from './api';
   import { setLanguage, tr } from './l10n.svelte';
+  import Icon from './Icon.svelte';
   import MenuRow from './MenuRow.svelte';
 
   let vm = $state<ViewModel | null>(null);
@@ -20,6 +21,13 @@
   let notice = $state<Notice | null>(null);
   let busy = $state(false);
   let root: HTMLElement | undefined = $state();
+  let list: HTMLElement | undefined = $state();
+  /// The connection list's height limit: what the screen (and the backend's bound) leaves next to the rest.
+  let listMax = $state<number | null>(null);
+  /// The list scrolls (its scroll bar then takes the right margin).
+  let scrollable = $state(false);
+  let settingsOpen = $state(false);
+  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null));
 
   function apply(next: ViewModel) {
     setLanguage(next.language);
@@ -30,10 +38,8 @@
     const unlisten = [onViewModel(apply)];
     api.viewModel().then(apply, console.error);
     const timer = setInterval(() => (now = Date.now()), 1000);
-    // The popover window follows the content's height.
-    const observer = new ResizeObserver(() => {
-      if (root) api.setMenuHeight(Math.ceil(root.getBoundingClientRect().height)).catch(console.error);
-    });
+    // The popover window follows the content's height; many connections scroll inside the list instead.
+    const observer = new ResizeObserver(measure);
     if (root) observer.observe(root);
     return () => {
       clearInterval(timer);
@@ -41,6 +47,22 @@
       for (const u of unlisten) u.then((f) => f());
     };
   });
+
+  /// The backend accepts 40…900 points; the list gets what the screen leaves (at least a few cards).
+  const MAX_HEIGHT = 900;
+
+  function measure() {
+    if (!root) return;
+    const total = root.getBoundingClientRect().height;
+    if (list) {
+      const others = total - list.getBoundingClientRect().height;
+      const limit = Math.min(MAX_HEIGHT, (window.screen?.availHeight || MAX_HEIGHT) - 40);
+      const next = Math.max(150, Math.floor(limit - others));
+      if (next !== listMax) listMax = next;
+      scrollable = list.scrollHeight > list.clientHeight + 1;
+    }
+    api.setMenuHeight(Math.max(40, Math.min(MAX_HEIGHT, Math.ceil(total)))).catch(console.error);
+  }
 
   function toggle(row: Row, debug: boolean) {
     const action = row.switchOn ? api.disconnect(row.id) : api.connect(row.id, debug);
@@ -93,6 +115,7 @@
     <section class="question" aria-live="polite">
       <h1>{tr('There are active VPN connections')}</h1>
       <p>{tr('Disconnect them before quitting?')}</p>
+      {#if vm?.quitNote}<p class="note">{vm.quitNote}</p>{/if}
       <div class="buttons">
         <button class="primary" disabled={busy} onclick={() => answer('disconnectAndQuit')}>{tr('Disconnect and Quit')}</button>
         <button disabled={busy} onclick={() => answer('keepRunning')}>{tr('Quit, Keep Them Running')}</button>
@@ -101,60 +124,108 @@
     </section>
   {:else}
     {#if vm?.statusError}
-      <button class="status-error" title={tr('Open System Status')} onclick={() => open('setup')}>
-        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l7 12.5H1z M7.3 6v4.2h1.4V6z M7.3 11.2v1.4h1.4v-1.4z" fill="currentColor" fill-rule="evenodd" /></svg>
-        <span>{vm.statusError}</span>
+      <button class="banner status-error" title={tr('Open System Status')} onclick={() => open('setup')}>
+        <Icon name="warning" />
+        <span class="banner-text">{vm.statusError}</span>
+        <Icon name="chevron" class="chevron" />
       </button>
-      <hr />
     {/if}
-    {#if vm && vm.rows.length === 0}
-      <p class="empty">{tr('No connections yet')}</p>
-    {/if}
-    {#each vm?.rows ?? [] as row (row.id)}
-      <MenuRow {row} {now} onToggle={toggle} />
-    {/each}
-    <hr />
+    <div class="list" class:scrollable bind:this={list} style:max-height={listMax === null ? null : `${listMax}px`}>
+      {#if vm && vm.rows.length === 0}
+        <div class="empty">
+          <Icon name="globe" />
+          <p>{tr('No connections yet')}</p>
+        </div>
+      {/if}
+      {#each vm?.rows ?? [] as row (row.id)}
+        <MenuRow {row} {now} onToggle={toggle} />
+      {/each}
+    </div>
     {#if vm?.update.available}
-      <button class="item accent" onclick={() => open('update')}>{tr('Update available: %@', vm.update.available)}</button>
-    {/if}
-    <button class="item" onclick={() => open('manage')}>{tr('New Connection / Import…')}</button>
-    <button class="item" onclick={() => open('manage')}>{tr('Manage Connections…')}</button>
-    <button class="item" onclick={() => open('setup')}>
-      {tr('System Status')}
-      {#if vm && !vm.setupComplete}<span class="warn" aria-hidden="true">!</span>{/if}
-    </button>
-    <button class="item" onclick={() => api.openUserGuide().catch(console.error)}>{tr('Help')}</button>
-    {#if vm?.update.enabled}
-      <button class="item" disabled={vm.update.checking} onclick={() => checkNow().catch(console.error)}>
-        {vm.update.checking ? tr('Checking for Updates…') : tr('Check for Updates Now')}
+      <button class="banner update" onclick={() => open('update')}>
+        <Icon name="download" />
+        <span class="banner-text">{tr('Update available: %@', vm.update.available)}</span>
+        <Icon name="chevron" class="chevron" />
       </button>
-      <label class="check">
-        <input type="checkbox" checked={vm.update.autoCheck} onchange={(e) => setUpdateOption('autoCheck', e)} />
-        {tr('Check for Updates Automatically')}
-      </label>
-      <label class="check">
-        <input type="checkbox" checked={vm.update.delayUpdates} onchange={(e) => setUpdateOption('delayUpdates', e)} />
-        {tr('Only Offer Updates Published at Least 24 Hours Ago')}
-      </label>
     {/if}
-    {#if vm?.loginItem}
-      <label class="check">
-        <input
-          type="checkbox"
-          checked={vm.loginItem.isOn}
-          disabled={!vm.loginItem.canToggle}
-          onchange={(e) => setLaunchAtLogin(e).catch(console.error)}
-        />
-        {tr('Launch at Login')}
-      </label>
-      {#if vm.loginItem.note}
-        <p class="note">{vm.loginItem.note}</p>
-      {/if}
-      {#if vm.loginItem.showsOpenSettings}
-        <button class="small" onclick={() => api.openLoginItemsSettings().catch(console.error)}>{tr('Open Login Items Settings…')}</button>
-      {/if}
+    <div class="tiles">
+      <button class="tile" onclick={() => open('manage')}>
+        <span class="tile-icon new"><Icon name="plus" /></span>
+        <span class="tile-label">{tr('New Connection / Import…')}</span>
+      </button>
+      <button class="tile" onclick={() => open('manage')}>
+        <span class="tile-icon manage"><Icon name="list" /></span>
+        <span class="tile-label">{tr('Manage Connections…')}</span>
+      </button>
+      <button class="tile" onclick={() => open('setup')}>
+        <span class="tile-icon status">
+          <Icon name="status" />
+          {#if vm && !vm.setupComplete}<span class="warn" aria-hidden="true">!</span>{/if}
+        </span>
+        <span class="tile-label">{tr('System Status')}</span>
+      </button>
+    </div>
+    {#if vm && hasSettings}
+      <div class="group">
+        <button class="disclosure" class:open={settingsOpen} aria-expanded={settingsOpen} aria-controls="menu-settings" onclick={() => (settingsOpen = !settingsOpen)}>
+          <Icon name="gear" />
+          <span class="disclosure-label">{tr('Settings')}</span>
+          <Icon name="chevron" class="chevron" />
+        </button>
+        <div id="menu-settings" class="settings" hidden={!settingsOpen}>
+          {#if vm.update.enabled}
+            <label class="setting">
+              <span>{tr('Check for Updates Automatically')}</span>
+              <input type="checkbox" class="switch" role="switch" checked={vm.update.autoCheck} onchange={(e) => setUpdateOption('autoCheck', e)} />
+            </label>
+            <label class="setting">
+              <span>{tr('Only Offer Updates Published at Least 24 Hours Ago')}</span>
+              <input type="checkbox" class="switch" role="switch" checked={vm.update.delayUpdates} onchange={(e) => setUpdateOption('delayUpdates', e)} />
+            </label>
+          {/if}
+          {#if vm.loginItem}
+            <label class="setting">
+              <span>{tr('Launch at Login')}</span>
+              <input
+                type="checkbox"
+                class="switch"
+                role="switch"
+                checked={vm.loginItem.isOn}
+                disabled={!vm.loginItem.canToggle}
+                onchange={(e) => setLaunchAtLogin(e).catch(console.error)}
+              />
+            </label>
+            {#if vm.loginItem.note || vm.loginItem.showsOpenSettings}
+              <div class="setting-extra">
+                {#if vm.loginItem.note}
+                  <p class="note">{vm.loginItem.note}</p>
+                {/if}
+                {#if vm.loginItem.showsOpenSettings}
+                  <button class="small" onclick={() => api.openLoginItemsSettings().catch(console.error)}>{tr('Open Login Items Settings…')}</button>
+                {/if}
+              </div>
+            {/if}
+          {/if}
+          {#if vm.update.enabled}
+            <button class="setting action" disabled={vm.update.checking} onclick={() => checkNow().catch(console.error)}>
+              <span>{vm.update.checking ? tr('Checking for Updates…') : tr('Check for Updates Now')}</span>
+              {#if vm.update.checking}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="refresh" />{/if}
+            </button>
+          {/if}
+        </div>
+      </div>
     {/if}
-    <button class="item" onclick={quit}>{tr('Quit MacVPN')}</button>
+    <div class="footer">
+      <button class="pill" onclick={() => api.openUserGuide().catch(console.error)}>
+        <Icon name="help" />
+        {tr('Help')}
+      </button>
+      <span class="spacer"></span>
+      <button class="pill quit" onclick={quit}>
+        <Icon name="power" />
+        {tr('Quit MacVPN')}
+      </button>
+    </div>
     <p class="hint">{tr('Option-click a switch: debug mode')}</p>
   {/if}
 </main>
@@ -163,128 +234,419 @@
   main {
     display: flex;
     flex-direction: column;
-    gap: 2px;
-    padding: 8px;
+    gap: var(--space-3);
+    padding: var(--space-4);
   }
-  hr {
-    border: none;
-    border-top: 1px solid var(--separator);
-    margin: 4px 0;
-    width: 100%;
+
+  /* The connections. */
+  .list {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    /* Room for the cards' shadows when the list scrolls, and for a slim scroll bar in the right margin. */
+    margin: -3px calc(-1 * var(--space-4)) -3px -3px;
+    padding: 3px var(--space-4) 3px 3px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+  .list.scrollable {
+    padding-right: calc(var(--space-4) - 8px);
+  }
+  .list::-webkit-scrollbar {
+    width: 8px;
+  }
+  .list::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 4px;
+    background: var(--fill-pressed) padding-box;
   }
   .empty {
-    color: var(--secondary);
-    padding: 8px;
-    margin: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-6) var(--space-4);
+    border-radius: var(--radius-card);
+    border: 1px dashed var(--border-strong);
+    color: var(--tertiary);
   }
-  .item,
-  .status-error {
+  .empty :global(.icon) {
+    width: 22px;
+    height: 22px;
+  }
+  .empty p {
+    margin: 0;
+    color: var(--secondary);
+  }
+
+  /* The status error and the offered update. */
+  .banner {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
     width: 100%;
-    text-align: left;
-    padding: 4px 8px;
+    padding: 8px 10px;
     border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: inherit;
+    border-radius: var(--radius-card);
     font: inherit;
+    text-align: left;
+    transition: background-color var(--duration) var(--ease);
   }
-  .item:hover,
-  .item:focus-visible {
-    background: var(--hover);
-    outline: none;
+  .banner-text {
+    flex: 1;
+    min-width: 0;
   }
-  .status-error {
-    font-size: 11px;
-    color: var(--orange);
-  }
-  .status-error svg {
+  .banner :global(.chevron) {
     width: 12px;
     height: 12px;
-    flex: none;
+    opacity: 0.6;
   }
-  .status-error span {
+  .status-error {
+    font-size: var(--text-sm);
+    color: var(--text);
+    background: var(--state-busy-soft);
+  }
+  .status-error > :global(.icon:first-child) {
+    color: var(--state-busy);
+  }
+  .status-error .banner-text {
     display: -webkit-box;
     -webkit-line-clamp: 2;
     line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }
-  .item:disabled {
-    opacity: 0.5;
+  .status-error:hover {
+    background: color-mix(in srgb, var(--state-busy) 22%, transparent);
   }
-  .accent {
-    color: var(--accent);
+  .update {
+    font-weight: 600;
+    color: var(--accent-text);
+    background: var(--accent-soft);
   }
-  .check {
+  .update:hover {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+  }
+  .banner:active {
+    filter: brightness(0.96);
+  }
+
+  /* The actions. */
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--space-2);
+  }
+  .tile {
     display: flex;
-    align-items: flex-start;
-    gap: 6px;
-    padding: 2px 8px;
-    font-size: 12px;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+    padding: 9px 3px 8px;
+    border: none;
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    color: var(--text);
+    font: inherit;
+    transition:
+      background-color var(--duration) var(--ease),
+      transform var(--duration) var(--ease);
   }
-  .check input {
-    margin: 2px 0 0;
-    flex: none;
+  .tile:hover {
+    background: var(--surface-hover);
+  }
+  .tile:active {
+    background: var(--surface-pressed);
+    transform: scale(0.97);
+  }
+  .tile:focus-visible {
+    box-shadow: var(--focus-ring);
+  }
+  .tile-icon {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: var(--radius-pill);
+    color: var(--accent);
+    background: var(--accent-soft);
+  }
+  .tile-icon.manage {
+    color: var(--vpn-wireguard);
+    background: color-mix(in srgb, var(--vpn-wireguard) 16%, transparent);
+  }
+  .tile-icon.status {
+    color: var(--state-on-text);
+    background: var(--state-on-soft);
+  }
+  .tile-icon :global(.icon) {
+    width: 15px;
+    height: 15px;
+  }
+  .tile-label {
+    max-width: 100%;
+    font-size: var(--text-sm);
+    font-weight: 500;
+    line-height: 13px;
+    text-align: center;
+    text-wrap: balance;
+    overflow-wrap: anywhere;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .warn {
+    position: absolute;
+    top: -4px;
+    right: -6px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 1.5px solid var(--surface);
+    background: var(--state-busy);
+    color: #fff;
+    font-size: 9px;
+    font-weight: 800;
+    line-height: 1;
+  }
+
+  /* The settings. */
+  .group {
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    overflow: hidden;
+  }
+  .disclosure {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    width: 100%;
+    padding: 8px 10px;
+    border: none;
+    border-radius: var(--radius-card);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-weight: 500;
+    text-align: left;
+  }
+  .disclosure:hover {
+    background: var(--fill-hover);
+  }
+  .disclosure > :global(.icon:first-child) {
+    color: var(--secondary);
+  }
+  .disclosure-label {
+    flex: 1;
+  }
+  .disclosure :global(.chevron) {
+    width: 12px;
+    height: 12px;
+    color: var(--tertiary);
+    transition: transform var(--duration) var(--ease);
+  }
+  .disclosure.open :global(.chevron) {
+    transform: rotate(90deg);
+  }
+  .disclosure:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--focus-border);
+  }
+  .settings {
+    padding: 0 10px 4px;
+  }
+  .settings[hidden] {
+    display: none;
+  }
+  .setting {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    width: 100%;
+    min-height: 34px;
+    padding: 6px 0;
+    border: none;
+    border-top: 1px solid var(--separator);
+    background: transparent;
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-md);
+    text-align: left;
+    box-sizing: border-box;
+  }
+  .setting span {
+    flex: 1;
+  }
+  .setting.action {
+    color: var(--accent-text);
+    font-weight: 500;
+  }
+  .setting.action:disabled {
+    color: var(--secondary);
+  }
+  .setting.action:hover:not(:disabled) {
+    color: var(--accent-hover);
+  }
+  .setting.action:focus-visible {
+    box-shadow: none;
+    text-decoration: underline;
+  }
+  .setting-extra {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-2);
+    padding: 0 0 8px;
   }
   .note {
-    margin: 0 8px 2px 28px;
-    font-size: 11px;
+    margin: 0;
+    font-size: var(--text-sm);
     color: var(--secondary);
   }
   .small {
-    align-self: flex-start;
-    margin: 0 0 4px 28px;
-    padding: 2px 8px;
+    padding: 3px 10px;
     font: inherit;
-    font-size: 11px;
-    border-radius: 5px;
-    border: 1px solid var(--separator);
-    background: var(--button);
-    color: inherit;
+    font-size: var(--text-sm);
+    border-radius: var(--radius-pill);
+    border: none;
+    background: var(--fill-hover);
+    color: var(--text);
   }
+  .small:hover {
+    background: var(--fill-pressed);
+  }
+  .spinner {
+    width: 12px;
+    height: 12px;
+    flex: none;
+    border: 2px solid var(--separator);
+    border-top-color: var(--secondary);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  /* Help, Quit and the hint. */
+  .footer {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+  .spacer {
+    flex: 1;
+  }
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 11px 5px 9px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--fill-hover);
+    color: var(--text);
+    font: inherit;
+    font-size: var(--text-md);
+    font-weight: 500;
+    transition: background-color var(--duration) var(--ease);
+  }
+  .pill :global(.icon) {
+    width: 14px;
+    height: 14px;
+    color: var(--secondary);
+  }
+  .pill:hover {
+    background: var(--fill-pressed);
+  }
+  .pill:active {
+    filter: brightness(0.94);
+  }
+  .quit:hover {
+    color: var(--state-fail-text);
+  }
+  .quit:hover :global(.icon) {
+    color: var(--state-fail-text);
+  }
+  .hint {
+    margin: -2px 0 0;
+    font-size: var(--text-xs);
+    color: var(--tertiary);
+    text-align: center;
+  }
+
+  /* An alert in place of the menu (a notice, the quit question). */
   .message {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
-  .warn {
-    color: var(--orange);
-    font-weight: 700;
-  }
-  .hint {
-    margin: 2px 8px 0;
-    font-size: 10px;
-    color: var(--tertiary);
-  }
   .question {
-    padding: 8px;
+    padding: 14px;
+    border-radius: var(--radius-card);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
   }
   .question h1 {
-    font-size: 13px;
+    font-size: var(--text-base);
+    font-weight: 600;
     margin: 0 0 4px;
   }
   .question p {
-    margin: 0 0 10px;
+    margin: 0 0 12px;
     color: var(--secondary);
+  }
+  .question p.note {
+    margin-top: -6px;
+    padding: 7px 9px;
+    border-radius: var(--radius-control);
+    background: var(--state-busy-soft);
+    color: var(--text);
+    font-size: var(--text-md);
   }
   .buttons {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: var(--space-2);
   }
   .buttons button {
-    padding: 4px 10px;
-    border-radius: 5px;
-    border: 1px solid var(--separator);
-    background: var(--button);
-    color: inherit;
+    padding: 6px 10px;
+    border-radius: var(--radius-control);
+    border: none;
+    background: var(--fill-hover);
+    color: var(--text);
     font: inherit;
+    font-weight: 500;
+    transition: background-color var(--duration) var(--ease);
   }
-  .buttons .primary {
+  .buttons button:hover:not(:disabled) {
+    background: var(--fill-pressed);
+  }
+  .buttons button:disabled {
+    opacity: 0.5;
+  }
+  .buttons .primary,
+  .buttons .primary:hover:not(:disabled) {
     background: var(--accent);
-    border-color: var(--accent);
-    color: #fff;
+    color: var(--on-accent);
+  }
+  .buttons .primary:hover:not(:disabled) {
+    background: var(--accent-hover);
   }
 </style>

@@ -45,6 +45,14 @@ const COMMANDS: &[&str] = &[
     "update_dismiss_notice",
     "answer_prompt",
     "prompt_ready",
+    "answer_credentials",
+    "credentials_ready",
+    "pairing_answer",
+    "pairing_ready",
+    "control_set_enabled",
+    "control_set_allowed",
+    "control_revoke",
+    "control_audit_save",
 ];
 
 fn main() {

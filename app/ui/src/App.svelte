@@ -1,6 +1,8 @@
 <script lang="ts">
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import CredentialPrompt from './lib/CredentialPrompt.svelte';
   import Menu from './lib/Menu.svelte';
+  import Pairing from './lib/Pairing.svelte';
   import Manage from './lib/manage/Manage.svelte';
   import Prompt from './lib/Prompt.svelte';
   import Setup from './lib/Setup.svelte';
@@ -20,4 +22,8 @@
   <Update />
 {:else if label.startsWith('prompt-')}
   <Prompt />
+{:else if label.startsWith('cred-')}
+  <CredentialPrompt />
+{:else if label.startsWith('pair-')}
+  <Pairing />
 {/if}

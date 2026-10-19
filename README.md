@@ -6,14 +6,24 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. Version 1.0 is written in Rust with a Tauri user interface.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.1.
+
+### What's new in 1.1
+- **Control API.** Other apps of your user account that you pair (for example a Remote Desktop app) can bring the connections you allow up and down; the VPN stays up only while the app needs it. Off by default. See the [Control API guide](docs/control-api.md) and the [user guide](docs/user-guide.en.md#54-paired-apps-control-api).
+- **Credential prompt.** Missing user names, passwords, PSKs and key passwords are asked for at connect, and saved only after the connection is up.
+- **Live system VPN list.** Changes in System Settings show up at once.
+- **New card look** for the menu and every window, and a **Dock icon** while a window is open.
+- Same root layer (7): updating from 1.0 needs no admin password.
 
 ### Features
-- **Six VPN types.** OpenVPN, WireGuard, IKEv2 (strongSwan) and SSTP run through Homebrew tools and MacVPN's root helper. L2TP/IPsec and Cisco IPsec use the built-in macOS VPN. VPNs set up elsewhere in macOS show up as system VPNs, and you can start and stop them from MacVPN too.
+- **Six VPN types.** OpenVPN, WireGuard, IKEv2 (strongSwan) and SSTP run through Homebrew tools and MacVPN's root helper. L2TP/IPsec and Cisco IPsec use the built-in macOS VPN. VPNs set up elsewhere in macOS show up as system VPNs, and you can start and stop them from MacVPN too. The list is live: a VPN added, renamed or deleted in System Settings shows up in the menu and the Connections window without reopening them.
 - **Import and export.** Choose or drag in one or more files. Referenced key files, PKCS#12 files and MikroTik RouterOS configs are handled. Credential files go into the Keychain if you confirm. Exports never contain passwords, and they only contain private keys if you choose that.
 - **Editors.** A config editor with line-numbered errors and a panel for risky OpenVPN settings. Forms for SSTP, L2TP and Cisco IPsec. Passwords, PSKs and key passwords are stored in the Keychain.
 - **Multi-factor authentication.** OpenVPN static and dynamic challenges, sign-in in the browser (SAML, SSO, push), and a one-time code appended to the password for every type that has a password, including system VPNs.
+- **Credential prompt.** A user name, password, PSK or key password that is needed but not saved is asked for before connecting, and saved only after the connection is up (or not at all). A rejected sign-in is asked again once.
+- **Other apps can control VPNs.** With the [control API](docs/control-api.md) ([Hungarian](docs/control-api.hu.md)), a program of your user account that you pair, for example a Remote Desktop app, can list the connections you allow and hold one up through a local socket; when it quits, the VPN goes down unless it was up before. It never sees configs or passwords, and you can revoke it any time. Off by default.
 - **Order.** Pin connections to the top and drag them into order. The rest are ranked by how often you use them.
+- **Card interface.** Every connection is a card with a coloured type bubble and a state badge, in the menu and in the Connections window. While the Connections, System Status or Update window is open, MacVPN also shows a Dock icon, so Cmd+Tab reaches it.
 - **Log.** Every connection has a live log with a filter, search and save. Option-click a switch to connect in debug mode.
 - **System Status window.** Installs Homebrew, the VPN tools and the root helper, and uninstalls MacVPN.
 - **Also:** notifications, Launch at Login, signed in-app updates, and an English and Hungarian interface.
@@ -35,6 +45,7 @@ Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 0.x? See [
 - How-to guide: [English](docs/how-to.en.md), [Hungarian](docs/how-to.hu.md)
 - User guide: [English](docs/user-guide.en.md), [Hungarian](docs/user-guide.hu.md) (the menu's **Help** opens it)
 - [OpenVPN directive policy](docs/openvpn-directives.md)
+- Control API for other apps on the same Mac: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
 
 ### Security note
 Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
@@ -77,14 +88,24 @@ MIT – see [LICENSE](LICENSE).
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Az 1.0-s verzió Rustban készült, Tauri felülettel.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.1.
+
+### Újdonságok az 1.1-ben
+- **Vezérlő API.** A felhasználói fiókod általad párosított appjai (például egy Remote Desktop app) fel- és lekapcsolhatják az általad engedélyezett kapcsolatokat; a VPN csak addig marad fenn, amíg az appnak kell. Alapból ki van kapcsolva. Lásd [a vezérlő API leírását](docs/control-api.hu.md) és [az útmutatót](docs/user-guide.hu.md#54-párosított-appok-vezérlő-api).
+- **Hitelesítő adatok bekérése.** A hiányzó felhasználónevet, jelszót, PSK-t és kulcsjelszót csatlakozáskor bekéri, és csak a sikeres csatlakozás után menti.
+- **Élő rendszer-VPN lista.** A Rendszerbeállításokban végzett változások azonnal megjelennek.
+- **Új, kártyás megjelenés** a menüben és minden ablakban, és **Dock ikon**, amíg egy ablak nyitva van.
+- A root réteg ugyanaz (7): az 1.0-ról frissítve nem kell admin jelszó.
 
 ### Funkciók
-- **Hat VPN-típus.** Az OpenVPN, a WireGuard, az IKEv2 (strongSwan) és az SSTP Homebrew eszközökkel és a MacVPN root segédjével fut. Az L2TP/IPsec és a Cisco IPsec a macOS beépített VPN-jét használja. A macOS-ben máshol beállított VPN-ek rendszer VPN-ként jelennek meg, ezeket is indíthatod és bonthatod a MacVPN-ből.
+- **Hat VPN-típus.** Az OpenVPN, a WireGuard, az IKEv2 (strongSwan) és az SSTP Homebrew eszközökkel és a MacVPN root segédjével fut. Az L2TP/IPsec és a Cisco IPsec a macOS beépített VPN-jét használja. A macOS-ben máshol beállított VPN-ek rendszer VPN-ként jelennek meg, ezeket is indíthatod és bonthatod a MacVPN-ből. A lista élő: a Rendszerbeállításokban felvett, átnevezett vagy törölt VPN újranyitás nélkül megjelenik a menüben és a Kapcsolatok ablakban.
 - **Import és export.** Válassz ki vagy húzz be egy vagy több fájlt. A hivatkozott kulcsfájlokat, a PKCS#12 fájlokat és a MikroTik RouterOS configokat is kezeli. A hitelesítőadat-fájlok tartalma megerősítés után a Keychainbe kerül. Az export soha nem tartalmaz jelszót, privát kulcsot pedig csak akkor, ha ezt választod.
 - **Szerkesztők.** Config szerkesztő sorszámozott hibalistával és egy panellel a kockázatos OpenVPN beállításokhoz. Űrlap az SSTP-hez, az L2TP-hez és a Cisco IPsec-hez. A jelszavak, a PSK-k és a kulcsjelszavak a Keychainbe kerülnek.
 - **Többfaktoros hitelesítés.** OpenVPN statikus és dinamikus challenge, böngészős bejelentkezés (SAML, SSO, push), és a jelszó végére fűzött egyszer használatos kód minden jelszavas típusnál, a rendszer VPN-eknél is.
+- **Hitelesítő adatok bekérése.** A szükséges, de el nem mentett felhasználónevet, jelszót, PSK-t vagy kulcsjelszót csatlakozás előtt bekéri, és csak a sikeres csatlakozás után menti (vagy egyáltalán nem). Elutasított bejelentkezésnél egyszer újra kérdez.
+- **Más appok is vezérelhetik a VPN-eket.** A [vezérlő API-val](docs/control-api.hu.md) ([angolul](docs/control-api.md)) a felhasználói fiókod egy általad párosított programja, például egy Remote Desktop app, listázhatja az engedélyezett kapcsolatokat, és egy helyi socketen át fenntarthat egyet; ha kilép, a VPN lebomlik, hacsak nem állt fenn már előtte. Configot és jelszót sosem lát, és bármikor visszavonhatod. Alapból ki van kapcsolva.
 - **Sorrend.** A kapcsolatokat kitűzheted a lista elejére, és húzással rendezheted. A többit a használat gyakorisága szerint rendezi.
+- **Kártyás felület.** Minden kapcsolat egy kártya színes típusbuborékkal és állapotjelvénnyel, a menüben és a Kapcsolatok ablakban is. Amíg a Kapcsolatok, a Rendszerállapot vagy a Frissítés ablak nyitva van, a MacVPN a Dockban is megjelenik, így Cmd+Tabbal is elérhető.
 - **Napló.** Minden kapcsolatnak élő naplója van szűréssel, kereséssel és mentéssel. Option+kattintás a kapcsolón: csatlakozás debug módban.
 - **Rendszerállapot ablak.** Telepíti a Homebrew-t, a VPN-eszközöket és a root segédet, és innen távolíthatod el a MacVPN-t.
 - **Továbbá:** értesítések, indítás bejelentkezéskor, aláírt frissítés az appon belül, magyar és angol felület.
@@ -106,6 +127,7 @@ Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Már a 0.x verzió
 - Hogyan használd: [magyar](docs/how-to.hu.md), [angol](docs/how-to.en.md)
 - Felhasználói útmutató: [magyar](docs/user-guide.hu.md), [angol](docs/user-guide.en.md) (a menü **Súgó** pontja ezt nyitja meg)
 - [OpenVPN direktíva-szabályok](docs/openvpn-directives.md) (angolul, magyar összefoglalóval)
+- Vezérlő API más appoknak ugyanazon a Macen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
 
 ### Biztonsági megjegyzés
 A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).

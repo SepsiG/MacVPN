@@ -344,6 +344,8 @@ pub enum AuthWaitKind {
     Code,
     /// Waiting for a web / push approval.
     Web,
+    /// Waiting for the credential prompt (user name, password, PSK or key password).
+    Credentials,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -398,7 +400,8 @@ impl ValidationIssue {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+/// `Debug` shows which fields are set, never a value.
+#[derive(Clone, PartialEq, Eq, Default)]
 pub struct Secrets {
     pub username: Option<String>,
     pub password: Option<String>,
@@ -411,6 +414,54 @@ pub struct Secrets {
     pub one_time_code: Option<String>,
     /// OpenVPN static challenge: `password` is already in SCRV1 / concat form (`challenge=packed`).
     pub challenge_packed: bool,
+}
+
+/// Wipes every value (the connect paths call it once the root layer / `SCNetworkConnection` has them). No `Drop`:
+/// the struct-update syntax (`..base.clone()`) used across the workspace moves out of `Secrets`.
+impl zeroize::Zeroize for Secrets {
+    fn zeroize(&mut self) {
+        let mut wiped = 0;
+        for value in
+            [&mut self.username, &mut self.password, &mut self.psk, &mut self.key_password, &mut self.one_time_code]
+        {
+            if let Some(v) = value.as_mut() {
+                wiped += usize::from(!v.is_empty());
+                v.zeroize();
+            }
+            *value = None;
+        }
+        self.challenge_packed = false;
+        WIPED.with(|w| w.set(w.get() + wiped));
+    }
+}
+
+thread_local! {
+    static WIPED: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// How many non-empty secret values [`Secrets::zeroize`] has wiped on this thread (tests check that every connect
+/// path wipes its copies, also on early returns).
+#[doc(hidden)]
+pub fn wiped_secret_values() -> usize {
+    WIPED.with(std::cell::Cell::get)
+}
+
+impl std::fmt::Debug for Secrets {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let state = |v: &Option<String>| match v {
+            None => "none",
+            Some(v) if v.is_empty() => "empty",
+            Some(_) => "set",
+        };
+        f.debug_struct("Secrets")
+            .field("username", &state(&self.username))
+            .field("password", &state(&self.password))
+            .field("psk", &state(&self.psk))
+            .field("key_password", &state(&self.key_password))
+            .field("one_time_code", &state(&self.one_time_code))
+            .field("challenge_packed", &self.challenge_packed)
+            .finish()
+    }
 }
 
 impl Secrets {
@@ -426,25 +477,36 @@ impl Secrets {
         bad.then(|| l10n::tr("The user name, password and PSK must not contain line breaks or control characters", &[]))
     }
 
-    /// The `mvpn up` stdin format: `key=value` per line. Stripping line breaks is only a safety net: `input_error`
-    /// already rejects them on save.
-    pub fn stdin_payload(&self) -> String {
-        let mut out = String::new();
-        for (key, value) in [
+    /// The `mvpn up` stdin format: `key=value` per line, in a buffer that is wiped on drop. Stripping line breaks
+    /// is only a safety net: `input_error` already rejects them on save. Every `\n` and `\r` is removed:
+    /// deliberately stricter than Swift, whose `replacingOccurrences` keeps a `\n` / `\r` that a combining mark
+    /// follows, which would let a value add a line to the payload.
+    pub fn stdin_payload(&self) -> zeroize::Zeroizing<String> {
+        let fields = [
             ("username", &self.username),
             ("password", &self.password),
             ("psk", &self.psk),
             ("keypass", &self.key_password),
             ("otp", &self.one_time_code),
-        ] {
-            let Some(value) = value else { continue };
-            let v = remove_line_breaks(value);
-            if v.is_empty() {
-                continue;
+        ];
+        let is_kept = |c: &char| *c != '\n' && *c != '\r';
+        // The exact size first, so the buffer is never reallocated (a reallocation would free an unwiped copy).
+        let kept_len = |v: &str| v.chars().filter(is_kept).map(char::len_utf8).sum::<usize>();
+        let mut capacity = if self.challenge_packed { "challenge=packed\n".len() } else { 0 };
+        for (key, value) in fields {
+            let n = value.as_deref().map_or(0, kept_len);
+            if n > 0 {
+                capacity += key.len() + 1 + n + 1;
             }
+        }
+        let mut out = zeroize::Zeroizing::new(String::with_capacity(capacity));
+        for (key, value) in fields {
+            let Some(value) = value.as_deref().filter(|v| kept_len(v) > 0) else { continue };
             out.push_str(key);
             out.push('=');
-            out.push_str(&v);
+            for c in value.chars().filter(is_kept) {
+                out.push(c);
+            }
             out.push('\n');
         }
         if self.challenge_packed {
@@ -452,11 +514,4 @@ impl Secrets {
         }
         out
     }
-}
-
-/// Every `\n` and `\r` removed. Deliberately stricter than Swift: Foundation's `replacingOccurrences` keeps a
-/// `\n` / `\r` that a combining mark follows, which would let a value add a line to the `key=value` stdin
-/// payload. Nothing depends on that quirk.
-fn remove_line_breaks(s: &str) -> String {
-    s.chars().filter(|&c| c != '\n' && c != '\r').collect()
 }

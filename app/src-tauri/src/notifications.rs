@@ -5,6 +5,7 @@
 
 use macvpn_app_core::ConnectionEvent;
 use macvpn_app_core::ConnectionItem;
+use macvpn_app_core::credential_prompt::CredentialPromptView;
 use macvpn_app_core::notify::{self, ClickAction, NotificationContent};
 use macvpn_app_core::prompt::PromptView;
 use macvpn_core::models::uuid_string;
@@ -53,6 +54,20 @@ pub fn prompt_closed(state: &AppState, connection_id: &str) {
     }
 }
 
+/// "…: credentials needed" (the credential window does not take the focus).
+pub fn credentials_opened(state: &AppState, prompt: &CredentialPromptView) {
+    if state.notifications_enabled() {
+        post(&notify::for_credential_prompt(prompt));
+    }
+}
+
+/// The credential prompt closed: its notification goes too.
+pub fn credentials_closed(state: &AppState, connection_id: &str) {
+    if state.notifications_enabled() {
+        notifications::remove_delivered(&notify::credential_notification_id(connection_id));
+    }
+}
+
 /// A click: the prompt comes forward, or the Connections window opens on the connection's Log tab.
 fn clicked(app: &AppHandle, info: &BTreeMap<String, String>) {
     let Some(state) = app.try_state::<Arc<AppState>>() else { return };
@@ -63,6 +78,7 @@ fn clicked(app: &AppHandle, info: &BTreeMap<String, String>) {
     };
     match notify::route_click(info, listed) {
         ClickAction::FocusPrompt(connection) => crate::prompts::focus(app, &state, &connection),
+        ClickAction::FocusCredentials(connection) => crate::credentials::focus(app, &state, &connection),
         ClickAction::ShowConnection { select, log_tab } => {
             if let (Some(id), true) = (&select, log_tab) {
                 state.connections.request_log_tab(id);

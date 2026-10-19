@@ -2,12 +2,13 @@
   // One System Status row (the Swift `CheckRow`): green / red mark, title, detail; the action only when not ok.
   import type { Snippet } from 'svelte';
   import type { CheckRow } from './api';
+  import Icon from './Icon.svelte';
 
   let { row, title, children }: { row: CheckRow; title: string; children?: Snippet } = $props();
 </script>
 
 <div class="check-row">
-  <span class="mark" class:ok={row.ok} aria-hidden="true">{row.ok ? '✓' : '✕'}</span>
+  <span class="mark" class:ok={row.ok} aria-hidden="true"><Icon name={row.ok ? 'check' : 'cross'} /></span>
   <div class="text">
     <strong>{title}</strong>
     <span class="detail">{row.detail}</span>
@@ -20,35 +21,43 @@
 <style>
   .check-row {
     display: flex;
-    align-items: flex-start;
-    gap: 10px;
+    align-items: center;
+    gap: var(--space-5);
+    min-height: 36px;
   }
   .mark {
     flex: none;
-    width: 18px;
-    height: 18px;
+    width: 24px;
+    height: 24px;
     border-radius: 50%;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
-    font-weight: 700;
     color: #fff;
-    background: var(--red);
+    background: var(--state-fail);
+    box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.25);
+  }
+  .mark :global(.icon) {
+    width: 13px;
+    height: 13px;
+    stroke-width: 2.2;
   }
   .mark.ok {
-    background: var(--green);
+    background: var(--state-on);
   }
   .text {
     display: flex;
     flex-direction: column;
-    gap: 2px;
+    gap: 1px;
     flex: 1;
     min-width: 0;
   }
+  strong {
+    font-weight: 600;
+  }
   .detail {
     color: var(--secondary);
-    font-size: 12px;
+    font-size: var(--text-md);
     overflow-wrap: anywhere;
     -webkit-user-select: text;
     user-select: text;

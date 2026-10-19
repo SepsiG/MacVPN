@@ -1159,6 +1159,64 @@ impl OpenVPNValidator {
     }
 }
 
+/// What a config says, read the way [`OpenVPNValidator::validate_full`] reads it: the directive lines (outside
+/// data blocks, top level and inside `<connection>`), tokenized by [`OpenVPNValidator::tokenize`], and the names
+/// of the data blocks (lower-cased). Lines the tokenizer rejects are left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct ConfigOutline {
+    pub directives: Vec<Vec<String>>,
+    pub blocks: BTreeSet<String>,
+    /// The lines of the `<key>` blocks (the private key).
+    pub key: String,
+}
+
+impl OpenVPNValidator {
+    pub(crate) fn outline(text: &str) -> ConfigOutline {
+        let mut outline = ConfigOutline::default();
+        let mut in_block: Option<String> = None;
+        let mut in_connection = false;
+        for (_, raw_line) in numbered_lines(text) {
+            if has_control_character(raw_line) {
+                continue;
+            }
+            let line = trim_space_tab(raw_line);
+            if let Some(block) = &in_block {
+                if swift_str::has_prefix(line, "</") {
+                    in_block = None;
+                } else if block == "key" {
+                    outline.key.push_str(line);
+                    outline.key.push('\n');
+                }
+                continue;
+            }
+            if in_connection && swift_str::has_prefix(line, "</") {
+                in_connection = false;
+                continue;
+            }
+            if matches(line, "^<[A-Za-z0-9-]+>$") {
+                let name = ascii_lowercased(&line[1..line.len() - 1]);
+                if name == "connection" && !in_connection {
+                    in_connection = true;
+                    continue;
+                }
+                outline.blocks.insert(name.clone());
+                in_block = Some(name);
+                continue;
+            }
+            if line.is_empty() || swift_str::has_prefix(line, "#") || swift_str::has_prefix(line, ";") {
+                continue;
+            }
+            let Some(tokens) = Self::tokenize(line) else { continue };
+            let mut texts: Vec<String> = tokens.into_iter().map(|t| t.text).collect();
+            if let Some(name) = texts.first().and_then(|t| Self::directive_name(t)) {
+                texts[0] = name;
+                outline.directives.push(texts);
+            }
+        }
+        outline
+    }
+}
+
 impl ConfigValidator for OpenVPNValidator {
     fn validate(&self, text: &str) -> Vec<ValidationIssue> {
         self.validate_text(text)

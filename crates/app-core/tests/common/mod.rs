@@ -47,6 +47,8 @@ pub struct Call {
 #[derive(Default)]
 pub struct MockRoot {
     responses: Mutex<HashMap<String, Result<String, String>>>,
+    /// One-shot responses, used before `responses` (first in, first out).
+    once: Mutex<HashMap<String, std::collections::VecDeque<Result<String, String>>>>,
     delays: Mutex<HashMap<String, Duration>>,
     calls: Mutex<Vec<Call>>,
 }
@@ -54,6 +56,16 @@ pub struct MockRoot {
 impl MockRoot {
     pub fn respond(&self, line: &str, result: Result<&str, &str>) {
         self.responses.lock().unwrap().insert(line.to_string(), result.map(str::to_string).map_err(str::to_string));
+    }
+
+    /// The next call of `line` gets this response (then the regular one again).
+    pub fn respond_once(&self, line: &str, result: Result<&str, &str>) {
+        self.once
+            .lock()
+            .unwrap()
+            .entry(line.to_string())
+            .or_default()
+            .push_back(result.map(str::to_string).map_err(str::to_string));
     }
 
     pub fn delay(&self, line: &str, seconds: f64) {
@@ -73,7 +85,11 @@ impl MockRoot {
         let (response, delay) = {
             let mut calls = self.calls.lock().unwrap();
             calls.push(Call { line: line.clone(), stdin });
-            (self.responses.lock().unwrap().get(&line).cloned(), self.delays.lock().unwrap().get(&line).copied())
+            let once = self.once.lock().unwrap().get_mut(&line).and_then(|q| q.pop_front());
+            (
+                once.or_else(|| self.responses.lock().unwrap().get(&line).cloned()),
+                self.delays.lock().unwrap().get(&line).copied(),
+            )
         };
         if let Some(delay) = delay {
             std::thread::sleep(delay);
@@ -116,7 +132,7 @@ impl RootClient for MockRoot {
             line.push_str(" --accept-risky ");
             line.push_str(&accept_risky.join(","));
         }
-        self.run(line, Some(secrets.stdin_payload())).map(|_| ())
+        self.run(line, Some(secrets.stdin_payload().to_string())).map(|_| ())
     }
 
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {
@@ -213,16 +229,22 @@ impl NativeController for MockNative {
 }
 
 #[derive(Default)]
-pub struct MemorySecrets(Mutex<HashMap<(Uuid, SecretField), String>>);
+pub struct MemorySecrets(Mutex<HashMap<(Uuid, SecretField), String>>, Mutex<Vec<(Uuid, SecretField)>>);
 
 impl MemorySecrets {
     pub fn set(&self, value: &str, id: &Uuid, field: SecretField) {
         self.0.lock().unwrap().insert((*id, field), value.to_string());
     }
+
+    /// The writes through `SecretWriter::set` (not the test's own `set`), in order.
+    pub fn writes(&self) -> Vec<(Uuid, SecretField)> {
+        self.1.lock().unwrap().clone()
+    }
 }
 
 impl macvpn_app_core::deps::SecretWriter for MemorySecrets {
     fn set(&self, value: &str, id: &Uuid, field: SecretField) {
+        self.1.lock().unwrap().push((*id, field));
         if value.is_empty() {
             self.0.lock().unwrap().remove(&(*id, field));
         } else {

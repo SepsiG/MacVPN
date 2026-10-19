@@ -232,6 +232,7 @@ pub fn uninstall(
     login_item_left |= system.remove_launch_agent().is_err();
     if choice.remove_user_data {
         for c in &all {
+            manager.forget_saves(&c.id);
             secrets.delete_all(&c.id);
         }
         secrets.remove_all();

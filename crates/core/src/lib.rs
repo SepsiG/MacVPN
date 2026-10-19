@@ -6,6 +6,8 @@
 #![forbid(unsafe_code)]
 
 pub mod collation;
+pub mod control;
+pub mod credentials;
 pub mod date;
 pub mod exporter;
 pub mod importer;
