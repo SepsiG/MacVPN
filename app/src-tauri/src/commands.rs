@@ -10,10 +10,10 @@ use macvpn_app_core::updates::{CheckNowResult, Notice};
 use macvpn_core::l10n;
 use std::collections::BTreeSet;
 use std::sync::Arc;
-use tauri::{AppHandle, LogicalSize, Manager, State, WebviewUrl, WebviewWindowBuilder};
+use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
 
 use crate::state::AppState;
-use crate::tray::{MENU_WIDTH, MENU_WINDOW};
+use crate::tray::MENU_WINDOW;
 
 type Shared<'a> = State<'a, Arc<AppState>>;
 
@@ -276,7 +276,7 @@ pub async fn open_user_guide(app: AppHandle, state: Shared<'_>) -> Result<(), St
 pub async fn set_menu_height(app: AppHandle, height: f64) -> Result<(), String> {
     let height = validate_menu_height(height)?;
     let window = app.get_webview_window(MENU_WINDOW).ok_or("no menu window")?;
-    window.set_size(LogicalSize::new(MENU_WIDTH, height)).map_err(|e| e.to_string())
+    crate::tray::resize_menu(&window, height)
 }
 
 /// `choice` absent: the menu's Quit – `ask` when the menu shows the active-connections question, `unsaved` when
@@ -506,7 +506,7 @@ mod tests {
     }
 
     /// Every command is granted exactly where it is used: the prompt, credential and pairing windows only signal and
-    /// answer their own prompt / pairing and read the view model; the other windows get everything else; nothing but listening to
+    /// answer their own prompt / pairing, fit their own height and read the view model; the other windows get everything else; nothing but listening to
     /// events from the core. The build list, the capabilities and `generate_handler!` name the same commands.
     #[test]
     fn capabilities_grant_exactly_the_commands() {
@@ -532,7 +532,8 @@ mod tests {
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
                 "allow-answer-credentials",
-                "allow-credentials-ready"
+                "allow-credentials-ready",
+                "allow-fit-window"
             ]
         );
         assert_eq!(prompt["windows"], serde_json::json!(["prompt-*"]));
@@ -544,7 +545,8 @@ mod tests {
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
                 "allow-pairing-answer",
-                "allow-pairing-ready"
+                "allow-pairing-ready",
+                "allow-fit-window"
             ]
         );
         assert_eq!(
@@ -554,7 +556,8 @@ mod tests {
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
                 "allow-answer-prompt",
-                "allow-prompt-ready"
+                "allow-prompt-ready",
+                "allow-fit-window"
             ]
         );
         let main_permissions = permissions(&main);
@@ -567,6 +570,7 @@ mod tests {
                 "allow-pairing-ready",
                 "allow-answer-credentials",
                 "allow-credentials-ready",
+                "allow-fit-window",
             ]
             .contains(&command.as_str());
             assert_eq!(in_main, !window_only, "{command}");

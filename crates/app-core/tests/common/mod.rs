@@ -14,7 +14,7 @@ use macvpn_core::store::ConnectionStore;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use uuid::Uuid;
 
 /// A unique directory under the system temp dir, removed on drop. Never the user's Application Support.
@@ -78,6 +78,16 @@ impl MockRoot {
 
     pub fn lines(&self) -> Vec<String> {
         self.calls().into_iter().map(|c| c.line).collect()
+    }
+
+    /// Waits (up to 5 s) until `line` was called `count` times. A call is recorded when it starts, before its
+    /// delay: an ordering point that does not depend on the runner's pace (unlike a fixed sleep).
+    pub fn wait_for_call(&self, line: &str, count: usize) {
+        let start = Instant::now();
+        while self.lines().iter().filter(|l| *l == line).count() < count {
+            assert!(start.elapsed() < Duration::from_secs(5), "no call of {line:?} (x{count})");
+            std::thread::sleep(Duration::from_millis(2));
+        }
     }
 
     /// The response is decided when the call starts (as the Swift mock does); the delay comes after.

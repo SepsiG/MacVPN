@@ -4,7 +4,7 @@
 //! check, and the system VPN change watcher. The core's locale hooks (collation, preferred languages) are installed by [`install_core_hooks`].
 //!
 //! `unsafe` code is confined to the small FFI modules `sys`, `control_socket`, `cf`, `keychain_ffi`, `sc_ffi`, `sc_watch`,
-//! `preferences`, `smappservice_ffi`, `dialogs`, `notifications` and `app_hooks`, each with an audit note and a `SAFETY` comment
+//! `preferences`, `smappservice_ffi`, `dialogs`, `notifications`, `app_hooks`, `window_fit` and `window_shape`, each with an audit note and a `SAFETY` comment
 //! per block.
 
 pub mod app_hooks;
@@ -33,6 +33,8 @@ pub mod system;
 pub mod temp_dir;
 pub mod testing;
 pub mod update_installer;
+pub mod window_fit;
+pub mod window_shape;
 
 /// The core version this platform layer is built against.
 pub fn core_version() -> &'static str {

@@ -49,6 +49,7 @@ const COMMANDS: &[&str] = &[
     "credentials_ready",
     "pairing_answer",
     "pairing_ready",
+    "fit_window",
     "control_set_enabled",
     "control_set_allowed",
     "control_revoke",

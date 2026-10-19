@@ -19,12 +19,17 @@
 //!   SystemConfiguration watcher. `live.js` (Connections) opens a fake system VPN's detail; the driver removes the
 //!   service, the script checks the "removed from macOS" banner and the disabled form, the driver adds a new
 //!   service, the script waits for its row; `live-menu.js` checks the menu popover (never reopened) shows it too
-//!   (`LIVE …`, `MENU …`).
+//!   (`LIVE …`, `MENU …`, the version line included and not clipped). Then the popover is shown and its rounded
+//!   corners are read back from AppKit (`MacVPN smoke: menu: shape …`, with the window number for screenshots).
 //!   The credential prompt: `credentials.js` answers the `cred-*` window of a seeded OpenVPN connection with a bare
 //!   `auth-user-pass` and nothing stored (user name and password typed, "Save" left ticked); once [`FakeRoot`]
 //!   connected it, the in-memory secret store holds both values, and a second connect asks nothing. A second seeded
 //!   connection's `up` fails once with the sign-in failure: the re-prompt shows the retry line and is cancelled, and
-//!   the connection ends disconnected without a failure (`MacVPN smoke: credentials: …`).
+//!   the connection ends disconnected without a failure (`MacVPN smoke: credentials: …`). Last, the largest credential
+//!   window (the retry line, all four fields and a refused answer's error: `credentials-largest.js`). Every prompt,
+//!   credential and pairing script checks its real window fits its content (`scrollHeight <= clientHeight`).
+//!   `MACVPN_SMOKE_SHOTS` (`SMOKE_SHOTS=<dir>`): each of those windows and the menu wait for the shell's screenshot
+//!   ([`shoot`]); `MACVPN_SMOKE_DARK` (`SMOKE_DARK=1`) puts the app in dark mode.
 //!   Last, `system.js` leaves an unsaved change and answers the quit question the shell's quit Apple Event
 //!   raises. Between the window scripts and the prompts, the Dock icon is checked (`NSApp.activationPolicy`): shown with the windows open, a Dock click (`dock::reopen`) restoring a minimized window without
 //!   opening any, hidden again once they are closed and while only a prompt is open. The results go to stderr (`MacVPN smoke: …`, first the language), ending with `MacVPN smoke: done`.
@@ -311,6 +316,10 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         return;
     };
     state.updates.consider(mock_release());
+    // MACVPN_SMOKE_DARK (`SMOKE_DARK=1`): the app's windows in dark mode, for the screenshots.
+    if std::env::var_os("MACVPN_SMOKE_DARK").is_some() {
+        eprintln!("MacVPN smoke: dark={}", macvpn_platform_mac::app_hooks::force_dark_appearance());
+    }
     // The language the core picked from the preferred languages (`scripts/smoke-manage.sh` can force it).
     eprintln!("MacVPN smoke: language {}", macvpn_core::l10n::AppLanguage::current().raw_value());
     let app = app.clone();
@@ -331,6 +340,7 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         credentials(&app, &state, &dir);
         control(&app, &state, &dir);
         live(&app, &state, &dir);
+        menu_shape(&app);
         let result = run_script(&app, &dir, "manage", "quit.js", &|| renamed(&state, QUIT_RESULT, "QUIT"));
         eprintln!("MacVPN smoke: quit: {}", result.unwrap_or_else(|e| format!("ERROR {e}")));
         // Last: an unsaved change for the shell's quit request (logout's way, through applicationShouldTerminate).
@@ -376,6 +386,68 @@ fn run_script(
     crate::commands::open(app, window)?;
     eval(app, window, source)?;
     wait_for(90, done).ok_or_else(|| "no result".into())
+}
+
+/// The popover shown: its rounded corners as AppKit holds them (`MacVPN smoke: menu: shape …`), with the window
+/// number. With `MACVPN_SMOKE_SHOTS` set, it stays shown until the shell took its screenshot ([`shoot`]); then it
+/// hides.
+fn menu_shape(app: &AppHandle) {
+    let Some(window) = app.get_webview_window(crate::tray::MENU_WINDOW) else {
+        return eprintln!("MacVPN smoke: menu: ERROR no menu window");
+    };
+    crate::tray::show_menu(app);
+    std::thread::sleep(Duration::from_secs(2));
+    let (tx, rx) = std::sync::mpsc::channel();
+    let target = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let _ = tx.send(target.ns_window().ok().and_then(macvpn_platform_mac::window_shape::shape));
+    });
+    match rx.recv_timeout(Duration::from_secs(5)) {
+        Ok(Some(shape)) => eprintln!(
+            "MacVPN smoke: menu: shape radius={} masks={} opaque={} shadow={} window={}",
+            shape.radius, shape.masks, shape.opaque, shape.shadow, shape.number
+        ),
+        _ => eprintln!("MacVPN smoke: menu: ERROR no shape"),
+    }
+    shoot(app, crate::tray::MENU_WINDOW, "menu", Duration::ZERO);
+    crate::tray::hide_menu(app);
+}
+
+/// `MACVPN_SMOKE_SHOTS`: where the shell puts the screenshots (`scripts/smoke-manage.sh`, `SMOKE_SHOTS`).
+fn shots_dir() -> Option<PathBuf> {
+    std::env::var_os("MACVPN_SMOKE_SHOTS").map(PathBuf::from)
+}
+
+/// A window script that waits for its screenshot (`window.smokeShot`) when screenshots are on.
+fn with_shot(source: &str) -> String {
+    if shots_dir().is_some() { format!("window.smokeShot = 'pending';\n{source}") } else { source.to_string() }
+}
+
+/// The window's number for `screencapture -l` (read on the main thread).
+fn window_number(app: &AppHandle, label: &str) -> Option<isize> {
+    let window = app.get_webview_window(label)?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let target = window.clone();
+    let _ = window.run_on_main_thread(move || {
+        let _ = tx.send(target.ns_window().ok().and_then(macvpn_platform_mac::window_shape::number));
+    });
+    rx.recv_timeout(Duration::from_secs(5)).ok().flatten()
+}
+
+/// With screenshots on: after `settle`, logs `MacVPN smoke: shot <name> window=<number>`, waits until the shell
+/// took it (`<dir>/<name>.done`, at most 20 s) and lets the window's script go on (`window.smokeShot`).
+fn shoot(app: &AppHandle, label: &str, name: &str, settle: Duration) {
+    let Some(dir) = shots_dir() else { return };
+    std::thread::sleep(settle);
+    let Some(number) = window_number(app, label) else {
+        return eprintln!("MacVPN smoke: shot {name} ERROR no window");
+    };
+    eprintln!("MacVPN smoke: shot {name} window={number}");
+    let done = dir.join(format!("{name}.done"));
+    let _ = wait_for(20, || done.exists().then_some(()));
+    if let Some(window) = app.get_webview_window(label) {
+        let _ = window.eval("window.smokeShot = 'done';");
+    }
 }
 
 /// `NSApp.activationPolicy` is Regular (the Dock icon is shown), read on the main thread.
@@ -425,6 +497,7 @@ fn prompts(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         AuthPromptKind::Code { text: "Smoke: enter 123456".into(), echo: false, from_server: true },
         AuthPromptKind::WebAuth { url: "https://sso.example.com/auth?session=smoke".into() },
     ] {
+        let prompt_kind = if matches!(kind, AuthPromptKind::Code { .. }) { "code" } else { "web" };
         let broker = state.broker.clone();
         let prompt = AuthPrompt {
             connection_id: connection.clone(),
@@ -440,9 +513,11 @@ fn prompts(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
             eprintln!("MacVPN smoke: prompt: ERROR no prompt window");
             return;
         };
-        if let Err(e) = eval(app, &label, source.clone()) {
+        let shot = if matches!(prompt_kind, "code") { "mfa-code" } else { "mfa-web" };
+        if let Err(e) = eval(app, &label, with_shot(&source)) {
             eprintln!("MacVPN smoke: prompt: ERROR {e}");
         }
+        shoot(app, &label, shot, Duration::from_secs(2));
         // The mock code is compared, not logged.
         let result = match waiting.join() {
             Ok(AuthPromptResult::Code(code)) => format!("code {}", if code == "123456" { "ok" } else { "wrong" }),
@@ -485,9 +560,10 @@ fn control(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     let Some(label) = label else { return say("ERROR no pairing window".into()) };
     match std::fs::read_to_string(dir.join("pairing.js")) {
         Ok(source) => {
-            if let Err(e) = eval(app, &label, source) {
+            if let Err(e) = eval(app, &label, with_shot(&source)) {
                 say(format!("ERROR pairing.js: {e}"));
             }
+            shoot(app, &label, "pairing", Duration::from_secs(2));
         }
         Err(e) => return say(format!("ERROR pairing.js: {e}")),
     }
@@ -592,9 +668,11 @@ fn credentials(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     let worker = connect(&cred);
     let Some((label, view)) = window() else { return say("ERROR no credential window".into()) };
     say(format!("first fields={} retry={}", view.fields.join("+"), view.message.is_some()));
-    if let Err(e) = eval(app, &label, source.clone()) {
+    if let Err(e) = eval(app, &label, with_shot(&source)) {
         say(format!("ERROR {e}"));
     }
+    // The smallest window: the user name and the password.
+    shoot(app, &label, "cred-small", Duration::from_secs(2));
     let _ = worker.join();
     let connected = wait_for(15, || state.manager.state(&key).is_connected().then_some(())).is_some();
     let secrets = &state.connections.deps().secrets;
@@ -647,4 +725,40 @@ fn credentials(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         other => format!("{other:?}"),
     };
     say(format!("retry state={final_state} closed={closed}"));
+
+    // 4. The most a credential window shows: the retry line, all four fields, "Save" and its hint, and the error
+    //    of a refused answer. `credentials-largest.js` checks it fits and cancels (Connect when anything is wrong).
+    let largest = match std::fs::read_to_string(dir.join("credentials-largest.js")) {
+        Ok(source) => source,
+        Err(e) => return say(format!("ERROR credentials-largest.js: {e}")),
+    };
+    let broker = state.credential_broker.clone();
+    let prompt = macvpn_core::credentials::CredentialPrompt {
+        connection_id: retry_key.clone(),
+        connection_name: "Zz Credentials, the largest window".into(),
+        kind: VPNKind::L2tp,
+        fields: vec![
+            macvpn_core::credentials::CredentialField::Username,
+            macvpn_core::credentials::CredentialField::Password,
+            macvpn_core::credentials::CredentialField::Psk,
+            macvpn_core::credentials::CredentialField::KeyPassword,
+        ],
+        username: None,
+        retry: true,
+        deadline: PromptDeadline::new(Date::now()),
+    };
+    let waiting = std::thread::spawn(move || broker.present(prompt, Date::now()));
+    let Some((label, view)) = window() else { return say("ERROR no largest window".into()) };
+    if let Err(e) = eval(app, &label, with_shot(&largest)) {
+        say(format!("ERROR {e}"));
+    }
+    // The lock, the refused Connect and the resize come first.
+    shoot(app, &label, "cred-large", Duration::from_secs(4));
+    let answer = match waiting.join() {
+        Ok(macvpn_core::credentials::CredentialAnswer::Cancelled) => "cancelled",
+        Ok(macvpn_core::credentials::CredentialAnswer::Provided { .. }) => "connect",
+        Err(_) => "panicked",
+    };
+    let closed = wait_for(10, || app.get_webview_window(&label).is_none().then_some(())).is_some();
+    say(format!("largest fields={} answer={answer} closed={closed}", view.fields.join("+")));
 }

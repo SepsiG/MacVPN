@@ -94,6 +94,18 @@ pub fn activation_policy_is_regular() -> Option<bool> {
     )
 }
 
+/// Puts the whole app in dark mode (`NSApp.appearance = darkAqua`), whatever the system's setting, which is not
+/// touched. For the smoke test's dark screenshots (debug builds only). Main thread only; false elsewhere.
+#[cfg(debug_assertions)]
+pub fn force_dark_appearance() -> bool {
+    let Some(mtm) = MainThreadMarker::new() else { return false };
+    // SAFETY: an immutable AppKit string constant.
+    let name = unsafe { objc2_app_kit::NSAppearanceNameDarkAqua };
+    let appearance = objc2_app_kit::NSAppearance::appearanceNamed(name);
+    NSApplication::sharedApplication(mtm).setAppearance(appearance.as_deref());
+    appearance.is_some()
+}
+
 /// Shows `window` (an `NSWindow *`) above the others without making it key or activating the app. Main thread
 /// only; a null pointer does nothing.
 pub fn order_front_regardless(window: *mut c_void) {

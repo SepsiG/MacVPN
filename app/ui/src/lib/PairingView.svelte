@@ -67,9 +67,7 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: 18px var(--space-7) var(--space-7);
-    height: 100vh;
     box-sizing: border-box;
-    overflow: hidden;
   }
   h1 {
     display: flex;
@@ -135,9 +133,9 @@
     margin-top: 2px;
     font-weight: 600;
   }
+  /* Many connections scroll inside the list (about eight rows); the window fits the rest. */
   .items {
-    flex: 1;
-    min-height: 0;
+    max-height: 224px;
     overflow: auto;
     display: flex;
     flex-direction: column;

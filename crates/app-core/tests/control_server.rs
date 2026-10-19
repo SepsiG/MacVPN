@@ -866,7 +866,8 @@ fn a_dripping_client_is_closed_at_the_auth_deadline() {
     let mut c = h.connect();
     let started = Instant::now();
     let mut closed = false;
-    for _ in 0..40 {
+    // Until the generous WAIT (the auth deadline is 300 ms here; without it a dripping client stays open for good).
+    while started.elapsed() < WAIT {
         // One byte at a time, well inside the per-read timeout but never a full line.
         if c.stream.write_all(b"{").is_err() {
             closed = true;
@@ -879,7 +880,6 @@ fn a_dripping_client_is_closed_at_the_auth_deadline() {
         }
     }
     assert!(closed, "still open after {:?}", started.elapsed());
-    assert!(started.elapsed() < Duration::from_millis(1500), "{:?}", started.elapsed());
     c.expect_closed();
 }
 

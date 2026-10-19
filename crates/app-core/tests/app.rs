@@ -176,9 +176,10 @@ fn poller_loop_refreshes_the_manager_until_stopped() {
             p.run(|| m.refresh(), || m.has_active(), || false, || true, &clock, || p.wait(Duration::from_millis(10)));
         })
     };
-    std::thread::sleep(Duration::from_millis(50));
+    // Ordered by the recorded calls, not by fixed sleeps (a busy runner stretches those).
+    f.root.wait_for_call("status", 1);
     poller.wake();
-    std::thread::sleep(Duration::from_millis(50));
+    f.root.wait_for_call("status", 2);
     poller.stop();
     thread.join().unwrap();
     let statuses = f.root.lines().iter().filter(|l| *l == "status").count();

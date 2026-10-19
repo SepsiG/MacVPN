@@ -1,10 +1,10 @@
 // Driven by scripts/smoke-manage.sh (MACVPN_SMOKE_DIR, debug build, sandbox only), in a credential prompt window
-// (`cred-*`). The first prompt (nothing stored) must show exactly the user name and password fields, the title in
-// the view model's language, "Save" ticked and Connect disabled; once the inputs take input (the 1 s lock), it
-// types the smoke user name and password, leaves "Save" ticked and clicks Connect. The re-prompt after a sign-in
-// failure must show the retry line, the stored user name pre-filled and only the user name and password; it is
-// cancelled. Anything wrong: the opposite answer (Cancel on the first prompt, Connect on the re-prompt), which the
-// backend reports.
+// (`cred-*`). Each prompt's window must fit its content (no scrolling). The first prompt (nothing stored) must
+// show exactly the user name and password fields, the title in the view model's language, "Save" ticked and
+// Connect disabled; once the inputs take input (the 1 s lock), it types the smoke user name and password, leaves
+// "Save" ticked and clicks Connect. The re-prompt after a sign-in failure must show the retry line, the stored user
+// name pre-filled and only the user name and password; it is cancelled. Anything wrong: the opposite answer
+// (Cancel on the first prompt, Connect on the re-prompt), which the backend reports.
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (fn, ms = 10000) => {
@@ -15,6 +15,16 @@
       await sleep(100);
     }
     return null;
+  };
+  // The window fits its content (fit_window): nothing scrolls, and no more than the content's own padding below.
+  const fits = () => {
+    const page = document.scrollingElement;
+    const content = document.getElementById('app')?.getBoundingClientRect().height ?? 0;
+    return content > 0 && page.scrollHeight <= page.clientHeight && window.innerHeight - content <= 2;
+  };
+  // With screenshots on (the driver sets 'pending'), wait here until it took one.
+  const shot = async () => {
+    if (window.smokeShot === 'pending') await waitFor(() => window.smokeShot === 'done', 30000);
   };
   const setValue = (el, value) => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(el, value);
@@ -38,7 +48,9 @@
     inputs()[1]?.type === 'password' &&
     !!save?.checked &&
     connect.disabled &&
-    !document.querySelector('form, [type=submit], [autofocus]');
+    !document.querySelector('form, [type=submit], [autofocus]') &&
+    !!(await waitFor(fits, 5000));
+  await shot();
   if (prompt?.message) {
     // The re-prompt: the retry line and the stored user name.
     const ok = common && retry === prompt.message && inputs()[0].value === prompt.username;

@@ -166,6 +166,18 @@ fn control_view_escapes_control_and_format_characters_in_paths() {
     assert_eq!(view.clients[0].executable, "/Applications/X.app/Contents/MacOS/X");
 }
 
+/// The menu's "MacVPN <version>": the Cargo version, the same as the bundle's (`tauri.conf.json`), never a
+/// version of the UI's own.
+#[test]
+fn view_model_carries_the_app_version() {
+    let vm = ViewModel::build(&snapshot(&[], None), "en", |_| true, Vec::new(), false);
+    assert_eq!(vm.app_version, env!("CARGO_PKG_VERSION"));
+    assert_eq!(vm.app_version, macvpn_core::VERSION);
+    assert_eq!(serde_json::to_value(&vm).unwrap()["appVersion"], env!("CARGO_PKG_VERSION"));
+    let conf: serde_json::Value = serde_json::from_str(include_str!("../../../app/src-tauri/tauri.conf.json")).unwrap();
+    assert_eq!(conf["version"], vm.app_version);
+}
+
 #[test]
 fn row_state_serialization() {
     let json = |s: &ConnectionState| serde_json::to_value(RowState::from(s)).unwrap();

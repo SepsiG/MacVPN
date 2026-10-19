@@ -1,6 +1,6 @@
 {
   "identifier": "pairing",
-  "description": "The control API's pairing windows (pair-<id>, local content only): the view model, their own pairing's ready signal and answer, and listening to events. Nothing else.",
+  "description": "The control API's pairing windows (pair-<id>, local content only): the view model, their own pairing's ready signal and answer, fitting their own height to the content, and listening to events. Nothing else.",
   "windows": [
     "pair-*"
   ],
@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "allow-get-view-model",
     "allow-pairing-answer",
-    "allow-pairing-ready"
+    "allow-pairing-ready",
+    "allow-fit-window"
   ]
 }

@@ -156,6 +156,9 @@ pub struct ViewModel {
     pub pairings: Vec<PairingView>,
     /// The open credential prompts (each in its `cred-<id>` window). Never a typed value.
     pub credential_prompts: Vec<CredentialPromptView>,
+    /// The app's version (the workspace's Cargo version, which the bundle carries too), shown at the bottom of the
+    /// menu as "MacVPN <version>".
+    pub app_version: &'static str,
 }
 
 /// A paired app in the Connections window's "Paired apps" section. Never the token or its hash.
@@ -275,6 +278,7 @@ impl ViewModel {
             control: ControlView::default(),
             pairings: Vec::new(),
             credential_prompts: Vec::new(),
+            app_version: macvpn_core::VERSION,
         }
     }
 

@@ -9,3 +9,8 @@ export function uptime(since: number, nowMs: number): string {
   const two = (n: number) => String(n).padStart(2, '0');
   return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
 }
+
+/// The menu's footer line: the product name and the backend's version ("MacVPN <version>", the same in every language).
+export function versionLabel(version: string): string {
+  return `MacVPN ${version}`;
+}

@@ -93,7 +93,7 @@ fn open_window(app: &AppHandle, state: &AppState, prompt: &PromptView) -> Result
     let height = if prompt.kind == "webAuth" { 330.0 } else { 300.0 };
     let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title(&prompt.connection_name)
-        .inner_size(440.0, height)
+        .inner_size(crate::fit::MFA.width, height)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)

@@ -235,19 +235,20 @@ fn stale_refresh_does_not_overwrite_disconnect() {
     m.refresh();
     let key = uuid_string(&c.id);
     f.root.delay("status", 0.1);
-    f.root.delay(&down_line(VPNKind::Openvpn, &c.id), 0.3);
+    let down = down_line(VPNKind::Openvpn, &c.id);
+    f.root.delay(&down, 1.0);
     let stale = spawn(HU, {
         let m = m.clone();
         move || m.refresh() // reads the old "connected" answer
     });
-    sleep(0.02);
+    f.root.wait_for_call("status", 2);
     f.root.respond("status", Ok("[]"));
     let disc = spawn(HU, {
         let (m, c) = (m.clone(), c.clone());
         move || m.disconnect(&c)
     });
-    sleep(0.15); // the stale refresh finished meanwhile
-    stale.join().unwrap();
+    f.root.wait_for_call(&down, 1);
+    stale.join().unwrap(); // the stale refresh finished while the disconnect runs
     assert_eq!(m.state(&key), ConnectionState::Disconnecting);
     disc.join().unwrap();
     assert_eq!(m.state(&key), ConnectionState::Disconnected);
@@ -266,7 +267,7 @@ fn stale_result_from_older_refresh_is_discarded() {
         let m = m.clone();
         move || m.refresh() // reads connected, slowly
     });
-    sleep(0.02);
+    f.root.wait_for_call("status", 1);
     f.root.respond("status", Ok("[]"));
     f.root.delay("status", 0.0);
     m.refresh(); // newer and fast: disconnected
@@ -370,7 +371,7 @@ fn disconnect_during_pending_connect_then_up_fails_is_silent() {
     let key = uuid_string(&c.id);
     let up = up_line(VPNKind::Wireguard, &c.id);
     f.root.respond(&up, Err("megszakítva"));
-    f.root.delay(&up, 0.2);
+    f.root.delay(&up, 0.5);
     f.root.respond("status", Ok("[]"));
     let m = f.manager();
     let events = record_events(&m);
@@ -378,7 +379,7 @@ fn disconnect_during_pending_connect_then_up_fails_is_silent() {
         let (m, c) = (m.clone(), c.clone());
         move || m.connect(&c, false)
     });
-    sleep(0.05);
+    f.root.wait_for_call(&up, 1);
     assert_eq!(m.state(&key), ConnectionState::Connecting);
     m.disconnect(&c);
     connecting.join().unwrap();
@@ -426,7 +427,7 @@ fn late_successful_up_after_cancel_is_torn_down() {
     f.store.save(&c, Some("x")).unwrap();
     let key = uuid_string(&c.id);
     let up = up_line(VPNKind::Wireguard, &c.id);
-    f.root.delay(&up, 0.2);
+    f.root.delay(&up, 0.5);
     f.root.respond("status", Ok("[]"));
     let m = f.manager();
     let events = record_events(&m);
@@ -434,7 +435,7 @@ fn late_successful_up_after_cancel_is_torn_down() {
         let (m, c) = (m.clone(), c.clone());
         move || m.connect(&c, false)
     });
-    sleep(0.05);
+    f.root.wait_for_call(&up, 1);
     m.disconnect(&c);
     connecting.join().unwrap();
     let lines = f.root.lines();
@@ -463,7 +464,7 @@ fn stale_failure_does_not_touch_newer_connect() {
         let (m, c) = (m.clone(), c.clone());
         move || m.connect(&c, false)
     });
-    sleep(0.05);
+    f.root.wait_for_call(&up, 1);
     m.disconnect(&c);
     f.root.respond(&up, Ok(""));
     f.root.delay(&up, 0.6);
@@ -471,7 +472,7 @@ fn stale_failure_does_not_touch_newer_connect() {
         let (m, c) = (m.clone(), c.clone());
         move || m.connect(&c, false)
     });
-    sleep(0.05);
+    f.root.wait_for_call(&up, 2);
     a.join().unwrap(); // A fails now
     assert!(events_of(&events).is_empty());
     assert_eq!(m.state(&key), ConnectionState::Connecting, "B művelete érintetlen");

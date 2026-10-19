@@ -21,6 +21,9 @@
 #               driver changes (no scutil, no real VPN); with the Connections window open, a fake system VPN's
 #               detail turns read-only with the "removed from macOS" banner when the driver removes it, and a VPN
 #               the driver adds appears in the window and in the menu popover without reopening either;
+#   (the menu popover shown: its rounded corners as AppKit holds them; SMOKE_SHOTS=<dir> takes screenshots)
+#   (every prompt, pairing and credential window must fit its content: no scrolling, checked in the real window;
+#               the largest credential window – retry line, four fields, a refused answer's error – too)
 #   quit.js   – the quit flows' edge cases: a selection while the quit's "Unsaved Changes" is shown, the Update
 #               window closed during an install and while its quit question is shown (the update is cancelled);
 #   system.js – an unsaved change; the shell then quits the app the way logout does (a quit Apple Event) and
@@ -84,7 +87,13 @@ case "${SMOKE_LANG:-}" in
   en|hu) LANG_ARGS=(-AppleLanguages "(${SMOKE_LANG})") ;;
   *) echo "SMOKE_LANG: en or hu" >&2; exit 2 ;;
 esac
-MACVPN_SANDBOX_HOME="$HOME_DIR" MACVPN_SMOKE_DIR="$PWD/scripts/smoke" "$APP" ${LANG_ARGS[@]+"${LANG_ARGS[@]}"} > "$LOG" 2>&1 &
+# SMOKE_SHOTS=<dir>: screenshots (with the shadow) of the real windows, <dir>/<name>-<lang>[-dark].png: the menu
+# popover, the MFA code and web sign-in prompts, the pairing window, the smallest and the largest credential window.
+# SMOKE_DARK=1: the app in dark mode (NSApp.appearance in the debug build; the system's own setting is not touched).
+SHOTS_ENV=()
+[ -z "${SMOKE_SHOTS:-}" ] || { mkdir -p "$SMOKE_SHOTS"; rm -f "$SMOKE_SHOTS"/*.done; SHOTS_ENV=(MACVPN_SMOKE_SHOTS="$SMOKE_SHOTS"); }
+[ -z "${SMOKE_DARK:-}" ] || SHOTS_ENV+=(MACVPN_SMOKE_DARK=1)
+env ${SHOTS_ENV[@]+"${SHOTS_ENV[@]}"} MACVPN_SANDBOX_HOME="$HOME_DIR" MACVPN_SMOKE_DIR="$PWD/scripts/smoke" "$APP" ${LANG_ARGS[@]+"${LANG_ARGS[@]}"} > "$LOG" 2>&1 &
 PID=$!
 CLIENT_PID=
 for _ in $(seq 1 300); do
@@ -95,6 +104,14 @@ for _ in $(seq 1 300); do
     SOCKET=$(sed -n 's/^MacVPN smoke: control: listening //p' "$LOG" | head -1)
     "$NODE" scripts/smoke/control-client.mjs "$SOCKET" "$CONTROL_VPN" "$HOME_DIR/client.json" > "$HOME_DIR/client.log" 2>&1 &
     CLIENT_PID=$!
+  fi
+  # The driver holds a window still (`MacVPN smoke: shot <name> window=<number>`) until its screenshot is taken.
+  if [ -n "${SMOKE_SHOTS:-}" ]; then
+    while read -r SHOT WINDOW; do
+      [ -e "$SMOKE_SHOTS/$SHOT.done" ] && continue
+      screencapture -x -l "$WINDOW" "$SMOKE_SHOTS/$SHOT-${SMOKE_LANG:-default}${SMOKE_DARK:+-dark}.png" 2>/dev/null || true
+      touch "$SMOKE_SHOTS/$SHOT.done"
+    done < <(sed -n 's/^MacVPN smoke: shot \([a-z-]*\) window=\([0-9]*\)$/\1 \2/p' "$LOG" 2>/dev/null)
   fi
 done
 [ -z "$CLIENT_PID" ] || wait "$CLIENT_PID" || true
@@ -158,6 +175,8 @@ grep -q '^MacVPN smoke: credentials: retry fields=username+password message=true
 [ "$(grep -c "^MacVPN smoke: fake root: up $CRED_RETRY" "$LOG")" = 1 ] || fail "the cancelled re-prompt connected again"
 grep -q '^MacVPN smoke: credentials: retry state=disconnected closed=true$' "$LOG" || fail "the cancelled re-prompt"
 ! grep -q 'smoke-pass-4711\|stored-pass' "$LOG" || fail "the log shows a password"
+grep -q '^MacVPN smoke: credentials: largest fields=username+password+psk+keyPassword answer=cancelled closed=true$' "$LOG" \
+  || fail "the largest credential window (retry line, four fields, error) does not fit its content"
 ! grep -q '^MacVPN smoke: credentials: ERROR' "$LOG" || fail "the credential prompt smoke"
 
 # The control API: the switch, the pairing window, the test client's session, the lease's end, the switch off.
@@ -196,6 +215,9 @@ ADDED_MS=$(sed -n 's/^MacVPN smoke: live: added listed=\([0-9]*\)$/\1/p' "$LOG")
 [ "$(name "$LIVE_MENU")" = "MENU OK" ] || fail "live list, menu: $(name "$LIVE_MENU")"
 ! grep -q '^MacVPN smoke: fake native: start ' "$LOG" || fail "live list: a fake system VPN was started"
 
+# The menu popover's rounded corners (borderless window: non-opaque, its content layer masked, with a shadow).
+grep -Eq '^MacVPN smoke: menu: shape radius=12 masks=true opaque=false shadow=true window=[0-9]+$' "$LOG" || fail "the menu's rounded corners"
+
 # Quitting the way logout does (a quit Apple Event): applicationShouldTerminate answers "later", the Connections
 # window asks about the unsaved change (system.js answers Discard), then the app quits.
 grep -q '^MacVPN smoke: system: unsaved change ready$' "$LOG" || fail "no unsaved change for the quit test"
@@ -208,4 +230,4 @@ for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 ! kill -0 "$PID" 2>/dev/null || fail "the app did not quit after the quit question"
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
-echo "✓ smoke test passed (${LANGUAGE}; Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, quit flows, quit request)"
+echo "✓ smoke test passed (${LANGUAGE}; Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, menu shape, quit flows, quit request)"

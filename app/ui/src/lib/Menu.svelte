@@ -12,6 +12,7 @@
   import { setLanguage, tr } from './l10n.svelte';
   import Icon from './Icon.svelte';
   import MenuRow from './MenuRow.svelte';
+  import { versionLabel } from './format';
 
   let vm = $state<ViewModel | null>(null);
   let now = $state(Date.now());
@@ -227,6 +228,7 @@
       </button>
     </div>
     <p class="hint">{tr('Option-click a switch: debug mode')}</p>
+    {#if vm}<p class="version">{versionLabel(vm.appVersion)}</p>{/if}
   {/if}
 </main>
 
@@ -246,6 +248,9 @@
     /* Room for the cards' shadows when the list scrolls, and for a slim scroll bar in the right margin. */
     margin: -3px calc(-1 * var(--space-4)) -3px -3px;
     padding: 3px var(--space-4) 3px 3px;
+    /* The measured max-height (listMax) includes this padding: otherwise a long list ends up 6 px taller than
+       the height left for it and the window's 900 px cap clips the bottom (the version line's padding). */
+    box-sizing: border-box;
     overflow-y: auto;
     overscroll-behavior: contain;
   }
@@ -588,6 +593,15 @@
     font-size: var(--text-xs);
     color: var(--tertiary);
     text-align: center;
+  }
+  /* Right under the hint, as one quiet block (the column's gap would push it away). */
+  .version {
+    margin: calc(2px - var(--space-3)) 0 0;
+    font-size: var(--text-xs);
+    color: var(--tertiary);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    user-select: text;
   }
 
   /* An alert in place of the menu (a notice, the quit question). */

@@ -313,6 +313,8 @@ export interface ViewModel {
   control: ControlView;
   pairings: PairingView[];
   credentialPrompts: CredentialPromptView[];
+  /// The app's version (the backend's Cargo / bundle version), shown at the bottom of the menu.
+  appVersion: string;
 }
 
 export type WindowName = 'manage' | 'setup' | 'update';
@@ -331,6 +333,8 @@ export const api = {
   movePinned: (from: number[], to: number) => invoke<void>('move_pinned', { from, to }),
   openWindow: (name: WindowName) => invoke<void>('open_window', { name }),
   setMenuHeight: (height: number) => invoke<void>('set_menu_height', { height }),
+  /// A prompt window's content height (its own window only).
+  fitWindow: (height: number) => invoke<void>('fit_window', { height }),
   quit: (choice: QuitChoice | null) => invoke<QuitReply>('quit', { choice }),
   checkForUpdates: () => invoke<CheckNowResult>('check_for_updates'),
   setUpdateOption: (option: 'autoCheck' | 'delayUpdates', on: boolean) => invoke<void>('set_update_option', { option, on }),

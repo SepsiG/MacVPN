@@ -1,5 +1,5 @@
 // Driven by scripts/smoke-manage.sh (MACVPN_SMOKE_DIR, debug build, sandbox only), in the control API's pairing
-// window: the name must be labelled as self-reported, the executable path shown in full, no connection ticked and
+// window: the window must fit its content (only the connection list may scroll, inside its box), the name must be labelled as self-reported, the executable path shown in full, no connection ticked and
 // "Allow" disabled until one is; then the seeded target connection is ticked and allowed once the input lock
 // passed. Anything wrong: Deny (the client then fails to pair, and the shell reports it).
 (async () => {
@@ -12,6 +12,16 @@
       await sleep(100);
     }
     return null;
+  };
+  // The window fits its content (fit_window): nothing scrolls, and no more than the content's own padding below.
+  const fits = () => {
+    const page = document.scrollingElement;
+    const content = document.getElementById('app')?.getBoundingClientRect().height ?? 0;
+    return content > 0 && page.scrollHeight <= page.clientHeight && window.innerHeight - content <= 2;
+  };
+  // With screenshots on (the driver sets 'pending'), wait here until it took one.
+  const shot = async () => {
+    if (window.smokeShot === 'pending') await waitFor(() => window.smokeShot === 'done', 30000);
   };
   const target = '91111111-2222-4333-8444-555555555555';
   const allow = await waitFor(() => document.querySelector('.pairing button.allow'));
@@ -27,7 +37,9 @@
     path === pairing.executable &&
     path.startsWith('/') &&
     allow.disabled &&
-    ![...document.querySelectorAll('.pairing input[type=checkbox]')].some((c) => c.checked);
+    ![...document.querySelectorAll('.pairing input[type=checkbox]')].some((c) => c.checked) &&
+    !!(await waitFor(fits, 5000));
+  await shot();
   const box = document.querySelector(`.pairing input[value="${target}"]`);
   if (!ok || !box) {
     deny.click();

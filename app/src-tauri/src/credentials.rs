@@ -89,17 +89,18 @@ pub fn sync(app: &AppHandle, state: &Arc<AppState>, pending: &[CredentialPromptV
     }
 }
 
-/// The window's height for the fields it shows.
+/// The window's first height for the fields it shows, before its page measured itself (`fit_window` then sets
+/// the content's real height, error and language included).
 fn window_height(prompt: &CredentialPromptView) -> f64 {
-    let message = if prompt.message.is_some() { 60.0 } else { 0.0 };
-    200.0 + 38.0 * prompt.fields.len() as f64 + message
+    let message = if prompt.message.is_some() { 56.0 } else { 0.0 };
+    224.0 + 56.0 * prompt.fields.len() as f64 + message
 }
 
 fn open_window(app: &AppHandle, state: &AppState, prompt: &CredentialPromptView) -> Result<(), String> {
     let label = credential_window_label(prompt.id);
     let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title(&prompt.connection_name)
-        .inner_size(420.0, window_height(prompt))
+        .inner_size(crate::fit::CREDENTIALS.width, window_height(prompt))
         .resizable(false)
         .minimizable(false)
         .maximizable(false)

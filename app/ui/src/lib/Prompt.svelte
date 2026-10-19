@@ -6,6 +6,7 @@
   // backend takes from its own validated copy). Return in the code field submits a valid code, Escape cancels. The
   // window closes when the prompt ends (answered, cancelled, expired).
   import { onMount } from 'svelte';
+  import { fitToContent } from './fit';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, onViewModel, type PromptAction, type ViewModel } from './api';
   import Icon from './Icon.svelte';
@@ -32,6 +33,7 @@
   }
 
   onMount(() => {
+    const unfit = fitToContent(document.getElementById('app'), api.fitWindow);
     const unlisten = onViewModel(apply);
     api.viewModel().then(apply, console.error);
     const timer = setInterval(() => (now = Date.now()), 1000);
@@ -48,6 +50,7 @@
       }, console.error);
     }
     return () => {
+      unfit();
       clearInterval(timer);
       clearTimeout(arm);
       unlisten.then((f) => f());
@@ -139,9 +142,7 @@
     flex-direction: column;
     gap: var(--space-4);
     padding: 18px var(--space-7) var(--space-7);
-    height: 100vh;
     box-sizing: border-box;
-    overflow: auto;
   }
   h1 {
     display: flex;

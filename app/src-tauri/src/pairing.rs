@@ -75,7 +75,7 @@ fn open_window(app: &AppHandle, state: &AppState, pairing: &PairingView) -> Resu
     let label = pairing_window_label(pairing.id);
     let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title(macvpn_core::l10n::tr("Allow an App to Control VPNs?", &[]))
-        .inner_size(460.0, 470.0)
+        .inner_size(crate::fit::PAIRING.width, 470.0)
         .resizable(false)
         .minimizable(false)
         .maximizable(false)

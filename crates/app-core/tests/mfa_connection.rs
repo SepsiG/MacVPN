@@ -364,7 +364,7 @@ fn disconnect_while_connecting_cancels_via_bridge() {
         let (m, c) = (m.clone(), c.clone());
         move || m.connect(&c, false)
     });
-    sleep(0.1);
+    f.root.wait_for_call(&up_line(VPNKind::Openvpn, &c.id), 1);
     m.disconnect(&c);
     connecting.join().unwrap();
     let lines = f.root.lines();
@@ -383,7 +383,7 @@ fn pending_state_during_up_and_cleared_after() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
     f.store.save(&c, Some("client\nremote vpn.example.com 1194\n")).unwrap();
-    f.root.delay(&up_line(VPNKind::Openvpn, &c.id), 0.5);
+    f.root.delay(&up_line(VPNKind::Openvpn, &c.id), 1.0);
     f.root.respond("status", Ok("[]"));
     let m = manager_with_reader(&f, |_| Some(AuthUIState::new(1, AuthUIStateKind::Pending)));
     let key = uuid_string(&c.id);
@@ -391,8 +391,14 @@ fn pending_state_during_up_and_cleared_after() {
         let (m, c) = (m.clone(), c.clone());
         move || m.connect(&c, false)
     });
-    sleep(0.25);
-    match m.state(&key) {
+    // Polled while `up` runs (its 1 s delay), not a fixed sleep: the watcher's first read may come late on a busy
+    // runner.
+    let mut state = m.state(&key);
+    while !matches!(state, ConnectionState::AwaitingAuth(_)) && !connecting.is_finished() {
+        std::thread::sleep(Duration::from_millis(5));
+        state = m.state(&key);
+    }
+    match state {
         ConnectionState::AwaitingAuth(wait) => assert_eq!(wait.kind, AuthWaitKind::Web),
         other => panic!("{other:?}"),
     }

@@ -9,7 +9,7 @@ use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 use tauri::image::Image;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
-use tauri::{AppHandle, Manager, PhysicalPosition, Rect, WebviewWindowBuilder};
+use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, Rect, WebviewWindow, WebviewWindowBuilder};
 
 use crate::state::AppState;
 
@@ -33,6 +33,43 @@ pub fn hide_menu(app: &AppHandle) {
 
 /// The popover's width (points); its height follows the content (`set_menu_height`).
 pub const MENU_WIDTH: f64 = 330.0;
+/// The popover's corner radius (points), the system popovers' and Control Center's.
+pub const MENU_CORNER_RADIUS: f64 = macvpn_platform_mac::window_shape::POPOVER_CORNER_RADIUS;
+
+/// The popover window as [`create_menu_window`] and [`resize_menu`] use it (a fake in the tests).
+pub trait MenuWindow {
+    fn set_height(&self, height: f64) -> Result<(), String>;
+    /// Rounds the borderless window's corners (and recomputes its shadow), on the main thread.
+    fn round_corners(&self, radius: f64);
+}
+
+impl MenuWindow for WebviewWindow {
+    fn set_height(&self, height: f64) -> Result<(), String> {
+        self.set_size(LogicalSize::new(MENU_WIDTH, height)).map_err(|e| e.to_string())
+    }
+
+    fn round_corners(&self, radius: f64) {
+        let target = self.clone();
+        // Queued after the window's pending changes (a resize), so the shadow follows the new size.
+        let _ = self.run_on_main_thread(move || {
+            if let Ok(ns_window) = target.ns_window() {
+                macvpn_platform_mac::window_shape::round_corners(ns_window, radius);
+            }
+        });
+    }
+}
+
+/// Rounds the popover's corners: once created ([`create_menu_window`]) and after each resize ([`resize_menu`]).
+pub fn shape_menu(window: &impl MenuWindow) {
+    window.round_corners(MENU_CORNER_RADIUS);
+}
+
+/// The popover follows its content's height; the shadow is recomputed for the new shape.
+pub fn resize_menu(window: &impl MenuWindow, height: f64) -> Result<(), String> {
+    window.set_height(height)?;
+    shape_menu(window);
+    Ok(())
+}
 
 const IDLE: &[u8] = include_bytes!("../icons/tray/idle.png");
 const ACTIVE: &[u8] = include_bytes!("../icons/tray/active.png");
@@ -60,7 +97,11 @@ pub fn create_menu_window(app: &AppHandle) -> tauri::Result<()> {
         .find(|w| w.label == MENU_WINDOW)
         .cloned()
         .ok_or_else(|| tauri::Error::WindowNotFound)?;
-    WebviewWindowBuilder::from_config(app, &config)?.on_navigation(crate::navigation::is_allowed).build()?;
+    let window =
+        WebviewWindowBuilder::from_config(app, &config)?.on_navigation(crate::navigation::is_allowed).build()?;
+    // Borderless (`decorations: false`): rounded like a system popover, through the public AppKit API (no
+    // private API, no transparent webview).
+    shape_menu(&window);
     Ok(())
 }
 
@@ -158,5 +199,54 @@ pub fn hide_on_blur(app: &AppHandle) {
             *state.hidden_on_blur.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
         }
         hide_menu(app);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::cell::RefCell;
+
+    #[derive(Default)]
+    struct FakeWindow {
+        calls: RefCell<Vec<String>>,
+        fail: bool,
+    }
+
+    impl MenuWindow for FakeWindow {
+        fn set_height(&self, height: f64) -> Result<(), String> {
+            self.calls.borrow_mut().push(format!("height {height}"));
+            if self.fail { Err("gone".into()) } else { Ok(()) }
+        }
+
+        fn round_corners(&self, radius: f64) {
+            self.calls.borrow_mut().push(format!("round {radius}"));
+        }
+    }
+
+    #[test]
+    fn the_corner_radius_is_a_popovers() {
+        assert_eq!(MENU_CORNER_RADIUS, 12.0);
+    }
+
+    #[test]
+    fn a_new_menu_is_rounded() {
+        let window = FakeWindow::default();
+        shape_menu(&window);
+        assert_eq!(*window.calls.borrow(), ["round 12"]);
+    }
+
+    #[test]
+    fn a_resize_rounds_again_after_the_new_size() {
+        let window = FakeWindow::default();
+        assert_eq!(resize_menu(&window, 420.0), Ok(()));
+        assert_eq!(*window.calls.borrow(), ["height 420", "round 12"]);
+    }
+
+    #[test]
+    fn a_failed_resize_leaves_the_shape() {
+        let window = FakeWindow { fail: true, ..FakeWindow::default() };
+        assert!(resize_menu(&window, 420.0).is_err());
+        assert_eq!(*window.calls.borrow(), ["height 420"]);
     }
 }

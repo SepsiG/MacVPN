@@ -11,6 +11,7 @@ mod control;
 mod credentials;
 mod dialogs;
 mod dock;
+mod fit;
 mod manage;
 mod navigation;
 mod notifications;
@@ -439,12 +440,16 @@ fn main() {
             credentials::credentials_ready,
             pairing::pairing_answer,
             pairing::pairing_ready,
+            fit::fit_window,
             control::control_set_enabled,
             control::control_set_allowed,
             control::control_revoke,
             control::control_audit_save,
         ])
         .on_window_event(|window, event| {
+            if let WindowEvent::Destroyed = event {
+                fit::forget(window.label());
+            }
             // The last real window gone: the Dock icon goes too.
             if let WindowEvent::Destroyed = event
                 && dock::counts(window.label())

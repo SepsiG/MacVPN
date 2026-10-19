@@ -5,6 +5,7 @@
   // the close button deny; at the end of the two minutes the buttons are disabled and the backend times the pairing
   // out. The window closes when the pairing ends.
   import { onMount } from 'svelte';
+  import { fitToContent } from './fit';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, onViewModel, type ViewModel } from './api';
   import { setLanguage } from './l10n.svelte';
@@ -29,6 +30,7 @@
   }
 
   onMount(() => {
+    const unfit = fitToContent(document.getElementById('app'), api.fitWindow);
     const unlisten = onViewModel(apply);
     api.viewModel().then(apply, console.error);
     const timer = setInterval(() => (now = Date.now()), 1000);
@@ -39,6 +41,7 @@
       }, console.error);
     }
     return () => {
+      unfit();
       clearInterval(timer);
       clearTimeout(arm);
       unlisten.then((f) => f());

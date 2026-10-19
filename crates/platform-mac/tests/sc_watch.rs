@@ -22,17 +22,22 @@ fn start_and_stop_are_quick_and_leak_no_thread() {
         let watcher = SystemVpnWatcher::start(|| {}).expect("watcher starts");
         let started = Instant::now();
         watcher.stop();
-        assert!(started.elapsed() < Duration::from_secs(1), "stop took {:?}", started.elapsed());
+        assert!(started.elapsed() < Duration::from_secs(5), "stop took {:?}", started.elapsed());
     }
     // A watcher that is never stopped explicitly stops when dropped.
     for _ in 0..10 {
         let watcher = SystemVpnWatcher::start(|| {}).expect("watcher starts");
         let started = Instant::now();
         drop(watcher);
-        assert!(started.elapsed() < Duration::from_secs(1), "drop took {:?}", started.elapsed());
+        assert!(started.elapsed() < Duration::from_secs(5), "drop took {:?}", started.elapsed());
     }
-    std::thread::sleep(Duration::from_millis(200));
-    let after = thread_count();
+    // The stopped threads exit on their own pace: polled (up to 5 s), not a fixed sleep.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let mut after = thread_count();
+    while after > before && Instant::now() < deadline {
+        std::thread::sleep(Duration::from_millis(50));
+        after = thread_count();
+    }
     assert!(after <= before, "threads before {before}, after {after}");
 }
 

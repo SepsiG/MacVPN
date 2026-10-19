@@ -102,9 +102,7 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: 18px var(--space-7) var(--space-7);
-    height: 100vh;
     box-sizing: border-box;
-    overflow: auto;
   }
   h1 {
     display: flex;
@@ -201,7 +199,6 @@
     align-items: center;
     justify-content: flex-end;
     gap: var(--space-3);
-    margin-top: auto;
   }
   .expires {
     margin-right: auto;

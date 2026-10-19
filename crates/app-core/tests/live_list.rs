@@ -93,7 +93,21 @@ fn the_deadline_follows_the_last_trigger() {
     assert_eq!(d.deadline(), Some(t0 + ms(700)));
 }
 
-/// The reload thread: a burst of triggers wakes the poller once, after the debounce; stop ends the thread.
+/// Polls `count` until it reaches `target` (or `limit` passes); returns the last value.
+fn wait_for_count(count: &AtomicUsize, target: usize, limit: Duration) -> usize {
+    let start = Instant::now();
+    loop {
+        let value = count.load(Ordering::SeqCst);
+        if value >= target || start.elapsed() > limit {
+            return value;
+        }
+        std::thread::sleep(ms(10));
+    }
+}
+
+/// The reload thread: a burst of triggers wakes the poller once; a later trigger wakes it again; stop ends the
+/// thread. Independent of the runner's pace: the debounce's exact timing is covered by the `Debouncer` tests above
+/// (explicit instants); here only the order of events is checked, with generous bounds.
 #[test]
 fn live_reload_wakes_once_per_burst_and_stops() {
     let reload = Arc::new(LiveReload::new());
@@ -106,21 +120,24 @@ fn live_reload_wakes_once_per_burst_and_stops() {
             })
         })
     };
+    let burst = Instant::now();
     for _ in 0..5 {
         reload.trigger();
-        std::thread::sleep(ms(50));
     }
-    std::thread::sleep(ms(300));
-    assert_eq!(wakes.load(Ordering::SeqCst), 0, "not before the debounce");
-    std::thread::sleep(ms(500));
-    assert_eq!(wakes.load(Ordering::SeqCst), 1);
+    let early = wakes.load(Ordering::SeqCst);
+    // Only meaningful when the runner did not stall past the debounce meanwhile.
+    if burst.elapsed() < LIVE_DEBOUNCE {
+        assert_eq!(early, 0, "not before the debounce");
+    }
+    assert_eq!(wait_for_count(&wakes, 1, Duration::from_secs(5)), 1, "the burst wakes the poller");
+    std::thread::sleep(Duration::from_secs(1));
+    assert_eq!(wakes.load(Ordering::SeqCst), 1, "a burst is one wake");
     reload.trigger();
-    std::thread::sleep(ms(800));
-    assert_eq!(wakes.load(Ordering::SeqCst), 2);
+    assert_eq!(wait_for_count(&wakes, 2, Duration::from_secs(5)), 2, "a later trigger wakes it again");
     let started = Instant::now();
     reload.stop();
     thread.join().unwrap();
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(started.elapsed() < Duration::from_secs(5), "stop ends the thread promptly");
 }
 
 // MARK: - Poll fallback

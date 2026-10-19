@@ -6,6 +6,7 @@
   // answer and are cleared from the fields and the page's state right after it is sent. The window closes when
   // the prompt ends (answered, cancelled, expired, disconnected).
   import { onMount } from 'svelte';
+  import { fitToContent } from './fit';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, onViewModel, type CredentialAction, type CredentialField, type ViewModel } from './api';
   import CredentialView from './CredentialView.svelte';
@@ -46,6 +47,7 @@
   }
 
   onMount(() => {
+    const unfit = fitToContent(document.getElementById('app'), api.fitWindow);
     const unlisten = onViewModel(apply);
     api.viewModel().then(apply, console.error);
     const timer = setInterval(() => (now = Date.now()), 1000);
@@ -61,6 +63,7 @@
       }, console.error);
     }
     return () => {
+      unfit();
       clearInterval(timer);
       clearTimeout(arm);
       unlisten.then((f) => f());
