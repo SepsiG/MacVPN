@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backup-choose-destination"
+description = "Enables the backup_choose_destination command without any pre-configured scope."
+commands.allow = ["backup_choose_destination"]
+
+[[permission]]
+identifier = "deny-backup-choose-destination"
+description = "Denies the backup_choose_destination command without any pre-configured scope."
+commands.deny = ["backup_choose_destination"]

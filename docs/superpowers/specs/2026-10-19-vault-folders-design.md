@@ -3,7 +3,7 @@
 **Date:** 2026-10-19
 **Status:** design agreed in conversation (scope, recovery key, auto-unlock, folders, colours); this written spec awaits review.
 **Base:** MacVPN 1.0/1.1 (Rust/Tauri). The main spec (`2026-10-16-macvpn-design.md`) and its section 3 security rules still apply.
-**Release:** sections 4–5 ship in 1.1.0; sections 2, 3 and 3a ship in 1.2.0, where the root layer changes and root `VERSION` goes to 8.
+**Release:** sections 4–5 ship in 1.1.0; sections 2, 3, 3a and 3b ship in 1.2.0, where the root layer changes and root `VERSION` goes to 8.
 
 ## 1. Goals
 
@@ -21,7 +21,8 @@
 2. **Folders.** Folders can be nested to any depth, and each folder can take a colour from a palette. A connection inherits the colour of its nearest coloured ancestor, and the user can override that on the connection.
 3. **Credential prompt.** When a connection needs a username and password (or a PSK) that is not stored, MacVPN asks for it in a modal before connecting. The user can choose to save it in the vault.
 4. **Shared credentials.** A username and password can be defined once, centrally, and selected in any number of connections. Changing the password there updates every connection that uses it.
-5. **Live system-VPN list.** Adding, changing or deleting a system VPN in macOS shows up in MacVPN at once, without reopening windows.
+5. **Full backup and restore.** All data, secrets included, can be exported into one encrypted backup file and restored on a reinstalled or new Mac.
+6. **Live system-VPN list.** Adding, changing or deleting a system VPN in macOS shows up in MacVPN at once, without reopening windows.
 
 **Not goals:**
 - syncing between machines
@@ -44,15 +45,17 @@
 `vault.keys` is a small JSON file next to `vault.db`, mode 0600, written atomically. It holds two **wrapped copies** of the DEK:
 
 - **Password slot:**
-  - `KEK_pw = Argon2id(master password, salt₁, m=64 MiB, t=3, p=1)`
+  - `KEK_pw = Argon2id(master password, salt₁, m=64 MiB, t=32, p=1)` (the spike raised t from 3 to 32, about 0.66 s on an M5)
   - `wrap = XChaCha20-Poly1305(KEK_pw, nonce, DEK, aad="macvpn-vault-v1|pw")`
 - **Recovery slot:**
-  - `KEK_rc = Argon2id(recovery key, salt₂, same parameters)`
+  - `KEK_rc = Argon2id(recovery key, salt₂, its own parameters, by default the same)`
   - the DEK wrapped the same way, with `aad="…|rc"`
 - **Recovery key:** 120 random bits, shown as `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX` in base32 Crockford.
   - It is shown **once**, when the vault is created and whenever the user asks for a new one.
   - The user has to confirm that they saved it, by retyping one group.
-- The file also stores the KDF parameters and a version, so they can be raised later.
+- The file stores a version, and **each slot stores its own KDF parameters**, so the two slots can be raised independently.
+  - Parameters read from the file must lie between a floor (64 MiB, t ≥ 3, p ≥ 1) and a ceiling (1 GiB, t ≤ 256, p ≤ 16); anything else makes the file corrupt. This stops a tampered file from downgrading the KDF or from making it allocate or run without limit.
+  - Every new wrap (create, a new password, a new recovery key) uses the slot's parameters raised to at least the default (64 MiB, t = 32, p = 1); parameters are never lowered.
 
 The slots make these operations cheap:
 - **Changing the master password** only rewraps the password slot. The database is not re-encrypted.
@@ -103,6 +106,17 @@ control_clients(id TEXT PK, json TEXT NOT NULL)
 - The `meta_json` format stays compatible with the export format and the Swift-era `meta.json`, so import and export don't change.
 - Foreign keys are on. Each write runs in a transaction, with `journal_mode=WAL` and `secure_delete=ON`.
 - Folder cycles are rejected in code: a folder can't move under its own descendant.
+
+**Schema versioning.** `meta` holds `schema_version` (an integer) and `min_app_schema`, the lowest app schema that may write this database. On open, MacVPN compares them with the app's `CURRENT_SCHEMA`:
+
+- **The database is older:** it is migrated automatically.
+  1. First a byte copy of the still-encrypted file is made, after a WAL checkpoint: `vault.db.bak-v<old>`, mode 0600. Only the last 2 such backups are kept.
+  2. Then each migration step v→v+1 runs in order, each in its own transaction (a savepoint inside one outer transaction).
+  3. `schema_version` (and `min_app_schema`) are updated in the same transaction as the last step.
+  4. If any step fails, everything is rolled back: the database stays at the old version, the backup is kept, and the app reports a clear error. A half-migrated database never exists.
+- **Equal:** normal.
+- **The database is newer than the app** (written by a newer MacVPN), or `min_app_schema` is above the app's schema: it is opened **read-only** (`SQLITE_OPEN_READONLY` plus `PRAGMA query_only=ON`), as long as every table and column the app knows can still be read. Connecting with the stored data still works. Every write path (save, delete, import, folder edits, ranking updates, backup restore, control-client changes) is refused with a typed `VaultError::NewerSchema { db, app }`, so the UI can say "This data was saved by a newer MacVPN — update the app to make changes". If the app cannot even read it, opening is refused with the same error.
+- **Rule:** a migration must never be needed to *read* an older database, and an older app must never write to a newer database. Schema changes are therefore additive where possible.
 
 ### 2.5 Root-layer change (root VERSION 8)
 
@@ -172,6 +186,7 @@ control_clients(id TEXT PK, json TEXT NOT NULL)
 - **Choosing one in a connection:** each connection editor that has username/password fields (OpenVPN `auth-user-pass`, L2TP, Cisco IPsec, IKEv2 EAP, SSTP, and system VPNs that MacVPN stores secrets for) gets a selector:
   - **Own username and password**, the default and today's behaviour, or
   - **Use credential: <name>**. The connection's own username and password fields are then hidden, and its own stored username and password are deleted after the user confirms.
+  - A linked connection's editor never writes the username or password: saving it cannot change the shared credential that the other connections use. The credential is changed only in the Credentials section, or by "Save" in the credential prompt (below).
   - Other secrets (PSK, key password, OTP secret) stay per connection.
 - **At connect time:**
   - The username and password are taken from the linked credential.
@@ -180,9 +195,52 @@ control_clients(id TEXT PK, json TEXT NOT NULL)
 - **Deleting a credential that is in use:** a question lists the connections and offers two choices: "Copy into each connection", which turns them back into their own username and password, or Cancel. A credential is never deleted silently while it is linked (`ON DELETE RESTRICT`).
 - **Export and import:**
   - Export never contains secrets. It writes `credentialName` in the exported metadata.
-  - On import, a credential with the same name is linked automatically. Otherwise the user is asked to pick a credential or to use the connection's own fields.
+  - On import, nothing is linked automatically: an imported file chooses its own server, so a silent link would send the shared password to whatever host the file names. When a credential with the same name exists, the user is asked "Use the shared credential '<name>' for this connection to <server>?", where <server> is the remote host read from the config. The default answer is the connection's own fields. When no credential has that name, the user is asked to pick a credential or to use the connection's own fields.
+  - The folder path in the metadata follows the folder-name rules; a line with an invalid name is ignored.
 - **Control API:** no change. The API never sees credentials.
 - **Migration from 1.1:** nothing is converted automatically. In the Credentials section, a **"Create from connection…"** helper turns an existing connection's username and password into a credential and offers to link the other connections that have the same username and password. The comparison is done in memory and the values are never shown.
+
+## 3b. Full backup and restore
+
+The per-connection export stays as it is: one connection, never any secrets. Next to it comes a **full backup** for reinstalling the system or moving to another Mac.
+
+- **Backup:** "Back up everything…" in the menu's settings and in the Manage window writes a single file, `MacVPN-backup-<date>.macvpnbackup`, with mode 0600, to a path the user picks in the native save panel.
+- **What the backup contains:**
+  - every connection, with its config and secrets
+  - folders, colours, order, pins and the ranking
+  - shared credentials
+  - system-VPN OTP settings, and the folder and colour placements of system VPNs
+  - app preferences: auto-update, the 24 h delay, launch at login, the control-API on/off switch, and auto-unlock
+- **What is left out:**
+  - **Paired control-API clients.** Their tokens are bound to executable paths on this Mac, so clients pair again after a restore.
+  - **The vault key and the recovery key.**
+  - **Logs.**
+- **Encryption:**
+  - The user sets a **backup password** at least 10 characters long, with a strength hint. The master password is offered as a default only after explicit confirmation ("Use my master password").
+  - The format is a versioned header holding the magic number, the format version, the Argon2id parameters and the salt, then an XChaCha20-Poly1305 sealed payload. The payload is a SQLite database image (`VACUUM INTO` of a temporary plain copy built in memory) or JSON. The plan decides which, but the plain copy must never touch the disk.
+  - The header is authenticated as AAD.
+  - The Argon2id parameters in the header have a backup-specific ceiling (256 MiB, 64 passes, 4 lanes). A header above it is refused before the key derivation runs.
+  - A wrong password or a corrupted file produces one generic error.
+- **A backup is untrusted input.** Anyone who knows its password can craft one. Before anything is written, a restore checks the payload with the same rules as the editors: credential names, usernames and passwords, folder names, item ids, no control characters in any secret, and caps on the size and on the number of entries. An invalid backup is refused as a whole. A restored link never leaves the connection with its own username and password. A merge drops the restored connections' acknowledged risky OpenVPN directives, unless the same connection already exists with the same config. "Replace everything" keeps them, and the restore window lists those connections first.
+- **Restore on a fresh install:** the first-run "Create vault" window offers **"Restore from backup…"**.
+  1. Pick the file and enter the backup password.
+  2. Set a new master password and save a new recovery key.
+  3. Everything is imported in one transaction.
+- **Restore into an existing vault:** "Restore from backup…" in the settings offers:
+  - **Merge:** adds items that are missing. When an id already exists, one question applies to all conflicts: overwrite with the backup, keep the existing item, or keep both. "Keep both" gives the backup copy a new id and a " (backup)" suffix.
+  - **Replace everything:** clears the vault first, after a confirmation that names how many items will be lost. It suggests making a backup of the current state first.
+- **After a restore:**
+  - The backed-up preferences are never applied silently. The user confirms each one, and the control API is unticked by default.
+  - Native L2TP/Cisco profiles are reinstalled from their stored data through the existing installer, which asks for the admin password once.
+  - A missing brew tool or root layer shows up in System Status as usual.
+  - System VPNs that don't exist on the new Mac keep their folder placement for 30 days (section 5), then they are dropped.
+- **Version:** a backup from a newer MacVPN with an unknown format version is refused with a clear message. An older format is migrated on import.
+- **Security:**
+  - The backup is as sensitive as the vault, and the UI says so ("Anyone with this file and its password can read all your VPN credentials").
+  - The password is never stored.
+  - No plaintext is written to a temporary file.
+  - The file is written atomically; if writing fails, the partial file is removed.
+- **Not included:** automatic or scheduled backups, and cloud upload.
 
 ## 4. Credential prompt before connecting
 
@@ -255,6 +313,7 @@ control_clients(id TEXT PK, json TEXT NOT NULL)
 ## 8. Testing
 
 - **Core:**
+  - Backup: format round-trip; a wrong password and a tampered header or payload give the same generic error; merge conflict modes (overwrite, keep, keep both); replace; an unknown newer version is refused; no plaintext temp files (checked with a scratch-dir scan).
   - Shared credentials: link and unlink, the restricted delete, copy-into-connections, required fields when a linked credential has no password, and import matching by name.
   - Wrap and unwrap with known vectors.
   - A wrong password or recovery key fails without leaking which part was wrong.
@@ -288,4 +347,4 @@ control_clients(id TEXT PK, json TEXT NOT NULL)
 The parts ship in two releases:
 
 - **1.1.0:** the control API, the card UI, **the live system-VPN list (section 5)** and **the credential prompt (section 4)**. These don't depend on the vault. Until 1.2, "Save" in the credential prompt writes to the existing secret store.
-- **1.2.0:** the vault (section 2), the migration, folders and colours (section 3), shared credentials (section 3a), and root VERSION 8. The credential prompt's "Save" then writes to the vault, through the same `SecretStore` trait.
+- **1.2.0:** the vault (section 2), the migration, folders and colours (section 3), shared credentials (section 3a), full backup and restore (section 3b), and root VERSION 8. The credential prompt's "Save" then writes to the vault, through the same `SecretStore` trait.

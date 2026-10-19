@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-item-set-color"
+description = "Enables the item_set_color command without any pre-configured scope."
+commands.allow = ["item_set_color"]
+
+[[permission]]
+identifier = "deny-item-set-color"
+description = "Denies the item_set_color command without any pre-configured scope."
+commands.deny = ["item_set_color"]

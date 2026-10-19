@@ -7,6 +7,7 @@ use crate::editor::{Draft, EditorDeps, EditorFields, EditorView, Target};
 use crate::import_export::{self, ImportReport};
 use crate::manager::ConnectionItem;
 use crate::questions::{QuestionBroker, QuestionView};
+use crate::shared_credentials::{self, CredentialsView, ImportLink, SharedCredentials};
 use macvpn_core::importer;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
@@ -165,6 +166,9 @@ pub struct ConnectionsModel {
     /// [`Self::system_services_changed`] one at a time.
     services_sync: Mutex<()>,
     on_change: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+    /// The shared credentials over the vault (spec 3a): the Credentials section, the editors' selector, the
+    /// import's question. `None` until the app has a vault: every credential action then says it is locked.
+    credentials: Mutex<Option<SharedCredentials>>,
 }
 
 impl ConnectionsModel {
@@ -176,6 +180,7 @@ impl ConnectionsModel {
             importing: Mutex::new(()),
             services_sync: Mutex::new(()),
             on_change: Mutex::new(None),
+            credentials: Mutex::new(None),
         }
     }
 
@@ -437,6 +442,9 @@ impl ConnectionsModel {
 
     /// Saves one draft outside the lock. `None`: no such draft; `Err`: the message.
     fn save_draft(&self, key: &str) -> Option<Result<(), String>> {
+        if let Err(locked) = self.unlocked() {
+            return Some(Err(locked));
+        }
         let mut draft = self.lock().drafts.get(key).cloned()?;
         if draft.removed {
             return Some(Err(removed_message()));
@@ -498,8 +506,25 @@ impl ConnectionsModel {
         }
     }
 
+    /// Refused while the vault is locked (nothing that reads or writes it works then).
+    fn unlocked(&self) -> Result<(), String> {
+        if self.deps.manager.is_locked() { Err(crate::vault_stores::locked_message()) } else { Ok(()) }
+    }
+
+    /// The vault was locked: every editor and its unsaved edits are dropped (the drafts hold connection settings
+    /// and typed secrets). A pending "Unsaved Changes" question then finds nothing to save.
+    pub fn vault_locked(&self) {
+        {
+            let mut s = self.lock();
+            s.drop_drafts();
+            s.import_issues.clear();
+        }
+        self.changed();
+    }
+
     /// The editor of `key`, loaded on its first use (a later open does not overwrite the editing).
     pub fn open_editor(&self, key: &str) -> Result<EditorView, String> {
+        self.unlocked()?;
         if let Some(d) = self.lock().drafts.get(key) {
             return Ok(d.view(key));
         }
@@ -517,6 +542,7 @@ impl ConnectionsModel {
     }
 
     fn with_draft<T>(&self, key: &str, f: impl FnOnce(&mut Draft) -> Result<T, String>) -> Result<T, String> {
+        self.unlocked()?;
         let result = {
             let mut s = self.lock();
             let draft = s.drafts.get_mut(key).ok_or("no editor")?;
@@ -546,6 +572,7 @@ impl ConnectionsModel {
 
     /// "Forget saved secrets" (system VPN). Allowed on a removed VPN too: deleting is not editing.
     pub fn forget_secrets(&self, key: &str) -> Result<EditorView, String> {
+        self.unlocked()?;
         let mut draft = self.lock().drafts.get(key).cloned().ok_or("no editor")?;
         draft.forget(&self.deps);
         self.with_draft(key, |d| {
@@ -607,6 +634,7 @@ impl ConnectionsModel {
 
     /// "New <kind>": saved with the kind's template and selected.
     pub fn create(&self, kind: VPNKind) -> Result<Uuid, String> {
+        self.unlocked()?;
         let mut c = Connection::new(l10n::tr("New %@", &[Arg::Str(kind.display_name())]), kind);
         if kind.is_native() {
             c.native = Some(NativeSettings::default());
@@ -623,13 +651,23 @@ impl ConnectionsModel {
     pub fn import_paths(&self, paths: &[PathBuf]) -> ImportReport {
         let _one_at_a_time = self.importing.lock().unwrap_or_else(PoisonError::into_inner);
         let mut report = ImportReport::default();
+        if let Err(locked) = self.unlocked() {
+            report.errors.push(locked);
+            return report;
+        }
         for path in paths {
             let mut confirm = |files: &[String], config: &str| {
                 let (title, message) = import_export::credential_question(files, config);
                 self.questions.ask(title, message, l10n::tr("Use", &[]), l10n::tr("Ignore", &[]))
             };
-            let file = import_export::import_file(&self.deps, path, &mut confirm);
+            let mut file = import_export::import_file(&self.deps, path, &mut confirm);
             if let Some((id, issues)) = file.imported {
+                if let Some(imported) = &file.credential
+                    && let Some(note) = self.ask_imported_credential(&id, imported)
+                {
+                    let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                    file.report.notes.push(format!("{name}: {note}"));
+                }
                 if !issues.is_empty() {
                     self.lock().import_issues.insert(id, issues);
                 }
@@ -645,6 +683,7 @@ impl ConnectionsModel {
     /// items deleted. Returns the deleted connection (the app stops its native log collection, opens the Profiles
     /// pane for a native one, and refreshes).
     pub fn delete(&self, id: &Uuid) -> Option<Connection> {
+        self.unlocked().ok()?;
         let key = uuid_string(id);
         let c = self.deps.manager.connections().into_iter().find(|c| c.id == *id)?;
         if self.deps.manager.state(&key).is_active() {
@@ -673,6 +712,203 @@ impl ConnectionsModel {
     /// The editors' fields by key (tests, diagnostics).
     pub fn draft_fields(&self) -> BTreeMap<String, EditorFields> {
         self.lock().drafts.iter().map(|(k, d)| (k.clone(), d.fields.clone())).collect()
+    }
+
+    // MARK: - Shared credentials (spec 3a)
+
+    /// The app's shared credentials, once it has a vault.
+    pub fn set_shared_credentials(&self, credentials: SharedCredentials) {
+        *self.credentials.lock().unwrap_or_else(PoisonError::into_inner) = Some(credentials);
+        self.changed();
+    }
+
+    pub fn shared_credentials(&self) -> Option<SharedCredentials> {
+        self.credentials.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    fn require_credentials(&self) -> Result<SharedCredentials, String> {
+        self.shared_credentials().ok_or_else(shared_credentials::locked_message)
+    }
+
+    /// The Credentials section's list (a locked or missing vault: the reason instead).
+    pub fn credentials_view(&self) -> CredentialsView {
+        self.shared_credentials().map_or_else(CredentialsView::locked, |c| c.view())
+    }
+
+    /// The vault item of a listed connection that has a username or password: a managed connection's id, or an
+    /// L2TP / Cisco IPsec system VPN's service ID.
+    pub fn credential_item(&self, key: &str) -> Result<Uuid, String> {
+        match self.deps.manager.item(key) {
+            Some(ConnectionItem::Managed(c)) if c.kind != VPNKind::Wireguard => Ok(c.id),
+            Some(ConnectionItem::System(s)) if s.supports_stored_secrets() => s.secret_id().ok_or("no item".into()),
+            Some(_) => Err("this connection has no user name or password".into()),
+            None => Err("unknown connection".into()),
+        }
+    }
+
+    /// The display names of the vault items (managed connections and system VPNs).
+    fn item_names(&self) -> HashMap<String, String> {
+        let mut names: HashMap<String, String> =
+            self.deps.manager.connections().into_iter().map(|c| (uuid_string(&c.id), c.name)).collect();
+        for s in self.deps.manager.system_services() {
+            if let Some(id) = s.secret_id() {
+                names.insert(uuid_string(&id), s.name.clone());
+            }
+        }
+        names
+    }
+
+    /// The open editors follow a credential change: a rename shows the new name, a link that came or went (the
+    /// selector, "Copy into each connection", "Create from connection…") turns the own fields on or off.
+    fn credentials_changed(&self) {
+        // Read outside the window's lock (the vault and the manager have their own).
+        let targets: Vec<(String, Target, Option<String>)> =
+            self.lock().drafts.iter().map(|(k, d)| (k.clone(), d.target.clone(), d.credential.clone())).collect();
+        for (key, target, before) in targets {
+            let Some(state) = Draft::link_state(&self.deps, &target) else { continue };
+            let mut s = self.lock();
+            let Some(draft) = s.drafts.get_mut(&key) else { continue };
+            if state.credential.is_some() != before.is_some() {
+                draft.apply_link_state(state);
+            } else {
+                draft.credential = state.credential;
+            }
+        }
+        self.changed();
+    }
+
+    /// The editor's selector: `Some` links the connection to the credential (the UI confirmed that its own
+    /// username and password are deleted), `None` returns it to its own (empty) fields.
+    pub fn link_credential(&self, key: &str, credential: Option<Uuid>) -> Result<(), String> {
+        let item = self.credential_item(key)?;
+        let credentials = self.require_credentials()?;
+        credentials.link(&uuid_string(&item), credential).map_err(|e| shared_credentials::error_message(&e))?;
+        self.credentials_changed();
+        Ok(())
+    }
+
+    /// "Add" in the Credentials section.
+    pub fn add_credential(
+        &self,
+        name: &str,
+        username: &str,
+        password: shared_credentials::PasswordInput,
+    ) -> Result<(), String> {
+        self.require_credentials()?.add(name, username, password)?;
+        self.changed();
+        Ok(())
+    }
+
+    /// "Edit" / "Rename" in the Credentials section.
+    pub fn edit_credential(
+        &self,
+        id: Uuid,
+        name: Option<&str>,
+        username: Option<&str>,
+        password: shared_credentials::PasswordInput,
+    ) -> Result<(), String> {
+        self.require_credentials()?.edit(id, name, username, password)?;
+        self.credentials_changed();
+        Ok(())
+    }
+
+    /// "Delete": `Ok(Some(names))` when connections still use it and `copy_into` is false (the question "Copy
+    /// into each connection" or Cancel names them); with `copy_into` they get their own copies first.
+    pub fn delete_credential(&self, id: Uuid, copy_into: bool) -> Result<Option<Vec<String>>, String> {
+        let result = self.require_credentials()?.delete(id, copy_into);
+        let names = match result {
+            Ok(()) => None,
+            Err(shared_credentials::DeleteCredentialError::InUse(items)) => {
+                Some(shared_credentials::item_names(&items, &self.item_names()))
+            }
+            Err(shared_credentials::DeleteCredentialError::Vault(e)) => {
+                return Err(shared_credentials::error_message(&e));
+            }
+        };
+        self.credentials_changed();
+        Ok(names)
+    }
+
+    /// "Create from connection…", step 2: the other connections with the same own username and password, as
+    /// (vault item, name), sorted by name. The values are compared in the vault and never leave it.
+    pub fn credential_matches(&self, key: &str) -> Result<Vec<(String, String)>, String> {
+        let item = self.credential_item(key)?;
+        let items = self
+            .require_credentials()?
+            .matching_items(&uuid_string(&item))
+            .map_err(|e| shared_credentials::error_message(&e))?;
+        let names = shared_credentials::item_names(&items, &self.item_names());
+        let mut out: Vec<(String, String)> = items.into_iter().zip(names).collect();
+        out.sort_by(|a, b| a.1.cmp(&b.1).then_with(|| a.0.cmp(&b.0)));
+        Ok(out)
+    }
+
+    /// "Create from connection…", step 3: the credential from the connection's own values, linked to it and to
+    /// the ticked matches (vault items from [`Self::credential_matches`]).
+    pub fn credential_from_connection(&self, key: &str, name: &str, link: &[String]) -> Result<(), String> {
+        let item = self.credential_item(key)?;
+        self.require_credentials()?.from_connection(self.deps.secrets.as_ref(), &item, name, link)?;
+        self.credentials_changed();
+        Ok(())
+    }
+
+    /// The import's question about an exported `credentialName` (spec 3a): nothing is linked unless the user
+    /// says so; the default answer (and a closed window) keeps the connection's own fields. `Some`: a note for
+    /// the import report.
+    fn ask_imported_credential(&self, id: &Uuid, imported: &import_export::ImportedCredentialName) -> Option<String> {
+        let credentials = match self.require_credentials() {
+            Ok(c) => c,
+            Err(reason) => return Some(shared_credentials::import_not_checked_note(&imported.name, &reason)),
+        };
+        let item = uuid_string(id);
+        let linked = match credentials.link_imported(Some(&imported.name), imported.kind, &imported.config) {
+            Ok(ImportLink::Own) => return None,
+            Ok(ImportLink::Ask { credential, name, remote }) => {
+                let (title, message) = shared_credentials::import_question(&name, remote.as_deref());
+                let yes = self.questions.ask(
+                    title,
+                    message,
+                    l10n::tr("Use Shared Credential", &[]),
+                    l10n::tr("Use Own Fields", &[]),
+                );
+                if !yes {
+                    return None;
+                }
+                credentials.link(&item, Some(credential))
+            }
+            Ok(ImportLink::Unknown { name, remote }) => {
+                let list = match credentials.list() {
+                    Ok(list) => list,
+                    Err(e) => {
+                        return Some(shared_credentials::import_not_checked_note(
+                            &name,
+                            &shared_credentials::error_message(&e),
+                        ));
+                    }
+                };
+                if list.is_empty() {
+                    return Some(shared_credentials::unknown_credential_note(&name));
+                }
+                let (title, message) = shared_credentials::unknown_credential_question(&name, remote.as_deref());
+                let options = list.iter().map(|s| s.credential.name.clone()).collect();
+                let choice = self.questions.ask_choice(
+                    title,
+                    message,
+                    options,
+                    l10n::tr("Use", &[]),
+                    l10n::tr("Use Own Fields", &[]),
+                );
+                let chosen = choice.and_then(|i| list.get(i))?;
+                credentials.link(&item, Some(chosen.credential.id))
+            }
+            Err(e) => {
+                return Some(shared_credentials::import_not_checked_note(
+                    &imported.name,
+                    &shared_credentials::error_message(&e),
+                ));
+            }
+        };
+        linked.err().map(|e| shared_credentials::error_message(&e))
     }
 }
 

@@ -25,7 +25,59 @@ sha2 = "0.11.1"
 unicode-normalization = "0.1.26"
 unicode-segmentation = "1.13.3"
 uuid = { version = "1.26.1", features = ["v4"] }
+# The encrypted vault (behind the `vault` feature; versions pinned by the spike,
+# docs/superpowers/spikes/2026-10-19-vault-spike.md). No getrandom: randomness comes from `vault::Entropy`.
+argon2 = { version = "=0.6.0", default-features = false, features = ["alloc", "zeroize"], optional = true }
+chacha20poly1305 = { version = "=0.11.0", default-features = false, features = ["alloc", "zeroize"], optional = true }
 zeroize = "1.9.1"
 
+# SQLCipher 4 with the CommonCrypto provider (chosen by libsqlite3-sys when no OPENSSL_* variable is set; the
+# release gate in scripts/build-dmg.sh checks it). Linux/Windows add
+# `rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }` together
+# with their KeyStore, not before (it would put openssl-src into Cargo.lock).
+[target.'cfg(target_os = "macos")'.dependencies]
+rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher"], optional = true }
+
+[features]
+# The vault code (key hierarchy, database). Only the app side (app-core, platform-mac) enables it; the root layer
+# (mvpn) never does, and the release gate in scripts/build-dmg.sh checks that mvpn links no SQLite.
+vault = ["dep:argon2", "dep:chacha20poly1305", "dep:rusqlite"]
+# Test-only helpers (the cheap `KdfParams::insecure_for_tests`). Enabled only by this crate's own dev-dependency on
+# itself, never by a production crate.
+test-support = []
+
+[[test]]
+name = "vault_keys"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_keystore"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_db"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_connections"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_misc"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_tree"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_backup"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_credentials"
+required-features = ["vault"]
+
 [dev-dependencies]
+macvpn-core = { path = ".", features = ["test-support"] }
 plist = "1.10.1"

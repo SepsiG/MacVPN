@@ -77,6 +77,12 @@ impl std::error::Error for CommandError {}
 /// Runs one command. Behind a trait so tests (and the UI) can substitute recorded answers.
 pub trait CommandRunner: Send + Sync {
     fn run(&self, executable: &str, arguments: &[String], stdin: Option<&str>) -> Result<CommandResult, CommandError>;
+
+    /// [`CommandRunner::run`] with raw bytes on stdin (`mvpn up`'s framed config). The real runner writes them as
+    /// they are, without a copy; the default (test doubles) passes them on as (lossy) text.
+    fn run_bytes(&self, executable: &str, arguments: &[String], stdin: &[u8]) -> Result<CommandResult, CommandError> {
+        self.run(executable, arguments, Some(&String::from_utf8_lossy(stdin)))
+    }
 }
 
 /// The runners' time limits (seconds).
@@ -149,6 +155,10 @@ impl ProcessCommandRunner {
 
 impl CommandRunner for ProcessCommandRunner {
     fn run(&self, executable: &str, arguments: &[String], stdin: Option<&str>) -> Result<CommandResult, CommandError> {
+        self.run_bytes(executable, arguments, stdin.unwrap_or("").as_bytes())
+    }
+
+    fn run_bytes(&self, executable: &str, arguments: &[String], stdin: &[u8]) -> Result<CommandResult, CommandError> {
         if self.cancel.as_ref().is_some_and(CancelToken::is_cancelled) {
             return Err(CommandError::Cancelled);
         }
@@ -164,7 +174,7 @@ impl CommandRunner for ProcessCommandRunner {
             .stderr(Stdio::piped())
             .spawn()
             .map_err(CommandError::Io)?;
-        let outcome = Job::new(&mut child, stdin.unwrap_or("").as_bytes(), executable).run(self);
+        let outcome = Job::new(&mut child, stdin, executable).run(self);
         // Never leave a running child or a zombie behind if watching it failed (`Child` knows whether it was
         // already reaped, so this cannot signal a reused pid).
         if matches!(outcome, Err(CommandError::Io(_))) {

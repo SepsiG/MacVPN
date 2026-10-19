@@ -1,7 +1,8 @@
 <script lang="ts">
   // The credential prompt as its window shows it (the window's logic is in CredentialPrompt.svelte): the
-  // connection's name, the re-prompt's "Sign-in failed" line, only the asked fields (the user name as text,
-  // pre-filled when one is stored; the others as password fields), "Save" (ticked by default) and Connect /
+  // connection's name, the shared credential the password belongs to ("Password for Office AD — used by 4
+  // connections"; "Save in vault" then updates the credential), the re-prompt's "Sign-in failed" line, only the asked fields (the user name as text,
+  // pre-filled when one is stored; the others as password fields), "Save in vault" (ticked by default) and Connect /
   // Cancel. There is no form and no default button: Return in a field does nothing, Connect needs a click (or Space
   // on the focused button), and it works only once the input lock passed and every field has a value.
   import type { CredentialField, CredentialPromptView } from './api';
@@ -55,6 +56,13 @@
     {tr('Credentials needed')}
   </h1>
   <p class="name">{prompt.connectionName}</p>
+  {#if prompt.credentialName}
+    <p class="caption shared">
+      {prompt.usedBy === 1
+        ? tr('Password for %@ — used by 1 connection', prompt.credentialName)
+        : tr('Password for %@ — used by %lld connections', prompt.credentialName, prompt.usedBy ?? 0)}
+    </p>
+  {/if}
   {#if prompt.message}
     <p class="banner warn retry" role="alert"><Icon name="warning" /><span>{prompt.message}</span></p>
   {/if}
@@ -85,8 +93,8 @@
   <label class="save">
     <input type="checkbox" bind:checked={save} disabled={!armed} />
     <span>
-      {tr('Save')}
-      <span class="caption hint">{tr('Stored in the macOS Keychain')}</span>
+      {tr('Save in vault')}
+      <span class="caption hint">{tr('Kept encrypted in the MacVPN vault, used from the next connect on')}</span>
     </span>
   </label>
   <div class="buttons">

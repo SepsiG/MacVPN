@@ -93,7 +93,8 @@ pub fn sync(app: &AppHandle, state: &Arc<AppState>, pending: &[CredentialPromptV
 /// the content's real height, error and language included).
 fn window_height(prompt: &CredentialPromptView) -> f64 {
     let message = if prompt.message.is_some() { 56.0 } else { 0.0 };
-    224.0 + 56.0 * prompt.fields.len() as f64 + message
+    let credential = if prompt.credential_name.is_some() { 24.0 } else { 0.0 };
+    224.0 + 56.0 * prompt.fields.len() as f64 + message + credential
 }
 
 fn open_window(app: &AppHandle, state: &AppState, prompt: &CredentialPromptView) -> Result<(), String> {
@@ -173,11 +174,19 @@ mod tests {
             username: None,
             message,
             deadline: 0.0,
+            credential_name: None,
+            used_by: None,
         };
         let one = window_height(&view(vec!["password"], None));
         let two = window_height(&view(vec!["username", "password"], None));
         let retry = window_height(&view(vec!["username", "password"], Some("x".into())));
         assert!(one < two && two < retry);
+        let shared = CredentialPromptView {
+            credential_name: Some("Office AD".into()),
+            used_by: Some(4),
+            ..view(vec!["password"], None)
+        };
+        assert!(window_height(&shared) > one);
     }
 
     #[test]

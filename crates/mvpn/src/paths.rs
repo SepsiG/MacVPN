@@ -44,7 +44,6 @@ pub struct Settings {
     pub log_base: PathBuf,
     /// The user the connection belongs to (`SUDO_USER` as root, the caller in test mode); unvalidated.
     pub target_user: String,
-    pub src_base: Option<PathBuf>,
     pub wg_run: PathBuf,
     pub lock_tries: u64,
     pub log_max: u64,
@@ -93,7 +92,6 @@ impl Settings {
             run_base: pick(&test.run_base, RUN_BASE),
             log_base: pick(&test.log_base, LOG_BASE),
             target_user,
-            src_base: test.src_base.as_ref().map(PathBuf::from),
             wg_run: pick(&test.wg_run, WG_RUN),
             lock_tries: test.lock_tries.unwrap_or(LOCK_TRIES),
             log_max: test.log_max.unwrap_or(LOG_MAX),

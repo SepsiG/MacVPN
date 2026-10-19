@@ -29,7 +29,11 @@
 //!   window (the retry line, all four fields and a refused answer's error: `credentials-largest.js`). Every prompt,
 //!   credential and pairing script checks its real window fits its content (`scrollHeight <= clientHeight`).
 //!   `MACVPN_SMOKE_SHOTS` (`SMOKE_SHOTS=<dir>`): each of those windows and the menu wait for the shell's screenshot
-//!   ([`shoot`]); `MACVPN_SMOKE_DARK` (`SMOKE_DARK=1`) puts the app in dark mode.
+//!   ([`shoot`]), so do the Connections window's New menu and a context menu (`popover-shots.js`);
+//!   `MACVPN_SMOKE_DARK` (`SMOKE_DARK=1`) puts the app in dark mode, `MACVPN_SMOKE_LIGHT` (`SMOKE_LIGHT=1`) in light.
+//!   Folders: `folders.js` (Connections) creates a folder from the New menu, a subfolder from its context menu,
+//!   colours the folder, drags a seeded connection into the subfolder, collapses and expands the folder, and
+//!   deletes the subfolder moving its contents up (`FOLDERS …`; the folders are kept in the vault).
 //!   Last, `system.js` leaves an unsaved change and answers the quit question the shell's quit Apple Event
 //!   raises. Between the window scripts and the prompts, the Dock icon is checked (`NSApp.activationPolicy`): shown with the windows open, a Dock click (`dock::reopen`) restoring a minimized window without
 //!   opening any, hidden again once they are closed and while only a prompt is open. The results go to stderr (`MacVPN smoke: …`, first the language), ending with `MacVPN smoke: done`.
@@ -42,6 +46,7 @@ use macvpn_core::models::{ConnectionState, Secrets, VPNKind, parse_uuid, uuid_st
 use macvpn_core::native::NativeKind;
 use macvpn_core::status::RootStatus;
 use macvpn_core::update::{Release, ReleaseAsset};
+use macvpn_platform_mac::mvpn_client::MvpnClient;
 use macvpn_platform_mac::setup_checker::SetupReport;
 use macvpn_platform_mac::temp_dir::{make_private_temp_directory, write_script};
 use macvpn_platform_mac::update_installer::{InstallerError, UpdateSteps, VerifiedDownload};
@@ -64,6 +69,8 @@ const CONTROL_RESULT: &str = "81111111-2222-4333-8444-555555555555";
 const CONTROL_VPN: &str = "91111111-2222-4333-8444-555555555555";
 const LIVE_RESULT: &str = "C1111111-2222-4333-8444-555555555555";
 const LIVE_MENU_RESULT: &str = "C2111111-2222-4333-8444-555555555555";
+/// The folders step's connection: dragged into a folder by `folders.js`, then carries its result.
+const FOLDERS_RESULT: &str = "E1111111-2222-4333-8444-555555555555";
 /// [`FakeNative`]'s system VPNs: listed from the start, removed by the live step; added by it.
 const LIVE_A: &str = "D1111111-2222-4333-8444-555555555555";
 const LIVE_B: &str = "D2111111-2222-4333-8444-555555555555";
@@ -73,6 +80,34 @@ const CRED_RETRY: &str = "B1111111-2222-4333-8444-555555555555";
 /// What `credentials.js` types (compared here, never logged).
 const CRED_USER: &str = "smoke-user";
 const CRED_PASSWORD: &str = "smoke-pass-4711";
+/// The shared credential step's connections (OpenVPN, a bare `auth-user-pass`, nothing stored), and what
+/// `shared.js` / `shared-prompt.js` enter (compared here, never logged).
+const SHARED_ONE: &str = "E3111111-2222-4333-8444-555555555555";
+const SHARED_TWO: &str = "E4111111-2222-4333-8444-555555555555";
+const SHARED_USER: &str = "smoke-shared";
+const SHARED_PASSWORD: &str = "smoke-shared-pass";
+
+/// The smoke run's 1.1 Keychain item (the in-memory one): the migration must move it into the vault.
+const SEEDED_L2TP: &str = "31111111-2222-4333-8444-555555555555";
+const SEEDED_PSK: &str = "seeded-psk-0815";
+
+/// A smoke run seeds the sandbox's in-memory "old Keychain" with one item (`SEEDED_L2TP`'s PSK).
+pub fn seed_legacy_keychain(env: &Environment, memory: &macvpn_platform_mac::secrets::InMemoryKeychain) {
+    use macvpn_platform_mac::secrets::KeychainBackend;
+    if smoke_dir_of(env).is_some() {
+        memory.write(SEEDED_PSK.as_bytes(), "local.macvpn.secrets", &format!("{SEEDED_L2TP}.psk"));
+    }
+}
+
+/// The recovery key of the vault the smoke run created (for its recovery step; never logged).
+static RECOVERY_KEY: Mutex<Option<zeroize::Zeroizing<String>>> = Mutex::new(None);
+
+/// `vault_create` hands its key over in a smoke run (debug builds only).
+pub fn remember_recovery_key(key: &str) {
+    if std::env::var_os("MACVPN_SMOKE_DIR").is_some() {
+        *RECOVERY_KEY.lock().unwrap_or_else(PoisonError::into_inner) = Some(zeroize::Zeroizing::new(key.to_string()));
+    }
+}
 
 fn smoke_dir(state: &AppState) -> Option<PathBuf> {
     smoke_dir_of(&state.env)
@@ -119,13 +154,24 @@ impl RootClient for FakeRoot {
             .collect())
     }
 
-    fn up(&self, kind: VPNKind, id: &Uuid, secrets: &Secrets, _: bool, _: &[String]) -> Result<(), String> {
-        // Which credentials arrived on "stdin", never their values.
-        let set = |name: &str, value: &Option<String>| {
-            value.as_deref().is_some_and(|v| !v.is_empty()).then(|| format!(" {name}=set"))
+    fn up(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        _: bool,
+        _: &[String],
+    ) -> Result<(), String> {
+        // The stdin `mvpn up` would read (root layer 8: the config frame, then the secrets), read back as the root
+        // layer does. Which credentials arrived, never their values.
+        let stdin = MvpnClient::up_stdin(config, secrets);
+        let Some(names) = framed_secret_names(&stdin, config) else {
+            eprintln!("MacVPN smoke: fake root: up {} ERROR bad stdin frame", uuid_string(id));
+            return Err("bad stdin frame".into());
         };
         let fields: String =
-            [set("username", &secrets.username), set("password", &secrets.password)].into_iter().flatten().collect();
+            ["username", "password"].into_iter().filter(|n| names.contains(n)).map(|n| format!(" {n}=set")).collect();
         eprintln!("MacVPN smoke: fake root: up {}{fields}", uuid_string(id));
         std::thread::sleep(Duration::from_millis(500));
         {
@@ -151,6 +197,28 @@ impl RootClient for FakeRoot {
     fn respond(&self, _: &Uuid, _: AuthResponseKind, _: &str) -> Result<(), String> {
         Ok(())
     }
+}
+
+/// Reads `mvpn up`'s framed stdin back: `config <length>\n`, exactly that many config bytes (equal to `config`),
+/// then `key=value` secret lines. The keys with a non-empty value; `None`: a malformed frame.
+fn framed_secret_names(stdin: &[u8], config: &[u8]) -> Option<Vec<&'static str>> {
+    let newline = stdin.iter().position(|b| *b == b'\n')?;
+    let length: usize = std::str::from_utf8(&stdin[..newline]).ok()?.strip_prefix("config ")?.parse().ok()?;
+    let rest = &stdin[newline + 1..];
+    let (framed, lines) = (rest.get(..length)?, rest.get(length..)?);
+    if framed != config {
+        return None;
+    }
+    let lines = std::str::from_utf8(lines).ok()?;
+    let mut names = Vec::new();
+    for line in lines.lines() {
+        let (key, value) = line.split_once('=')?;
+        let name = ["username", "password", "psk", "keypass", "otp", "challenge"].into_iter().find(|n| *n == key)?;
+        if !value.is_empty() {
+            names.push(name);
+        }
+    }
+    Some(names)
 }
 
 /// The smoke run's native layer: a system VPN list the driver changes. Start and stop only log (and set the
@@ -215,14 +283,14 @@ impl NativeController for FakeNative {
     }
 }
 
-/// The mock System Status report: Homebrew is there, `sstpc` is missing, root layer 6 is installed (7 bundled).
+/// The mock System Status report: Homebrew is there, `sstpc` is missing, root layer 7 is installed (8 bundled).
 pub fn setup_report(state: &AppState) -> Option<SetupReport> {
     smoke_dir(state)?;
     Some(SetupReport {
         brew_prefix: Some("/opt/homebrew".into()),
         missing_tools: vec!["sstpc".into()],
-        installed_root_version: Some("6".into()),
-        bundled_root_version: Some("7".into()),
+        installed_root_version: Some("7".into()),
+        bundled_root_version: Some("8".into()),
         sudo_works: true,
         missing_root_files: vec![],
     })
@@ -316,9 +384,12 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         return;
     };
     state.updates.consider(mock_release());
-    // MACVPN_SMOKE_DARK (`SMOKE_DARK=1`): the app's windows in dark mode, for the screenshots.
+    // MACVPN_SMOKE_DARK (`SMOKE_DARK=1`): the app's windows in dark mode, for the screenshots; MACVPN_SMOKE_LIGHT
+    // (`SMOKE_LIGHT=1`): in light mode, whatever the system's setting.
     if std::env::var_os("MACVPN_SMOKE_DARK").is_some() {
-        eprintln!("MacVPN smoke: dark={}", macvpn_platform_mac::app_hooks::force_dark_appearance());
+        eprintln!("MacVPN smoke: dark={}", macvpn_platform_mac::app_hooks::force_appearance(true));
+    } else if std::env::var_os("MACVPN_SMOKE_LIGHT").is_some() {
+        eprintln!("MacVPN smoke: light={}", macvpn_platform_mac::app_hooks::force_appearance(false));
     }
     // The language the core picked from the preferred languages (`scripts/smoke-manage.sh` can force it).
     eprintln!("MacVPN smoke: language {}", macvpn_core::l10n::AppLanguage::current().raw_value());
@@ -326,6 +397,8 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
     let state = state.clone();
     std::thread::spawn(move || {
         std::thread::sleep(Duration::from_secs(2));
+        // First the vault: the seeded 1.1 data is migration input (`vault-create.js`).
+        vault_create(&app, &state, &dir);
         for (window, script, id, prefix) in [
             ("manage", "manage.js", MANAGE_RESULT, "SMOKE"),
             ("setup", "setup.js", SETUP_RESULT, "SETUP"),
@@ -338,11 +411,19 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         prompts(&app, &state, &dir);
         eprintln!("MacVPN smoke: dock: prompt only regular={}", regular(&app));
         credentials(&app, &state, &dir);
+        backup(&app, &state, &dir);
         control(&app, &state, &dir);
         live(&app, &state, &dir);
+        folders(&app, &state, &dir);
         menu_shape(&app);
+        shared(&app, &state, &dir);
+        manage_shot(&app);
+        popover_shots(&app, &dir);
         let result = run_script(&app, &dir, "manage", "quit.js", &|| renamed(&state, QUIT_RESULT, "QUIT"));
         eprintln!("MacVPN smoke: quit: {}", result.unwrap_or_else(|e| format!("ERROR {e}")));
+        // Lock, unlock with the password (after a wrong one), with the recovery key, and with the new password.
+        vault_lock_unlock(&app, &state, &dir);
+        dump(&state);
         // Last: an unsaved change for the shell's quit request (logout's way, through applicationShouldTerminate).
         let ready = run_script(&app, &dir, "manage", "system.js", &|| {
             state.connections.has_unsaved_changes().then(|| "unsaved change ready".to_string())
@@ -411,6 +492,38 @@ fn menu_shape(app: &AppHandle) {
     }
     shoot(app, crate::tray::MENU_WINDOW, "menu", Duration::ZERO);
     crate::tray::hide_menu(app);
+}
+
+/// With screenshots on: the Connections window with the folder tree and its Credentials section open.
+fn manage_shot(app: &AppHandle) {
+    if shots_dir().is_none() {
+        return;
+    }
+    if let Err(e) = crate::commands::open(app, "manage") {
+        return eprintln!("MacVPN smoke: shot manage-credentials ERROR {e}");
+    }
+    std::thread::sleep(Duration::from_secs(1));
+    if let Some(window) = app.get_webview_window("manage") {
+        let _ = window.eval("document.querySelector('button.shared-credentials')?.click();");
+    }
+    shoot(app, "manage", "manage-credentials", Duration::from_secs(2));
+}
+
+/// With screenshots on: the Connections window with the New menu open, then a connection's context menu at the
+/// window's right edge (`popover-shots.js`; manage.js checks they lie inside the window).
+fn popover_shots(app: &AppHandle, dir: &Path) {
+    if shots_dir().is_none() {
+        return;
+    }
+    let source = match std::fs::read_to_string(dir.join("popover-shots.js")) {
+        Ok(source) => source,
+        Err(e) => return eprintln!("MacVPN smoke: shot new-menu ERROR {e}"),
+    };
+    if let Err(e) = crate::commands::open(app, "manage").and_then(|()| eval(app, "manage", with_shot(&source))) {
+        return eprintln!("MacVPN smoke: shot new-menu ERROR {e}");
+    }
+    shoot(app, "manage", "new-menu", Duration::from_secs(1));
+    shoot(app, "manage", "context-menu", Duration::from_secs(2));
 }
 
 /// `MACVPN_SMOKE_SHOTS`: where the shell puts the screenshots (`scripts/smoke-manage.sh`, `SMOKE_SHOTS`).
@@ -536,7 +649,7 @@ fn control(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     let say = |line: String| eprintln!("MacVPN smoke: control: {line}");
     // The mock System Status report has an outdated root layer: the client's `up` would be `setup_required`.
     *state.setup.write().unwrap_or_else(PoisonError::into_inner) =
-        SetupReport { installed_root_version: Some("7".into()), ..setup_report(state).unwrap_or_default() };
+        SetupReport { installed_root_version: Some("8".into()), ..setup_report(state).unwrap_or_default() };
     let socket = state.env.application_support().join("control").join("macvpn.sock");
     let source = match std::fs::read_to_string(dir.join("control.js")) {
         Ok(source) => source,
@@ -634,6 +747,24 @@ fn live(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         .and_then(|source| eval(app, crate::tray::MENU_WINDOW, source))
         .map(|()| wait_for(30, || renamed(state, LIVE_MENU_RESULT, "MENU")).unwrap_or_else(|| "no result".into()));
     say(format!("menu: {}", menu.unwrap_or_else(|e| format!("ERROR {e}"))));
+}
+
+/// Folders and colours (spec 3) through the Connections window (`folders.js`, see the module docs), then the
+/// backend's view of the result, logged as `MacVPN smoke: folders: …` lines.
+fn folders(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    let say = |line: String| eprintln!("MacVPN smoke: folders: {line}");
+    let result = run_script(app, dir, "manage", "folders.js", &|| renamed(state, FOLDERS_RESULT, "FOLDERS"));
+    say(format!("ui: {}", result.unwrap_or_else(|e| format!("ERROR {e}"))));
+    let tree = state.manager.folder_tree();
+    let work = state.manager.folders().into_iter().find(|f| f.name == "SMOKE Work");
+    let placed = state.manager.placement(FOLDERS_RESULT).and_then(|p| p.folder);
+    say(format!(
+        "store work={} colour={} subfolders={} item_in_work={}",
+        work.is_some(),
+        work.as_ref().and_then(|w| w.color).map_or("none", |c| c.as_str()),
+        work.as_ref().map_or(0, |w| tree.children(Some(w.id)).len()),
+        work.as_ref().is_some_and(|w| placed == Some(w.id)),
+    ));
 }
 
 /// The credential prompt end to end (see the module docs), logged as `MacVPN smoke: credentials: …` lines.
@@ -746,6 +877,7 @@ fn credentials(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         username: None,
         retry: true,
         deadline: PromptDeadline::new(Date::now()),
+        credential: None,
     };
     let waiting = std::thread::spawn(move || broker.present(prompt, Date::now()));
     let Some((label, view)) = window() else { return say("ERROR no largest window".into()) };
@@ -761,4 +893,415 @@ fn credentials(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     };
     let closed = wait_for(10, || app.get_webview_window(&label).is_none().then_some(())).is_some();
     say(format!("largest fields={} answer={answer} closed={closed}", view.fields.join("+")));
+}
+
+// MARK: - The vault
+
+/// What the smoke run types as the master password: at creation, after the recovery reset (compared by the vault
+/// only, never logged).
+const MASTER: &str = "smoke-master-4711";
+const MASTER_RESET: &str = "smoke-reset-0815";
+const MASTER_CHANGED: &str = "smoke-changed-2024";
+
+/// Where the connections are written for `scripts/smoke-manage.sh` to check (the vault is encrypted): the 1.1 layout
+/// (`connections/<UUID>/{meta.json,config}`) under the sandbox home. Smoke runs only (test data, no secret).
+pub fn dump(state: &AppState) {
+    let Some(_) = smoke_dir(state) else { return };
+    let dir = state.env.home.join("smoke-dump/connections");
+    let _ = std::fs::remove_dir_all(&dir);
+    let store = macvpn_core::store::ConnectionStore::new(dir);
+    let repo = &state.connections.deps().store;
+    let Ok(list) = repo.list() else { return eprintln!("MacVPN smoke: dump: ERROR the vault is not readable") };
+    for c in &list {
+        let config = repo.load_config(&c.id).ok();
+        if let Err(e) = store.save(c, config.as_deref()) {
+            eprintln!("MacVPN smoke: dump: ERROR {e}");
+        }
+    }
+    eprintln!("MacVPN smoke: dump: {} connections", list.len());
+}
+
+/// A vault window's script with its placeholders filled in (`__MODE__`, `__PASSWORD__`, `__NEW_PASSWORD__`,
+/// `__RECOVERY_KEY__`); evaluated in `label`.
+fn vault_script(app: &AppHandle, dir: &Path, label: &str, script: &str, values: &[(&str, &str)]) -> Result<(), String> {
+    let mut source = std::fs::read_to_string(dir.join(script)).map_err(|e| e.to_string())?;
+    for (placeholder, value) in values {
+        source = source.replace(placeholder, value);
+    }
+    wait_for(20, || app.get_webview_window(label).map(|_| ())).ok_or("no window")?;
+    eval(app, label, source)
+}
+
+/// The create window in migration mode (see the module docs), logged as `MacVPN smoke: vault: …` lines.
+fn vault_create(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_app_core::deps::SecretField;
+    let say = |line: String| eprintln!("MacVPN smoke: vault: {line}");
+    let setup = state.vault.view(false).1;
+    say(format!(
+        "create window migrating={} keychain_items={}",
+        setup.as_ref().is_some_and(|s| s.migrating),
+        setup.as_ref().map_or(0, |s| s.keychain_items)
+    ));
+    if let Err(e) = vault_script(app, dir, crate::vault::CREATE_WINDOW, "vault-create.js", &[("__PASSWORD__", MASTER)])
+    {
+        return say(format!("ERROR {e}"));
+    }
+    let done = wait_for(120, || {
+        (state.vault.lifecycle.state() == macvpn_app_core::vault::VaultState::Unlocked
+            && app.get_webview_window(crate::vault::CREATE_WINDOW).is_none())
+        .then_some(())
+    })
+    .is_some();
+    let support = state.env.application_support();
+    let files_gone = !support.join("connections").exists() && !support.join("connection-order.json").exists();
+    let marker = support.join(macvpn_app_core::migration::MARKER).exists();
+    let key = recovery_key().is_some();
+    let secret = parse_uuid(SEEDED_L2TP)
+        .and_then(|id| state.connections.deps().secrets.get(&id, SecretField::Psk))
+        .is_some_and(|psk| psk == SEEDED_PSK);
+    let pinned = state.manager.is_pinned("21111111-2222-4333-8444-555555555555");
+    say(format!(
+        "created done={done} connections={} secret={} pinned={pinned} files_gone={files_gone} marker={marker} key={key}",
+        state.manager.connections().len(),
+        if secret { "yes" } else { "no" },
+    ));
+}
+
+fn recovery_key() -> Option<zeroize::Zeroizing<String>> {
+    RECOVERY_KEY.lock().unwrap_or_else(PoisonError::into_inner).clone()
+}
+
+/// Locks the vault the way "Lock now" does.
+fn lock(state: &Arc<AppState>) {
+    state.vault.lifecycle.lock();
+    crate::vault::after_lock(state);
+}
+
+/// No seeded connection name anywhere in the view model (the menu and every window read it).
+fn names_hidden(state: &AppState) -> bool {
+    let vm = format!("{:?}", state.view_model());
+    !vm.contains("Seeded") && !vm.contains("Zz ")
+}
+
+/// Opens the unlock window (unless the menu's "Unlock…" did), runs `vault-unlock.js`, and waits for the vault to
+/// open.
+fn unlock_with(app: &AppHandle, state: &Arc<AppState>, dir: &Path, values: &[(&str, &str)]) -> bool {
+    let opened = if app.get_webview_window(crate::vault::UNLOCK_WINDOW).is_some() {
+        Ok(())
+    } else {
+        crate::vault::open_window(app, state, crate::vault::UNLOCK_WINDOW)
+    };
+    if let Err(e) = opened.and_then(|()| vault_script(app, dir, crate::vault::UNLOCK_WINDOW, "vault-unlock.js", values))
+    {
+        eprintln!("MacVPN smoke: vault: ERROR {e}");
+        return false;
+    }
+    wait_for(90, || {
+        (state.vault.lifecycle.is_unlocked() && app.get_webview_window(crate::vault::UNLOCK_WINDOW).is_none())
+            .then_some(())
+    })
+    .is_some()
+}
+
+/// Lock now from the menu, the locked menu, unlock (password after a wrong one, recovery key, new password), and the
+/// master password changed in its window (see the module docs), logged as `MacVPN smoke: vault: …` lines.
+fn vault_lock_unlock(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    let say = |line: String| eprintln!("MacVPN smoke: vault: {line}");
+    let count = || state.manager.connections().len();
+    let before = count();
+    // The menu: "Show “Lock Now”" in the settings, "Lock Now", the locked menu's "Unlock…" (vault-menu.js).
+    let menu = vault_script(app, dir, crate::tray::MENU_WINDOW, "vault-menu.js", &[("__MODE__", "lock")]);
+    let locked = wait_for(30, || (!state.vault.lifecycle.is_unlocked()).then_some(())).is_some();
+    let hidden = locked && names_hidden(state);
+    let window = wait_for(30, || app.get_webview_window(crate::vault::UNLOCK_WINDOW).map(|_| ())).is_some();
+    say(format!(
+        "menu lock_now={locked} names_hidden={hidden} unlock_window={window}{}",
+        menu.err().map(|e| format!(" ERROR {e}")).unwrap_or_default()
+    ));
+    say(format!("locked state={:?} names_hidden={}", state.vault.view(false).0.state, names_hidden(state)));
+    let ok = unlock_with(app, state, dir, &[("__MODE__", "wrong-then-right"), ("__PASSWORD__", MASTER)]);
+    say(format!("unlocked password={ok} names_back={}", count() == before));
+
+    let Some(key) = recovery_key() else { return say("ERROR no recovery key".into()) };
+    lock(state);
+    let ok = unlock_with(
+        app,
+        state,
+        dir,
+        &[("__MODE__", "recovery"), ("__RECOVERY_KEY__", key.as_str()), ("__NEW_PASSWORD__", MASTER_RESET)],
+    );
+    say(format!("unlocked recovery={ok} names_back={}", count() == before));
+
+    lock(state);
+    let ok = unlock_with(app, state, dir, &[("__MODE__", "password"), ("__PASSWORD__", MASTER_RESET)]);
+    say(format!("unlocked new_password={ok} names_back={}", count() == before));
+
+    // "Change Master Password…" in the menu's settings, then the password window (vault-password.js).
+    let changed = vault_script(app, dir, crate::tray::MENU_WINDOW, "vault-menu.js", &[("__MODE__", "change")])
+        .and_then(|()| {
+            vault_script(
+                app,
+                dir,
+                crate::vault::PASSWORD_WINDOW,
+                "vault-password.js",
+                &[("__PASSWORD__", MASTER_RESET), ("__NEW_PASSWORD__", MASTER_CHANGED)],
+            )
+        })
+        .map(|()| {
+            wait_for(60, || app.get_webview_window(crate::vault::PASSWORD_WINDOW).is_none().then_some(())).is_some()
+        });
+    say(format!(
+        "password window closed={}",
+        changed.unwrap_or_else(|e| {
+            say(format!("ERROR {e}"));
+            false
+        })
+    ));
+    lock(state);
+    let ok = unlock_with(app, state, dir, &[("__MODE__", "password"), ("__PASSWORD__", MASTER_CHANGED)]);
+    say(format!("unlocked changed_password={ok} names_back={}", count() == before));
+}
+
+/// Shared credentials end to end (spec 3a; see `scripts/smoke/shared.js`), logged as `MacVPN smoke: shared: …`:
+/// the Credentials section adds "Smoke Cred" (a user name, no password) and links the two seeded "Zz Shared"
+/// connections through their editors' selector; connecting the first asks for the password only, naming the
+/// credential and "used by 2", and "Save" stores it in the credential, so the second connects without a prompt;
+/// Delete with "Copy into each connection" gives both their own copies; an import whose metadata names "Smoke
+/// Import" asks first (with the config's server) and links only after the answer.
+fn shared(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_app_core::deps::SecretField;
+    let say = |line: String| eprintln!("MacVPN smoke: shared: {line}");
+    let (Ok(source), Ok(prompt_source)) =
+        (std::fs::read_to_string(dir.join("shared.js")), std::fs::read_to_string(dir.join("shared-prompt.js")))
+    else {
+        return say("ERROR shared.js / shared-prompt.js".into());
+    };
+    let find = |id: &str| {
+        let id = parse_uuid(id)?;
+        state.manager.connections().into_iter().find(|c| c.id == id)
+    };
+    let (Some(one), Some(two)) = (find(SHARED_ONE), find(SHARED_TWO)) else {
+        return say("ERROR the seeded connections are missing".into());
+    };
+    let Some(credentials) = state.connections.shared_credentials() else { return say("ERROR no vault".into()) };
+    let secrets = state.connections.deps().secrets.clone();
+    let phase = |phase: &str| {
+        let script = format!("window.__smokeShared = '{phase}';\n{source}");
+        if let Err(e) = crate::commands::open(app, "manage").and_then(|()| eval(app, "manage", script)) {
+            say(format!("ERROR {phase}: {e}"));
+        }
+    };
+    let smoke_cred = || credentials.list().ok()?.into_iter().find(|s| s.credential.name == "Smoke Cred");
+
+    // 1. Add the credential and link both connections, in the window.
+    phase("setup");
+    let linked = wait_for(60, || {
+        let a = secrets.credential_for(&one.id)?;
+        let b = secrets.credential_for(&two.id)?;
+        (a.name == "Smoke Cred" && b.name == "Smoke Cred").then_some(a.used_by)
+    });
+    let user_ok = smoke_cred().is_some_and(|c| c.credential.username == SHARED_USER && !c.credential.has_password);
+    say(format!("linked={} used_by={} user={user_ok}", linked.is_some(), linked.unwrap_or(0)));
+
+    // 2. The first connect asks for the password only, naming the credential; "Save" stores it there.
+    let connect = |c: &macvpn_core::models::Connection| {
+        let (manager, c) = (state.manager.clone(), c.clone());
+        std::thread::spawn(move || manager.connect(&c, false))
+    };
+    let worker = connect(&one);
+    let window = wait_for(15, || state.credential_broker.pending().first().cloned()).and_then(|p| {
+        let label = macvpn_app_core::notify::credential_window_label(p.id);
+        wait_for(10, || app.get_webview_window(&label).map(|_| (label.clone(), p.clone())))
+    });
+    let Some((label, view)) = window else { return say("ERROR no credential window".into()) };
+    say(format!(
+        "prompt fields={} credential={} used_by={}",
+        view.fields.join("+"),
+        view.credential_name.as_deref().unwrap_or("-"),
+        view.used_by.unwrap_or(0)
+    ));
+    if let Err(e) = eval(app, &label, prompt_source) {
+        say(format!("ERROR {e}"));
+    }
+    let _ = worker.join();
+    let key_one = uuid_string(&one.id);
+    let connected = wait_for(15, || state.manager.state(&key_one).is_connected().then_some(())).is_some();
+    let saved = wait_for(10, || smoke_cred().filter(|c| c.credential.has_password)).is_some()
+        && secrets.get(&two.id, SecretField::Password).as_deref() == Some(SHARED_PASSWORD);
+    say(format!("first connected={connected} saved_in_credential={saved}"));
+
+    // The second linked connection: nothing to ask.
+    let key_two = uuid_string(&two.id);
+    let worker = connect(&two);
+    let asked = wait_for(5, || {
+        let asked = state.credential_broker.prompt_for_connection(&key_two).is_some();
+        (asked || state.manager.state(&key_two).is_connected()).then_some(asked)
+    });
+    if asked == Some(true) {
+        state.credential_broker.dismiss(&key_two);
+    }
+    let _ = worker.join();
+    say(format!("second prompt={} connected={}", asked.unwrap_or(true), state.manager.state(&key_two).is_connected()));
+    state.manager.disconnect(&one);
+    state.manager.disconnect(&two);
+
+    // 3. Delete, "Copy into each connection": both keep the values as their own.
+    phase("delete");
+    let copied = wait_for(30, || {
+        let own = |c: &macvpn_core::models::Connection| {
+            secrets.credential_for(&c.id).is_none()
+                && secrets.get(&c.id, SecretField::Username).as_deref() == Some(SHARED_USER)
+                && secrets.get(&c.id, SecretField::Password).as_deref() == Some(SHARED_PASSWORD)
+        };
+        (smoke_cred().is_none() && own(&one) && own(&two)).then_some(())
+    })
+    .is_some();
+    say(format!("deleted copied={copied}"));
+
+    // 4. An import naming an existing credential: the question first, the link only after "Use".
+    if let Err(e) = state.connections.add_credential("Smoke Import", "import-user", None) {
+        return say(format!("ERROR {e}"));
+    }
+    let Some(base) = state.env.staging_parent() else { return say("ERROR no sandbox tmp".into()) };
+    let Ok(folder) = make_private_temp_directory("macvpn-smoke-import", &base) else {
+        return say("ERROR no import folder".into());
+    };
+    let path = folder.join("Zz Shared import.ovpn");
+    let text = "# macvpn-meta: {\"credentialName\":\"Smoke Import\"}\nclient\ndev tun\nremote vpn.example.com 1194\nauth-user-pass\n";
+    if let Err(e) = std::fs::write(&path, text) {
+        return say(format!("ERROR {e}"));
+    }
+    let importing = state.clone();
+    let worker = std::thread::spawn(move || importing.connections.import_paths(&[path]));
+    let imported = || state.connections.deps().store.list().ok()?.into_iter().find(|c| c.name == "Zz Shared import");
+    let asked = wait_for(15, || state.connections.questions().current()).is_some();
+    let before = imported().is_some_and(|c| secrets.credential_for(&c.id).is_none());
+    say(format!("import asked={asked} unlinked_before_answer={before}"));
+    phase("import");
+    let _ = worker.join();
+    let after = imported().and_then(|c| secrets.credential_for(&c.id)).map(|c| c.name);
+    let stored = imported().and_then(|c| state.connections.deps().store.load_config(&c.id).ok());
+    say(format!(
+        "import linked={} meta_stripped={}",
+        after.as_deref() == Some("Smoke Import"),
+        stored.is_some_and(|t| t.starts_with("client\n"))
+    ));
+    let _ = std::fs::remove_dir_all(&folder);
+}
+
+/// The backup step's seeded connections: the canary (its name, config line and password must never be in the file
+/// in clear) and one added after the backup (gone after "Replace everything").
+const BACKUP_CANARY: &str = "F1111111-2222-4333-8444-555555555555";
+const BACKUP_EXTRA: &str = "F2111111-2222-4333-8444-555555555555";
+const BACKUP_CANARY_NAME: &str = "Smoke Backup canary";
+const BACKUP_CANARY_LINE: &str = "remote smoke-canary.example.com 1194";
+const BACKUP_CANARY_SECRET: &str = "smoke-canary-secret-4711";
+/// The smoke run's backup file, in place of the save and open panels: `<sandbox>/tmp/smoke.macvpnbackup`.
+pub fn backup_file(state: &AppState) -> Option<PathBuf> {
+    smoke_dir(state)?;
+    let dir = state.env.home.join("tmp");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join("smoke.macvpnbackup"))
+}
+
+/// The vault's backup service (attached in `build_state`).
+fn backup_service(state: &AppState) -> Result<Arc<macvpn_app_core::backup::BackupService>, String> {
+    state.backup.service().ok_or_else(|| "no backup service".to_string())
+}
+
+/// The full backup: `backup.js` backs the vault up into the sandbox `tmp` (the file must be 0600 and hold no seeded
+/// name, config line or secret in clear); the canary is renamed; `restore.js` first tries a wrong password (the
+/// generic message), then merges with Overwrite (the name is back); then a connection is added and the canary
+/// renamed again, and `restore.js` replaces everything (the name is back, the added connection gone, the control
+/// API not switched on although the backup had it on). `MacVPN smoke: backup: …`.
+fn backup(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_core::models::{Connection, SecretField};
+    let say = |line: String| eprintln!("MacVPN smoke: backup: {line}");
+    let (Ok(backup_js), Ok(restore_js)) =
+        (std::fs::read_to_string(dir.join("backup.js")), std::fs::read_to_string(dir.join("restore.js")))
+    else {
+        return say("ERROR backup.js / restore.js missing".into());
+    };
+    let service = match backup_service(state) {
+        Ok(service) => service,
+        Err(e) => return say(format!("ERROR no vault: {e}")),
+    };
+    let vault = service.vault().clone();
+    let (Some(canary_id), Some(extra_id)) = (parse_uuid(BACKUP_CANARY), parse_uuid(BACKUP_EXTRA)) else { return };
+    let save = |id: Uuid, name: &str| {
+        let c = Connection::with_id(id, name, VPNKind::Openvpn, Date::now());
+        let config = format!("client\ndev tun\n{BACKUP_CANARY_LINE}\n");
+        vault.with(|v| v.save_connection(&c, Some(&config)))
+    };
+    let name = || {
+        vault
+            .with_read(|v| Ok(v.connections()?.into_iter().find(|s| s.connection.id == canary_id)))
+            .ok()
+            .flatten()
+            .map(|s| s.connection.name)
+    };
+    let seeded = save(canary_id, BACKUP_CANARY_NAME).and_then(|()| {
+        vault.with(|v| v.set_secret(&uuid_string(&canary_id), SecretField::Password, BACKUP_CANARY_SECRET))
+    });
+    if let Err(e) = seeded {
+        return say(format!("ERROR seeding the vault: {e}"));
+    }
+    // The backup carries the control API on; the restore must not switch it on by itself.
+    state.prefs.set_bool(crate::control::ENABLED_KEY, true);
+    let Some(file) = backup_file(state) else { return };
+    let _ = std::fs::remove_file(&file);
+
+    // 1. Back up.
+    let run = |window: &str, source: String| crate::backup::show(app, window).and_then(|()| eval(app, window, source));
+    if let Err(e) = run(crate::backup::BACKUP_WINDOW, backup_js.replace("__MASTER__", MASTER)) {
+        return say(format!("ERROR {e}"));
+    }
+    let written = wait_for(60, || {
+        let closed = app.get_webview_window(crate::backup::BACKUP_WINDOW).is_none();
+        (closed && file.exists()).then_some(())
+    });
+    state.prefs.set_bool(crate::control::ENABLED_KEY, false);
+    let Some(()) = written else { return say("ERROR no backup file".into()) };
+    use std::os::unix::fs::PermissionsExt;
+    let mode = std::fs::metadata(&file).map(|m| m.permissions().mode() & 0o777).unwrap_or(0);
+    let bytes = std::fs::read(&file).unwrap_or_default();
+    let clear = [BACKUP_CANARY_NAME, BACKUP_CANARY_LINE, BACKUP_CANARY_SECRET, "Seeded A"]
+        .iter()
+        .any(|needle| bytes.windows(needle.len()).any(|w| w == needle.as_bytes()));
+    say(format!("saved mode={mode:o} clear={}", if clear { "yes" } else { "no" }));
+
+    // 2. A wrong password, then Merge with Overwrite.
+    if let Err(e) = save(canary_id, "Smoke changed") {
+        return say(format!("ERROR {e}"));
+    }
+    if let Err(e) = run(crate::backup::RESTORE_WINDOW, format!("window.__SMOKE_RESTORE__ = 'merge';\n{restore_js}")) {
+        return say(format!("ERROR {e}"));
+    }
+    let merged = wait_for(90, || {
+        let closed = app.get_webview_window(crate::backup::RESTORE_WINDOW).is_none();
+        (closed && name().as_deref() == Some(BACKUP_CANARY_NAME)).then_some(())
+    });
+    say(format!("merge restored={}", if merged.is_some() { "yes" } else { "no" }));
+
+    // 3. Replace everything.
+    if let Err(e) = save(canary_id, "Smoke changed again").and_then(|()| save(extra_id, "Smoke added later")) {
+        return say(format!("ERROR {e}"));
+    }
+    if let Err(e) = run(crate::backup::RESTORE_WINDOW, format!("window.__SMOKE_RESTORE__ = 'replace';\n{restore_js}")) {
+        return say(format!("ERROR {e}"));
+    }
+    let replaced = wait_for(90, || {
+        let closed = app.get_webview_window(crate::backup::RESTORE_WINDOW).is_none();
+        (closed && name().as_deref() == Some(BACKUP_CANARY_NAME)).then_some(())
+    });
+    let extra_gone =
+        vault.with_read(|v| Ok(v.connections()?.iter().all(|s| s.connection.id != extra_id))).unwrap_or(false);
+    let control = state.prefs.bool(crate::control::ENABLED_KEY).unwrap_or(false);
+    say(format!(
+        "replace restored={} extra-gone={} control-api={}",
+        if replaced.is_some() { "yes" } else { "no" },
+        if extra_gone { "yes" } else { "no" },
+        if control { "on" } else { "off" }
+    ));
+    let _ = std::fs::remove_file(&file);
 }

@@ -2,11 +2,21 @@
 
 [Magyar változat](user-guide.hu.md)
 
-MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, passwords are kept in the Keychain, and every connection has a live log. This guide describes version 1.1 (see [What's new in 1.1](#whats-new-in-11)). The menu's **Help** item opens it.
+MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.2 (see [What's new in 1.2](#whats-new-in-12)). The menu's **Help** item opens it.
 
 For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference. Developers who want another program on this Mac to bring MacVPN connections up and down (**Paired apps** in the Connections window) should read the [Control API guide](control-api.md).
 
 > **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
+
+## What's new in 1.2
+
+- **Encrypted vault.** Your connections, their passwords and the rest of MacVPN's data are now in one encrypted file, the vault, protected by a master password. A recovery key gets you back in if you forget the password. With **Unlock automatically** (on by default) MacVPN opens without asking; **Lock Now** locks it on demand. See [11](#11-vault).
+- **Moving from 1.1.** On the first launch of 1.2, MacVPN moves your 1.1 connections and saved passwords into the vault, checks them, and only then deletes the old copies. macOS may ask for Keychain access once per old item. The root layer goes from 7 to 8, which needs your admin password once. Back up first: see [8.2](#82-upgrading-from-11).
+- **Folders and colours.** Group connections and system VPNs into nested folders, give folders and connections one of 12 colours, and drag them where you want them. See [12](#12-folders-and-colours).
+- **Shared credentials.** One user name and password used by several connections. Change it once, and every connection that uses it signs in with the new one. See [13](#13-shared-credentials).
+- **Full backup and restore.** **Back Up Everything…** writes one encrypted file with every connection, secret, folder and shared credential; **Restore from Backup…** brings it back on this Mac or a new one. See [14](#14-backup-and-restore).
+- **Credential prompt.** Its checkbox is now **Save in vault**. IKEv2 with EAP sign-in now asks once more after a rejected password, like OpenVPN and SSTP. See [5.3](#53-credentials-asked-when-connecting).
+- **Licences.** The app bundle contains `THIRD-PARTY-NOTICES.txt` with the licences of the components MacVPN ships (among them SQLCipher).
 
 ## What's new in 1.1
 
@@ -26,9 +36,14 @@ For short step-by-step instructions, see the [How-to guide](how-to.en.md). This 
 5. [Connecting](#5-connecting)
 6. [Debug mode and the log](#6-debug-mode-and-the-log)
 7. [Troubleshooting from the log](#7-troubleshooting-from-the-log)
-8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x))
+8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x), [Upgrading from 1.1](#82-upgrading-from-11))
 9. [Uninstalling](#9-uninstalling)
 10. [Security notes](#10-security-notes)
+11. [Vault](#11-vault)
+12. [Folders and colours](#12-folders-and-colours)
+13. [Shared credentials](#13-shared-credentials)
+14. [Backup and restore](#14-backup-and-restore)
+15. [Vault FAQ](#15-vault-faq)
 
 ---
 
@@ -90,11 +105,13 @@ After launch, MacVPN appears as a shield icon in the menu bar. While one of its 
 - **shield with an exclamation mark:** an error (a failed connection, or the status cannot be queried)
 - **key:** a connection is waiting for authentication (see [5.2](#52-multi-factor-authentication-mfa))
 
-Click the icon to open the menu. Each connection is a card with the coloured bubble of its type, its name, its type and state, and a switch (see [5](#5-connecting)); with many connections the list scrolls. Below the cards:
+Click the icon to open the menu. Each connection is a card with the coloured bubble of its type, its name, its type and state, and a switch (see [5](#5-connecting)); with many connections the list scrolls. Folders appear as rows you can open and close (see [12](#12-folders-and-colours)). Below the cards:
 
 - three tiles: **New Connection / Import…**, **Manage Connections…** and **System Status**;
-- the **Settings** group (click it to open or close it): **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Launch at Login** and **Check for Updates Now**;
-- **Help** (opens this guide) and **Quit MacVPN**.
+- the **Settings** group (click it to open or close it): **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Check for Updates Now** and **Launch at Login**; then the vault settings **Unlock automatically**, **Show “Lock Now”**, **Change Master Password…** and **New Recovery Key…** (see [11](#11-vault)), and **Back Up Everything…** and **Restore from Backup…** (see [14](#14-backup-and-restore));
+- **Help** (opens this guide), **Lock Now** (when shown, see [11.4](#114-lock-now)) and **Quit MacVPN**.
+
+While the vault is locked, the menu shows only an **Unlock…** row, the number of active connections and **Quit MacVPN** (see [11.5](#115-the-locked-menu)). Before the vault exists, the row says **Set Up the Vault…**.
 
 When an update is available, an **Update available: vX.Y.Z** banner appears too. The hint at the bottom reminds you: **Option-click a switch: debug mode**.
 
@@ -102,7 +119,7 @@ If anything is missing, the **System Status** window opens automatically at laun
 
 1. **Homebrew.** If it is missing, the **Install…** button opens Terminal with the official installer. The installer asks for your administrator password. If the installer cannot be downloaded, the Terminal window says so and stops without running anything. When it finishes, come back and press **Check Again**.
 2. **VPN tools.** Next to the list of missing tools, the **Install** button runs `brew install`. The output is shown live in the window. The installation continues even if you close the window.
-3. **Permissions (root scripts + sudoers).** The **Authorize** button asks for the admin password once. It installs MacVPN's root layer: the single root binary `/usr/local/libexec/macvpn/mvpn` with its `VERSION` file (root layer 7), and the `/etc/sudoers.d/macvpn` rule. After that, connecting and disconnecting work without a password. The row shows **Installed (version 7)** when it is up to date. If an app update brings a newer root layer, it says **Update required (6 → 7)** (with the installed and the new version); if a file is missing, **Incomplete installation**. Press **Authorize** again. If connections are active, the window warns first: **Updating the system component will disconnect active VPN connections.**
+3. **Permissions (root scripts + sudoers).** The **Authorize** button asks for the admin password once. It installs MacVPN's root layer: the single root binary `/usr/local/libexec/macvpn/mvpn` with its `VERSION` file (root layer 8 in MacVPN 1.2), and the `/etc/sudoers.d/macvpn` rule. After that, connecting and disconnecting work without a password. The row shows **Installed (version 8)** when it is up to date. If an app update brings a newer root layer, it says **Update required (7 → 8)** (with the installed and the new version); if a file is missing, **Incomplete installation**. Press **Authorize** again. If connections are active, the window warns first: **Updating the system component will disconnect active VPN connections.**
 
 When all three are green, setup is done. L2TP and Cisco IPsec work without them.
 
@@ -121,12 +138,12 @@ MacVPN does not start automatically by default. To start it every time you log i
 
 You add connections in the **Connections** window. To open it, use the menu: **Manage Connections…** or **New Connection / Import…**.
 
-- The list is on the left: the connections created in MacVPN and the **system VPNs** (VPNs configured elsewhere in macOS, marked **System VPN** under their name) in one list, pinned ones on top under **Pinned** (see [5.1](#51-order-of-connections)). You can only start and stop system VPNs. For L2TP and Cisco IPsec system VPNs you can also store the shared secret in MacVPN (see [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco)).
-- From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec) or **Import from File…**. A new connection starts with a template and a name like "New OpenVPN"; rename it in the name field.
+- The list is on the left: the connections created in MacVPN and the **system VPNs** (VPNs configured elsewhere in macOS, marked **System VPN** under their name) in one tree with your folders, pinned ones on top of each folder (see [5.1](#51-order-of-connections) and [12](#12-folders-and-colours)). Below the list are **Credentials** (see [13](#13-shared-credentials)) and **Paired apps** (see [5.4](#54-paired-apps-control-api)). You can only start and stop system VPNs. For L2TP and Cisco IPsec system VPNs you can also store the shared secret in MacVPN (see [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco)).
+- From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec), **New Folder** or **Import from File…**. The same menu has **Back Up Everything…** and **Restore from Backup…** (see [14](#14-backup-and-restore)). A new connection starts with a template and a name like "New OpenVPN"; rename it in the name field.
 - The selected connection's header has **Connect** / **Disconnect**, **Connect in Debug Mode**, the export icon and the delete icon (**Delete**, with a confirmation). Below it are two tabs: **Settings** and **Log**.
 - If the status cannot be queried (for example the root layer is missing), a warning banner with a **System Status** button appears at the top of the window.
 
-Text-based types (OpenVPN, WireGuard, IKEv2) have a monospace editor. **Save** (⌘S) checks the config first. If it finds errors, they are listed in red under the editor with their line numbers (for example `Line 3: Forbidden directive: up – delete the line or comment it out (#)`), and nothing is saved. Risky OpenVPN settings appear in a yellow panel while you type (see [3.1](#31-openvpn)). Passwords have their own fields (**Authentication (stored in the Keychain)**). They go into the macOS Keychain, not into the config.
+Text-based types (OpenVPN, WireGuard, IKEv2) have a monospace editor. **Save** (⌘S) checks the config first. If it finds errors, they are listed in red under the editor with their line numbers (for example `Line 3: Forbidden directive: up – delete the line or comment it out (#)`), and nothing is saved. Risky OpenVPN settings appear in a yellow panel while you type (see [3.1](#31-openvpn)). Passwords have their own fields in the **Authentication** section. They go into MacVPN's encrypted vault, not into the config. Where a connection signs in with a user name and password, the **Password from** selector chooses between **Own username and password** and a shared credential (see [13](#13-shared-credentials)).
 
 SSTP, L2TP and Cisco IPsec have a form instead of a text editor (see [3.4](#34-l2tpipsec-and-cisco-ipsec) and [3.6](#36-sstp)).
 
@@ -140,7 +157,7 @@ The easiest way is to import the `.ovpn` file from your provider (**New → Impo
 
 - If the `.ovpn` refers to external files (for example `ca ca.crt`, `cert client.crt`, `key client.key`, `tls-auth ta.key`), the import reads them from next to the `.ovpn` and embeds them (into `<ca>…</ca>` blocks). So before importing, keep those files next to the `.ovpn`. If a file is missing, the import reports an error.
 - If the server asks for a username and password (an `auth-user-pass` line), fill in **Username** and **Password**.
-- If the private key is protected by a password (a password-protected PKCS#12 file, or an encrypted PEM key: `-----BEGIN ENCRYPTED PRIVATE KEY-----` or `Proc-Type: 4,ENCRYPTED`), enter it in **Private key password**. It is stored in the Keychain and passed to OpenVPN only while connecting.
+- If the private key is protected by a password (a password-protected PKCS#12 file, or an encrypted PEM key: `-----BEGIN ENCRYPTED PRIVATE KEY-----` or `Proc-Type: 4,ENCRYPTED`), enter it in **Private key password**. It is stored in the vault and passed to OpenVPN only while connecting.
 - MacVPN sorts every directive into three tiers (the full list is in [openvpn-directives.md](openvpn-directives.md)):
   - **Allowed** directives work as usual, for example `setenv CONFIG_VERSION "2.0.4"`, `remap-usr1 SIGTERM`, `pull-filter`, `machine-readable-output`.
   - **Risky settings** (for example `user nobody`, `group nogroup`, `route-noexec`, server-side or Windows-only options, and every directive MacVPN does not know) are shown in a yellow **Risky settings** panel, each with a short reason. Tick **I acknowledge these settings and the security risks** to save and connect. The acknowledgement covers exactly the risky directives present when you save: if you add another one later, you have to tick the box again.
@@ -222,7 +239,7 @@ The profile file is written to a private temporary folder (only you can read it)
 
 **Matching the macOS service.** Once the profile is installed, MacVPN remembers the ID of that macOS VPN service (a service with the same name and server address) and from then on connects, disconnects and shows the status by ID. A different VPN that happens to have the same name then appears in the list as a system VPN (marked **System VPN**). If MacVPN cannot tell which of several same-named services is its own, it does not connect (and does not pass the password) and shows: **More than one VPN service is named "<name>"…**. Rename or remove the other one in **System Settings → Network**.
 
-The **account name** is saved in the connection's settings file (`meta.json`) in plain text: it is not a secret. The password and the PSK are in the Keychain.
+The **account name** is saved with the connection's settings: it is not a secret, and it is written into the profile. The password and the PSK are in the vault. With a shared credential, the account name is only written into the profile, and MacVPN signs in with the shared credential (see [13](#13-shared-credentials)).
 
 ### 3.5 System VPNs: shared secret for L2TP / Cisco
 
@@ -233,7 +250,7 @@ For L2TP and Cisco IPsec system VPNs, the detail view has two fields:
 - **Shared secret (PSK)**
 - **Password (optional, if not saved in macOS)**
 
-Click **Save**. They are stored in the MacVPN keychain (not in the VPN's own settings), and passed to macOS each time you connect from MacVPN. **Forget saved secrets** deletes them. Leaving a field empty also deletes it.
+Click **Save**. They are stored in MacVPN's vault (not in the VPN's own settings), and passed to macOS each time you connect from MacVPN. **Forget saved secrets** deletes them. Leaving a field empty also deletes it.
 
 If you switch away or close the window with unsaved changes here, the app asks the same **Save / Discard / Cancel** question as for other connections.
 
@@ -248,7 +265,7 @@ SSTP (Secure Socket Tunneling Protocol, the Microsoft VPN over HTTPS, port 443) 
 Create it with **New → SSTP**, or import an `.sstp` file. It has a form, not a text editor:
 
 - **Name**, **Server** (host name or IPv4/IPv6 address, without a port), **Port** (443 by default). Connecting to an IPv6 address has not been tested against a real server yet; prefer the host name.
-- **Username** and **Password**. The password goes into the Keychain. Use `user@domain` instead of `DOMAIN\user`: backslashes, spaces and quotes are not allowed in the user name. **The SSTP password must not contain quotation marks (`"`), backslashes (`\`) or control characters**: `sstpc` passes the password to `pppd` without escaping, so these characters could change `pppd`'s settings. The form shows an error and does not save such a password; change the password on the server if needed.
+- **Username** and **Password**. The password goes into the vault. Use `user@domain` instead of `DOMAIN\user`: backslashes, spaces and quotes are not allowed in the user name. **The SSTP password must not contain quotation marks (`"`), backslashes (`\`) or control characters**: `sstpc` passes the password to `pppd` without escaping, so these characters could change `pppd`'s settings. The form shows an error and does not save such a password; change the password on the server if needed.
 - **Server certificate**:
   - **System CA**: the server certificate must be signed by a well-known authority. This uses the CA certificates of Homebrew's OpenSSL, not the macOS Keychain, so a company CA that is only installed in the Keychain is not trusted here.
   - **Custom CA file**: **Choose PEM File…** loads the CA certificate (`-----BEGIN CERTIFICATE-----`). It is stored inside the connection's config. A binary (DER) `.cer` file must be converted to PEM first, for example `openssl x509 -inform der -in ca.cer -out ca.pem`.
@@ -290,7 +307,7 @@ If one file cannot be recognized or cannot be imported, the other files are stil
 - it is at most 1 MB;
 - its content matches the directive: a PEM certificate for `ca`, `cert` and `extra-certs`; a PEM private key (`-----BEGIN … PRIVATE KEY-----`) for `key`; an OpenVPN static key (`-----BEGIN OpenVPN Static key V1-----`) for `tls-auth`, `tls-crypt` and `secret`; a tls-crypt-v2 client key for `tls-crypt-v2`; DH parameters for `dh`. Otherwise: **The file for the … directive (…) does not have the expected format**.
 
-A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` block (it must be a PKCS#12 file, inside the folder, at most 1 MB). If it has a password, enter it in **Private key password** after the import. A username/password file in `auth-user-pass` (for example `auth-user-pass auth.cfg`) is never copied into the config: if it is inside the folder, at most 1 KB and has exactly two lines (username, password), MacVPN asks **Use the credentials from … for this connection?**; if you choose **Use**, it stores them in the connection's **Username** and **Password** fields (Keychain) and says so in the import message; otherwise enter them yourself. An `askpass pass.txt` file is handled the same way for the **Private key password**. If the private key is encrypted, the import message reminds you to fill in **Private key password**.
+A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` block (it must be a PKCS#12 file, inside the folder, at most 1 MB). If it has a password, enter it in **Private key password** after the import. A username/password file in `auth-user-pass` (for example `auth-user-pass auth.cfg`) is never copied into the config: if it is inside the folder, at most 1 KB and has exactly two lines (username, password), MacVPN asks **Use the credentials from … for this connection?**; if you choose **Use**, it stores them in the connection's **Username** and **Password** fields (in the vault) and says so in the import message; otherwise enter them yourself. An `askpass pass.txt` file is handled the same way for the **Private key password**. If the private key is encrypted, the import message reminds you to fill in **Private key password**.
 
 **MikroTik RouterOS.** Configs exported from RouterOS v7 (`/interface ovpn-server server export-client-config`) and the classic v6 wiki configs (with `ca.crt`, `client.crt`, an encrypted `client.key` and `auth-user-pass auth.cfg` next to the `.ovpn`) import without errors or risky settings. Enter the key's export passphrase in **Private key password**.
 
@@ -301,6 +318,8 @@ A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` b
 - The password, PSK and username are **not** exported. In native profiles they are left empty. The SSTP user name is part of the config, so it is in the `.sstp` export; the password is not.
 - **Private keys:** keys that are part of the config can be. If the config contains an OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<pkcs12>`, `<auth-user-pass>` or `<http-proxy-user-pass>` block, a WireGuard `PrivateKey` / `PresharedKey`, or a strongSwan `secrets` section, MacVPN warns you (**The config contains private keys or credentials**) and offers three choices: **Export Without Keys** (the default: these OpenVPN blocks and the strongSwan `secrets` section are removed, WireGuard keys are left empty), **Export With Keys**, or **Cancel**. Anyone who has the keys can connect as you: export them only if the recipient needs them, and keep the file in a trusted place.
 - The exported file is created with `600` permissions (only you can read it).
+- **Folder and shared credential.** If the connection is in a folder or uses a shared credential, a text export (`.ovpn`, `.conf`, `.swanctl.conf`, `.sstp`) starts with one comment line such as `# macvpn-meta: {"folder":["Work","Clients"],"credentialName":"Office AD"}`. It holds only these names, never a secret. On import, MacVPN recreates the folders that are missing and puts the connection there (if a folder cannot be created, the connection goes to the top level and the message says so). A `credentialName` is never linked silently: MacVPN asks first and names the server (see [13.4](#134-import-and-export)). Files without this line import to the top level, as before. A `.mobileconfig` export has no such line.
+- A full backup of everything, with the passwords, is a different feature: see [14](#14-backup-and-restore).
 - `.ovpn`, WireGuard `.conf`, `.swanctl.conf` and `.sstp` exports can be imported into MacVPN again.
 - A `.mobileconfig` export (L2TP, Cisco IPSec) **cannot** be imported into MacVPN. To use it on another Mac, double-click it in Finder: macOS installs it as a profile, then approve it in **System Settings → General → Device Management** (Profiles). If you drop a `.mobileconfig` file on MacVPN's import, it tells you the same.
 
@@ -322,11 +341,11 @@ A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` b
 
 ### 5.1 Order of connections
 
-The menu and the list in the **Connections** window use the same order. Connections created in MacVPN and system VPNs are ranked together.
+The menu and the list in the **Connections** window use the same order. Connections created in MacVPN and system VPNs are ranked together. With folders, the same rules apply inside every folder, after its subfolders (see [12.3](#123-order-inside-a-folder)).
 
-- **Pinned connections come first**, in your order. To pin one, right-click it in the **Connections** window and choose **Pin to Top**; to remove it from the top, choose **Unpin**. Drag the pinned connections in the **Pinned** section to change their order. Pinned connections have a small pin icon, in the menu too.
+- **Pinned connections come first**, in your order. To pin one, right-click it in the **Connections** window and choose **Pin to Top**; to remove it from the top, choose **Unpin**. Drag a pinned connection onto another pinned connection of the same folder to change their order. Pinned connections have a small pin icon, in the menu too.
 - **The others follow, most used first.** Every successful connect that you start in MacVPN adds 1 point. The points lose half of their value every 14 days, so a connection you used a lot last month falls behind one you use now. Only the moment the connection comes up counts: status checks while it stays up, and connections started outside MacVPN (for example in System Settings) do not. Connections with equal points (for example, new ones with no points) are listed by name.
-- The order is stored on this Mac in `~/Library/Application Support/MacVPN/connection-order.json`. It contains no secrets, and exports do not include it. When you delete a connection, or a system VPN disappears, its entry is removed.
+- The order is stored in the vault (until 1.1 it was `connection-order.json`). Single-connection exports do not include it; a full backup does. When you delete a connection, its entry is removed.
 
 ### 5.2 Multi-factor authentication (MFA)
 
@@ -354,12 +373,12 @@ If a connection needs a user name, password, shared secret (PSK) or private key 
   - **SSTP:** the password is not saved (the user name is in the connection's settings).
   - **L2TP / Cisco IPsec created in MacVPN:** the account, the password or the shared secret is not saved.
   - **WireGuard,** IKEv2 with certificates, and **system VPNs** never ask: for a system VPN, macOS may keep the secrets in the profile itself.
-- **The window** shows only the missing fields. A saved user name is filled in. **Save** is ticked; the hint says where it goes: in 1.1 into the **macOS Keychain**, like the editor's fields (from 1.2 into MacVPN's encrypted vault). Untick it to use the values for this connect only.
+- **The window** shows only the missing fields. A saved user name is filled in. **Save in vault** is ticked (**Kept encrypted in the MacVPN vault, used from the next connect on**). Untick it to use the values for this connect only. If the connection uses a shared credential without a saved password, the window names it (**Password for Office AD — used by 4 connections**), and **Save in vault** stores the password in the shared credential, for every connection that uses it.
 - **Save happens only after the connection is up.** A wrong password is never stored.
-- **Wrong user name or password:** if the server rejects the sign-in (OpenVPN `AUTH_FAILED`, SSTP "wrong user name or password"), the window opens **once** more with **Sign-in failed — check the username and password** and the user name filled in. A second failure ends with the normal error and notification. L2TP, Cisco IPsec and IKEv2 do not ask again in 1.1: macOS and strongSwan do not report a wrong password separately from other failures.
+- **Wrong user name or password:** if the server rejects the sign-in (OpenVPN `AUTH_FAILED`, SSTP "wrong user name or password"), the window opens **once** more with **Sign-in failed — check the username and password** and the user name filled in. A second failure ends with the normal error and notification. From 1.2, IKEv2 with EAP sign-in asks again too (root layer 8 reports **Authentication failed (EAP)**). L2TP and Cisco IPsec do not ask again: macOS does not report a wrong password separately from other failures.
 - **Cancel** (or Escape, or closing the window) stops the connect without an error or a notification. Disconnecting while the window is open closes it. It expires after 2 minutes, which counts as Cancel.
 - **Like the code window,** it does not take the keyboard away from the app you are using: click the window or the "…: credentials needed" notification to type. It ignores input for about a second after it appears, and it has no default button: Return does nothing, so click **Connect**. While it is open, the row shows **Waiting for authentication**.
-- **Known limitation in 1.1:** the password of a private key in a PKCS#12 bundle (`<pkcs12>`) is not asked for, because MacVPN cannot tell whether the bundle has one. Save it in the connection's editor (**Private key password**).
+- **Known limitation:** the password of a private key in a PKCS#12 bundle (`<pkcs12>`) is not asked for, because MacVPN cannot tell whether the bundle has one. Save it in the connection's editor (**Private key password**).
 - What you type goes to the VPN tool for this connect. MacVPN wipes its own copies after use; copies the system makes on the way (the web view and the app's internal messaging) cannot be wiped by MacVPN. What you type is never written to the log. A control-API client only sees the state `waiting_for_credentials`, and `credentials_cancelled` if you cancel.
 
 ### 5.4 Paired apps (control API)
@@ -553,20 +572,40 @@ MacVPN looks for new versions on the GitHub Releases page: at launch, then once 
 - To check manually: menu → **Check for Updates Now**. If you are up to date, it says **MacVPN is up to date**.
 - To turn off automatic checks: menu → the **Check for Updates Automatically** checkbox.
 - **Optional delay:** with the **Only Offer Updates Published at Least 24 Hours Ago** checkbox (off by default), MacVPN offers a new release only once it has been public for 24 hours (based on the release's publish time on GitHub). This gives time for a bad or malicious release to be noticed and removed before you install it. **Check for Updates Now** then tells you if a newer version exists but is not offered yet.
-- **Keychain prompt after an update:** because MacVPN is ad-hoc signed (no Developer ID), macOS treats each new version as a new program, and may ask once after each update whether MacVPN may access its own Keychain items. Click **Always Allow** only if the prompt is MacVPN's own: it names MacVPN and its path (usually `/Applications/MacVPN.app`). If the prompt names another program, click **Deny**.
+- **Keychain prompt after an update:** because MacVPN is ad-hoc signed (no Developer ID), macOS treats each new version as a new program. From 1.2, MacVPN keeps only one item in the Keychain, the vault key of **Unlock automatically**, so macOS asks at most once after an update (and not at all when **Unlock automatically** is off). Click **Always Allow** only if the prompt is MacVPN's own: it names MacVPN and its path (usually `/Applications/MacVPN.app`). If the prompt names another program, click **Deny**; MacVPN then asks for the master password instead.
 - If an update brings a new root layer, the **System Status** window opens and shows **Update required**. Update it with **Authorize** and one admin password.
 - If the app's location is not writable (for example it runs directly from Downloads or from the DMG), the update reports an error. Move the app to the Applications folder, or update manually: download the new DMG and replace the app with it.
 - The update log is at `~/Library/Caches/MacVPN/update.log`. If the previous update was cancelled (because MacVPN did not quit within 30 seconds) or failed, MacVPN shows a one-time notice at the next launch; the installed version stays in place. At launch MacVPN also removes leftovers of an interrupted update (hidden `.MacVPN.app.update-…` and `.MacVPN.app.old-…` folders next to the app).
 
 ### 8.1 Upgrading from 0.x
 
-MacVPN 1.0 replaced the 0.x Swift app; 1.1 continues it. From 0.x the upgrade (straight to the latest 1.x) works like any other update:
+MacVPN 1.0 replaced the 0.x Swift app; 1.1 and 1.2 continue it. Every older version, 0.x and 1.x alike, goes straight to 1.2 with the in-app update, and the first launch of 1.2 moves your data into the vault (the migration of [8.2](#82-upgrading-from-11)). Read [8.2](#82-upgrading-from-11) first and back up your data folder before you update.
 
 1. **Update in the app.** In MacVPN 0.x, choose **Check for Updates Now**, then **Download and Install** in the Update window. The 0.x updater checks the new release's signature like any other update. (Versions before 0.2.2 do not check signatures: on those, download the DMG from the [Releases](https://github.com/SepsiG/MacVPN/releases) page instead, quit MacVPN, and replace the app in Applications.)
-2. **Your data is kept.** Connections, passwords, pinned connections and their order, the one-time code settings of system VPNs, the update settings and **Launch at Login** carry over. Connections you left running stay connected. Nothing needs to be imported again.
-3. **The Keychain asks once.** Version 1.0 has a new signature, so macOS may ask whether MacVPN may access its Keychain items. Click **Always Allow** if the prompt names MacVPN at `/Applications/MacVPN.app`. After that, the editors show **Saved — type to replace** for every stored password, and connecting asks no more. (Items that very old versions stored under the Keychain service `macvpn` are moved to `local.macvpn.secrets` automatically at launch.)
-4. **Reinstall the root layer.** 1.0 replaces the separate root scripts of 0.x with the single `mvpn` binary (root layer 7). The **System Status** window opens with **Update required**, for example **Update required (6 → 7)** when coming from 0.4.0. Click **Authorize** and enter the admin password. Active VPN connections are disconnected first; the old files (`ovpn-dns`, `mvpn-validate`, `mvpn-mgmt`) are removed. Until you do this, OpenVPN, WireGuard, IKEv2 and SSTP connections show **Missing tool** and cannot connect.
-5. **Hardened runtime.** The 1.0 app and its root binary are signed with the hardened runtime, so macOS refuses to load foreign libraries into them. This protects the passwords the app reads from the Keychain. Nothing changes for you; it is still ad-hoc signed, so Gatekeeper asks again only if you install the DMG manually.
+2. **Create the vault.** At the first launch of 1.2 the **Set Up the Vault** window opens in migration mode: choose the master password, save the recovery key, and let MacVPN move your connections, passwords, pinned connections and their order, and the one-time code settings of system VPNs into the vault ([8.2](#82-upgrading-from-11), steps 3 to 5). The update settings and **Launch at Login** stay as they were. Connections you left running stay connected. Nothing needs to be imported again.
+3. **The Keychain asks during the migration.** The new version has a new signature, so macOS asks whether MacVPN may read each old Keychain item: up to one prompt per item, and the window tells you how many to expect. Click **Always Allow** if the prompt names MacVPN at `/Applications/MacVPN.app`. (Items that very old versions stored under the Keychain service `macvpn` are moved to `local.macvpn.secrets` first, automatically.) After the migration the old items are deleted and the passwords are only in the vault.
+4. **Reinstall the root layer.** 1.0 replaced the separate root scripts of 0.x with the single `mvpn` binary; 1.2 brings root layer 8. The **System Status** window opens with **Update required**, for example **Update required (6 → 8)** when coming from 0.4.0. Click **Authorize** and enter the admin password. Active VPN connections are disconnected first; the old files (`ovpn-dns`, `mvpn-validate`, `mvpn-mgmt`) are removed. Until you do this, OpenVPN, WireGuard, IKEv2 and SSTP connections show **Missing tool** and cannot connect.
+5. **Hardened runtime.** The app and its root binary are signed with the hardened runtime, so macOS refuses to load foreign libraries into them. This protects the passwords the app holds in memory. Nothing changes for you; it is still ad-hoc signed, so Gatekeeper asks again only if you install the DMG manually.
+
+### 8.2 Upgrading from 1.1
+
+MacVPN 1.2 moves everything into an encrypted vault (see [11](#11-vault)) and brings root layer 8. The upgrade itself is the usual in-app update; take your time over the first launch.
+
+1. **Back up first.** Quit MacVPN 1.1 (you can leave connections running), then copy its data folder in Terminal:
+   ```
+   cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.1
+   ```
+   The passwords are in the Keychain, not in this folder; keep them somewhere safe too (for example in a password manager) until the upgrade is done. Start MacVPN 1.1 again.
+2. **Update in the app.** Menu → **Check for Updates Now** → **Download and Install** (see [8](#8-updates)). MacVPN restarts as 1.2.
+3. **Create the vault.** The **Set Up the Vault** window opens. It says that your connections and saved passwords move into the vault, and how many times macOS may ask for Keychain access (for example **macOS may ask up to 5 times for access to the Keychain — choose Always Allow each time. This happens only once.**). Click **Continue**, choose the master password, keep **Unlock automatically** as you like, and click **Create Vault**. Save the recovery key and confirm it (see [11.1](#111-master-password-and-recovery-key)).
+4. **The migration.** **Moving your data into the vault…**: every connection directory, every saved password, PSK and key password, the order and pins, the one-time-code settings of system VPNs and the paired apps are copied into the vault in one step, read back and compared. Only after that check are the old files overwritten and deleted and the old Keychain items deleted. The result says **Your data is in the vault** with the number of connections and secrets. If some items could not be read, it says so (**1 item could not be read and was left where it was.**); they stay in their old place.
+5. **Keychain prompts.** During the migration macOS may ask once for each old Keychain item, because the 1.2 app has a new ad-hoc signature. Each prompt names MacVPN and `/Applications/MacVPN.app`: choose **Always Allow** (Hungarian macOS: „Mindig engedélyez”). If you click **Deny**, that secret cannot be read: it stays in the Keychain, and the connection asks for it at the next connect. This happens only once: afterwards MacVPN keeps one Keychain item at most (see [8](#8-updates)).
+6. **Root layer 7 → 8.** The **System Status** window shows **Update required (7 → 8)**. Click **Authorize** and enter the admin password once. Active VPN connections are disconnected first. Until you do this, OpenVPN, WireGuard, IKEv2 and SSTP connections show **Missing tool**; L2TP, Cisco IPsec and system VPNs work without it.
+7. **Check.** Connect each connection once. Saved passwords show **Saved — type to replace** in the editors.
+
+**If the migration fails** (**The migration did not finish**), nothing is deleted. MacVPN removes the new, half-filled vault and keeps working from your 1.1 data in **read-only** mode: you can connect, but you cannot add, edit or delete anything (**MacVPN is using the old storage in read-only mode until the migration succeeds**). The menu shows a **The move into the vault did not finish. Try again…** banner. Click it (or **Try Again** in the window) and create the vault again with a new master password; the recovery key of the failed attempt is void. If you close the setup window before creating the vault, MacVPN also runs read-only from the 1.1 data, and the menu banner says **Finish setting up the vault…**.
+
+**Paired apps** (control API) carry over and keep working after the migration.
 
 ---
 
@@ -578,7 +617,7 @@ MacVPN 1.0 replaced the 0.x Swift app; 1.1 continues it. From 0.x the upgrade (s
    - `/etc/sudoers.d/macvpn` (sudoers rule)
    - `/var/run/macvpn`, `/var/run/macvpn-ui` (runtime data)
    - `/var/log/macvpn` (connection logs)
-3. If you tick **Also delete user data (connections and Keychain passwords)**, your connections (`~/Library/Application Support/MacVPN`) and their passwords in the Keychain are deleted too, including the shared secrets saved for system VPNs.
+3. If you tick **Also delete user data**, your data is deleted too: the vault with every connection, password, folder and shared credential (`~/Library/Application Support/MacVPN`, with `vault.db` and `vault.keys`), the vault key that **Unlock automatically** keeps in the Keychain (`local.macvpn.vault`), and any MacVPN Keychain items left from 1.1 (`local.macvpn.secrets`), including the shared secrets saved for system VPNs. Without the tick, the vault and its Keychain key stay, and a later install opens them again. Backup files you made with **Back Up Everything…** are not touched: delete them yourself if you no longer need them.
 4. Click **Uninstall** and enter the admin password. MacVPN disconnects active connections first.
    If a connection cannot be disconnected, the uninstall stops ("A connection could not be disconnected, uninstall cancelled.") and nothing is removed. Disconnect it (or restart the Mac), then try again.
 5. At the end a window titled **MacVPN has been uninstalled** appears with this text:
@@ -607,8 +646,13 @@ If MacVPN created `/etc/ppp/options` for SSTP (it leaves a marker when it does) 
 
 **Threat model.** MacVPN protects against dangerous *configs*: a downloaded or imported `.ovpn`, WireGuard or IKEv2 file cannot run commands, read or write arbitrary files as root, or fake a successful connection, because the root side checks every setting against an allowlist and decides only from root-only files. It does **not** protect against *programs already running in your user account*. Such a program can, in practice, become root: it can replace the Homebrew VPN tools (which your user can write) and then ask MacVPN's passwordless sudo rule to run them. Treat MacVPN like any tool that grants your account admin-level power, and only use it on a Mac where you are the administrator and trust the software running under your account.
 
-- **Ad-hoc signed app.** MacVPN is not signed with an Apple Developer ID and is not notarized. That is why you need the Gatekeeper step on first launch (see [1.2](#12-allow-the-first-launch-gatekeeper)). Only download it from the official [Releases](https://github.com/SepsiG/MacVPN/releases) page. The app and the `mvpn` root binary are signed with the hardened runtime and no entitlements, so macOS does not let other programs inject a library into them (for example through `DYLD_INSERT_LIBRARIES`) to read the passwords MacVPN takes from the Keychain.
-- **Passwords.** Passwords and PSKs are stored in the macOS Keychain (service `local.macvpn.secrets`). Usernames of the text-based types are in the Keychain too; the account name of L2TP / Cisco connections is in the connection's `meta.json` in plain text, as it is not a secret. Passwords and PSKs are masked (`***`) in the log, and exports do not contain them. Keys that are part of a config (WireGuard `PrivateKey`, OpenVPN `<key>` and similar) are only exported if you choose **Export With Keys**. The L2TP / Cisco profile contains the PSK (but not the password) and is deleted from disk once installed. User names, passwords and PSKs cannot contain line breaks or control characters (MacVPN refuses to save them). A saved log is created with `600` permissions. For OpenVPN, the username and password go to MacVPN's root helper (`mvpn mgmt-bridge`, shown as `mvpn-mgmt` in process lists) through a root-only file (permissions `600` in a `700` directory) that the helper deletes right after reading it. The helper keeps them in memory, so OpenVPN can log in again when it reconnects, and hands them to OpenVPN through its root-only management socket. One-time codes are never stored: they exist only in memory while connecting, and are masked in the log.
+- **Ad-hoc signed app.** MacVPN is not signed with an Apple Developer ID and is not notarized. That is why you need the Gatekeeper step on first launch (see [1.2](#12-allow-the-first-launch-gatekeeper)). Only download it from the official [Releases](https://github.com/SepsiG/MacVPN/releases) page. The app and the `mvpn` root binary are signed with the hardened runtime and no entitlements, so macOS does not let other programs inject a library into them (for example through `DYLD_INSERT_LIBRARIES`) to read the passwords MacVPN holds in memory.
+- **The vault (1.2).** Connections, configs, user names, passwords, PSKs, key passwords, shared credentials, folders and the order are in one encrypted SQLCipher database (`vault.db`, AES-256 with a per-page HMAC; the whole file is encrypted). Its random 256-bit key is stored only wrapped, in `vault.keys`: once with a key derived from the master password and once with a key derived from the recovery key (Argon2id, then XChaCha20-Poly1305). Neither the master password nor the recovery key is stored. The recovery key is shown once, when it is made, and never again. With **Unlock automatically**, the vault key itself is in the macOS Keychain (service `local.macvpn.vault`), readable by MacVPN's code signature; turn it off if you want the master password asked at every launch. **Lock Now** wipes the key from memory. Wrong master passwords are slowed down (up to 30 seconds between tries), never locked out. Both vault files are safe to copy, as they are encrypted; quit MacVPN first, so the database has written everything into `vault.db` (while it runs, recent changes may still be in its `vault.db-wal` file). Details: [11](#11-vault).
+- **Passwords.** Passwords and PSKs are stored in the vault. Until 1.1 they were in the macOS Keychain (service `local.macvpn.secrets`); the migration to 1.2 deletes those items once their copies in the vault were checked (see [8.2](#82-upgrading-from-11)). The account name of L2TP / Cisco connections is not a secret: it is also written into the macOS profile. Passwords and PSKs are masked (`***`) in the log, and exports do not contain them. Keys that are part of a config (WireGuard `PrivateKey`, OpenVPN `<key>` and similar) are only exported if you choose **Export With Keys**. The L2TP / Cisco profile contains the PSK (but not the password) and is deleted from disk once installed. User names, passwords and PSKs cannot contain line breaks or control characters (MacVPN refuses to save them). A saved log is created with `600` permissions. For OpenVPN, the username and password go to MacVPN's root helper (`mvpn mgmt-bridge`, shown as `mvpn-mgmt` in process lists) through a root-only file (permissions `600` in a `700` directory) that the helper deletes right after reading it. The helper keeps them in memory, so OpenVPN can log in again when it reconnects, and hands them to OpenVPN through its root-only management socket. One-time codes are never stored: they exist only in memory while connecting, and are masked in the log.
+- **Secrets in memory.** MacVPN wipes its own copies of the master password, the recovery key, the vault key and the passwords you type as soon as it no longer needs them. Copies made on the way in, by the web view that shows the windows and by the app's internal messaging (IPC), cannot be wiped by MacVPN; they live in the app's memory until it is reused. Stored passwords are never sent to the web view at all: the editors only learn that a value is saved.
+- **Shared credentials.** A connection linked to a shared credential takes its user name and password from it. The connection's editor never changes the shared credential, even when you save the connection: it is changed only in **Credentials**, or by **Save in vault** in the credential prompt. An imported file is never linked to a shared credential silently, because the file chooses its own server: MacVPN asks first and shows the server the password would be sent to (see [13.4](#134-import-and-export)).
+- **Backups.** A file made by **Back Up Everything…** contains every secret, encrypted with the backup password (Argon2id, XChaCha20-Poly1305). Anyone with the file and its password can read all your VPN credentials: keep the two apart. MacVPN treats a backup as untrusted input, because anyone who knows its password can craft one: before anything is written, it checks every item with the same rules as the editors and refuses an invalid backup as a whole. A restore never turns on **Allow other apps to control VPNs** by itself: that preference is unticked in the restore window, and every other backed-up preference is applied only if you tick it. Details: [14](#14-backup-and-restore).
+- **L2TP / Cisco profiles and the vault (1.2).** macOS keeps the PSK of an L2TP / Cisco profile installed by MacVPN in its System keychain, as part of the profile: macOS owns these profiles, and without the PSK the VPN would not work when started from System Settings. The password is never in the profile. MacVPN's own copies of the PSK and the password (shown in the editor, and passed to macOS each time you connect from MacVPN) are kept in MacVPN's encrypted vault, not in the Keychain. To remove the PSK from the System keychain, remove the profile in **System Settings → General → Device Management**.
 - **Root layer integrity.** The installer copies the root files (`mvpn` and `VERSION`) to a root-only staging folder and installs them only if their SHA-256 matches what the app computed just before asking for the admin password. It makes `/usr/local/libexec/macvpn` root-owned and not writable by others. If `/usr/local` or `/usr/local/libexec` is not root-owned or is writable by others, it stops with instructions instead of changing them (see [section 7.8](#78-other)). The sudoers rule starts `mvpn` with a clean environment (no `LANG`, `LC_*` or other variables from your session).
 - **Sudoers and Homebrew (known limitation).** To connect, MacVPN uses a sudoers rule to run the `/usr/local/libexec/macvpn/mvpn` binary as root without a password, and that binary runs the Homebrew tools (`openvpn`, `wg-quick`, `charon`, `sstpc`). The Homebrew directory (`/opt/homebrew`) is writable by your user. Malware running in your user account could replace those programs and gain root that way. Config filtering protects against accidental or imported dangerous settings, not against malware already running in your account. On a single-user Mac that you administer yourself, this is an acceptable risk. If it is not for you, do not enable the root layer, and use only L2TP / Cisco connections.
 - **SSTP password on the command line (known limitation).** The Homebrew `sstpc` computes the SSTP crypto binding keys from the password itself, so it only starts when the password is given on its command line (`--password`). MacVPN passes it there and never writes it into the log (`***`). `sstpc` masks its own command line right after reading it, but for that first moment other local users could see the password with `ps`. On a single-user Mac this is an acceptable risk. If it is not for you, do not use SSTP.
@@ -619,4 +663,261 @@ If MacVPN created `/etc/ppp/options` for SSTP (it leaves a marker when it does) 
   - It accepts the DMG, its `.sha256` file and its `.sig` signature only from `https://github.com/SepsiG/MacVPN/releases/download/<tag>/<file name>`, for exactly the tag of the release; redirects may only lead to GitHub's own download hosts.
   - Releases are built by a hardened GitHub Actions workflow: actions pinned to exact commits, read-only build job, the tagged commit must be on `main`, and a separate job that runs no repository code and only creates a draft. The maintainer checks the checksum, signs the release offline on their own Mac, and only then publishes it.
   - The optional 24-hour delay (see [section 8](#8-updates)) gives time to notice and pull a bad release.
-  - The app is ad-hoc signed; macOS may ask once after each update for Keychain access to MacVPN's items (see [section 8](#8-updates)). Allow it only for MacVPN's own prompt.
+  - The app is ad-hoc signed; macOS may ask once after each update for Keychain access to the vault key (see [section 8](#8-updates)). Allow it only for MacVPN's own prompt.
+- **Third-party licences.** MacVPN is MIT-licensed ([LICENSE](../LICENSE)). The app bundle contains `THIRD-PARTY-NOTICES.txt` with the licences of the components it ships, among them SQLCipher (BSD-style, © Zetetic LLC).
+
+---
+
+## 11. Vault
+
+From 1.2, MacVPN keeps your connections, their configs, user names, passwords, PSKs and key passwords, the shared credentials, the folders and colours, the order and pins, the one-time-code settings of system VPNs and the paired apps in one encrypted file, the **vault**: `~/Library/Application Support/MacVPN/vault.db`, with its key file `vault.keys` next to it. The whole database is encrypted; without the vault key nothing in it can be read, not even the connection names.
+
+### 11.1 Master password and recovery key
+
+The **Set Up the Vault** window opens on the first launch of 1.2 (later, while there is no vault, from the menu's **Set Up the Vault…** row).
+
+1. **Set up the vault.** It explains the vault. If you are upgrading, it also says that your data moves into the vault and how often macOS may ask for Keychain access (see [8.2](#82-upgrading-from-11)). On a new Mac you can choose **Restore from backup…** here instead (see [14.3](#143-restore-on-a-new-mac)). Click **Continue**.
+2. **Choose a master password.** At least 10 characters; a long phrase is easier to remember and harder to guess. A hint under the field rates it (**Too short**, **Weak — easy to guess**, **Fair**, **Strong**); weak passwords are allowed but not advised. Type it again in **Repeat the master password**. **Unlock automatically** is ticked (see [11.2](#112-unlock-automatically)). Click **Create Vault**.
+3. **Your recovery key.** 24 letters and digits in six groups, like `7K2M-…-QX4T`. If you forget the master password, this key is the only way back into the vault. Write it down or keep it in a password manager: **it is shown only now**. **Copy** copies it. Click **I Saved It**.
+4. **Check your recovery key.** Type the group the window asks for (**Type group 3 of your recovery key, counting from the left.**) and click **Confirm**.
+5. **The vault is ready.** Click **Done**. When upgrading, the migration runs first (**Moving your data into the vault…**, then **Your data is in the vault**).
+
+The window has no default button: Return in a field does nothing, so click the buttons. The recovery key is not case-sensitive; `O` counts as `0`, `I` and `L` as `1`, and dashes and spaces are ignored.
+
+### 11.2 Unlock automatically
+
+- **On** (the default): the vault key is kept in the macOS Keychain (service `local.macvpn.vault`), so MacVPN opens without asking. After an update macOS may ask once whether MacVPN may read it: choose **Always Allow** if the prompt names MacVPN at `/Applications/MacVPN.app`.
+- **Off:** MacVPN asks for the master password at every launch. To turn it off, open the menu's **Settings** and switch off **Unlock automatically**, then confirm with **Turn Off** (**Turn off automatic unlock?**). The Keychain item is deleted.
+- **To turn it on again,** switch it on: the **Turn on automatic unlock** window asks for the master password; click **Turn On**.
+- If the Keychain item cannot be read (for example you clicked **Deny**), MacVPN asks for the master password instead.
+
+### 11.3 Unlocking
+
+The **Unlock MacVPN** window opens at launch when the vault is not unlocked automatically, and from the locked menu's **Unlock…** row. Enter the **Master password** and click **Unlock**.
+
+A wrong password shows **Wrong password or recovery key**. Each further wrong try makes the next one wait longer (1, 2, 4, 8, 16, then 30 seconds; the button shows **Try again in 8 s**). There is no lockout. If you forgot the password, click **Use recovery key** (see [11.8](#118-forgotten-master-password)).
+
+### 11.4 Lock Now
+
+**Lock Now** in the menu's footer locks the vault at once. It is shown when **Unlock automatically** is off, or when you switch on **Show “Lock Now”** in the menu's **Settings**.
+
+Locking closes the vault and wipes its key from memory. It does **not** delete the Keychain item: with **Unlock automatically** on, the next launch opens without asking again. Running VPNs stay up. Unsaved changes in the Connections window are discarded, and the master password and recovery key windows close.
+
+### 11.5 The locked menu
+
+While the vault is locked, the menu shows only:
+
+- an **Unlock…** row (**MacVPN is locked**),
+- the number of active connections (**1 connection active**, **3 connections active**), without their names,
+- **Quit MacVPN**.
+
+Nothing that needs the vault works while it is locked: connecting, editing, importing, exporting, the folders (hidden, and they cannot be changed: **Folders cannot be changed while the vault is locked**), shared credentials and backups. Such actions answer **The vault is locked. Unlock it and try again.** Paired apps get the `locked` error; they can still bring a VPN down (see the [Control API guide](control-api.md)).
+
+### 11.6 Changing the master password
+
+1. Menu → **Settings** → **Change Master Password…**.
+2. Enter the **Current master password**, then the **New master password** twice.
+3. Click **Change Password**. **The master password was changed**: use the new one from now on.
+
+Your recovery key stays the same. The vault is not re-encrypted; only its password-wrapped key is rewritten. A wrong current password is slowed down like an unlock.
+
+### 11.7 A new recovery key
+
+If your recovery key may have been seen by someone, or you lost it while you still know the master password:
+
+1. Menu → **Settings** → **New Recovery Key…**.
+2. Enter the **Master password** and click **Make New Key**. The new key replaces the old one: the old key stops working at once.
+3. Save the new key (it is shown only now), click **I Saved It**, type the group asked for, and click **Confirm**.
+
+### 11.8 Forgotten master password
+
+1. In the **Unlock MacVPN** window, click **Use recovery key**.
+2. Type the **Recovery key**, then a **New master password** twice.
+3. Click **Reset and Unlock**.
+
+Your connections stay as they are, and the recovery key keeps working. **Use the master password** goes back to the password field.
+
+---
+
+## 12. Folders and colours
+
+Folders group connections in the **Connections** window and in the menu. They nest to any depth. Connections created in MacVPN and system VPNs can both be put in folders, or stay at the top level.
+
+### 12.1 Folders
+
+- **Create:** toolbar **New** (+) → **New Folder**, or right-click a folder → **New Folder** (a subfolder), or right-click a connection or an empty area → **New Folder** (at the top level). The new folder is named "New Folder", and its name field is open: type the name and press Return.
+- **Folder context menu:** **New Folder**, **Rename**, **Colour…**, **Move to Top Level** (for a subfolder), **Delete…**.
+- **Connection context menu:** **Pin to Top** / **Unpin**, **Colour…**, **Move to Top Level** (for a connection in a folder), **New Folder**.
+- **Names:** 1 to 64 characters, no control characters (**A folder name needs 1 to 64 characters and no control characters**).
+
+### 12.2 Colours
+
+**Colour…** opens a palette of 12 colours: Red, Orange, Amber, Yellow, Lime, Green, Teal, Cyan, Blue, Indigo, Purple and Pink. They are tuned for light and dark mode.
+
+- A **folder** can also have **None**. A folder without its own colour takes its parent folder's colour.
+- A **connection** without its own colour takes the colour of its nearest coloured folder. A connection with its own colour shows an **Own colour** dot; **Use folder colour** in the palette removes it.
+- The colour shows as a slim bar on the connection's row and on the folder icon.
+
+### 12.3 Order inside a folder
+
+Inside every folder (and at the top level): first the subfolders, in the order you dragged them; then the pinned connections, in your order; then the others, most used first (see [5.1](#51-order-of-connections)); connections with equal use by name.
+
+### 12.4 Drag and drop
+
+- **Folders** can be dropped into another folder (they nest) or between folders (they are reordered).
+- **Connections** only change folder when dropped on a folder. The exception is a pinned connection dropped on another pinned connection in the same folder: that changes the order of the pins.
+- While you drag, a **Top level** drop zone appears: drop there to move an item out of all folders.
+- A folder cannot be dropped into itself or one of its subfolders: **A folder cannot be moved into itself or one of its subfolders**.
+
+### 12.5 Deleting a folder
+
+**Delete…** asks **What should happen to its contents?**
+
+- **Move its contents to the parent folder** (or **Move its contents to the top level** for a top-level folder) is the default. The connections and subfolders stay.
+- **Delete the connections too** deletes the connections in the folder and its subfolders, with their saved passwords. A second confirmation asks first (**Delete 3 connections?**, **This cannot be undone.**, **Delete Connections**).
+- System VPNs are never deleted this way: **System VPNs are moved to the top level.**
+- While a connection inside the folder is active, the folder cannot be deleted: **Disconnect the connections in this folder before deleting them**.
+
+### 12.6 Folders in the menu
+
+- Folders are rows you can open and close; MacVPN remembers which are closed.
+- A folder's badge shows how many connections inside are active (**2 active**), also when it is closed.
+- Nesting is shown by indentation, up to 3 levels; deeper folders work but are not indented further.
+
+### 12.7 Export, import and system VPNs
+
+- An export writes the folder path in its `# macvpn-meta` line; an import recreates the missing folders (see [4](#4-import-and-export)).
+- A system VPN keeps its folder and colour for 30 days after it disappears from macOS, so it comes back in its place if it is reinstalled (for example after a restore on a new Mac).
+- While the vault is locked, folders are hidden and cannot be edited.
+
+---
+
+## 13. Shared credentials
+
+A **shared credential** is a named user name and password that several connections use, for example "Office AD". Change it once, and every connection that uses it signs in with the new one. Passwords are stored in the vault and never shown.
+
+### 13.1 The Credentials section
+
+Open the **Connections** window and select **Credentials** in the sidebar. Each credential shows its name, its user name (or **No user name**), **Password saved** or **No password saved: asked when connecting**, and **Used by 3 connections**.
+
+- **Add Credential…** → **New Shared Credential**: **Name** (1 to 64 characters), **Username**, **Password**. The password is optional: without it, MacVPN asks for it when connecting and can save it here.
+- **Edit…**: change the user name or password. The password field shows **Saved — type to replace**, as in the editors.
+- **Rename…**: a new name; the links stay.
+- **Delete**: a credential that no connection uses is deleted. If connections use it, MacVPN lists them and asks **Copy into Each Connection** (each gets the user name and password as its own, then the credential is deleted) or **Cancel**. A credential in use is never deleted silently.
+
+### 13.2 Create from a connection
+
+Nothing is converted automatically when you upgrade. To turn a connection's sign-in into a shared credential:
+
+1. **Credentials** → **Create from Connection…**.
+2. Pick the **Connection** and a **Name**, and click **Next**. The connection's stored user name and password become the shared credential, and the connection uses it. The values are not shown.
+3. **Link the Same Sign-in?** lists the other connections with the same user name and password (compared inside MacVPN, never shown). Tick the ones that should use the credential too, and click **Create and Link**. If there are none: **No other connection has the same user name and password.**
+
+### 13.3 Using a credential in a connection
+
+Editors with a user name and password (OpenVPN with `auth-user-pass`, IKEv2 with EAP, SSTP, L2TP, Cisco IPsec, and L2TP / Cisco system VPNs) have a **Password from** selector:
+
+- **Own username and password** (the default): the fields of the connection itself.
+- **Use credential: Office AD**: MacVPN asks **Use the shared credential Office AD?** and explains that the user name and password stored for this connection are deleted. Click **Use Credential**. The connection's own fields are then hidden, and the editor says **The user name and password come from the shared credential Office AD. Change them in the Credentials section.**
+
+Other secrets (PSK, private key password, one-time-code settings) stay with each connection. **The editor never changes a shared credential**: saving a connection cannot change what other connections use. A shared credential changes only in **Credentials**, or when you tick **Save in vault** in the credential prompt (see [5.3](#53-credentials-asked-when-connecting)); a new password saved there after a rejected sign-in updates the shared credential for every connection.
+
+### 13.4 Import and export
+
+- An export writes only the credential's **name** (`credentialName` in the `# macvpn-meta` line), never its user name or password.
+- An import never links a credential silently: the imported file chooses its own server, and a silent link would send your shared password there. If a credential with that name exists, MacVPN asks **Use the shared credential 'Office AD' for this connection to vpn.example.com?** and names the server read from the file. **Use Own Fields** (the safe choice) keeps the connection's own user name and password; choose **Use Shared Credential** only if you trust the file. If no credential has that name, you can pick another credential or use the connection's own fields.
+- Paired apps (control API) never see shared credentials.
+
+---
+
+## 14. Backup and restore
+
+The per-connection export (see [4](#4-import-and-export)) never contains passwords. For reinstalling macOS or moving to another Mac there is a **full backup**: one encrypted file with everything.
+
+### 14.1 What a backup contains
+
+- every connection with its config and secrets,
+- the folders, colours, order, pins and usage ranking,
+- the shared credentials,
+- the one-time-code settings and folder placement of system VPNs,
+- the app preferences: automatic update checks, the 24-hour delay, **Launch at Login**, **Allow other apps to control VPNs** and **Unlock automatically**.
+
+Not included: the **paired apps** (they are tied to program paths on this Mac: pair them again after a restore), the vault key and the recovery key, and the logs.
+
+### 14.2 Back Up Everything
+
+1. Menu → **Settings** → **Back Up Everything…** (or **New** (+) → **Back Up Everything…** in the Connections window). It needs an unlocked vault.
+2. Read the warning: **Anyone with this file and its password can read all your VPN credentials.**
+3. Choose a **Backup password** (at least 10 characters) and repeat it. MacVPN does not store it: without it the backup cannot be opened.
+   - Instead you can click **Use my master password…** and confirm with **Use Master Password**. Then anyone who learns your master password can also open this file, wherever it is kept; a separate backup password keeps the two apart.
+   - Type your **Master password** too. MacVPN checks it before every backup (with the same delay after a wrong one as the unlock), so an unlocked Mac left alone is not enough to take a copy of all your passwords.
+4. Click **Back Up…** and choose where to save. The file is named `MacVPN-backup-<date>.macvpnbackup`, readable only by you.
+5. Keep the file and its password apart, for example the file on an external disk and the password in a password manager.
+
+### 14.3 Restore on a new Mac
+
+1. Install MacVPN 1.2 or later, and start it.
+2. In the **Set Up the Vault** window, click **Restore from backup…**. (This needs a new, empty vault.)
+3. **Choose File…**, enter the **Backup password**, and click **Open Backup**.
+4. Choose a new master password for this Mac and save the new recovery key, as in [11.1](#111-master-password-and-recovery-key).
+5. Everything is restored in one step. Then follow the after-restore steps in [14.5](#145-after-a-restore).
+
+### 14.4 Restore into an existing vault
+
+1. Menu → **Settings** → **Restore from Backup…**. Nothing changes before you confirm what to restore.
+2. **Choose File…**, enter the **Backup password**, **Open Backup**. A wrong password or a damaged file gives one message: **The backup cannot be opened. The password is wrong, or the file is damaged.**
+3. The summary shows when and by which version it was made (**Made on … by MacVPN 1.2.0**) and how many **Connections**, **Folders** and **Shared credentials** it holds. It lists first the connections whose risky OpenVPN settings were acknowledged (such as scripts that run as root): restore only a backup you made yourself.
+4. Choose:
+   - **Merge**: adds what is missing here. For items that already exist, choose once for all (**When an item already exists:**): **Overwrite it with the backup’s copy**, **Keep the item that is here**, or **Keep both (the backup’s copy is named “(backup)”)**. A merge drops the risky-setting acknowledgements of the restored connections, unless the same connection with the same config is already here; its editor then asks again.
+   - **Replace everything**: clears the vault first. A confirmation says how many connections, folders and shared credentials will be deleted; **This cannot be undone.** **Back Up the Current State First…** makes a backup of the current state before you go on. Paired apps stay. Replace keeps the acknowledgements.
+5. **The backup was restored.**
+
+If anything fails, **The restore failed. Nothing was changed.** A backup whose folders would form a loop with the folders here is refused too.
+
+### 14.5 After a restore
+
+- **Preferences.** **The backup’s preferences are not applied by themselves.** Each row shows the backup's value and this Mac's (**Backup: On · This Mac: Off**). Tick the ones to use on this Mac and click **Apply Selected Preferences**. **Allow other apps to control VPNs** is never ticked for you: tick it only if you use paired apps on this Mac, and pair them again.
+- **Native profiles.** L2TP and Cisco IPsec connections need their profile on this Mac. **Reinstall 2 Native Profiles** opens them; macOS asks you to approve each one in **System Settings → General → Device Management**.
+- **Tools.** A missing Homebrew tool or root layer shows in **System Status**, as usual.
+- **System VPNs** that do not exist on this Mac keep their folder and colour for 30 days, in case you set them up again.
+
+### 14.6 A backup is untrusted input
+
+Anyone who knows a backup's password can make one, so MacVPN checks every item with the same rules as the editors (names, user names, passwords, folder names, sizes, the number of entries, no control characters) before it writes anything. An invalid backup is refused as a whole (**This backup cannot be restored: it holds data MacVPN does not accept.**). A backup made by a newer MacVPN is refused with **This backup was made by a newer MacVPN. Update MacVPN to restore it.** No restore ever turns on the control API by itself.
+
+---
+
+## 15. Vault FAQ
+
+**I forgot the master password.**
+Click **Use recovery key** in the **Unlock MacVPN** window and set a new master password with your recovery key ([11.8](#118-forgotten-master-password)). If **Unlock automatically** is on, MacVPN still opens without the password, but **Change Master Password…** and **New Recovery Key…** need it: lock MacVPN (**Lock Now**), then reset it with the recovery key.
+
+**I lost the recovery key.**
+If you still know the master password, make a new one at once: **Settings → New Recovery Key…** ([11.7](#117-a-new-recovery-key)). If you lost both the master password and the recovery key:
+
+- With **Unlock automatically** on, MacVPN still opens the vault and your connections keep working, but nothing that needs the master password does (changing it, a new recovery key, a new backup). Export the connections you need now ([4](#4-import-and-export); the saved passwords are not in an export).
+- With **Unlock automatically** off, the vault cannot be opened by anyone, MacVPN included.
+- A backup opens only with its own password. A backup made with **Use my master password…** needs the master password as it was when the backup was made. The recovery key never opens a backup.
+
+Restore from a backup you can still open ([14](#14-backup-and-restore)), or set MacVPN up again: uninstall with **Also delete user data** ([9](#9-uninstalling)) and import your connections again.
+
+**MacVPN says it is locked.**
+Click **Unlock…** in the menu and enter the master password. Running VPNs stayed up while it was locked. If it locks at every launch, **Unlock automatically** is off or macOS refused the Keychain access: switch it on in **Settings** ([11.2](#112-unlock-automatically)).
+
+**The migration from 1.1 failed.**
+Nothing was deleted, and MacVPN works read-only from your 1.1 data. Click the **The move into the vault did not finish. Try again…** banner in the menu and create the vault again with a new master password ([8.2](#82-upgrading-from-11)). If it fails again, quit MacVPN, check that your 1.1 data folder is intact (and your backup of it), and report the message shown in the window.
+
+**How many Keychain prompts should I expect?**
+During the migration from 1.1: up to one per old Keychain item; the setup window tells you the number beforehand. Answer **Always Allow** each time. After that, at most one after each update (for the vault key), and none if **Unlock automatically** is off. A prompt that does not name MacVPN at `/Applications/MacVPN.app` is not MacVPN's: click **Deny**.
+
+**I clicked Deny by mistake during the migration.**
+That item could not be read and was left in the Keychain; the result says how many. The connection asks for the missing password at the next connect (**Save in vault** stores it).
+
+**"The vault is damaged and cannot be opened."**
+`vault.db` or `vault.keys` was changed or is incomplete. Restore from a backup ([14](#14-backup-and-restore)), or quit MacVPN and put back a copy of both files (made while MacVPN was not running).
+
+**"This vault was saved by a newer MacVPN."**
+You started an older MacVPN after a newer one. Install the latest version.
+
+**How do I remove everything when uninstalling?**
+Tick **Also delete user data** in **Uninstall MacVPN…**: it deletes the vault, the vault key in the Keychain and any 1.1 Keychain items ([9](#9-uninstalling)). Delete your `.macvpnbackup` files yourself.

@@ -6,7 +6,14 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.1.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.2.
+
+### What's new in 1.2
+- **Encrypted vault.** Connections and their passwords are kept in one encrypted vault, protected by a master password, with a recovery key shown once. **Unlock automatically** opens it without asking; **Lock Now** locks it. See [the vault chapter](docs/user-guide.en.md#11-vault).
+- **Folders and colours.** Nested folders for connections and system VPNs, 12 colours, drag and drop. See [folders](docs/user-guide.en.md#12-folders-and-colours).
+- **Shared credentials.** One user name and password for several connections, changed in one place. See [shared credentials](docs/user-guide.en.md#13-shared-credentials).
+- **Full backup and restore.** One encrypted file with everything, restorable on this Mac or a new one. See [backup and restore](docs/user-guide.en.md#14-backup-and-restore).
+- **Upgrading from 1.1:** back up `~/Library/Application Support/MacVPN` first. The first launch moves your data into the vault (macOS may ask for Keychain access once per old item: choose **Always Allow**), and the root layer goes from 7 to 8 (one admin password). See [Upgrading from 1.1](docs/user-guide.en.md#82-upgrading-from-11).
 
 ### What's new in 1.1
 - **Control API.** Other apps of your user account that you pair (for example a Remote Desktop app) can bring the connections you allow up and down; the VPN stays up only while the app needs it. Off by default. See the [Control API guide](docs/control-api.md) and the [user guide](docs/user-guide.en.md#54-paired-apps-control-api).
@@ -17,12 +24,16 @@ MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (stron
 
 ### Features
 - **Six VPN types.** OpenVPN, WireGuard, IKEv2 (strongSwan) and SSTP run through Homebrew tools and MacVPN's root helper. L2TP/IPsec and Cisco IPsec use the built-in macOS VPN. VPNs set up elsewhere in macOS show up as system VPNs, and you can start and stop them from MacVPN too. The list is live: a VPN added, renamed or deleted in System Settings shows up in the menu and the Connections window without reopening them.
-- **Import and export.** Choose or drag in one or more files. Referenced key files, PKCS#12 files and MikroTik RouterOS configs are handled. Credential files go into the Keychain if you confirm. Exports never contain passwords, and they only contain private keys if you choose that.
-- **Editors.** A config editor with line-numbered errors and a panel for risky OpenVPN settings. Forms for SSTP, L2TP and Cisco IPsec. Passwords, PSKs and key passwords are stored in the Keychain.
+- **Encrypted vault.** Connections, configs, passwords, PSKs and key passwords are kept in one encrypted vault (SQLCipher), protected by a master password and a recovery key. With **Unlock automatically** the vault key stays in the macOS Keychain and MacVPN opens without asking; otherwise it asks at launch. **Lock Now** locks it while VPNs keep running.
+- **Folders and colours.** Nested folders for your connections and system VPNs, 12 colours, drag and drop, collapsible folders in the menu with a count of active connections.
+- **Shared credentials.** A named user name and password that several connections use; change it once for all of them.
+- **Full backup and restore.** **Back Up Everything…** writes one encrypted file with every connection, secret, folder and shared credential; **Restore from Backup…** merges it or replaces everything, here or on a new Mac.
+- **Import and export.** Choose or drag in one or more files. Referenced key files, PKCS#12 files and MikroTik RouterOS configs are handled. Credential files go into the vault if you confirm. Exports never contain passwords, and they only contain private keys if you choose that. Folders and the name of a shared credential travel with the export; a shared credential is never linked on import without asking.
+- **Editors.** A config editor with line-numbered errors and a panel for risky OpenVPN settings. Forms for SSTP, L2TP and Cisco IPsec. Passwords, PSKs and key passwords are stored in the vault.
 - **Multi-factor authentication.** OpenVPN static and dynamic challenges, sign-in in the browser (SAML, SSO, push), and a one-time code appended to the password for every type that has a password, including system VPNs.
-- **Credential prompt.** A user name, password, PSK or key password that is needed but not saved is asked for before connecting, and saved only after the connection is up (or not at all). A rejected sign-in is asked again once.
+- **Credential prompt.** A user name, password, PSK or key password that is needed but not saved is asked for before connecting, and saved in the vault only after the connection is up (or not at all). A rejected sign-in is asked again once.
 - **Other apps can control VPNs.** With the [control API](docs/control-api.md) ([Hungarian](docs/control-api.hu.md)), a program of your user account that you pair, for example a Remote Desktop app, can list the connections you allow and hold one up through a local socket; when it quits, the VPN goes down unless it was up before. It never sees configs or passwords, and you can revoke it any time. Off by default.
-- **Order.** Pin connections to the top and drag them into order. The rest are ranked by how often you use them.
+- **Order.** Pin connections to the top of their folder and drag them into order. The rest are ranked by how often you use them.
 - **Card interface.** Every connection is a card with a coloured type bubble and a state badge, in the menu and in the Connections window. While the Connections, System Status or Update window is open, MacVPN also shows a Dock icon, so Cmd+Tab reaches it.
 - **Log.** Every connection has a live log with a filter, search and save. Option-click a switch to connect in debug mode.
 - **System Status window.** Installs Homebrew, the VPN tools and the root helper, and uninstalls MacVPN.
@@ -34,7 +45,7 @@ MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (stron
 3. The app is ad-hoc signed, not signed with a Developer ID, so Gatekeeper blocks the first launch. On macOS 14, Control-click (right-click) the app in Applications, choose **Open**, then **Open** again. On macOS 15 or later, open System Settings → Privacy & Security and click **Open Anyway**.
 4. In the System Status window, install the missing Homebrew packages and click **Authorize** to install the root helper (one admin password prompt).
 
-Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 0.x? See [Upgrading from 0.x](docs/user-guide.en.md#81-upgrading-from-0x).
+Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 1.1? See [Upgrading from 1.1](docs/user-guide.en.md#82-upgrading-from-11). Coming from 0.x? See [Upgrading from 0.x](docs/user-guide.en.md#81-upgrading-from-0x).
 
 ### Requirements
 - macOS 14 or later, Apple silicon or Intel
@@ -48,7 +59,7 @@ Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 0.x? See [
 - Control API for other apps on the same Mac: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
 
 ### Security note
-Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
+Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
 
 ### Development
 MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
@@ -69,9 +80,9 @@ MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
 - Manual GUI checklist: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md)
 
 **Repository layout.**
-- `crates/core`: platform-independent logic (models, storage, validators, import/export, MFA, update checks, ranking) and the EN/HU text table `crates/core/l10n/strings.json`
+- `crates/core`: platform-independent logic (models, the vault behind the `vault` feature, validators, import/export, MFA, update checks, ranking) and the EN/HU text table `crates/core/l10n/strings.json`
 - `crates/mvpn`: the root binary (`/usr/local/libexec/macvpn/mvpn`, root layer version in `crates/mvpn/VERSION`)
-- `crates/platform-mac`: macOS services (Keychain, native VPN, login item, dialogs, installers)
+- `crates/platform-mac`: macOS services (Keychain for the vault key, native VPN, login item, dialogs, installers)
 - `crates/app-core`: the app logic without a UI
 - `app/src-tauri`: the Tauri app; `app/ui`: its web UI
 - `scripts/`: build, test, signing and icon scripts; `Tests/Fixtures`: OpenVPN and MikroTik fixtures
@@ -82,13 +93,20 @@ MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
 **Releasing.** See [`docs/RELEASING.md`](docs/RELEASING.md) for the release procedure and the repository security settings.
 
 ### License
-MIT – see [LICENSE](LICENSE).
+MIT – see [LICENSE](LICENSE). Third-party components (among them SQLCipher, BSD-style, © Zetetic LLC) are listed with their licences in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt), which also ships inside the app bundle.
 
 ---
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.1.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.2.
+
+### Újdonságok az 1.2-ben
+- **Titkosított széf.** A kapcsolatok és jelszavaik egy titkosított széfben vannak, amelyet mesterjelszó véd, és van egy csak egyszer megjelenő helyreállítási kulcs. Az **Automatikus feloldás** kérdés nélkül megnyitja, a **Széf zárolása most** zárolja. Lásd [a széf fejezetet](docs/user-guide.hu.md#11-széf).
+- **Mappák és színek.** Egymásba ágyazható mappák a kapcsolatoknak és a rendszer VPN-eknek, 12 szín, húzással rendezés. Lásd [mappák](docs/user-guide.hu.md#12-mappák-és-színek).
+- **Közös hitelesítő adatok.** Egy felhasználónév és jelszó több kapcsolatnak, egy helyen módosítva. Lásd [közös hitelesítő adatok](docs/user-guide.hu.md#13-közös-hitelesítő-adatok).
+- **Teljes biztonsági mentés és visszaállítás.** Egyetlen titkosított fájl mindennel, ezen vagy egy új Macen visszaállítható. Lásd [mentés és visszaállítás](docs/user-guide.hu.md#14-biztonsági-mentés-és-visszaállítás).
+- **Frissítés 1.1-ről:** előbb mentsd le a `~/Library/Application Support/MacVPN` mappát. Az első indítás a széfbe költözteti az adataidat (a macOS régi elemenként egyszer Keychain-hozzáférést kérhet: válaszd a **Mindig engedélyez** gombot), a root réteg pedig 7-ről 8-ra vált (egy admin jelszó). Lásd [Frissítés 1.1-ről](docs/user-guide.hu.md#82-frissítés-11-ről).
 
 ### Újdonságok az 1.1-ben
 - **Vezérlő API.** A felhasználói fiókod általad párosított appjai (például egy Remote Desktop app) fel- és lekapcsolhatják az általad engedélyezett kapcsolatokat; a VPN csak addig marad fenn, amíg az appnak kell. Alapból ki van kapcsolva. Lásd [a vezérlő API leírását](docs/control-api.hu.md) és [az útmutatót](docs/user-guide.hu.md#54-párosított-appok-vezérlő-api).
@@ -99,12 +117,16 @@ A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, 
 
 ### Funkciók
 - **Hat VPN-típus.** Az OpenVPN, a WireGuard, az IKEv2 (strongSwan) és az SSTP Homebrew eszközökkel és a MacVPN root segédjével fut. Az L2TP/IPsec és a Cisco IPsec a macOS beépített VPN-jét használja. A macOS-ben máshol beállított VPN-ek rendszer VPN-ként jelennek meg, ezeket is indíthatod és bonthatod a MacVPN-ből. A lista élő: a Rendszerbeállításokban felvett, átnevezett vagy törölt VPN újranyitás nélkül megjelenik a menüben és a Kapcsolatok ablakban.
-- **Import és export.** Válassz ki vagy húzz be egy vagy több fájlt. A hivatkozott kulcsfájlokat, a PKCS#12 fájlokat és a MikroTik RouterOS configokat is kezeli. A hitelesítőadat-fájlok tartalma megerősítés után a Keychainbe kerül. Az export soha nem tartalmaz jelszót, privát kulcsot pedig csak akkor, ha ezt választod.
-- **Szerkesztők.** Config szerkesztő sorszámozott hibalistával és egy panellel a kockázatos OpenVPN beállításokhoz. Űrlap az SSTP-hez, az L2TP-hez és a Cisco IPsec-hez. A jelszavak, a PSK-k és a kulcsjelszavak a Keychainbe kerülnek.
+- **Titkosított széf.** A kapcsolatok, a configok, a jelszavak, a PSK-k és a kulcsjelszavak egyetlen titkosított széfben (SQLCipher) vannak, amelyet mesterjelszó és helyreállítási kulcs véd. **Automatikus feloldás** mellett a széfkulcs a macOS Keychainben marad, és a MacVPN kérdés nélkül megnyílik; különben induláskor kérdez. A **Széf zárolása most** zárol, a VPN-ek közben futnak tovább.
+- **Mappák és színek.** Egymásba ágyazható mappák a kapcsolatoknak és a rendszer VPN-eknek, 12 szín, húzás, a menüben csukható mappák az aktív kapcsolatok számával.
+- **Közös hitelesítő adatok.** Névvel ellátott felhasználónév és jelszó, amelyet több kapcsolat használ; egyszer módosítod mindegyiknek.
+- **Teljes biztonsági mentés és visszaállítás.** A **Teljes biztonsági mentés…** egyetlen titkosított fájlba írja az összes kapcsolatot, titkot, mappát és közös hitelesítő adatot; a **Visszaállítás biztonsági mentésből…** összefésüli vagy mindent lecserél, itt vagy egy új Macen.
+- **Import és export.** Válassz ki vagy húzz be egy vagy több fájlt. A hivatkozott kulcsfájlokat, a PKCS#12 fájlokat és a MikroTik RouterOS configokat is kezeli. A hitelesítőadat-fájlok tartalma megerősítés után a széfbe kerül. Az export soha nem tartalmaz jelszót, privát kulcsot pedig csak akkor, ha ezt választod. A mappa és a közös hitelesítő adat neve az exporttal utazik; importáláskor a közös hitelesítő adat sosem kapcsolódik kérdés nélkül.
+- **Szerkesztők.** Config szerkesztő sorszámozott hibalistával és egy panellel a kockázatos OpenVPN beállításokhoz. Űrlap az SSTP-hez, az L2TP-hez és a Cisco IPsec-hez. A jelszavak, a PSK-k és a kulcsjelszavak a széfbe kerülnek.
 - **Többfaktoros hitelesítés.** OpenVPN statikus és dinamikus challenge, böngészős bejelentkezés (SAML, SSO, push), és a jelszó végére fűzött egyszer használatos kód minden jelszavas típusnál, a rendszer VPN-eknél is.
-- **Hitelesítő adatok bekérése.** A szükséges, de el nem mentett felhasználónevet, jelszót, PSK-t vagy kulcsjelszót csatlakozás előtt bekéri, és csak a sikeres csatlakozás után menti (vagy egyáltalán nem). Elutasított bejelentkezésnél egyszer újra kérdez.
+- **Hitelesítő adatok bekérése.** A szükséges, de el nem mentett felhasználónevet, jelszót, PSK-t vagy kulcsjelszót csatlakozás előtt bekéri, és csak a sikeres csatlakozás után menti a széfbe (vagy egyáltalán nem). Elutasított bejelentkezésnél egyszer újra kérdez.
 - **Más appok is vezérelhetik a VPN-eket.** A [vezérlő API-val](docs/control-api.hu.md) ([angolul](docs/control-api.md)) a felhasználói fiókod egy általad párosított programja, például egy Remote Desktop app, listázhatja az engedélyezett kapcsolatokat, és egy helyi socketen át fenntarthat egyet; ha kilép, a VPN lebomlik, hacsak nem állt fenn már előtte. Configot és jelszót sosem lát, és bármikor visszavonhatod. Alapból ki van kapcsolva.
-- **Sorrend.** A kapcsolatokat kitűzheted a lista elejére, és húzással rendezheted. A többit a használat gyakorisága szerint rendezi.
+- **Sorrend.** A kapcsolatokat kitűzheted a mappájuk elejére, és húzással rendezheted. A többit a használat gyakorisága szerint rendezi.
 - **Kártyás felület.** Minden kapcsolat egy kártya színes típusbuborékkal és állapotjelvénnyel, a menüben és a Kapcsolatok ablakban is. Amíg a Kapcsolatok, a Rendszerállapot vagy a Frissítés ablak nyitva van, a MacVPN a Dockban is megjelenik, így Cmd+Tabbal is elérhető.
 - **Napló.** Minden kapcsolatnak élő naplója van szűréssel, kereséssel és mentéssel. Option+kattintás a kapcsolón: csatlakozás debug módban.
 - **Rendszerállapot ablak.** Telepíti a Homebrew-t, a VPN-eszközöket és a root segédet, és innen távolíthatod el a MacVPN-t.
@@ -116,7 +138,7 @@ A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, 
 3. Az app ad-hoc aláírású, nincs Developer ID-vel aláírva, ezért a Gatekeeper az első indításkor letiltja. macOS 14-en kattints a Control billentyűvel (jobb gombbal) az appra az Applications mappában, válaszd a **Megnyitás** pontot, majd újra a **Megnyitás** gombot. macOS 15-ön és újabbon: Rendszerbeállítások → Adatvédelem és biztonság → **Megnyitás mindenképp**.
 4. A Rendszerállapot ablakban telepítsd a hiányzó Homebrew csomagokat, majd az **Engedélyezés** gombbal telepítsd a root segédet (egy admin jelszó).
 
-Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Már a 0.x verziót használod? Lásd: [Frissítés 0.x verzióról](docs/user-guide.hu.md#81-frissítés-0x-verzióról).
+Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Az 1.1-et használod? Lásd: [Frissítés 1.1-ről](docs/user-guide.hu.md#82-frissítés-11-ről). 0.x verzióról jössz? Lásd: [Frissítés 0.x verzióról](docs/user-guide.hu.md#81-frissítés-0x-verzióról).
 
 ### Követelmények
 - macOS 14 vagy újabb, Apple processzoros vagy Intel Mac
@@ -130,7 +152,7 @@ Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Már a 0.x verzió
 - Vezérlő API más appoknak ugyanazon a Macen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
 
 ### Biztonsági megjegyzés
-A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
+A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
 
 ### Fejlesztés
 A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).
@@ -151,9 +173,9 @@ A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).
 - Kézi GUI tesztlista: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md)
 
 **A repó felépítése.**
-- `crates/core`: platformfüggetlen logika (modellek, tárolás, validátorok, import/export, MFA, frissítés-ellenőrzés, rangsor) és az EN/HU szövegtábla, a `crates/core/l10n/strings.json`
+- `crates/core`: platformfüggetlen logika (modellek, a `vault` feature mögötti széf, validátorok, import/export, MFA, frissítés-ellenőrzés, rangsor) és az EN/HU szövegtábla, a `crates/core/l10n/strings.json`
 - `crates/mvpn`: a root bináris (`/usr/local/libexec/macvpn/mvpn`, a root réteg verziója a `crates/mvpn/VERSION`-ben)
-- `crates/platform-mac`: macOS-szolgáltatások (Keychain, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők)
+- `crates/platform-mac`: macOS-szolgáltatások (Keychain a széfkulcsnak, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők)
 - `crates/app-core`: az app logikája felület nélkül
 - `app/src-tauri`: a Tauri app; `app/ui`: a webes felülete
 - `scripts/`: build-, teszt-, aláíró és ikon scriptek; `Tests/Fixtures`: OpenVPN és MikroTik tesztadatok
@@ -164,7 +186,7 @@ A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).
 **Kiadás.** A kiadás menete és a repó biztonsági beállításai: [`docs/RELEASING.md`](docs/RELEASING.md) (angolul).
 
 ### Licenc
-MIT – lásd [LICENSE](LICENSE).
+MIT – lásd [LICENSE](LICENSE). A külső összetevők (köztük az SQLCipher, BSD-típusú, © Zetetic LLC) licencei a [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) fájlban vannak, amely az app csomagjában is megtalálható.
 
 ---
 

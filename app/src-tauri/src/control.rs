@@ -22,7 +22,7 @@
 
 use macvpn_app_core::control::{
     BoundSocket, ControlHost, ControlOptions, ControlRelay, ControlServer, ControlTransport, PairingAnswer,
-    PairingRequest, PeerIdentity, StopMode,
+    PairingRequest, PeerIdentity, RegistryStore, StopMode,
 };
 use macvpn_app_core::pairing::{PAIRING_TIMEOUT, PairingBroker};
 use macvpn_app_core::updates::Notice;
@@ -151,12 +151,16 @@ pub struct ControlApp {
     /// The quit proceeds: the server stopped for it and is never started again (set under `ops`).
     quitting: AtomicBool,
     socket_dir: PathBuf,
-    registry_dir: PathBuf,
+    /// The paired clients (the vault; `control-clients.json` before 1.2).
+    registry: Arc<dyn RegistryStore>,
+    /// Where they are, for the "cannot be read" message.
+    registry_path: PathBuf,
 }
 
 impl ControlApp {
-    /// `support`: the app's Application Support directory (the registry, and the socket under `control/`).
-    pub fn new(support: &Path) -> Self {
+    /// `support`: the app's Application Support directory (the socket under `control/`); `registry`: the paired
+    /// clients' store, at `registry_path` (shown when it cannot be read).
+    pub fn new(support: &Path, registry: Arc<dyn RegistryStore>, registry_path: PathBuf) -> Self {
         ControlApp {
             relay: Mutex::new(None),
             pairing: Arc::new(PairingBroker::new()),
@@ -166,7 +170,8 @@ impl ControlApp {
             audit: Mutex::new(None),
             quitting: AtomicBool::new(false),
             socket_dir: support.join("control"),
-            registry_dir: support.to_path_buf(),
+            registry,
+            registry_path,
         }
     }
 
@@ -291,7 +296,7 @@ impl ControlApp {
 
     /// Reads the registry for the list shown while the server is not running.
     fn refresh_offline(&self) {
-        let clients = Registry::load(&self.registry_dir).map(|r| r.clients().to_vec()).unwrap_or_default();
+        let clients = self.registry.load().map(|r| r.clients().to_vec()).unwrap_or_default();
         self.slot().offline = clients;
     }
 }
@@ -346,6 +351,11 @@ impl ControlHost for Host {
 
     fn credentials_cancelled(&self, key: &str) -> bool {
         self.app().is_some_and(|s| s.manager.credentials_cancelled(key))
+    }
+
+    /// The vault is locked: the manager keeps only the redacted active connections meanwhile.
+    fn locked(&self) -> bool {
+        self.app().is_some_and(|s| s.manager.is_locked())
     }
 
     fn log(&self, line: String) {
@@ -425,9 +435,14 @@ fn enabled(state: &AppState) -> bool {
     state.prefs.bool(ENABLED_KEY).unwrap_or(false)
 }
 
-/// At launch: starts the server if the setting is on, otherwise reads the list. Off the main thread.
+/// At launch, and after each unlock of the vault: starts the server if the setting is on, otherwise reads the list.
+/// Nothing while the vault is locked or not created (the registry is in it; a running server stays across a
+/// lock). Off the main thread.
 pub fn launch(state: &Arc<AppState>) {
     state.control.attach(&state.manager);
+    if !state.vault.readable() {
+        return;
+    }
     let _ops = state.control.ops();
     if enabled(state) {
         start_locked(state);
@@ -484,15 +499,15 @@ fn start_locked(state: &Arc<AppState>) {
         return;
     }
     // A registry that cannot be read is reported as such (the server refuses it too).
-    if let Err(e) = Registry::load(&control.registry_dir) {
-        let message = registry_error_message(&Registry::path(&control.registry_dir));
+    if let Err(e) = control.registry.load() {
+        let message = registry_error_message(&control.registry_path);
         control.record(&format!("not started: {e}"));
         control.slot().error = Some(message);
         return;
     }
     control.attach(&state.manager);
     let host = Arc::new(Host { state: Arc::downgrade(state) });
-    let options = ControlOptions::new(control.socket_dir.clone(), control.registry_dir.clone());
+    let options = ControlOptions::with_registry(control.socket_dir.clone(), control.registry.clone());
     match ControlServer::start(options, host, Arc::new(Transport)) {
         Ok(server) => {
             control.relay_set(Some(server.notifier()));
@@ -501,10 +516,10 @@ fn start_locked(state: &Arc<AppState>) {
             slot.error = None;
         }
         Err(e) => {
-            let message = if e.kind() == ErrorKind::AddrInUse || Registry::load(&control.registry_dir).is_ok() {
+            let message = if e.kind() == ErrorKind::AddrInUse || control.registry.load().is_ok() {
                 start_error_message(&e, &control.socket_dir)
             } else {
-                registry_error_message(&Registry::path(&control.registry_dir))
+                registry_error_message(&control.registry_path)
             };
             control.record(&format!("not started: {e}"));
             control.slot().error = Some(message);
@@ -646,10 +661,10 @@ fn edit(
     let found = match result {
         Some(result) => result.map_err(|e| e.to_string())?,
         None => {
-            let mut registry = Registry::load(&control.registry_dir).map_err(|e| e.to_string())?;
+            let mut registry = control.registry.load().map_err(|e| e.to_string())?;
             let found = offline(&mut registry);
             if found {
-                registry.save(&control.registry_dir).map_err(|e| e.to_string())?;
+                control.registry.save(&registry).map_err(|e| e.to_string())?;
                 control.record(&format!("edited the pairing {id} while the API is off"));
             }
             control.refresh_offline();
@@ -796,7 +811,8 @@ mod tests {
     #[test]
     fn no_start_once_the_quit_proceeds() {
         let root = scratch("quit");
-        let control = ControlApp::new(&root);
+        let registry = Arc::new(macvpn_app_core::control::FileRegistryStore { dir: root.clone() });
+        let control = ControlApp::new(&root, registry, root.join("control-clients.json"));
         assert!(control.may_start());
         control.begin_quit();
         assert!(!control.may_start());
@@ -854,7 +870,7 @@ mod tests {
         fn status(&self) -> Result<Vec<RootStatus>, String> {
             Ok(vec![])
         }
-        fn up(&self, kind: VPNKind, id: &Uuid, _: &Secrets, debug: bool, _: &[String]) -> Result<(), String> {
+        fn up(&self, kind: VPNKind, id: &Uuid, _: &[u8], _: &Secrets, debug: bool, _: &[String]) -> Result<(), String> {
             self.0.push(format!("up {} {} debug={debug}", kind.raw_value(), uuid_string(id)));
             Ok(())
         }

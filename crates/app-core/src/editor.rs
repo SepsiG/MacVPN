@@ -12,6 +12,12 @@
 //! `None` ("keep the stored value") unless the user typed a new value or removed the stored one (`Some("")`), and
 //! the view only says which fields have a stored value ([`StoredSecrets`]). Saving with an untouched field keeps
 //! the Keychain item as it is.
+//!
+//! Shared credentials (spec 3a): the username and password of a connection linked to a credential are the
+//! credential's and are never written from an editor. A linked editor (Task 19) sends `None` for those fields;
+//! a non-empty value is refused with a message ([`EditorDeps::linked_credential_error`]) before anything is
+//! saved, and the secret store refuses it as well (`SecretWriter::set`). The credential itself changes only in
+//! the Credentials section or through the credential prompt's "Save" (`SecretWriter::save_prompted`).
 
 use crate::deps::{
     Clock, ConnectionRepository, ProfileInstaller, SecretField, SecretReader, SecretWriter, SystemService,
@@ -286,6 +292,20 @@ impl EditorDeps {
         self.manager.connections().into_iter().find(|x| x.id == c.id).unwrap_or_else(|| c.clone())
     }
 
+    /// The message for a save that would write the username or password of a connection linked to a shared
+    /// credential (a non-empty value; an empty one is a no-op there). `None`: fine.
+    fn linked_credential_error(&self, id: &Uuid, s: &Secrets) -> Option<String> {
+        let typed = |v: &Option<String>| v.as_deref().is_some_and(|v| !v.is_empty());
+        if !typed(&s.username) && !typed(&s.password) {
+            return None;
+        }
+        let credential = self.secrets.credential_for(id)?;
+        Some(l10n::tr(
+            "This connection uses the shared credential %@. Change its user name and password in the Credentials section.",
+            &[Arg::Str(&credential.name)],
+        ))
+    }
+
     /// Writes the given fields (an empty value deletes the item); a `None` field keeps its stored value.
     fn store_secrets(&self, s: &Secrets, id: &Uuid) {
         let w = &self.secret_writer;
@@ -336,6 +356,9 @@ pub fn save_text(
         issues = macvpn_core::validators::validator(c.kind).map(|v| v.validate(config)).unwrap_or_default();
     }
     if let Some(error) = secrets.input_error() {
+        issues.push(ValidationIssue::new(0, error));
+    }
+    if let Some(error) = deps.linked_credential_error(&c.id, secrets) {
         issues.push(ValidationIssue::new(0, error));
     }
     if !issues.is_empty() {
@@ -398,6 +421,7 @@ pub fn save_otp(deps: &EditorDeps, c: &Connection, otp: OTPSetting) -> Option<St
 /// Native save: the profile (without the password, with the PSK) goes to a fresh private temp directory, is
 /// opened from there, and is deleted once the service is listed by `scutil --nc list` (at the latest on the
 /// next launch). `password` / `psk` `None`: the stored value is kept (the stored PSK goes into the profile).
+/// MacVPN's copies of both go to the secret store (the vault); see `mobileconfig`'s module docs.
 pub fn save_native(
     deps: &EditorDeps,
     c: &Connection,
@@ -410,14 +434,19 @@ pub fn save_native(
     if settings.server.is_empty() || settings.account.is_empty() {
         return Some(l10n::tr("Server and account name are required", &[]));
     }
+    // A linked connection's account name is the profile's only: the stored username is the credential's.
+    let linked = deps.secrets.credential_for(&c.id).is_some();
     let secrets = Secrets {
-        username: Some(settings.account.clone()),
+        username: (!linked).then(|| settings.account.clone()),
         password: password.map(str::to_string),
         psk: psk.map(str::to_string),
         key_password: Some(String::new()),
         ..Secrets::default()
     };
     if let Some(error) = secrets.input_error() {
+        return Some(error);
+    }
+    if let Some(error) = deps.linked_credential_error(&c.id, &secrets) {
         return Some(error);
     }
     let profile_psk = match psk {
@@ -442,7 +471,7 @@ pub fn save_native(
     deps.profiles.install(&c.id, &data, &exporter::file_name(&updated), service_existed).err()
 }
 
-/// The PSK / password of a system VPN in MacVPN's keychain (L2TP / Cisco IPsec with a UUID service ID only). An
+/// The PSK / password of a system VPN in MacVPN's secret store (L2TP / Cisco IPsec with a UUID service ID only). An
 /// empty field deletes the item, a `None` field keeps it. `None`: saved; otherwise the error.
 pub fn save_system_secrets(
     deps: &EditorDeps,
@@ -457,6 +486,9 @@ pub fn save_system_secrets(
     let secrets =
         Secrets { password: password.map(str::to_string), psk: psk.map(str::to_string), ..Secrets::default() };
     if let Some(error) = secrets.input_error() {
+        return Some(error);
+    }
+    if let Some(error) = deps.linked_credential_error(&id, &secrets) {
         return Some(error);
     }
     if let Some(psk) = psk {
@@ -504,15 +536,45 @@ pub struct Draft {
     pub stored: StoredSecrets,
     /// System VPN: the service is no longer listed by macOS (the editor is read-only until it returns).
     pub removed: bool,
+    /// The shared credential the connection's username and password come from (its name; spec 3a). While it is
+    /// set, the editor hides its own username and password fields and never writes them.
+    pub credential: Option<String>,
+}
+
+/// An editor's shared-credential state ([`Draft::link_state`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LinkState {
+    /// The linked credential's name.
+    pub credential: Option<String>,
+    pub stored_password: bool,
+    /// The own username (empty while linked).
+    pub username: String,
+}
+
+/// The vault item of an editor's target: the managed connection's id or the system VPN's service ID.
+pub fn secret_item(target: &Target) -> Option<Uuid> {
+    match target {
+        Target::Connection(c) => Some(c.id),
+        Target::System(s) => s.secret_id(),
+    }
 }
 
 impl Draft {
     /// The fields as stored now (the Swift `load`). `import_issues`: the import's validation problems, shown once.
     pub fn load(deps: &EditorDeps, target: Target, import_issues: Vec<ValidationIssue>) -> Draft {
+        let credential = secret_item(&target).and_then(|id| deps.secrets.credential_for(&id)).map(|c| c.name);
+        let linked = credential.is_some();
         let (fields, stored) = match &target {
             Target::Connection(c) => {
                 let stored = StoredSecrets::read(&deps.secrets.secrets(&c.id));
-                let username = || deps.secrets.get(&c.id, SecretField::Username).unwrap_or_default();
+                // A linked connection's username is the credential's: never shown in (or sent back from) its editor.
+                let username = || {
+                    if linked {
+                        String::new()
+                    } else {
+                        deps.secrets.get(&c.id, SecretField::Username).unwrap_or_default()
+                    }
+                };
                 let text = || deps.store.load_config(&c.id).unwrap_or_default();
                 let fields = if c.kind.is_native() {
                     let settings = c.native.clone().unwrap_or_default();
@@ -581,6 +643,43 @@ impl Draft {
             import_error: None,
             stored,
             removed: false,
+            credential,
+        }
+    }
+
+    /// The link state of `target` as stored now (read without any lock of the caller held).
+    pub fn link_state(deps: &EditorDeps, target: &Target) -> Option<LinkState> {
+        let id = secret_item(target)?;
+        let credential = deps.secrets.credential_for(&id).map(|c| c.name);
+        let secrets = match target {
+            Target::Connection(_) => deps.secrets.secrets(&id),
+            Target::System(s) => deps.manager.system_secrets(s),
+        };
+        let username = if credential.is_some() {
+            String::new()
+        } else {
+            deps.secrets.get(&id, SecretField::Username).unwrap_or_default()
+        };
+        Some(LinkState { credential, stored_password: StoredSecrets::read(&secrets).password, username })
+    }
+
+    /// The connection was linked to a shared credential or unlinked (the editor's selector, "Copy into each
+    /// connection", "Create from connection…"): the link state and the stored-password flag follow, and the
+    /// username and password fields go back to "stored" in the edited and in the original fields, so the other
+    /// edits stay and the draft does not turn dirty.
+    pub fn apply_link_state(&mut self, state: LinkState) {
+        self.credential = state.credential;
+        self.stored.password = state.stored_password;
+        for fields in [&mut self.fields, &mut self.original] {
+            match fields {
+                EditorFields::Text(f) => {
+                    f.username = state.username.clone();
+                    f.password = None;
+                }
+                EditorFields::Native(f) => f.password = None,
+                EditorFields::Sstp(f) => f.password = None,
+                EditorFields::System(f) => f.password = None,
+            }
         }
     }
 
@@ -643,8 +742,10 @@ impl Draft {
                 // Only OpenVPN has a private key password; the other kinds clear it (as the Swift save).
                 let key_password =
                     if c.kind == VPNKind::Openvpn { f.key_password.clone() } else { Some(String::new()) };
+                // A linked editor sends no username (an empty one); a typed one is refused by `save_text`.
+                let linked = self.credential.is_some();
                 let secrets = Secrets {
-                    username: Some(f.username.clone()),
+                    username: (!linked || !f.username.is_empty()).then(|| f.username.clone()),
                     password: f.password.clone(),
                     psk: f.psk.clone(),
                     key_password: key_password.clone(),
@@ -806,6 +907,7 @@ impl Draft {
                 if self.stored.password || self.stored.psk || o.otp != OtpFields::default()),
             has_stored_secret: self.stored,
             removed: self.removed,
+            credential: self.credential.clone(),
         }
     }
 }
@@ -852,6 +954,9 @@ pub struct EditorView {
     pub has_stored_secret: StoredSecrets,
     /// System VPN: removed from macOS; the editor is read-only ("This VPN was removed from macOS").
     pub removed: bool,
+    /// The shared credential (its name) the username and password come from: the selector shows "Use
+    /// credential: <name>" and the own username and password fields are hidden. `None`: its own fields.
+    pub credential: Option<String>,
 }
 
 /// The editor key of a connection.

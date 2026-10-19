@@ -23,13 +23,35 @@ fn up_passes_kind_id_debug_and_secrets_on_stdin() {
     hu();
     let mock = MockCommandRunner::new();
     let secrets = Secrets { username: Some("u".into()), password: Some("p".into()), ..Secrets::default() };
-    MvpnClient::new(&mock).up(VPNKind::Openvpn, &id(), &secrets, true, &[]).unwrap();
+    MvpnClient::new(&mock).up(VPNKind::Openvpn, &id(), b"client\n", &secrets, true, &[]).unwrap();
     let call = &mock.calls()[0];
     assert_eq!(
         call.command_line(),
         "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn up openvpn 11111111-2222-3333-4444-555555555555 --debug --lang hu"
     );
-    assert_eq!(call.stdin.as_deref(), Some("username=u\npassword=p\n"));
+    assert_eq!(call.stdin.as_deref(), Some("config 7\nclient\nusername=u\npassword=p\n"));
+}
+
+/// Root layer 8: `config <exact byte length>\n`, the config bytes as they are (its `password=` lines stay config),
+/// then the secret lines. The secrets and the config are never in the arguments.
+#[test]
+fn up_frames_the_config_on_stdin() {
+    hu();
+    let mock = MockCommandRunner::new();
+    let config = "# Irodai VPN – árvíztűrő tükörfúrógép\nserver=vpn.example.com\nuser=bob\npassword=FromConfig\n";
+    let secrets = Secrets { password: Some("Titok123".into()), ..Secrets::default() };
+    MvpnClient::new(&mock).up(VPNKind::Sstp, &id(), config.as_bytes(), &secrets, false, &[]).unwrap();
+    let call = &mock.calls()[0];
+    let expected = format!("config {}\n{config}password=Titok123\n", config.len());
+    assert_ne!(config.len(), config.chars().count(), "the test needs multi-byte characters");
+    assert_eq!(call.stdin.as_deref(), Some(expected.as_str()));
+    assert!(
+        call.arguments.iter().all(|a| !a.contains("Titok123") && !a.contains("FromConfig") && !a.contains("config"))
+    );
+    // Without secrets: the frame alone.
+    let mock = MockCommandRunner::new();
+    MvpnClient::new(&mock).up(VPNKind::Wireguard, &id(), b"[Interface]\n", &Secrets::default(), false, &[]).unwrap();
+    assert_eq!(mock.calls()[0].stdin.as_deref(), Some("config 12\n[Interface]\n"));
 }
 
 #[test]
@@ -46,7 +68,7 @@ fn up_accept_risky_sorted_filtered_and_openvpn_only() {
         ["up", "wireguard", "11111111-2222-3333-4444-555555555555"]
     );
     let mock = MockCommandRunner::new();
-    MvpnClient::new(&mock).up(VPNKind::Openvpn, &id(), &Secrets::default(), true, &risky).unwrap();
+    MvpnClient::new(&mock).up(VPNKind::Openvpn, &id(), b"x", &Secrets::default(), true, &risky).unwrap();
     assert!(mock.calls()[0].command_line().ends_with("--debug --accept-risky auth-user-pass,route-up --lang hu"));
 }
 
@@ -58,7 +80,7 @@ fn up_failure_returns_stderr() {
         "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn up wireguard 11111111-2222-3333-4444-555555555555 --lang hu",
         CommandResult::new(1, "", "AUTH_FAILED\n"),
     );
-    let e = MvpnClient::new(&mock).up(VPNKind::Wireguard, &id(), &Secrets::default(), false, &[]).unwrap_err();
+    let e = MvpnClient::new(&mock).up(VPNKind::Wireguard, &id(), b"x", &Secrets::default(), false, &[]).unwrap_err();
     assert_eq!(e.to_string(), "AUTH_FAILED");
     // No stderr: the generic message with the exit code.
     let mock = MockCommandRunner::new();
@@ -79,7 +101,7 @@ fn up_uses_the_long_runner_status_the_quick_one_down_the_default() {
     long.respond(status, CommandResult::exit(1));
     quick.respond(status, CommandResult::stdout("[]\n"));
     let client = MvpnClient::with_runners(&main, Some(&long), Some(&quick), None);
-    client.up(VPNKind::Openvpn, &id(), &Secrets::default(), false, &[]).unwrap();
+    client.up(VPNKind::Openvpn, &id(), b"x", &Secrets::default(), false, &[]).unwrap();
     client.down(VPNKind::Openvpn, &id()).unwrap();
     assert_eq!(client.status().unwrap(), []);
     client.respond(&id(), AuthResponseKind::Cancel, "").unwrap();

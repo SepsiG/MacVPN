@@ -101,6 +101,8 @@ impl CurlHttpClient {
     pub fn base_arguments(accept: Option<&str>, max_time: f64) -> Vec<String> {
         let mut args: Vec<String> = [
             "-q",
+            // A URL is taken literally: `[]` and `{}` are never curl's globbing.
+            "--globoff",
             "--silent",
             "--show-error",
             "--proto",

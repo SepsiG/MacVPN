@@ -3,15 +3,20 @@
 
 use crate::connections::ManageView;
 use crate::credential_prompt::CredentialPromptView;
-use crate::manager::{ConnectionItem, ManagerSnapshot};
+use crate::manager::{ConnectionItem, FolderSnapshot, ManagerSnapshot};
 use crate::pairing::PairingView;
 use crate::prompt::PromptView;
 use crate::quit::QuitQuestion;
 use crate::setup::SetupView;
+use crate::shared_credentials::CredentialsView;
 use crate::updates::UpdateView;
+use crate::vault::VaultState;
+use crate::vault_setup::VaultSetupView;
 use macvpn_core::control::protocol::escape_unsafe_text;
 use macvpn_core::control::registry::PairedClient;
+use macvpn_core::l10n;
 use macvpn_core::models::{AuthWaitKind, ConnectionState, VPNKind, uuid_string};
+use macvpn_core::vault::{ColorSource, FolderColor, FolderTree, TreeEntry};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap};
 use uuid::Uuid;
@@ -114,6 +119,113 @@ pub struct RowView {
     pub held_by: Vec<String>,
 }
 
+/// One row of the folder tree (spec 3), in display order: per folder its subfolders, then its items (pinned first,
+/// then by usage). The contents of collapsed folders are included; the views hide them. An item's other fields are
+/// in [`ViewModel::rows`] (same `id`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "camelCase", rename_all_fields = "camelCase")]
+pub enum TreeRowView {
+    Folder {
+        id: String,
+        name: String,
+        /// The parent folder (`None`: the root).
+        parent: Option<String>,
+        /// The real nesting depth (0 at the root); the views cap the indentation.
+        depth: usize,
+        /// The effective colour (a palette id), its source (`own`, `inherited`, `none`) and the own colour.
+        color: Option<&'static str>,
+        color_source: &'static str,
+        own_color: Option<&'static str>,
+        collapsed: bool,
+        /// The active connections in the folder and all its subfolders.
+        active_count: usize,
+        /// One of them is connected (the green dot).
+        has_connected: bool,
+        /// The managed connections in the folder and all its subfolders ("Delete the connections too").
+        connection_count: usize,
+        /// Every item in the folder and all its subfolders, and its subfolders.
+        item_count: usize,
+        folder_count: usize,
+    },
+    Item {
+        id: String,
+        parent: Option<String>,
+        depth: usize,
+        color: Option<&'static str>,
+        color_source: &'static str,
+        /// The item's own colour (an override; `None`: the folder's).
+        own_color: Option<&'static str>,
+    },
+}
+
+fn color_source(source: ColorSource) -> &'static str {
+    match source {
+        ColorSource::Own => "own",
+        ColorSource::Inherited(_) => "inherited",
+        ColorSource::None => "none",
+    }
+}
+
+impl TreeRowView {
+    /// The rows of the snapshot's folder tree, with each folder's counts over its whole subtree.
+    pub fn build(folders: &FolderSnapshot, states: &HashMap<String, (ConnectionState, bool)>) -> Vec<TreeRowView> {
+        let tree = FolderTree::new(folders.folders.clone()).unwrap_or_default();
+        let folder_of = |key: &str| folders.placements.get(key).and_then(|p| p.folder).filter(|f| tree.contains(*f));
+        // The items directly in each folder.
+        let mut direct: HashMap<uuid::Uuid, Vec<&str>> = HashMap::new();
+        for entry in &folders.entries {
+            if let TreeEntry::Item { key, .. } = entry
+                && let Some(folder) = folder_of(key)
+            {
+                direct.entry(folder).or_default().push(key);
+            }
+        }
+        let own = |c: Option<FolderColor>| c.map(FolderColor::as_str);
+        folders
+            .entries
+            .iter()
+            .map(|entry| match entry {
+                TreeEntry::Folder { id, depth } => {
+                    let node = tree.get(*id);
+                    let subtree: Vec<uuid::Uuid> = std::iter::once(*id).chain(tree.descendants(*id)).collect();
+                    let keys: Vec<&str> =
+                        subtree.iter().flat_map(|f| direct.get(f).into_iter().flatten().copied()).collect();
+                    let state = |k: &&str| states.get(*k).map(|(s, _)| s);
+                    let (color, source) = tree.folder_color(*id);
+                    TreeRowView::Folder {
+                        id: uuid_string(id),
+                        name: node.map(|n| n.name.clone()).unwrap_or_default(),
+                        parent: node.and_then(|n| n.parent).map(|p| uuid_string(&p)),
+                        depth: *depth,
+                        color: own(color),
+                        color_source: color_source(source),
+                        own_color: own(node.and_then(|n| n.color)),
+                        collapsed: node.is_some_and(|n| n.collapsed),
+                        active_count: keys.iter().filter(|k| state(k).is_some_and(ConnectionState::is_active)).count(),
+                        has_connected: keys.iter().any(|k| matches!(state(k), Some(ConnectionState::Connected { .. }))),
+                        connection_count: keys.iter().filter(|k| states.get(**k).is_some_and(|(_, m)| *m)).count(),
+                        item_count: keys.len(),
+                        folder_count: subtree.len() - 1,
+                    }
+                }
+                TreeEntry::Item { key, depth } => {
+                    let placement = folders.placements.get(key);
+                    let own_color = placement.and_then(|p| p.color);
+                    let (color, source) = tree.item_color(own_color, folder_of(key));
+                    TreeRowView::Item {
+                        id: key.clone(),
+                        parent: folder_of(key).map(|f| uuid_string(&f)),
+                        depth: *depth,
+                        color: own(color),
+                        color_source: color_source(source),
+                        own_color: own(own_color),
+                    }
+                }
+            })
+            .collect()
+    }
+}
+
 /// "Launch at Login" (the platform layer's `LoginItemState`, mapped by the app).
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,6 +244,14 @@ pub struct ViewModel {
     /// `en` or `hu` (the core's language rule).
     pub language: &'static str,
     pub rows: Vec<RowView>,
+    /// The folder tree over `rows` (spec 3): every folder and item in display order.
+    pub tree: Vec<TreeRowView>,
+    /// Folders can be edited (a folder store is configured); otherwise every item is at the root.
+    pub folders_enabled: bool,
+    /// Why folders cannot be edited now (the 1.1 data waits for its migration), shown above the tree.
+    pub folders_note: Option<String>,
+    /// The colour palette's ids, in display order (the `--folder-<id>` tokens).
+    pub palette: Vec<&'static str>,
     pub status_error: Option<String>,
     pub tray: TrayIcon,
     pub has_active: bool,
@@ -156,9 +276,79 @@ pub struct ViewModel {
     pub pairings: Vec<PairingView>,
     /// The open credential prompts (each in its `cred-<id>` window). Never a typed value.
     pub credential_prompts: Vec<CredentialPromptView>,
+    /// The Connections window's Credentials section (never a password).
+    pub credentials: CredentialsView,
     /// The app's version (the workspace's Cargo version, which the bundle carries too), shown at the bottom of the
     /// menu as "MacVPN <version>".
     pub app_version: &'static str,
+    /// The vault's state (never a password or key).
+    pub vault: VaultView,
+    /// The create window's step (`vault-create`), while it is open. Never a password or the recovery key.
+    pub vault_setup: Option<VaultSetupView>,
+    /// "Back up everything…" and "Restore from backup…" are offered (the vault is open).
+    pub backup_available: bool,
+}
+
+/// The vault's part of the view model (spec 2.3). Never a password, a recovery key or a key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VaultView {
+    /// `notCreated`, `locked`, `unlocked` or `legacyReadOnly`.
+    pub state: &'static str,
+    /// The key-store item exists (the next launch unlocks without the password).
+    pub auto_unlock: bool,
+    /// The menu shows "Lock now": auto-unlock is off, or the user turned "Show Lock now" on. Only while unlocked.
+    pub show_lock_now: bool,
+    /// The preference "Show Lock now" itself (the settings switch).
+    pub show_lock_now_pref: bool,
+    /// The active connections (the locked menu shows only this count).
+    pub active_count: usize,
+    /// Why the app runs from the old storage (the migration's error), in the legacy read-only mode.
+    pub legacy_error: Option<String>,
+    /// The `vault-password` window's mode while it is open: `change` (the current password and a new one twice)
+    /// or `confirm` (the master password once, to turn auto-unlock on).
+    pub password_mode: Option<&'static str>,
+}
+
+impl Default for VaultView {
+    /// Before the vault was looked at: as unlocked, so nothing is hidden by mistake in the tests of other parts.
+    fn default() -> Self {
+        VaultView {
+            state: "unlocked",
+            auto_unlock: true,
+            show_lock_now: false,
+            show_lock_now_pref: false,
+            active_count: 0,
+            legacy_error: None,
+            password_mode: None,
+        }
+    }
+}
+
+impl VaultView {
+    pub fn build(state: &VaultState, auto_unlock: bool, show_lock_now_pref: bool, active_count: usize) -> VaultView {
+        let (name, legacy_error) = match state {
+            VaultState::NotCreated => ("notCreated", None),
+            VaultState::Locked => ("locked", None),
+            VaultState::Unlocked => ("unlocked", None),
+            // An empty error: the create window runs in migration mode (nothing failed).
+            VaultState::LegacyReadOnly { error } => ("legacyReadOnly", Some(error.clone()).filter(|e| !e.is_empty())),
+        };
+        VaultView {
+            state: name,
+            auto_unlock,
+            show_lock_now: *state == VaultState::Unlocked && (!auto_unlock || show_lock_now_pref),
+            show_lock_now_pref,
+            active_count,
+            legacy_error,
+            password_mode: None,
+        }
+    }
+
+    /// Nothing from the vault may be shown: locked, or no vault yet (and no old storage to read).
+    pub fn hides_data(&self) -> bool {
+        matches!(self.state, "locked" | "notCreated")
+    }
 }
 
 /// A paired app in the Connections window's "Paired apps" section. Never the token or its hash.
@@ -261,9 +451,18 @@ impl ViewModel {
                 }
             })
             .collect();
+        let states: HashMap<String, (ConnectionState, bool)> = snapshot
+            .items
+            .iter()
+            .map(|(item, state, _)| (item.id(), (state.clone(), matches!(item, ConnectionItem::Managed(_)))))
+            .collect();
         ViewModel {
             language,
             rows,
+            tree: TreeRowView::build(&snapshot.folders, &states),
+            folders_enabled: snapshot.folders.enabled,
+            folders_note: None,
+            palette: FolderColor::ALL.iter().map(|c| c.as_str()).collect(),
             status_error: snapshot.status_error.clone(),
             tray: TrayIcon::from_snapshot(snapshot),
             has_active: snapshot.has_active,
@@ -278,8 +477,43 @@ impl ViewModel {
             control: ControlView::default(),
             pairings: Vec::new(),
             credential_prompts: Vec::new(),
+            credentials: CredentialsView::default(),
             app_version: macvpn_core::VERSION,
+            vault: VaultView::default(),
+            vault_setup: None,
+            backup_available: false,
         }
+    }
+
+    /// Sets the vault's part. While nothing from the vault may be shown ([`VaultView::hides_data`]) the rows (with
+    /// every connection name), the paired apps and the Connections window's selection are removed; only the
+    /// number of active connections stays (`vault.active_count`).
+    pub fn apply_vault(&mut self, mut vault: VaultView) {
+        vault.active_count = self.rows.iter().filter(|r| r.switch_on).count();
+        if vault.state == "legacyReadOnly" {
+            // The 1.1 data has no folders, and none may be written before the migration (it would block it).
+            self.folders_enabled = false;
+            self.folders_note = Some(l10n::tr("Folders can be made once your data is in the vault.", &[]));
+        }
+        if vault.hides_data() {
+            self.rows.clear();
+            // The folder tree (names, colours, placements) is vault data too; no folder editing either.
+            self.tree.clear();
+            self.palette.clear();
+            self.folders_enabled = false;
+            // The shared credentials (names, user names, how many use them) too. The lock dismissed the credential
+            // prompts; one still listed is not sent, and an MFA prompt shows no connection name.
+            self.credentials = CredentialsView::locked();
+            self.credential_prompts.clear();
+            for prompt in &mut self.prompts {
+                prompt.connection_name.clear();
+            }
+            self.control.clients.clear();
+            self.control.activity.clear();
+            self.manage.selected = None;
+            self.manage.dirty.clear();
+        }
+        self.vault = vault;
     }
 
     /// The "Held by …" labels: the lease holder names per connection key (`ControlServer::holders`).

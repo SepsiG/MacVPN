@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-set-show-lock-now"
+description = "Enables the vault_set_show_lock_now command without any pre-configured scope."
+commands.allow = ["vault_set_show_lock_now"]
+
+[[permission]]
+identifier = "deny-vault-set-show-lock-now"
+description = "Denies the vault_set_show_lock_now command without any pre-configured scope."
+commands.deny = ["vault_set_show_lock_now"]

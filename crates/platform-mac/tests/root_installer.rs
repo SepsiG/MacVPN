@@ -1,5 +1,6 @@
 //! Port of `RootInstallerTests.swift` (`RootInstallerTests`, `RootUninstallerTests`, `RootInstallerTempTests`).
-//! Root layer 7 installs the single `mvpn` + `VERSION` and removes the earlier layers' files.
+//! Root layer 7 (and 8, the config-on-stdin layer) installs the single `mvpn` + `VERSION` and removes the earlier
+//! layers' files.
 
 mod common;
 
@@ -124,11 +125,13 @@ fn run_install_sandbox(tamper: bool, parent: ParentState) -> (i32, String, Scrat
     run_install_sandbox_with(tamper, parent, None)
 }
 
-/// An installed layer 6 in the sandbox: a fake old `mvpn` that records each call together with the state of the
-/// files at that moment, and (optionally) run directories of active connections.
+/// An installed older layer in the sandbox (`version`; the layer 6 files are there too): a fake old `mvpn` that
+/// records each call together with the state of the files at that moment, and (optionally) run directories of
+/// active connections.
 struct OldLayer<'a> {
     run_dirs: bool,
     failing_id: Option<&'a str>,
+    version: &'a str,
 }
 
 const GOOD_ID: &str = "11111111-2222-3333-4444-555555555555";
@@ -160,7 +163,7 @@ fn run_install_sandbox_full(
             std::fs::write(own.join(old), "#!/bin/bash\n").unwrap();
         }
         if let Some(old) = &old {
-            std::fs::write(own.join("VERSION"), "6").unwrap();
+            std::fs::write(own.join("VERSION"), old.version).unwrap();
             let calls = root.join("calls");
             std::fs::write(
                 own.join("mvpn"),
@@ -259,8 +262,11 @@ fn recorded_calls(root: &Scratch) -> Vec<String> {
 #[test]
 fn install_takes_connections_down_with_the_old_layer_first() {
     lang(AppLanguage::Hu);
-    let (status, output, root) =
-        run_install_sandbox_with(false, ParentState::Safe, Some(OldLayer { run_dirs: true, failing_id: None }));
+    let (status, output, root) = run_install_sandbox_with(
+        false,
+        ParentState::Safe,
+        Some(OldLayer { run_dirs: true, failing_id: None, version: "6" }),
+    );
     assert_eq!(status, 0, "{output}");
     assert_eq!(
         recorded_calls(&root),
@@ -289,6 +295,29 @@ fn install_takes_connections_down_with_the_old_layer_first() {
     assert!(s.contains("case \"$kind\" in openvpn|wireguard|strongswan|sstp) ;; *) continue ;; esac"));
 }
 
+/// 7 → 8 (root 8 takes the config on stdin): the running connections are taken down with the installed layer 7
+/// (`down` reads no config, so the old layer can do it), then the bundled layer replaces it.
+#[test]
+fn upgrade_from_layer_7_takes_connections_down_with_it() {
+    lang(AppLanguage::En);
+    let (status, output, root) = run_install_sandbox_with(
+        false,
+        ParentState::Safe,
+        Some(OldLayer { run_dirs: true, failing_id: None, version: "7" }),
+    );
+    assert_eq!(status, 0, "{output}");
+    assert_eq!(
+        recorded_calls(&root),
+        [
+            format!("bob down openvpn {GOOD_ID} --lang en | VERSION=7 ovpn-dns=yes sudoers=no"),
+            format!("bob down wireguard {OTHER_ID} --lang en | VERSION=7 ovpn-dns=yes sudoers=no"),
+        ]
+    );
+    let dir = root.join("usr/local/libexec/macvpn");
+    assert_eq!(std::fs::read_to_string(dir.join("VERSION")).unwrap(), "4", "the bundled (sandbox) VERSION");
+    assert_eq!(std::fs::read_to_string(dir.join("mvpn")).unwrap(), "#!/bin/bash\n# mvpn\n");
+}
+
 /// A connection the old layer cannot take down: nothing is replaced, and the app shows a localized error.
 #[test]
 fn install_aborts_when_a_connection_cannot_be_disconnected() {
@@ -300,7 +329,7 @@ fn install_aborts_when_a_connection_cannot_be_disconnected() {
         let (status, output, root) = run_install_sandbox_with(
             false,
             ParentState::Safe,
-            Some(OldLayer { run_dirs: true, failing_id: Some(OTHER_ID) }),
+            Some(OldLayer { run_dirs: true, failing_id: Some(OTHER_ID), version: "6" }),
         );
         assert_eq!(status, 1, "{output}");
         assert!(output.contains(&format!("{line} {OTHER_ID}")), "{output}");
@@ -326,8 +355,11 @@ fn install_aborts_when_a_connection_cannot_be_disconnected() {
 #[test]
 fn install_without_running_connections_calls_nothing() {
     lang(AppLanguage::En);
-    let (status, output, root) =
-        run_install_sandbox_with(false, ParentState::Safe, Some(OldLayer { run_dirs: false, failing_id: None }));
+    let (status, output, root) = run_install_sandbox_with(
+        false,
+        ParentState::Safe,
+        Some(OldLayer { run_dirs: false, failing_id: None, version: "6" }),
+    );
     assert_eq!(status, 0, "{output}");
     assert!(recorded_calls(&root).is_empty());
     assert_eq!(std::fs::read_to_string(root.join("usr/local/libexec/macvpn/VERSION")).unwrap(), "4");
@@ -755,8 +787,12 @@ fn root_install_timeout() {
 #[test]
 fn install_sandbox_via_osascript_command_line() {
     lang(AppLanguage::En);
-    let (status, output, root) =
-        run_install_sandbox_full(false, ParentState::Safe, Some(OldLayer { run_dirs: true, failing_id: None }), true);
+    let (status, output, root) = run_install_sandbox_full(
+        false,
+        ParentState::Safe,
+        Some(OldLayer { run_dirs: true, failing_id: None, version: "6" }),
+        true,
+    );
     assert_eq!(status, 0, "{output}");
     assert_eq!(recorded_calls(&root).len(), 2);
     let dir = root.join("usr/local/libexec/macvpn");

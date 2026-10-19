@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-open-restore"
+description = "Enables the vault_open_restore command without any pre-configured scope."
+commands.allow = ["vault_open_restore"]
+
+[[permission]]
+identifier = "deny-vault-open-restore"
+description = "Denies the vault_open_restore command without any pre-configured scope."
+commands.deny = ["vault_open_restore"]

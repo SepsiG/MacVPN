@@ -234,6 +234,9 @@ pub async fn export_connection(
 #[tauri::command]
 pub async fn delete_connection(state: Shared<'_>, id: String) -> Result<(), String> {
     let c = managed(&state, &id)?;
+    if state.manager.is_locked() {
+        return Err(macvpn_app_core::vault_stores::locked_message());
+    }
     let shared = state.inner().clone();
     blocking(move || {
         shared.native_logs.remove(&c.id);

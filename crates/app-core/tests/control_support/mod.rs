@@ -143,6 +143,8 @@ pub struct FakeHost {
     pub epochs: Mutex<HashMap<String, u64>>,
     pub connects_done: AtomicUsize,
     pub credentials_cancelled: Mutex<HashSet<String>>,
+    /// The vault is locked (`ControlHost::locked`).
+    pub locked: AtomicBool,
 }
 
 pub fn managed(name: &str) -> (String, ConnectionItem) {
@@ -307,6 +309,10 @@ impl ControlHost for FakeHost {
 
     fn credentials_cancelled(&self, key: &str) -> bool {
         self.credentials_cancelled.lock().unwrap().contains(key)
+    }
+
+    fn locked(&self) -> bool {
+        self.locked.load(Ordering::SeqCst)
     }
 }
 

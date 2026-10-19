@@ -38,7 +38,7 @@ Goal: even if the maintainer's GitHub account (or CI) is compromised, no update 
 The flow is: **tag → CI builds a draft → `scripts/sign-release.sh vX.Y.Z` on the maintainer's Mac → published.**
 
 1. Merge everything for the release into `main`. CI (`.github/workflows/ci.yml`) must be green.
-2. If the root layer (`crates/mvpn`) changed, bump `crates/mvpn/VERSION`. Set the version (`X.Y.Z`) in `app/src-tauri/tauri.conf.json`, in `[workspace.package]` of `Cargo.toml` (then `cargo check` to update `Cargo.lock`) and in `app/ui/package.json` (`npm install --package-lock-only` updates the lock file). The three must agree (`scripts/build-dmg.sh` fails otherwise) and equal the tag (the workflow fails otherwise; it no longer rewrites the version). Before tagging, run the local-only checks: the smoke test in both languages (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`, see `app/README.md`) and `docs/manual-test-checklist.md`.
+2. If the root layer (`crates/mvpn`) changed, bump `crates/mvpn/VERSION` (MacVPN 1.2.0 ships root layer **8**: the config goes to `mvpn` on stdin; 1.1 had 7). A new root version makes every user re-run **Authorize** with the admin password: say so in the release notes. Set the version (`X.Y.Z`) in `app/src-tauri/tauri.conf.json`, in `[workspace.package]` of `Cargo.toml` (then `cargo check` to update `Cargo.lock`) and in `app/ui/package.json` (`npm install --package-lock-only` updates the lock file). The three must agree (`scripts/build-dmg.sh` fails otherwise) and equal the tag (the workflow fails otherwise; it no longer rewrites the version). Before tagging, run the local-only checks: the smoke test in both languages (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`, see `app/README.md`) and `docs/manual-test-checklist.md`.
 3. Tag the commit on `main` and push the tag:
    ```
    git checkout main && git pull
@@ -79,6 +79,16 @@ The flow is: **tag → CI builds a draft → `scripts/sign-release.sh vX.Y.Z` on
 7. If a release turns out to be broken or suspicious, delete it (or mark a newer fixed one as latest) quickly; users with the 24-hour delay will not have been offered it yet. A draft that should not be released can simply be deleted.
 
 All actions are pinned to full commit SHAs with a `# vX.Y.Z` comment. Dependabot (`.github/dependabot.yml`) proposes updates weekly; review the upstream diff before merging such a PR.
+
+## Licences and third-party notices
+
+Every release must ship the licence texts of what it bundles:
+
+- `LICENSE` at the repository root: MacVPN's own MIT licence.
+- `THIRD-PARTY-NOTICES.txt` in the repository and inside the app bundle (copied by `scripts/build-dmg.sh`; the build fails without it, and when it is not what the generator writes now). It covers:
+  - **SQLCipher** (from 1.2.0, statically linked into the app for the vault): its BSD-style licence in full, with the copyright notice of **Zetetic LLC**. Clause 2 of that licence requires binary redistributions to reproduce the copyright notice, the list of conditions and the disclaimer in the documentation or other materials provided with the distribution; `THIRD-PARTY-NOTICES.txt` in the bundle is how MacVPN meets it. SQLite itself is public domain (no notice required, but list it).
+  - Every Rust crate linked into the app or `mvpn` and every JS package bundled into the web view, with its licence expression and the licence files it ships. The list is generated, not written by hand: `node scripts/third-party-notices.mjs` (after `cargo fetch --locked` and `npm ci` in `app/ui`) rewrites the file from `cargo metadata` and `node_modules`; `--check` only compares. Regenerate it whenever a dependency changes and review the diff.
+- The release notes mention the licence files only when they change.
 
 ## Repository settings (not code)
 

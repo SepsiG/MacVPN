@@ -196,6 +196,35 @@ fn cancel_ends_silently() {
     assert!(f.secrets.writes().is_empty());
 }
 
+/// Lock Now while the credential window is open (review 1.2.0 M2): the prompt is dismissed, and the connect ends
+/// before anything else is asked or the root layer is called, whatever the window answers.
+#[test]
+fn a_lock_while_the_credential_prompt_is_open_ends_the_connect() {
+    let f = Fixture::new(EN);
+    let c = openvpn(&f, OVPN);
+    let key = uuid_string(&c.id);
+    let m = manager(&f);
+    let dismissed = Arc::new(Mutex::new(Vec::<String>::new()));
+    let weak = Arc::downgrade(&m);
+    m.set_credential_handler(move |_prompt| {
+        if let Some(m) = weak.upgrade() {
+            m.enter_locked();
+        }
+        let mut values = CredentialValues::default();
+        values.set(Username, Zeroizing::new("alice".into()));
+        values.set(Password, Zeroizing::new("s3cret".into()));
+        CredentialAnswer::Provided { values, save: true }
+    });
+    let seen = dismissed.clone();
+    m.set_dismiss_credentials(move |key| seen.lock().unwrap().push(key.to_string()));
+    m.connect(&c, false);
+    assert_eq!(*dismissed.lock().unwrap(), std::slice::from_ref(&key));
+    assert!(up_stdins(&f, &c).is_empty(), "the root layer was not called");
+    assert!(!m.state(&key).is_active());
+    m.flush_saves();
+    assert!(f.secrets.writes().is_empty());
+}
+
 #[test]
 fn waiting_for_credentials_while_the_window_is_open() {
     let f = Fixture::new(EN);
@@ -392,6 +421,27 @@ fn the_reprompt_does_not_ask_a_stored_key_password_again() {
     m.connect(&c, false);
     assert_eq!(w.fields(), [vec![Username, Password]]);
     assert!(!w.fields()[0].contains(&KeyPassword));
+}
+
+/// Root layer 8: strongSwan's EAP authentication failure is a sign-in failure too.
+#[test]
+fn an_ikev2_eap_failure_reprompts_once() {
+    let f = Fixture::new(EN);
+    let c = Connection::new("IKE", VPNKind::Strongswan);
+    f.store.save(&c, Some(&macvpn_core::importer::template(VPNKind::Strongswan))).unwrap();
+    f.secrets.set("alice", &c.id, SecretField::Username);
+    f.secrets.set("wrong", &c.id, SecretField::Password);
+    let m = manager(&f);
+    let w = window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "right")], true)]);
+    f.root.respond_once(&up_line(c.kind, &c.id), Err("Authentication failed (EAP)"));
+    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    m.connect(&c, false);
+    assert_eq!(w.prompts().len(), 1, "stored credentials: only the re-prompt");
+    assert!(w.prompts()[0].retry);
+    assert_eq!(up_stdins(&f, &c), ["username=alice\npassword=wrong\n", "username=alice\npassword=right\n"]);
+    assert!(m.state(&uuid_string(&c.id)).is_connected());
+    m.flush_saves();
+    assert_eq!(f.secrets.get(&c.id, SecretField::Password).as_deref(), Some("right"));
 }
 
 #[test]
@@ -633,6 +683,40 @@ impl macvpn_app_core::deps::SecretWriter for SlowWriter {
     }
     fn delete_all(&self, _: &uuid::Uuid) {}
     fn remove_all(&self) {}
+}
+
+/// Records which write the manager uses: the prompt's "Save" must go through `save_prompted` (which may update a
+/// linked shared credential), never the editors' `set`.
+#[derive(Default)]
+struct WriteKinds(Mutex<Vec<(&'static str, SecretField)>>);
+
+impl macvpn_app_core::deps::SecretWriter for WriteKinds {
+    fn set(&self, _: &str, _: &uuid::Uuid, field: SecretField) {
+        self.0.lock().unwrap().push(("set", field));
+    }
+    fn save_prompted(&self, _: &str, _: &uuid::Uuid, field: SecretField) {
+        self.0.lock().unwrap().push(("save_prompted", field));
+    }
+    fn delete_all(&self, _: &uuid::Uuid) {}
+    fn remove_all(&self) {}
+}
+
+#[test]
+fn save_writes_through_save_prompted() {
+    let f = Fixture::new(EN);
+    let c = openvpn(&f, OVPN);
+    let writer = Arc::new(WriteKinds::default());
+    let mut deps = f.deps();
+    deps.secret_writer = Some(writer.clone());
+    let m = f.manager_with(deps);
+    window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], true)]);
+    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    m.connect(&c, false);
+    m.flush_saves();
+    assert_eq!(
+        *writer.0.lock().unwrap(),
+        [("save_prompted", SecretField::Username), ("save_prompted", SecretField::Password)]
+    );
 }
 
 #[test]

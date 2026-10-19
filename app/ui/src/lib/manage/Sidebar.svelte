@@ -1,14 +1,21 @@
 <script lang="ts">
-  // The one ranked list (spec 10e): the pinned rows first (reordered by dragging), then the others by use; a
-  // row's context menu pins or unpins it. The "New" menu creates a connection of a kind or imports files.
-  import { api, type Choice, type Kind, type Row } from '../api';
+  // The connections as a folder tree (spec 3; lib/folders/FolderTree.svelte): per folder its subfolders, then the
+  // pinned rows (reordered by dragging), then the others by use. The "New" menu creates a connection of a kind, a
+  // folder, or imports files.
+  import { api, type Choice, type FolderColor, type Kind, type Row, type TreeRow } from '../api';
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
-  import TypeIcon from '../TypeIcon.svelte';
-  import { dropIndex, isMove } from './reorder';
+  import FolderTree from '../folders/FolderTree.svelte';
+  import { treeOf } from '../folders/tree';
+  import { backupApi } from '../vault/backupApi';
+  import { popover } from '../popover';
 
   let {
     rows,
+    tree,
+    foldersEnabled = false,
+    foldersNote = null,
+    palette = [],
     selected,
     kinds,
     onselect,
@@ -16,8 +23,18 @@
     paired = false,
     pairedCount = 0,
     onpaired,
+    credentials = false,
+    credentialCount = 0,
+    oncredentials = () => {},
+    backupAvailable = false,
   }: {
     rows: Row[];
+    /// The folder tree over `rows` (an older view model has none: the rows at the top level).
+    tree?: TreeRow[];
+    foldersEnabled?: boolean;
+    /// Why folders cannot be edited now.
+    foldersNote?: string | null;
+    palette?: FolderColor[];
     selected: string | null;
     kinds: Choice<Kind>[];
     onselect: (id: string) => void;
@@ -26,53 +43,20 @@
     paired?: boolean;
     pairedCount?: number;
     onpaired: () => void;
+    /// The Credentials section is shown.
+    credentials?: boolean;
+    credentialCount?: number;
+    oncredentials?: () => void;
+    /// "Back up everything…" and "Restore from backup…" are offered (the vault is open).
+    backupAvailable?: boolean;
   } = $props();
 
-  const pinned = $derived(rows.filter((r) => r.pinned));
-  const others = $derived(rows.filter((r) => !r.pinned));
   let menuOpen = $state(false);
-  let context = $state<{ row: Row; x: number; y: number } | null>(null);
-
-  // Dragging a pinned row: the index it came from and the gap it would drop into.
-  let drag = $state<{ from: number; startY: number; moved: boolean; gap: number } | null>(null);
-  let pinnedList: HTMLElement | undefined = $state();
-
-  function subtitle(row: Row): string {
-    return row.managed ? row.typeLabel : tr('%@ · System VPN', row.typeLabel);
-  }
-
-  function pointerdown(event: PointerEvent, index: number) {
-    if (event.button !== 0) return;
-    drag = { from: index, startY: event.clientY, moved: false, gap: index };
-  }
-
-  function pointermove(event: PointerEvent) {
-    if (!drag || !pinnedList) return;
-    if (!drag.moved && Math.abs(event.clientY - drag.startY) < 4) return;
-    drag.moved = true;
-    const mids = Array.from(pinnedList.querySelectorAll<HTMLElement>('[data-row]')).map((el) => {
-      const r = el.getBoundingClientRect();
-      return r.top + r.height / 2;
-    });
-    drag.gap = dropIndex(mids, event.clientY);
-  }
-
-  function pointerup() {
-    if (!drag) return;
-    const { from, gap, moved } = drag;
-    drag = null;
-    if (moved && isMove(from, gap)) api.movePinned([from], gap).catch(console.error);
-  }
-
-  function openContext(event: MouseEvent, row: Row) {
-    event.preventDefault();
-    context = { row, x: event.clientX, y: event.clientY };
-  }
-
-  function pin(row: Row) {
-    context = null;
-    (row.pinned ? api.unpin(row.id) : api.pin(row.id)).catch(console.error);
-  }
+  let newButton: HTMLButtonElement | undefined = $state();
+  /// The menu hangs under the New button, right-aligned to it, kept inside the window (`popover`).
+  const newButtonRect = () => newButton?.getBoundingClientRect() ?? { left: 0, top: 0, right: 0, bottom: 0 };
+  let folderTree: ReturnType<typeof FolderTree> | undefined = $state();
+  const shownTree = $derived(treeOf({ tree, rows }));
 
   function create(kind: Kind) {
     menuOpen = false;
@@ -81,28 +65,33 @@
 </script>
 
 <svelte:window
-  onpointermove={pointermove}
-  onpointerup={pointerup}
   onkeydown={(e) => {
-    if (e.key === 'Escape') {
-      menuOpen = false;
-      context = null;
-    }
+    if (e.key === 'Escape') menuOpen = false;
   }}
 />
 
 <nav class="sidebar">
   <div class="toolbar">
-    <button class="new" aria-haspopup="menu" aria-expanded={menuOpen} title={tr('New')} onclick={() => (menuOpen = !menuOpen)}>
+    <button class="new" bind:this={newButton} aria-haspopup="menu" aria-expanded={menuOpen} title={tr('New')} onclick={() => (menuOpen = !menuOpen)}>
       <Icon name="plus" />
       {tr('New')}
     </button>
     {#if menuOpen}
-      <div class="menu" role="menu">
+      <div class="menu" role="menu" use:popover={{ anchor: newButtonRect, align: 'end', gap: 6, maxWidth: 320 }}>
         {#each kinds as kind (kind.value)}
           <button role="menuitem" onclick={() => create(kind.value)}>{kind.title}</button>
         {/each}
         <hr />
+        {#if foldersEnabled}
+          <button
+            role="menuitem"
+            data-action="new-folder"
+            onclick={() => {
+              menuOpen = false;
+              folderTree?.newFolder(null);
+            }}>{tr('New Folder')}</button
+          >
+        {/if}
         <button
           role="menuitem"
           onclick={() => {
@@ -110,51 +99,40 @@
             onimport();
           }}>{tr('Import from File…')}</button
         >
+        {#if backupAvailable}
+          <hr />
+          <button
+            role="menuitem"
+            class="backup"
+            onclick={() => {
+              menuOpen = false;
+              backupApi.showWindow('backup').catch(console.error);
+            }}>{tr('Back Up Everything…')}</button
+          >
+          <button
+            role="menuitem"
+            class="restore"
+            onclick={() => {
+              menuOpen = false;
+              backupApi.showWindow('restore').catch(console.error);
+            }}>{tr('Restore from Backup…')}</button
+          >
+        {/if}
       </div>
     {/if}
   </div>
+  {#if foldersNote}<p class="folders-note" role="note">{foldersNote}</p>{/if}
   <div class="list">
-    {#if pinned.length > 0}
-      <h2>{tr('Pinned')}</h2>
-      <div bind:this={pinnedList} class:dragging={drag?.moved}>
-        {#each pinned as row, i (row.id)}
-          {#if drag?.moved && drag.gap === i}<div class="gap"></div>{/if}
-          <button
-            data-row
-            class="row"
-            class:selected={row.id === selected}
-            onclick={() => onselect(row.id)}
-            oncontextmenu={(e) => openContext(e, row)}
-            onpointerdown={(e) => pointerdown(e, i)}
-          >
-            <TypeIcon kind={row.kind} state={row.state} size="sm" />
-            <span class="text">
-              <span class="name"><span class="label">{row.name}</span>
-                <svg class="pin" viewBox="0 0 16 16" role="img" aria-label={tr('Pinned')}>
-                  <path d="M9.8 1.5l4.7 4.7-1.4 1.4-.9-.4-2.6 2.6.3 2.7-1.4 1.4-2.8-2.8-3 3-.9-.9 3-3-2.8-2.8 1.4-1.4 2.7.3 2.6-2.6-.4-.9z" fill="currentColor" />
-                </svg>
-              </span>
-              <span class="type">{subtitle(row)}</span>
-              {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
-            </span>
-          </button>
-        {/each}
-        {#if drag?.moved && drag.gap === pinned.length}<div class="gap"></div>{/if}
-      </div>
-    {/if}
-    <h2>{tr('Connections')}</h2>
-    {#each others as row (row.id)}
-      <button class="row" class:selected={row.id === selected} onclick={() => onselect(row.id)} oncontextmenu={(e) => openContext(e, row)}>
-        <TypeIcon kind={row.kind} state={row.state} size="sm" />
-        <span class="text">
-          <span class="name"><span class="label">{row.name}</span></span>
-          <span class="type">{subtitle(row)}</span>
-          {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
-        </span>
-      </button>
-    {/each}
+    <FolderTree bind:this={folderTree} {rows} tree={shownTree} {selected} enabled={foldersEnabled} {palette} {onselect} />
   </div>
   <div class="footer">
+    <button class="row section-link shared-credentials" class:selected={credentials} onclick={oncredentials}>
+      <span class="paired-icon" aria-hidden="true"><Icon name="key" /></span>
+      <span class="text">
+        <span class="name"><span class="label">{tr('Credentials')}</span></span>
+      </span>
+      {#if credentialCount > 0}<span class="count">{credentialCount}</span>{/if}
+    </button>
     <button class="row paired" class:selected={paired} onclick={onpaired}>
       <span class="paired-icon" aria-hidden="true"><Icon name="link" /></span>
       <span class="text">
@@ -164,15 +142,6 @@
     </button>
   </div>
 </nav>
-
-{#if context}
-  <div class="dismiss" role="presentation" onpointerdown={() => (context = null)}></div>
-  <div class="menu context" role="menu" style="left: {context.x}px; top: {context.y}px">
-    <button role="menuitem" onclick={() => context && pin(context.row)}>
-      {context.row.pinned ? tr('Unpin') : tr('Pin to Top')}
-    </button>
-  </div>
-{/if}
 
 <style>
   .sidebar {
@@ -199,16 +168,16 @@
     height: 14px;
     color: var(--accent);
   }
+  .folders-note {
+    margin: 0 14px 6px;
+    font-size: var(--text-sm);
+    color: var(--secondary);
+  }
   .list {
     flex: 1;
     overflow: auto;
-    padding: 0 10px 12px;
-  }
-  h2 {
-    font-size: var(--text-sm);
-    font-weight: 600;
-    color: var(--tertiary);
-    margin: 12px 8px 6px;
+    /* The tree fills the list (its empty space takes drops for the top level) and has its own bottom padding. */
+    padding: 0 10px;
   }
   .row {
     --badge-ring: var(--sidebar);
@@ -246,9 +215,6 @@
   .row:focus-visible {
     box-shadow: var(--focus-ring);
   }
-  .dragging .row {
-    cursor: grabbing;
-  }
   .text {
     display: flex;
     flex-direction: column;
@@ -266,22 +232,11 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .type {
-    font-size: var(--text-sm);
-    color: var(--secondary);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .held {
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--state-on-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
   .footer {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 2px;
     padding: 6px 10px 10px;
     border-top: 1px solid var(--separator);
   }
@@ -304,7 +259,8 @@
     height: 14px;
     stroke-width: 1.8;
   }
-  .paired .text {
+  .paired .text,
+  .section-link .text {
     flex: 1;
   }
   .count {
@@ -319,24 +275,12 @@
     line-height: 18px;
     text-align: center;
   }
-  .pin {
-    width: 10px;
-    height: 10px;
-    flex: none;
-    color: var(--tertiary);
-  }
-  .gap {
-    height: 3px;
-    margin: 1px 8px;
-    border-radius: 2px;
-    background: var(--accent);
-  }
+  /* Placed by `popover` (fixed, inside the window, at most 320 pt wide): long items wrap rather than widen it. */
   .menu {
-    position: absolute;
-    top: 44px;
-    right: 12px;
+    position: fixed;
     z-index: 20;
     min-width: 200px;
+    width: max-content;
     padding: 5px;
     border-radius: var(--radius-card);
     background: var(--surface);
@@ -347,16 +291,14 @@
     flex-direction: column;
     animation: pop 0.14s var(--ease);
   }
-  .menu.context {
-    position: fixed;
-    right: auto;
-    z-index: 40;
-  }
   .menu button {
     justify-content: flex-start;
     min-height: 26px;
     text-align: left;
     padding: 3px 10px;
+    white-space: normal;
+    overflow-wrap: break-word;
+    line-height: 1.3;
     border: none;
     border-radius: var(--radius-sm);
     background: transparent;
@@ -376,11 +318,6 @@
     border: none;
     border-top: 1px solid var(--separator);
     margin: 4px 6px;
-  }
-  .dismiss {
-    position: fixed;
-    inset: 0;
-    z-index: 30;
   }
   @keyframes pop {
     from {

@@ -280,6 +280,7 @@ A hibakódok általánosak, soha nem tartalmaznak nyers eszközkimenetet.
 | `mfa_cancelled` | A felhasználó megszakította a kód- vagy bejelentkezési ablakot. | Magától ne próbálkozz újra. |
 | `mfa_timeout` | A kód- vagy bejelentkezési ablak lejárt. | Hagyd, hogy a felhasználó újrapróbálja. |
 | `credentials_cancelled` | A felhasználó megszakította a hitelesítő adatokat kérő ablakot, vagy az 2 perc után lejárt (1.1.0-tól). | Magától ne próbálkozz újra. |
+| `locked` | A MacVPN széfje zárolva van (1.2.0-tól): a `pair`, `hello`, `list`, `up` és `status` kérést elutasítja, amíg a felhasználó fel nem oldja a MacVPN-ben. A `down` továbbra is működik, a meglévő munkamenet és a bérletei megmaradnak. `pair` vagy `hello` után a kapcsolat bezárul. | Kérd meg a felhasználót, hogy oldja fel a MacVPN-t, aztán próbáld újra. |
 | `failed` | Minden egyéb hiba. A `message`, ha van, rövid, lokalizált ok a felhasználónak. Akkor is ez jön, ha a felhasználó felépülés közben lebontotta a kapcsolatot a MacVPN-ben, vagy ha a saját `down` kérésed szakította meg az `up`-ot. | Mutasd meg az üzenetet. |
 | `app_quitting` | A MacVPN kilép. A kapcsolat ezután bomlik (a [`closing` esemény](#510-a-closing-esemény) `reason` értéke is lehet). | Csatlakozz újra, ha a MacVPN ismét fut. |
 | `disabled` | A felhasználó kikapcsolta: **Más appok vezérelhetik a VPN-eket**. A kapcsolat ezután bomlik (a [`closing` esemény](#510-a-closing-esemény) `reason` értéke is lehet). | — |
@@ -303,7 +304,7 @@ Minden más kódot `failed` kódként kezelj (lásd [8. szakasz](#8-kompatibilit
 
 ## 8. Kompatibilitás a későbbi verziókkal
 
-A későbbi MacVPN verziók új állapotokat és hibakódokat vezetnek be az `api` megváltoztatása nélkül. Ilyen kiegészítés a `waiting_for_credentials` állapot és a `credentials_cancelled` hiba; ezek az 1-es API-val egy kiadásban jelennek meg (1.1.0), egy későbbi verzió pedig a `locked` hibát hozza. Minden kliensnek ezeket a szabályokat kell követnie:
+A későbbi MacVPN verziók új állapotokat és hibakódokat vezetnek be az `api` megváltoztatása nélkül. Ilyen kiegészítés a `waiting_for_credentials` állapot és a `credentials_cancelled` hiba; ezek az 1-es API-val egy kiadásban jelennek meg (1.1.0). Ilyen a `locked` hiba is (1.2.0). Minden kliensnek ezeket a szabályokat kell követnie:
 
 - **Az ismeretlen állapot „folyamatban” állapotot jelent.** Várj tovább az `up` végső válaszára, és tartsd meg a foglalást.
 - **Az ismeretlen hibakód `failed` hibát jelent.** Mutasd meg a `message` szövegét, ha van, és naplózd a kódot.

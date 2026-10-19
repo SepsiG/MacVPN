@@ -54,6 +54,8 @@ const base: CredentialPromptView = {
   username: 'alice',
   message: null,
   deadline: 0,
+  credentialName: null,
+  usedBy: null,
 };
 
 async function view(props: Record<string, unknown>, prompt: Partial<CredentialPromptView> = {}): Promise<string> {
@@ -104,9 +106,11 @@ test('the view shows only the asked fields, the user name pre-filled', async () 
   assert.match(html, /<input[^>]*data-field="password"[^>]*type="password"/);
   assert.doesNotMatch(html, /data-field="psk"|data-field="keyPassword"/);
   assert.doesNotMatch(html, /Sign-in failed/);
-  // "Save" is ticked by default, with the 1.1 hint.
+  // "Save in vault" is ticked by default, with the vault hint (1.2: no Keychain).
   assert.match(html, /<input type="checkbox"[^>]*checked/);
-  assert.match(html, /Stored in the macOS Keychain/);
+  assert.match(html, /Save in vault/);
+  assert.match(html, /MacVPN vault/);
+  assert.doesNotMatch(html, /Keychain/);
 
   const psk = await view({ values: {}, armed: true }, { fields: ['psk'], username: null });
   assert.equal((psk.match(/data-field=/g) ?? []).length, 1);
@@ -135,4 +139,13 @@ test('a refused answer is shown, not silently ignored', async () => {
   assert.doesNotMatch(await view({ values: {}, armed: true }), /role="alert"/);
   assert.match(await view({ values: {}, armed: true, error: 'tooEarly' }), /role="alert"[^>]*>\s*Not ready yet/);
   assert.match(await view({ values: {}, armed: true, error: 'rejected' }), /role="alert"[^>]*>\s*MacVPN did not accept/);
+});
+
+test('a shared credential is named with its use count', async () => {
+  const own = await view({ values: {}, armed: true }, { fields: ['password'] });
+  assert.doesNotMatch(own, /used by/);
+  const shared = await view({ values: {}, armed: true }, { fields: ['password'], credentialName: 'Office AD', usedBy: 4 });
+  assert.match(shared, /<p class="caption shared[^"]*">\s*Password for Office AD — used by 4 connections\s*<\/p>/);
+  const one = await view({ values: {}, armed: true }, { fields: ['password'], credentialName: 'Office AD', usedBy: 1 });
+  assert.match(one, /Password for Office AD — used by 1 connection\b/);
 });

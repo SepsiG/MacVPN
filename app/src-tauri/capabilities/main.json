@@ -54,6 +54,26 @@
     "allow-control-set-enabled",
     "allow-control-set-allowed",
     "allow-control-revoke",
-    "allow-control-audit-save"
+    "allow-control-audit-save",
+    "allow-vault-show",
+    "allow-vault-lock-now",
+    "allow-vault-auto-unlock-off",
+    "allow-vault-set-show-lock-now",
+    "allow-folder-create",
+    "allow-folder-rename",
+    "allow-folder-set-color",
+    "allow-folder-set-collapsed",
+    "allow-folder-move",
+    "allow-folder-delete",
+    "allow-item-move",
+    "allow-item-set-color",
+    "allow-credential-create",
+    "allow-credential-update",
+    "allow-credential-delete",
+    "allow-credential-link",
+    "allow-credential-matches",
+    "allow-credential-from-connection",
+    "allow-answer-question-choice",
+    "allow-backup-show-window"
   ]
 }

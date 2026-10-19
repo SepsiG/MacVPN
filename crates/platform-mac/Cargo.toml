@@ -15,7 +15,7 @@ block2 = "0.6.2"
 core-foundation = "0.10.1"
 core-foundation-sys = "0.8.7"
 libc = "0.2.191"
-macvpn-core = { path = "../core" }
+macvpn-core = { path = "../core", features = ["vault"] }
 objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
@@ -53,9 +53,15 @@ plist = "1.10.1"
 regex = "1.13.1"
 security-framework-sys = "2.17.0"
 uuid = { version = "1.26.1", features = ["v4"] }
+zeroize = "1.9.1"
+
+[features]
+# Test-only API (`KeychainKeyStore::in_keychain`); enabled only by this crate's own dev-dependency on itself.
+test-support = []
 
 [lints]
 workspace = true
 
 [dev-dependencies]
+macvpn-platform-mac = { path = ".", features = ["test-support"] }
 ed25519-dalek = "3.0.0"

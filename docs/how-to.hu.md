@@ -2,7 +2,7 @@
 
 [English version](how-to.en.md)
 
-Rövid, lépésenkénti leírások a MacVPN 1.1-hez. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
+Rövid, lépésenkénti leírások a MacVPN 1.2-höz. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
 
 ## Tartalom
 
@@ -18,6 +18,11 @@ Rövid, lépésenkénti leírások a MacVPN 1.1-hez. A részletek a [felhasznál
 10. [Indítás bejelentkezéskor](#10-indítás-bejelentkezéskor)
 11. [A MacVPN eltávolítása](#11-a-macvpn-eltávolítása)
 12. [Gyakori kérdések hibaelhárításhoz](#12-gyakori-kérdések-hibaelhárításhoz)
+13. [Frissítés 1.1-ről 1.2-re](#13-frissítés-11-ről-12-re)
+14. [A széf beállítása, zárolása és feloldása](#14-a-széf-beállítása-zárolása-és-feloldása)
+15. [Kapcsolatok mappákba rendezése](#15-kapcsolatok-mappákba-rendezése)
+16. [Egy bejelentkezés több kapcsolatnak](#16-egy-bejelentkezés-több-kapcsolatnak)
+17. [Teljes biztonsági mentés és visszaállítás](#17-teljes-biztonsági-mentés-és-visszaállítás)
 
 ---
 
@@ -30,7 +35,7 @@ macOS 14 vagy újabb és rendszergazdai fiók kell hozzá.
 3. Nyisd meg először a MacVPN-t. Ad-hoc aláírású (nem Apple Developer ID-vel), ezért a Gatekeeper a sima dupla kattintást letiltja:
    - **macOS 14:** az Applications mappában kattints a Control billentyűvel (jobb gombbal) a **MacVPN**-re, válaszd a **Megnyitás** pontot, majd kattints a **Megnyitás** gombra.
    - **macOS 15 és újabb:** kattints duplán a MacVPN-re, zárd be a figyelmeztetést, majd a **Rendszerbeállítások → Adatvédelem és biztonság** alatt kattints a **Megnyitás mindenképp** gombra, add meg a jelszavadat, és kattints újra a **Megnyitás mindenképp** gombra.
-4. A menüsorban megjelenik egy pajzs. A MacVPN-nek nincs Dock ikonja.
+4. A menüsorban megjelenik egy pajzs, és megnyílik a **Széf beállítása** ablak: válassz mesterjelszót, és mentsd el a helyreállítási kulcsot ([14. rész](#14-a-széf-beállítása-zárolása-és-feloldása)).
 
 Részletek: [útmutató, 1.](user-guide.hu.md#1-telepítés)
 
@@ -40,7 +45,7 @@ Ha valami hiányzik, a **Rendszerállapot** ablak magától megnyílik (később
 
 1. **Homebrew:** ha piros, kattints a **Telepítés…** gombra. Terminál nyílik a hivatalos telepítővel; kövesd, majd kattints az **Újraellenőrzés** gombra.
 2. **VPN eszközök:** kattints a **Telepítés** gombra. A `brew install` kimenete az ablakban látszik. Az ablakot közben bezárhatod, a telepítés folytatódik.
-3. **Jogosultság (root scriptek + sudoers):** kattints az **Engedélyezés** gombra, és add meg egyszer az admin jelszót. Ez telepíti a `mvpn` root binárist és a sudoers szabályt, így később a csatlakozáshoz nem kell jelszó.
+3. **Jogosultság (root scriptek + sudoers):** kattints az **Engedélyezés** gombra, és add meg egyszer az admin jelszót (a MacVPN 1.2 a 8-as root réteget telepíti). Ez telepíti a `mvpn` root binárist és a sudoers szabályt, így később a csatlakozáshoz nem kell jelszó.
 4. Ha mindhárom sor zöld, kész vagy.
 
 Részletek: [útmutató, 2.](user-guide.hu.md#2-első-indítás-és-a-rendszerállapot-ablak)
@@ -75,9 +80,9 @@ A Kapcsolatok ablakban a **Csatlakozás** / **Bontás** gomb is használható. E
 
 Ha aktív kapcsolattal lépsz ki, a MacVPN megkérdezi: **Leállítás és kilépés**, **Kilépés, fussanak tovább** vagy **Mégse**.
 
-**Ha egy jelszó nincs elmentve,** a MacVPN csatlakozás előtt bekéri egy **Hitelesítő adatok szükségesek** ablakban (csak a hiányzó mezőket). Kattints az ablakra (nem veszi el a billentyűzetet a használt apptól), írd be az adatokat, és kattints a **Csatlakozás** gombra; az Enter nem csinál semmit. Bepipált **Mentés** mellett az adatok a sikeres csatlakozás után a macOS Keychainbe kerülnek. Ha a szerver elutasítja őket, az ablak egyszer újra kérdez. A **Mégse** hiba nélkül leállítja a csatlakozást.
+**Ha egy jelszó nincs elmentve,** a MacVPN csatlakozás előtt bekéri egy **Hitelesítő adatok szükségesek** ablakban (csak a hiányzó mezőket). Kattints az ablakra (nem veszi el a billentyűzetet a használt apptól), írd be az adatokat, és kattints a **Csatlakozás** gombra; az Enter nem csinál semmit. Bepipált **Mentés a széfbe** mellett az adatok a sikeres csatlakozás után a MacVPN titkosított széfjébe kerülnek. Ha a szerver elutasítja őket, az ablak egyszer újra kérdez. A **Mégse** hiba nélkül leállítja a csatlakozást.
 
-**Csatlakozás a jelszó mentése nélkül:** a **Csatlakozás** előtt vedd ki a pipát a **Mentés** elől a **Hitelesítő adatok szükségesek** ablakban. Az adatok csak erre a csatlakozásra érvényesek, a MacVPN legközelebb újra kérdez. Ha egy korábban elmentett jelszót akarsz újra bekéretni, nyisd meg a kapcsolatot a Kapcsolatok ablakban, és használd a **Mentett jelszó törlése** (vagy **Mentett titkok törlése**) gombot.
+**Csatlakozás a jelszó mentése nélkül:** a **Csatlakozás** előtt vedd ki a pipát a **Mentés a széfbe** elől a **Hitelesítő adatok szükségesek** ablakban. Az adatok csak erre a csatlakozásra érvényesek, a MacVPN legközelebb újra kérdez. Ha egy korábban elmentett jelszót akarsz újra bekéretni, nyisd meg a kapcsolatot a Kapcsolatok ablakban, és használd a **Mentett jelszó törlése** (vagy **Mentett titkok törlése**) gombot.
 
 Részletek: [felhasználói kézikönyv, 5.3](user-guide.hu.md#53-hitelesítő-adatok-bekérése-csatlakozáskor).
 
@@ -114,19 +119,19 @@ Az L2TP-nek és a Cisco IPsec-nek csak debug módban van naplója.
 2. Ha a config privát kulcsokat vagy hitelesítő adatokat tartalmaz, válaszd az **Exportálás kulcsok nélkül** (biztonságosabb) vagy az **Exportálás kulcsokkal** (csak ha a címzettnek kellenek) lehetőséget.
 3. Válaszd ki a mentés helyét. A fájlt csak te olvashatod.
 
-Az export soha nem tartalmaz jelszót és PSK-t. Biztonsági mentéshez exportáld az összes kapcsolatot, a jelszavakat pedig tartsd biztonságos helyen (például jelszókezelőben). A `.ovpn`, a WireGuard `.conf`, a `.swanctl.conf` és a `.sstp` fájl visszaimportálható; az L2TP / Cisco `.mobileconfig` exportot egy másik Macen a Finderben dupla kattintással telepítheted.
+Az export soha nem tartalmaz jelszót és PSK-t. A kapcsolat mappáját és közös hitelesítő adatának nevét viszi, így importáláskor a kapcsolat visszakerül a mappájába. A `.ovpn`, a WireGuard `.conf`, a `.swanctl.conf` és a `.sstp` fájl visszaimportálható; az L2TP / Cisco `.mobileconfig` exportot egy másik Macen a Finderben dupla kattintással telepítheted.
 
-A kapcsolataid a `~/Library/Application Support/MacVPN` mappában vannak, a jelszavaik a Keychainben. A mappa másolása önmagában nem viszi a jelszavakat.
+**Ha mindent a jelszavakkal együtt mentenél,** a **Teljes biztonsági mentés…** funkciót használd ([17. rész](#17-teljes-biztonsági-mentés-és-visszaállítás)). Az adataid a `~/Library/Application Support/MacVPN` mappában lévő titkosított széfben vannak; a mappa másolása a széfet is viszi, de a megnyitásához a mesterjelszó vagy a helyreállítási kulcs kell.
 
 ## 9. A MacVPN frissítése
 
 1. Ha új verzió jelent meg, a menüben megjelenik a **Frissítés elérhető: vX.Y.Z** sor. (Vagy válaszd a **Frissítések keresése most** pontot.)
 2. Kattints rá, olvasd el a változásokat, majd kattints a **Letöltés és telepítés** gombra.
 3. Válaszolj a nem mentett változásokra és az aktív kapcsolatokra vonatkozó kérdésekre. A MacVPN ellenőrzi az aláírást, lecseréli magát, és újraindul.
-4. Ha a macOS megkérdezi, hogy a MacVPN használhatja-e a Keychain-elemeit, kattints a **Mindig engedélyezés** gombra, de csak akkor, ha a kérdés a `/Applications/MacVPN.app` MacVPN-t nevezi meg.
+4. Ha a macOS megkérdezi, hogy a MacVPN használhatja-e a Keychain-elemét (a széfkulcsot, frissítésenként legfeljebb egyszer), kattints a **Mindig engedélyez** gombra, de csak akkor, ha a kérdés a `/Applications/MacVPN.app` MacVPN-t nevezi meg.
 5. Ha a **Rendszerállapot** ablak **Frissítés szükséges** felirattal nyílik meg, kattints az **Engedélyezés** gombra, és add meg az admin jelszót.
 
-0.x verzióról frissítesz? Előbb olvasd el: [Frissítés 0.x verzióról](user-guide.hu.md#81-frissítés-0x-verzióról). Részletek: [útmutató, 8.](user-guide.hu.md#8-frissítés)
+1.1-ről frissítesz? Kövesd a [13. részt](#13-frissítés-11-ről-12-re). 0.x verzióról frissítesz? Előbb olvasd el: [Frissítés 0.x verzióról](user-guide.hu.md#81-frissítés-0x-verzióról). Részletek: [útmutató, 8.](user-guide.hu.md#8-frissítés)
 
 ## 10. Indítás bejelentkezéskor
 
@@ -139,7 +144,7 @@ Ha a megjegyzés **Bejelentkezési LaunchAgenttel bekapcsolva (a következő bej
 ## 11. A MacVPN eltávolítása
 
 1. Nyisd meg a **Rendszerállapot** ablakot, és kattints a **MacVPN eltávolítása…** gombra.
-2. Ha a kapcsolataidat és a jelszavaikat is törölni szeretnéd, jelöld be: **A felhasználói adatok törlése is (kapcsolatok és Keychain jelszavak)**.
+2. Ha az adataidat is törölni szeretnéd, jelöld be **A felhasználói adatok törlése is** négyzetet: a széf minden kapcsolattal és jelszóval, a Keychainben lévő széfkulcs és a régi MacVPN 1.1 Keychain-bejegyzések is törlődnek. Az általad készített mentésfájlok megmaradnak.
 3. Kattints az **Eltávolítás** gombra, és add meg az admin jelszót. Előtte az aktív kapcsolatok bontódnak.
 4. Kattints a **Kilépés** gombra, majd húzd a `MacVPN.app`-ot a Kukába.
 5. Ha akarod, töröld a Homebrew csomagokat (`brew uninstall openvpn wireguard-tools strongswan sstp-client`) és az L2TP / Cisco profilokat a **Rendszerbeállítások → Általános → Eszközkezelés** alatt.
@@ -179,10 +184,107 @@ Céges CA esetén válaszd a **Saját CA fájl** módot, és töltsd be a CA-t P
 Csatlakozz újra, és 2 percen belül add meg a kódot (böngészős bejelentkezésnél 5 percen belül). [Bővebben](user-guide.hu.md#711-egyszer-használatos-kód-és-böngészős-bejelentkezés-mfa)
 
 **Frissítés után a macOS Keychain-hozzáférést kér.**
-Ez frissítésenként egyszer várható, mert a MacVPN ad-hoc aláírású. Csak akkor engedélyezd, ha a kérdés a `/Applications/MacVPN.app` MacVPN-t nevezi meg.
+Bekapcsolt **Automatikus feloldás** mellett ez frissítésenként egyszer várható (a széfkulcs miatt), mert a MacVPN ad-hoc aláírású; kikapcsolva a frissítés semmit sem kérdez. Csak akkor engedélyezd, ha a kérdés a `/Applications/MacVPN.app` MacVPN-t nevezi meg.
 
 **„A telepítés megszakítva: a(z) /usr/local/libexec nem a root tulajdona…” az Engedélyezés után.**
 Javítsd a mappa tulajdonosát a Terminálban az üzenet szerint, majd kattints újra az **Engedélyezés** gombra. [Bővebben](user-guide.hu.md#78-egyéb)
 
 **A frissítés szerint az app helye nem írható.**
 Helyezd a MacVPN-t az Applications mappába, és próbáld újra, vagy telepítsd kézzel az új DMG-t.
+
+**Elfelejtettem a mesterjelszót.**
+**A MacVPN feloldása** ablakban kattints a **Helyreállítási kulcs használata** gombra, írd be a helyreállítási kulcsot és egy új mesterjelszót, majd **Visszaállítás és feloldás**. [Bővebben](user-guide.hu.md#118-elfelejtett-mesterjelszó)
+
+**Elvesztettem a helyreállítási kulcsot.**
+Amíg a mesterjelszót tudod: menü → **Beállítások** → **Új helyreállítási kulcs…**. Ha mindkettő elveszett, bekapcsolt **Automatikus feloldás** mellett a széf még megnyílik (exportáld, amire szükséged van); nélküle senki sem nyithatja meg. A mesterjelszóval készült mentéshez az akkori mesterjelszó kell; a helyreállítási kulcs sosem nyit meg mentést. Állíts vissza egy olyan mentést, amelyet meg tudsz nyitni, vagy állítsd be újra a MacVPN-t. [Bővebben](user-guide.hu.md#15-gyakori-kérdések-a-széfről)
+
+**A menüben csak a „Széf feloldása…” látszik.**
+A széf zárolva van; a futó VPN-ek fennmaradtak. Kattints a **Széf feloldása…** sorra, és add meg a mesterjelszót. [Bővebben](user-guide.hu.md#115-a-zárolt-menü)
+
+**Az 1.1-ről való frissítéskor „Az átköltöztetés nem fejeződött be”.**
+Semmi sem törlődött, a MacVPN írásvédetten fut az 1.1-es adataidból. Kattints a menü sávjára, és hozd létre újra a széfet egy új mesterjelszóval. [Bővebben](user-guide.hu.md#82-frissítés-11-ről)
+
+**Az 1.2-re frissítés után a macOS sokszor kért Keychain-hozzáférést.**
+Ez egyszer várható: az átköltöztetés alatt régi mentett jelszavanként egy kérdés. Mindig a **Mindig engedélyez** gombot válaszd. A későbbi frissítések legfeljebb egyszer kérdeznek, és csak bekapcsolt **Automatikus feloldás** mellett. [Bővebben](user-guide.hu.md#15-gyakori-kérdések-a-széfről)
+
+**Egy mappa nem törölhető.**
+Van benne aktív kapcsolat. Előbb bontsd. [Bővebben](user-guide.hu.md#125-mappa-törlése)
+
+**Egy kapcsolat jelszómezője nem módosítható.**
+Közös hitelesítő adatot használ. A **Hitelesítő adatok** részben módosíthatod. [Bővebben](user-guide.hu.md#133-használat-egy-kapcsolatban)
+
+**A mentés nem nyitható meg.**
+Hibás a mentés jelszava, vagy sérült a fájl; a MacVPN nem árulja el, melyik. [Bővebben](user-guide.hu.md#14-biztonsági-mentés-és-visszaállítás)
+
+## 13. Frissítés 1.1-ről 1.2-re
+
+1. Lépj ki a MacVPN 1.1-ből, és másold le az adatait: `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.1`. A jelszavaid legyenek kéznél (például jelszókezelőben). Indítsd újra a MacVPN-t.
+2. Menü → **Frissítések keresése most** → **Letöltés és telepítés**.
+3. A **Széf beállítása** ablakban nézd meg, hány Keychain kérdést jelez előre, kattints a **Tovább** gombra, válassz mesterjelszót (legalább 10 karakter), és kattints a **Széf létrehozása** gombra.
+4. Mentsd el a helyreállítási kulcsot (csak egyszer látható), kattints az **Elmentettem** gombra, írd be a kért csoportot, és kattints a **Megerősítés** gombra.
+5. **Az adatok átköltöztetése a széfbe…** alatt minden olyan Keychain kérdésre, amely a `/Applications/MacVPN.app` MacVPN-t nevezi meg, a **Mindig engedélyez** gombbal válaszolj.
+6. Ellenőrizd az eredményt (**Az adataid a széfben vannak**), kattints a **Tovább**, majd a **Kész** gombra.
+7. A **Rendszerállapot** ablakban a **Frissítés szükséges (7 → 8)** sornál kattints az **Engedélyezés** gombra, és add meg az admin jelszót.
+8. Csatlakozz egyszer minden kapcsolattal.
+
+Ha az átköltöztetés nem sikerül, semmi sem törlődik: kattints a menü sávjára, és próbáld újra. Részletek: [útmutató, 8.2](user-guide.hu.md#82-frissítés-11-ről)
+
+## 14. A széf beállítása, zárolása és feloldása
+
+**Zárolás most:** kattints a menü alján a **Széf zárolása most** gombra. Ha nem látod, a **Beállítások** alatt kapcsold be a **„Széf zárolása most” megjelenítése** kapcsolót (kikapcsolt **Automatikus feloldás** mellett mindig látszik). A futó VPN-ek fennmaradnak.
+
+**Feloldás:** kattints a menüben a **Széf feloldása…** sorra, írd be a mesterjelszót, és kattints a **Feloldás** gombra.
+
+**Jelszókérés minden indításkor:** **Beállítások** → kapcsold ki az **Automatikus feloldás** kapcsolót → **Kikapcsolás**. Visszakapcsoláshoz kapcsold be, és add meg a mesterjelszót.
+
+**A mesterjelszó módosítása:** **Beállítások** → **Mesterjelszó módosítása…** → a jelenlegi jelszó, kétszer az új → **Jelszó módosítása**. A helyreállítási kulcs nem változik.
+
+**Új helyreállítási kulcs:** **Beállítások** → **Új helyreállítási kulcs…** → mesterjelszó → **Új kulcs készítése**, mentsd el, **Elmentettem**, írd be a csoportot, **Megerősítés**. A régi kulcs érvényét veszti.
+
+**Elfelejtett mesterjelszó visszaállítása:** **A MacVPN feloldása** ablakban **Helyreállítási kulcs használata** → a helyreállítási kulcs és kétszer az új jelszó → **Visszaállítás és feloldás**.
+
+Részletek: [útmutató, 11.](user-guide.hu.md#11-széf)
+
+## 15. Kapcsolatok mappákba rendezése
+
+1. Nyisd meg a **Kapcsolatok** ablakot. Kattints az **Új** (+) → **Új mappa** pontra, írj be egy nevet (legfeljebb 64 karakter), és nyomj Entert.
+2. Húzd a kapcsolatokat a mappára. Egy mappát egy másik mappára húzva beágyazod, mappák közé húzva átrendezed. A **Legfelső szint** területre ejtve az elem minden mappából kikerül.
+3. Jobb klikk egy mappán: **Átnevezés**, **Szín…**, **Áthelyezés a legfelső szintre**, **Törlés…**; jobb klikk egy kapcsolaton: **Szín…** (vagy **A mappa színe**) és **Kitűzés**.
+4. Mappa törléséhez válaszd a **Törlés…** pontot. Alapból a tartalma egy szinttel feljebb kerül; **A kapcsolatok is törlődjenek** választásnál a törlés előtt újra rákérdez.
+
+A menüben egy mappára kattintva nyitod és csukod; a jelvénye mutatja, hány kapcsolat aktív benne. Részletek: [útmutató, 12.](user-guide.hu.md#12-mappák-és-színek)
+
+## 16. Egy bejelentkezés több kapcsolatnak
+
+**Nulláról:**
+1. **Kapcsolatok** ablak → az oldalsávban **Hitelesítő adatok** → **Hitelesítő adat hozzáadása…**.
+2. Add meg a **Név**, a **Felhasználónév** és (ha akarod) a **Jelszó** mezőt, és ments.
+3. Nyisd meg mindegyik kapcsolatot, amely használja, a **Jelszó forrása** legyen **Hitelesítő adat: <név>**, erősítsd meg a **Használat** gombbal, és ments.
+
+**Egy olyan kapcsolatból, amelynek már van felhasználóneve és jelszava:**
+1. **Hitelesítő adatok** → **Létrehozás kapcsolatból…**, válaszd ki a kapcsolatot és egy nevet, kattints a **Tovább** gombra.
+2. Jelöld be a többi, azonos bejelentkezésű kapcsolatot, és kattints a **Létrehozás és összekapcsolás** gombra.
+
+**Jelszócsere mindegyiknél:** **Hitelesítő adatok** → a tétel → **Szerkesztés…**, írd be az új jelszót, ments.
+
+**A közös használat megszüntetése:** töröld a hitelesítő adatot, és válaszd a **Másolás minden kapcsolatba** gombot.
+
+Ha olyan fájlt importálsz, amely közös hitelesítő adatot nevez meg, a MacVPN a kapcsolás előtt rákérdez, és megmutatja a szervert; válaszd a **Saját adatok használata** gombot, hacsak nem bízol a fájlban. Részletek: [útmutató, 13.](user-guide.hu.md#13-közös-hitelesítő-adatok)
+
+## 17. Teljes biztonsági mentés és visszaállítás
+
+**Mentés:**
+1. Menü → **Beállítások** → **Teljes biztonsági mentés…**.
+2. Írj be kétszer egy mentési jelszót (legalább 10 karakter). (Vagy **A mesterjelszavam használata…**, ami a fájlt a mesterjelszavadhoz köti.)
+3. Kattints a **Mentés…** gombra, és válaszd ki a `MacVPN-backup-<dátum>.macvpnbackup` helyét.
+4. A fájlt és a jelszavát tartsd külön helyen.
+
+**Visszaállítás új Macen:**
+1. Telepítsd és indítsd el a MacVPN-t. A **Széf beállítása** ablakban kattints a **Visszaállítás biztonsági mentésből…** gombra.
+2. **Fájl kiválasztása…**, írd be a mentés jelszavát, **Mentés megnyitása**.
+3. Válassz új mesterjelszót, és mentsd el az új helyreállítási kulcsot.
+4. Jelöld be a kívánt beállításokat, majd **A kijelölt beállítások alkalmazása**. Az L2TP / Cisco profilokat a **… natív profil újratelepítése** gombbal telepítsd újra, és hagyd jóvá a Rendszerbeállításokban. A párosított appokat párosítsd újra.
+
+**Visszaállítás a jelenlegi széfbe:** menü → **Beállítások** → **Visszaállítás biztonsági mentésből…**, nyisd meg a fájlt, nézd át az összesítőt, majd válaszd az **Összefésülés** (hozzáadja, ami hiányzik; a már meglévő elemekről te döntesz) vagy a **Minden cseréje…** lehetőséget (törli, ami nincs a mentésben; előtte az **Előbb a jelenlegi állapot mentése…** gombbal menthetsz).
+
+Részletek: [útmutató, 14.](user-guide.hu.md#14-biztonsági-mentés-és-visszaállítás)

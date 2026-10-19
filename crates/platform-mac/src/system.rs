@@ -50,6 +50,14 @@ pub fn bundle_info(bundle: &Path) -> Option<macvpn_core::update::Info> {
     Some(info)
 }
 
+/// The local date as `YYYY-MM-DD` (the backup's default file name); empty if the time cannot be converted.
+pub fn local_date(unix: f64) -> String {
+    match crate::sys::local_time(unix.floor() as i64) {
+        Some((y, mo, d, ..)) => format!("{y:04}-{mo:02}-{d:02}"),
+        None => String::new(),
+    }
+}
+
 /// The local date and time as Swift's `Date().formatted(date: .numeric, time: .standard)` shows it in the two UI
 /// languages: `10/18/2026, 2:03:05 PM` (English) and `2026. 10. 18. 14:03:05` (Hungarian).
 pub fn local_date_time(unix: f64, language: macvpn_core::l10n::AppLanguage) -> String {

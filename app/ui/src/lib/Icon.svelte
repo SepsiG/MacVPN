@@ -22,7 +22,13 @@
     | 'save'
     | 'play'
     | 'stop'
-    | 'link';
+    | 'link'
+    | 'lock'
+    | 'folder'
+    | 'folder-plus'
+    | 'palette'
+    | 'pencil'
+    | 'arrow-up';
 </script>
 
 <script lang="ts">
@@ -92,10 +98,29 @@
     <path d="M5 3.2v9.6L12.6 8z" fill="currentColor" />
   {:else if name === 'stop'}
     <rect x="4" y="4" width="8" height="8" rx="1.6" fill="currentColor" />
+  {:else if name === 'folder'}
+    <path d="M1.8 4.2a1.4 1.4 0 0 1 1.4-1.4h3l1.4 1.5h5.2a1.4 1.4 0 0 1 1.4 1.4v6.1a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4z" />
+  {:else if name === 'folder-plus'}
+    <path d="M14.2 7.2V5.7a1.4 1.4 0 0 0-1.4-1.4H7.6L6.2 2.8h-3a1.4 1.4 0 0 0-1.4 1.4v7.6a1.4 1.4 0 0 0 1.4 1.4h4.6" />
+    <path d="M12 9.6v4.4M9.8 11.8h4.4" />
+  {:else if name === 'palette'}
+    <path d="M8 1.9a6.1 6.1 0 0 0 0 12.2c.9 0 1.4-.6 1.4-1.3 0-.8-.6-1-.6-1.7 0-.6.5-1 1.1-1h1.6a2.6 2.6 0 0 0 2.6-2.6C14.1 4.4 11.4 1.9 8 1.9z" />
+    <circle cx="4.9" cy="7.4" r="0.5" fill="currentColor" />
+    <circle cx="6.6" cy="4.8" r="0.5" fill="currentColor" />
+    <circle cx="9.6" cy="4.6" r="0.5" fill="currentColor" />
+  {:else if name === 'pencil'}
+    <path d="M10.6 2.6l2.8 2.8-7.6 7.6H3v-2.8z" />
+    <path d="M9.2 4l2.8 2.8" />
+  {:else if name === 'arrow-up'}
+    <path d="M8 13V3.2M4 7.2l4-4 4 4" />
   {:else if name === 'link'}
     <path d="M6.6 9.4l2.8-2.8" />
     <path d="M7.4 4.6l1.3-1.3a2.6 2.6 0 0 1 3.7 3.7l-1.3 1.3" />
     <path d="M8.6 11.4l-1.3 1.3a2.6 2.6 0 0 1-3.7-3.7l1.3-1.3" />
+  {:else if name === 'lock'}
+    <rect x="3.2" y="7" width="9.6" height="7" rx="1.6" />
+    <path d="M5.2 7V5a2.8 2.8 0 0 1 5.6 0v2" />
+    <circle cx="8" cy="10.5" r="0.4" fill="currentColor" />
   {/if}
 </svg>
 

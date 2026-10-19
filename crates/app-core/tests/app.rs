@@ -196,6 +196,9 @@ fn launch_order_migrates_the_keychain_first() {
     assert_eq!(steps[0], LaunchStep::MigrateKeychain);
     let index = |s: LaunchStep| steps.iter().position(|x| *x == s).unwrap();
     assert!(index(LaunchStep::RemoveLegacyProfiles) < index(LaunchStep::ReloadConnections));
+    // The vault opens after the Keychain move and before anything is read from it.
+    assert!(index(LaunchStep::MigrateKeychain) < index(LaunchStep::OpenVault));
+    assert_eq!(index(LaunchStep::OpenVault) + 1, index(LaunchStep::ReloadConnections));
     assert!(index(LaunchStep::ReloadConnections) < index(LaunchStep::CheckSetup));
     assert!(index(LaunchStep::UpdateHousekeeping) < index(LaunchStep::StartUpdateScheduler));
     assert_eq!(*steps.last().unwrap(), LaunchStep::StartPolling);

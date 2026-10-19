@@ -1,8 +1,8 @@
-//! The prompt windows (MFA `prompt-*`, credential `cred-*`, pairing `pair-*`) follow their content's height, the
+//! The prompt windows (MFA `prompt-*`, credential `cred-*`, pairing `pair-*`) and the vault windows (`vault-*`) follow their content's height, the
 //! way the menu does (`set_menu_height`): the page measures its rendered content (a `ResizeObserver`, so a retry
 //! message, an error or the language's longer texts resize it too) and asks for that height with `fit_window`.
 //!
-//! Only the calling window is resized (by its own label: no window can resize another), only those three kinds,
+//! Only the calling window is resized (by its own label: no window can resize another), only those four kinds,
 //! with each kind's fixed width, and the height bounded. The window is centred on its first fit; later fits (an
 //! error appearing) keep where the user put it.
 
@@ -21,6 +21,7 @@ pub struct FitBounds {
 pub const MFA: FitBounds = FitBounds { width: 440.0, min: 160.0, max: 800.0 };
 pub const CREDENTIALS: FitBounds = FitBounds { width: 420.0, min: 200.0, max: 860.0 };
 pub const PAIRING: FitBounds = FitBounds { width: 460.0, min: 240.0, max: 860.0 };
+pub const VAULT: FitBounds = FitBounds { width: 460.0, min: 160.0, max: 820.0 };
 
 /// The bounds for a window label; `None` for every other window (the menu, Connections, …).
 pub fn bounds_of(label: &str) -> Option<FitBounds> {
@@ -30,6 +31,8 @@ pub fn bounds_of(label: &str) -> Option<FitBounds> {
         Some(CREDENTIALS)
     } else if crate::pairing::is_pairing_window(label) {
         Some(PAIRING)
+    } else if crate::vault::is_vault_window(label) {
+        Some(VAULT)
     } else {
         None
     }
@@ -61,7 +64,7 @@ pub fn forget(label: &str) {
 /// window's page then gets exactly that height (the title bar is added on top: see `window_fit`).
 #[tauri::command]
 pub async fn fit_window(window: WebviewWindow, height: f64) -> Result<(), String> {
-    let bounds = bounds_of(window.label()).ok_or("not a prompt window")?;
+    let bounds = bounds_of(window.label()).ok_or("not a fitted window")?;
     let (width, height) = fitted_size(bounds, height)?;
     let center = first_fit(window.label());
     let target = window.clone();
@@ -83,7 +86,12 @@ mod tests {
         assert_eq!(bounds_of("prompt-3"), Some(MFA));
         assert_eq!(bounds_of("cred-7"), Some(CREDENTIALS));
         assert_eq!(bounds_of("pair-2"), Some(PAIRING));
-        for label in ["menu", "manage", "setup", "update", "cred-", "cred-x", "prompt-", "pair-1x", ""] {
+        for label in crate::vault::VAULT_WINDOWS {
+            assert_eq!(bounds_of(label), Some(VAULT), "{label}");
+        }
+        for label in
+            ["menu", "manage", "setup", "update", "cred-", "cred-x", "prompt-", "pair-1x", "vault-", "vault-x", ""]
+        {
             assert_eq!(bounds_of(label), None, "{label}");
         }
     }

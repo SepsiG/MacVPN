@@ -1,4 +1,15 @@
 //! The native (L2TP / Cisco IPsec) `.mobileconfig` profile (port of `MobileconfigGenerator.swift`).
+//!
+//! Where the native secrets live (spec 2.6, plan B Task 12, vault spike report D):
+//! - **The PSK stays in the profile** (`IPSec.SharedSecret`). Once the user approves the profile, macOS owns it
+//!   and keeps the PSK in the System keychain as part of that VPN service; without it the service may not work
+//!   when started from System Settings. Whether a profile without `SharedSecret` installs and still works from
+//!   there is open until the manual test in spike report D.3 passes; until then `generate` embeds it (guarded by
+//!   `psk_stays_in_the_profile_until_spike_d3_passes` in `tests/exporter.rs`).
+//! - **The password is never in the profile.** Started from System Settings, macOS asks for it.
+//! - **MacVPN's own copies** of the PSK and the password (for the editor and for the start options) live in the
+//!   vault, read through `SecretReader`, and are passed in process at every start through the
+//!   `SCNetworkConnectionStart` user options (`native::start_options`), which override the service's stored PSK.
 
 use crate::l10n;
 use crate::models::{Connection, NativeSettings, VPNKind, uuid_string};
@@ -46,7 +57,7 @@ fn dict(entries: Vec<(&str, PlistValue)>) -> PlistValue {
 
 /// The fixed PayloadIdentifier makes a reinstall replace the earlier profile. No password in the profile: MacVPN
 /// passes it in-process when connecting (`NativeStartOptions`); started from System Settings, macOS asks. The PSK
-/// is included, otherwise the service is unusable from there.
+/// is included, otherwise the service is unusable from there (see the module docs).
 pub fn generate(connection: &Connection, psk: &str) -> Result<Vec<u8>, MobileconfigError> {
     if !connection.kind.is_native() {
         return Err(MobileconfigError::NotNative);

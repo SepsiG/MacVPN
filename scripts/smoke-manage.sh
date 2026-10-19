@@ -1,9 +1,12 @@
 #!/bin/bash
-# Sandboxed smoke test of the app's windows (Tauri app, debug build with the embedded UI). Seeds connections in a
-# throwaway MACVPN_SANDBOX_HOME and starts the app with MACVPN_SMOKE_DIR=scripts/smoke, which runs, through the
-# real UI:
+# Sandboxed smoke test of the app's windows (Tauri app, debug build with the embedded UI). Seeds 1.1 data
+# (connections, a pin, an old Keychain item in the sandbox's in-memory Keychain) in a throwaway MACVPN_SANDBOX_HOME
+# and starts the app with MACVPN_SMOKE_DIR=scripts/smoke, which runs, through the real UI:
+#   vault-create.js – the create window in migration mode: the master password twice, the recovery key read and
+#               one group retyped; the seeded data moves into the vault and the old files are deleted;
 #   manage.js – the Connections window (risky panel, acknowledgement, unsaved-changes question, Log tab, SSTP and
-#               native forms, stored secrets never shown, New and Delete, a navigation away cancelled);
+#               native forms, stored secrets never shown, the New menu, a context menu at the window's corners and
+#               its colour picker inside the window, New and Delete, a navigation away cancelled);
 #   setup.js  – System Status over a mock report (rows, the reinstall notice, the simulated brew output, the root
 #               installer and the uninstaller answering "cancelled" in the sandbox);
 #   update.js – the Update window over a mock release (notes stay text), Download and Install up to the quit
@@ -13,6 +16,10 @@
 #   credentials.js – the credential prompt of a seeded OpenVPN connection with a bare auth-user-pass and nothing
 #               stored: the user name and password typed, saved (in memory) once connected, no prompt on the
 #               second connect; then the one re-prompt after a sign-in failure, cancelled without a failure;
+#   backup.js, restore.js – the full backup: "Back up everything" into the sandbox tmp (no save panel in the smoke
+#               run), the file 0600 with no seeded text in clear; "Restore from backup" with a wrong password (the
+#               generic message), then Merge with Overwrite, then Replace everything (its confirmation names the
+#               count) with the preferences step (the control API unticked) – each brings the renamed canary back;
 #   control.js, pairing.js, control-client.mjs – the control API: the Paired apps switch turns the socket on, the
 #               test client (Node) pairs (approved in the pairing window), says hello, lists, brings a seeded
 #               connection up (the smoke's stand-in root helper: nothing runs) and closes its socket, which takes
@@ -21,17 +28,31 @@
 #               driver changes (no scutil, no real VPN); with the Connections window open, a fake system VPN's
 #               detail turns read-only with the "removed from macOS" banner when the driver removes it, and a VPN
 #               the driver adds appears in the window and in the menu popover without reopening either;
+#   folders.js – folders and colours in the Connections window (kept in the vault): New Folder named
+#               in place, a subfolder, a colour the subfolder inherits, a connection dragged into it, collapse, and
+#               the subfolder deleted with its contents moved up;
 #   (the menu popover shown: its rounded corners as AppKit holds them; SMOKE_SHOTS=<dir> takes screenshots)
 #   (every prompt, pairing and credential window must fit its content: no scrolling, checked in the real window;
 #               the largest credential window – retry line, four fields, a refused answer's error – too)
+#   shared.js, shared-prompt.js – shared credentials (in the vault): the Credentials section adds one
+#               without a password, two seeded connections are linked to it through their editors' selector, the
+#               first connect asks for the password once (naming the credential, "used by 2") and saves it into
+#               the credential, the second connects without a prompt; Delete with "Copy into each connection";
+#               an import naming a credential asks first (with the server) and links only after "Use";
 #   quit.js   – the quit flows' edge cases: a selection while the quit's "Unsaved Changes" is shown, the Update
 #               window closed during an install and while its quit question is shown (the update is cancelled);
+#   vault-menu.js, vault-unlock.js, vault-password.js – "Show “Lock Now”" turned on and "Lock Now" clicked in the
+#               menu (the locked menu shows no name, no switch and no setting), its "Unlock…" opens the unlock window:
+#               a wrong password (the delay's countdown) and the right one; then the recovery key and a new master
+#               password, the new password, "Change Master Password…" in the menu's settings, and the changed one;
 #   system.js – an unsaved change; the shell then quits the app the way logout does (a quit Apple Event) and
 #               checks that the Connections window asked first and the app then quit.
-# Then it checks the store and the log.
+# Then it checks the vault's files, the connections the app wrote out for the checks (<home>/smoke-dump: the vault
+# itself is encrypted) and the log.
 # SMOKE_LANG=en|hu forces the app's language the way macOS selects it (the AppleLanguages preference, here in the
 # app's argument domain: -AppleLanguages '(hu)'); the run checks that the core picked it and the windows show it. Never touches the real Application Support, Keychain, preferences or
-# system (the sandbox keeps secrets and preferences in memory, opens nothing, runs no installer).
+# system (the sandbox's vault is in its own home, its auto-unlock key in memory; preferences in memory; it
+# opens nothing, runs no installer).
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -44,7 +65,10 @@ NODE=$(command -v node || echo /opt/homebrew/bin/node)
 [ -x "$NODE" ] || { echo "the control API test client needs node" >&2; exit 2; }
 # SMOKE_LOG=<file>: keep the app's log.
 trap 'kill "$PID" 2>/dev/null || true; [ -z "${SMOKE_LOG:-}" ] || cp "$LOG" "$SMOKE_LOG"; rm -rf "$HOME_DIR"' EXIT
-STORE="$HOME_DIR/Library/Application Support/MacVPN/connections"
+SUPPORT="$HOME_DIR/Library/Application Support/MacVPN"
+STORE="$SUPPORT/connections"
+# The connections as the app had them at the end (written by its smoke driver; the vault is encrypted).
+DUMP="$HOME_DIR/smoke-dump/connections"
 LOG="$HOME_DIR/app.log"
 seed() { # id kind name config [extra meta JSON]
   mkdir -p "$STORE/$1"
@@ -64,8 +88,11 @@ CONTROL=81111111-2222-4333-8444-555555555555
 CONTROL_VPN=91111111-2222-4333-8444-555555555555
 LIVE=C1111111-2222-4333-8444-555555555555
 LIVE_MENU=C2111111-2222-4333-8444-555555555555
+FOLDERS=E1111111-2222-4333-8444-555555555555
 CRED=A1111111-2222-4333-8444-555555555555
 CRED_RETRY=B1111111-2222-4333-8444-555555555555
+SHARED_ONE=E3111111-2222-4333-8444-555555555555
+SHARED_TWO=E4111111-2222-4333-8444-555555555555
 OVPN='client\ndev tun\nremote vpn.example.com 1194\n'
 seed "$A" openvpn "Seeded A" "$OVPN"
 seed 66666666-7777-4888-9999-AAAAAAAAAAAA openvpn "Seeded B" "$OVPN"
@@ -78,8 +105,15 @@ seed "$CONTROL" openvpn "Zz Control result" "$OVPN"
 seed "$CONTROL_VPN" openvpn "Zz Control VPN" "$OVPN"
 seed "$LIVE" openvpn "Zz Live result" "$OVPN"
 seed "$LIVE_MENU" openvpn "Zz Live menu result" "$OVPN"
+# First among the top-level rows, so folders.js can drag it next to the folders it creates.
+seed "$FOLDERS" openvpn "Aa Folders result" "$OVPN"
 seed "$CRED" openvpn "Zz Credentials" "${OVPN}auth-user-pass\n"
 seed "$CRED_RETRY" openvpn "Zz Credentials retry" "${OVPN}auth-user-pass\n"
+# A pin: migrated with the ranking.
+printf '{"pinned":["%s"],"usage":{}}' "$S" > "$SUPPORT/connection-order.json"
+chmod 600 "$SUPPORT/connection-order.json"
+seed "$SHARED_ONE" openvpn "Zz Shared one" "${OVPN}auth-user-pass\n"
+seed "$SHARED_TWO" openvpn "Zz Shared two" "${OVPN}auth-user-pass\n"
 
 LANG_ARGS=()
 case "${SMOKE_LANG:-}" in
@@ -87,12 +121,15 @@ case "${SMOKE_LANG:-}" in
   en|hu) LANG_ARGS=(-AppleLanguages "(${SMOKE_LANG})") ;;
   *) echo "SMOKE_LANG: en or hu" >&2; exit 2 ;;
 esac
-# SMOKE_SHOTS=<dir>: screenshots (with the shadow) of the real windows, <dir>/<name>-<lang>[-dark].png: the menu
-# popover, the MFA code and web sign-in prompts, the pairing window, the smallest and the largest credential window.
-# SMOKE_DARK=1: the app in dark mode (NSApp.appearance in the debug build; the system's own setting is not touched).
+# SMOKE_SHOTS=<dir>: screenshots (with the shadow) of the real windows, <dir>/<name>-<lang>[-dark|-light].png: the menu
+# popover, the MFA code and web sign-in prompts, the pairing window, the smallest and the largest credential window,
+# the Connections window with the New menu open and with a context menu at its right edge (popover-shots.js).
+# SMOKE_DARK=1: the app in dark mode, SMOKE_LIGHT=1: in light mode (NSApp.appearance in the debug build; the system's
+# own setting is not touched).
 SHOTS_ENV=()
 [ -z "${SMOKE_SHOTS:-}" ] || { mkdir -p "$SMOKE_SHOTS"; rm -f "$SMOKE_SHOTS"/*.done; SHOTS_ENV=(MACVPN_SMOKE_SHOTS="$SMOKE_SHOTS"); }
 [ -z "${SMOKE_DARK:-}" ] || SHOTS_ENV+=(MACVPN_SMOKE_DARK=1)
+[ -z "${SMOKE_LIGHT:-}" ] || SHOTS_ENV+=(MACVPN_SMOKE_LIGHT=1)
 env ${SHOTS_ENV[@]+"${SHOTS_ENV[@]}"} MACVPN_SANDBOX_HOME="$HOME_DIR" MACVPN_SMOKE_DIR="$PWD/scripts/smoke" "$APP" ${LANG_ARGS[@]+"${LANG_ARGS[@]}"} > "$LOG" 2>&1 &
 PID=$!
 CLIENT_PID=
@@ -109,40 +146,74 @@ for _ in $(seq 1 300); do
   if [ -n "${SMOKE_SHOTS:-}" ]; then
     while read -r SHOT WINDOW; do
       [ -e "$SMOKE_SHOTS/$SHOT.done" ] && continue
-      screencapture -x -l "$WINDOW" "$SMOKE_SHOTS/$SHOT-${SMOKE_LANG:-default}${SMOKE_DARK:+-dark}.png" 2>/dev/null || true
+      screencapture -x -l "$WINDOW" "$SMOKE_SHOTS/$SHOT-${SMOKE_LANG:-default}${SMOKE_DARK:+-dark}${SMOKE_LIGHT:+-light}.png" 2>/dev/null || true
       touch "$SMOKE_SHOTS/$SHOT.done"
     done < <(sed -n 's/^MacVPN smoke: shot \([a-z-]*\) window=\([0-9]*\)$/\1 \2/p' "$LOG" 2>/dev/null)
   fi
 done
 [ -z "$CLIENT_PID" ] || wait "$CLIENT_PID" || true
-name() { sed -n 's/.*"name" : "\(.*\)",*/\1/p' "$STORE/$1/meta.json"; }
+name() { sed -n 's/.*"name" : "\(.*\)",*/\1/p' "$DUMP/$1/meta.json" 2>/dev/null; }
 echo "manage: $(name "$A")"
 echo "setup:  $(name "$SETUP")"
 echo "update: $(name "$UPDATE")"
 echo "quit:   $(name "$QUIT")"
 echo "control: $(name "$CONTROL")"
 echo "live:   $(name "$LIVE") / $(name "$LIVE_MENU")"
+echo "folders: $(name "$FOLDERS")"
 grep '^MacVPN smoke: prompt' "$LOG" || true
 grep '^MacVPN smoke: control' "$LOG" || true
 grep '^MacVPN smoke: live' "$LOG" || true
 grep '^MacVPN smoke: credentials' "$LOG" || true
+grep '^MacVPN smoke: vault' "$LOG" || true
+grep '^MacVPN smoke: folders' "$LOG" || true
+grep '^MacVPN smoke: shared' "$LOG" || true
+grep '^MacVPN smoke: backup' "$LOG" || true
 fail() { echo "✗ $1"; sed 's/^/  app: /' "$LOG"; exit 1; }
 grep -q '^MacVPN smoke: done' "$LOG" || fail "the smoke run did not finish"
 LANGUAGE=$(sed -n 's/^MacVPN smoke: language //p' "$LOG")
 echo "language: ${LANGUAGE}"
 [ -z "${SMOKE_LANG:-}" ] || [ "$LANGUAGE" = "$SMOKE_LANG" ] || fail "the app picked ${LANGUAGE}, not ${SMOKE_LANG}"
 
+# The vault: created in migration mode, the seeded connections, the old Keychain item and the pin moved in, the
+# old files deleted, the marker written; the files are private.
+grep -q '^MacVPN smoke: vault: create window migrating=true keychain_items=1$' "$LOG" || fail "the create window was not in migration mode"
+grep -q '^MacVPN smoke: vault: created done=true connections=16 secret=yes pinned=true files_gone=true marker=true key=true$' "$LOG" \
+  || fail "the vault was not created and migrated"
+grep -q '^MacVPN: Vault: migrated: 16 connections, 1 secrets' "$LOG" || fail "no migration line"
+[ ! -e "$STORE" ] && [ ! -e "$SUPPORT/connection-order.json" ] || fail "the old files are still there"
+[ -e "$SUPPORT/migrated-to-vault" ] || fail "no migration marker"
+for f in vault.db vault.keys migrated-to-vault; do
+  [ "$(stat -f %Lp "$SUPPORT/$f")" = 600 ] || fail "$f is not 0600"
+done
+! grep -aq 'Seeded A\|Zz Credentials\|vpn.example.com' "$SUPPORT/vault.db" || fail "a name or a config is readable in vault.db"
+# Locked: no name in the view model; unlocked with the password (after a wrong one and its delay), with the recovery
+# key and a new master password, and with the new password.
+grep -q '^MacVPN smoke: vault: menu lock_now=true names_hidden=true unlock_window=true$' "$LOG" || fail "Lock Now and the locked menu"
+grep -q '^MacVPN smoke: vault: locked state="locked" names_hidden=true$' "$LOG" || fail "the locked view model"
+grep -q '^MacVPN: Vault: wrong password (attempt 1)$' "$LOG" || fail "the wrong password was not refused"
+grep -q '^MacVPN smoke: vault: unlocked password=true names_back=true$' "$LOG" || fail "unlock with the password"
+grep -q '^MacVPN smoke: vault: unlocked recovery=true names_back=true$' "$LOG" || fail "unlock with the recovery key"
+grep -q '^MacVPN: Vault: master password reset with the recovery key$' "$LOG" || fail "no reset line"
+grep -q '^MacVPN smoke: vault: unlocked new_password=true names_back=true$' "$LOG" || fail "unlock with the new password"
+grep -q '^MacVPN smoke: vault: password window closed=true$' "$LOG" || fail "the password window"
+grep -q '^MacVPN: Vault: master password changed$' "$LOG" || fail "no password change line"
+grep -q '^MacVPN smoke: vault: unlocked changed_password=true names_back=true$' "$LOG" || fail "unlock with the changed password"
+! grep -q 'smoke-master-4711\|smoke-reset-0815\|smoke-changed-2024\|seeded-psk-0815' "$LOG" || fail "the log shows a vault password or a secret"
+! grep -Eq '[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}-[0-9A-Z]{4}' "$LOG" || fail "the log shows a recovery key"
+! grep -q '^MacVPN smoke: vault: ERROR' "$LOG" || fail "the vault smoke"
+
 # The Connections window.
-grep -q '"user"' "$STORE/$A/meta.json" || fail "the acknowledgement was not stored"
-grep -q '^user nobody$' "$STORE/$A/config" || fail "the config was not saved"
+grep -q '"user"' "$DUMP/$A/meta.json" || fail "the acknowledgement was not stored"
+grep -q '^user nobody$' "$DUMP/$A/config" || fail "the config was not saved"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "Connections window: $(name "$A")"
-grep -q '^port=8443$' "$STORE/$S/config" || fail "the SSTP form was not saved"
+grep -q '^port=8443$' "$DUMP/$S/config" || fail "the SSTP form was not saved"
 PROFILE=$(find "$HOME_DIR/tmp" -path '*/macvpn-profile.*/Seeded L2.mobileconfig' | head -1)
 [ -n "$PROFILE" ] || fail "the native profile was not staged"
 [ "$(stat -f %Lp "$PROFILE")" = 600 ] || fail "the staged profile is not 0600"
 ! grep -rq native-secret "$HOME_DIR/tmp" || fail "the password is in a staged profile"
-[ "$(ls "$STORE" | wc -l | tr -d ' ')" = 13 ] || fail "create / delete left $(ls "$STORE" | wc -l | tr -d ' ') connections"
-[ "$(stat -f %Lp "$STORE/$A/meta.json")" = 600 ] || fail "meta.json is not 0600"
+# 16 seeded, one created and deleted, the backup step's canary (in the backup, so restored), one imported by the
+# shared credential step.
+[ "$(ls "$DUMP" | wc -l | tr -d ' ')" = 18 ] || fail "create / delete left $(ls "$DUMP" | wc -l | tr -d ' ') connections"
 
 # System Status and Update.
 [ "$(name "$SETUP")" = "SETUP OK" ] || fail "System Status window: $(name "$SETUP")"
@@ -179,6 +250,30 @@ grep -q '^MacVPN smoke: credentials: largest fields=username+password+psk+keyPas
   || fail "the largest credential window (retry line, four fields, error) does not fit its content"
 ! grep -q '^MacVPN smoke: credentials: ERROR' "$LOG" || fail "the credential prompt smoke"
 
+# Shared credentials (in the vault): added and linked in the window, the prompt asks once for the password
+# and saves it into the credential, the second linked connection asks nothing, Delete copies into each, the
+# import asks (with the server) before it links.
+grep -q '^MacVPN smoke: shared: linked=true used_by=2 user=true$' "$LOG" || fail "shared credential: add and link"
+grep -q '^MacVPN smoke: shared: prompt fields=password credential=Smoke Cred used_by=2$' "$LOG" || fail "shared credential: the prompt"
+grep -q "^MacVPN smoke: fake root: up $SHARED_ONE username=set password=set$" "$LOG" || fail "shared credential: the first up"
+grep -q '^MacVPN smoke: shared: first connected=true saved_in_credential=true$' "$LOG" || fail "shared credential: saved into the credential"
+grep -q '^MacVPN smoke: shared: second prompt=false connected=true$' "$LOG" || fail "shared credential: a prompt for the second connection"
+grep -q "^MacVPN smoke: fake root: up $SHARED_TWO username=set password=set$" "$LOG" || fail "shared credential: the second up"
+grep -q '^MacVPN smoke: shared: deleted copied=true$' "$LOG" || fail "shared credential: copy into each connection"
+grep -q '^MacVPN smoke: shared: import asked=true unlinked_before_answer=true$' "$LOG" || fail "shared credential: the import's question"
+grep -q '^MacVPN smoke: shared: import linked=true meta_stripped=true$' "$LOG" || fail "shared credential: the import's link"
+! grep -q 'smoke-shared-pass' "$LOG" || fail "the log shows the shared password"
+! grep -q '^MacVPN smoke: shared: ERROR' "$LOG" || fail "the shared credential smoke"
+# The full backup: the file in the sandbox tmp, 0600, nothing seeded in clear; a wrong password gives the generic
+# message, then Merge with Overwrite and Replace everything bring the canary's name back (replace also removes the
+# connection added later); the backed-up control API switch is not applied by itself; no password in the log.
+grep -q '^MacVPN smoke: backup: saved mode=600 clear=no$' "$LOG" || fail "the backup file (mode, plaintext)"
+grep -q '^MacVPN smoke: backup: merge restored=yes$' "$LOG" || fail "the restore with Merge"
+grep -q '^MacVPN smoke: backup: replace restored=yes extra-gone=yes control-api=off$' "$LOG" || fail "the restore with Replace everything"
+! grep -q 'smoke backup pw\|smoke-canary-secret\|smoke-master-4711' "$LOG" || fail "the log shows a backup secret"
+! grep -q '^MacVPN smoke: backup: ERROR' "$LOG" || fail "the backup smoke"
+[ ! -e "$HOME_DIR/tmp/smoke.macvpnbackup" ] || fail "the smoke backup file was left behind"
+
 # The control API: the switch, the pairing window, the test client's session, the lease's end, the switch off.
 CONTROL_SOCKET="$HOME_DIR/Library/Application Support/MacVPN/control/macvpn.sock"
 grep -q '^MacVPN smoke: control: on running=true socket=true$' "$LOG" || fail "the control API did not start"
@@ -202,7 +297,7 @@ grep -q 'paired “smoke-client”' "$AUDIT" || fail "no pairing in the audit fi
 grep -q 'lease on .* ended' "$AUDIT" || fail "no lease end in the audit file"
 ! grep -qi 'token' "$AUDIT" || fail "the audit file mentions a token"
 ! grep -qi 'token' "$LOG" || fail "the log mentions a token"
-[ "$(stat -f %Lp "$HOME_DIR/Library/Application Support/MacVPN/control-clients.json")" = 600 ] || fail "control-clients.json is not 0600"
+[ ! -e "$SUPPORT/control-clients.json" ] || fail "the paired apps are in control-clients.json, not in the vault"
 
 # The live system VPN list: the debounced reload shows a removed and an added VPN (well before the 5 s poll
 # fallback), the open editor turns read-only, the window and the menu follow without being reopened.
@@ -214,6 +309,12 @@ ADDED_MS=$(sed -n 's/^MacVPN smoke: live: added listed=\([0-9]*\)$/\1/p' "$LOG")
 [ "$(name "$LIVE")" = "LIVE OK" ] || fail "live list, Connections window: $(name "$LIVE")"
 [ "$(name "$LIVE_MENU")" = "MENU OK" ] || fail "live list, menu: $(name "$LIVE_MENU")"
 ! grep -q '^MacVPN smoke: fake native: start ' "$LOG" || fail "live list: a fake system VPN was started"
+
+# Folders and colours: created (named in place, the default name in the run's language), nested, coloured (the
+# subfolder inherits), a connection dragged into the subfolder, collapsed, the subfolder deleted with its contents
+# moved up into the folder.
+[ "$(name "$FOLDERS")" = "FOLDERS OK" ] || fail "folders: $(name "$FOLDERS")"
+grep -q '^MacVPN smoke: folders: store work=true colour=teal subfolders=0 item_in_work=true$' "$LOG" || fail "folders: the stored tree"
 
 # The menu popover's rounded corners (borderless window: non-opaque, its content layer masked, with a shadow).
 grep -Eq '^MacVPN smoke: menu: shape radius=12 masks=true opaque=false shadow=true window=[0-9]+$' "$LOG" || fail "the menu's rounded corners"
@@ -230,4 +331,4 @@ for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 ! kill -0 "$PID" 2>/dev/null || fail "the app did not quit after the quit question"
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
-echo "✓ smoke test passed (${LANGUAGE}; Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, menu shape, quit flows, quit request)"
+echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, menu shape, quit flows, quit request)"

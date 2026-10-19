@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-fresh-apply"
+description = "Enables the restore_fresh_apply command without any pre-configured scope."
+commands.allow = ["restore_fresh_apply"]
+
+[[permission]]
+identifier = "deny-restore-fresh-apply"
+description = "Denies the restore_fresh_apply command without any pre-configured scope."
+commands.deny = ["restore_fresh_apply"]

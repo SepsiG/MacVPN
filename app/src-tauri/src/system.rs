@@ -6,7 +6,7 @@
 //! answer as if the administrator prompt had been cancelled.
 
 use macvpn_app_core::quit::QuitOrigin;
-use macvpn_app_core::setup::{self, UninstallChoice, UninstallSystem};
+use macvpn_app_core::setup::{self, UninstallChoice, UninstallSystem, UserDataStores};
 use macvpn_app_core::updates::Notice;
 use macvpn_core::l10n;
 use macvpn_platform_mac::brew::{BrewBootstrap, BrewInstaller};
@@ -194,6 +194,10 @@ pub async fn setup_uninstall(state: Shared<'_>, remove_user_data: bool) -> Resul
             &shared.connections,
             shared.connections.deps().secret_writer.as_ref(),
             &system,
+            UserDataStores {
+                key_store: shared.vault.lifecycle.key_store().as_ref(),
+                legacy_keychain: shared.vault.legacy.keychain.as_ref(),
+            },
             UninstallChoice { remove_user_data },
         );
         shared.setup_ops.lock().unwrap_or_else(PoisonError::into_inner).uninstalling = false;

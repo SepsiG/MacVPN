@@ -13,8 +13,9 @@
 //! prompts) are called without the lock too, so they may call back into the manager.
 
 use crate::deps::{
-    AuthStateReader, Clock, ConnectionRepository, NativeController, NoAuthState, RankingPersistence, RootClient,
-    SecretField, SecretReader, SecretWriter, SystemClock, SystemOTPPersistence, SystemService,
+    AuthStateReader, Clock, ConnectionRepository, FolderOp, FolderStore, NativeController, NoAuthState, Placement,
+    RankingPersistence, RootClient, SecretField, SecretReader, SecretWriter, SystemClock, SystemOTPPersistence,
+    SystemService,
 };
 use macvpn_core::credentials::{
     self, CredentialAnswer, CredentialField, CredentialPrompt, CredentialValues, RequiredFields,
@@ -31,6 +32,7 @@ use macvpn_core::models::{
 use macvpn_core::native::NativeKind;
 use macvpn_core::ranking::ConnectionRanking;
 use macvpn_core::validators::OpenVPNValidator;
+use macvpn_core::vault::{FolderNode, FolderTree, TreeEntry, order_tree};
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -93,6 +95,17 @@ pub fn match_service(c: &Connection, services: &[SystemService]) -> NativeMatch 
         1 => NativeMatch::Service(named[0].clone()),
         _ => NativeMatch::Ambiguous(named),
     }
+}
+
+/// What a locked manager keeps of an active connection: the id, the kind, the bound native service ID (and, for a
+/// native connection not bound yet, its service name, which the status match needs); never the name or a setting.
+fn redacted(c: &Connection) -> Connection {
+    let mut kept = Connection::with_id(c.id, String::new(), c.kind, c.created_at);
+    kept.native_service_id.clone_from(&c.native_service_id);
+    if c.kind.is_native() && c.native_service_id.is_none() {
+        kept.native_service_name = Some(c.native_service_name.clone().unwrap_or_else(|| c.name.clone()));
+    }
+    kept
 }
 
 /// The service IDs of the managed native connections (these are not shown as system VPNs). For an unbound
@@ -240,6 +253,8 @@ pub struct Dependencies {
     pub clock: Arc<dyn Clock>,
     /// Where "Save" of the credential prompt writes, once the connection is up (`None`: nothing is saved).
     pub secret_writer: Option<Arc<dyn SecretWriter>>,
+    /// The folders and placements (spec 3). `None`: no folders, every item at the root (as in 1.1).
+    pub folders: Option<Arc<dyn FolderStore>>,
 }
 
 impl Dependencies {
@@ -260,6 +275,7 @@ impl Dependencies {
             auth_state: Arc::new(NoAuthState),
             clock: Arc::new(SystemClock),
             secret_writer: None,
+            folders: None,
         }
     }
 }
@@ -328,6 +344,10 @@ struct Inner {
     loaded: bool,
     /// Credential prompt values to save when the key's connect reaches `connected` (see [`PendingSave`]).
     pending_saves: HashMap<String, PendingSave>,
+    /// The folders (spec 3), as last loaded from the folder store.
+    folders: Vec<FolderNode>,
+    /// The placed items (a folder or an own colour) by key; every other item is at the root without a colour.
+    placements: HashMap<String, Placement>,
     /// Pending saves whose connect has just connected: written by the refresh, outside the lock.
     ready_saves: Vec<PendingSave>,
     /// Deleted connections ([`ConnectionManager::forget_saves`]): no "Save" is ever written for them.
@@ -335,6 +355,8 @@ struct Inner {
     /// The key's last connect ended because the credential prompt was cancelled or expired (a new connect clears
     /// it). The control API reports it as `credentials_cancelled`.
     credentials_cancelled: HashSet<String>,
+    /// The vault is locked ([`ConnectionManager::enter_locked`]): only the active connections are kept, redacted.
+    locked: bool,
 }
 
 impl Inner {
@@ -487,10 +509,47 @@ impl Inner {
     fn has_active(&self) -> bool {
         self.states.values().any(ConnectionState::is_active)
     }
+
+    /// The folder tree; a stored tree that is not one (never written by the stores) shows everything at the root.
+    fn folder_tree(&self) -> FolderTree {
+        FolderTree::new(self.folders.clone()).unwrap_or_default()
+    }
+
+    /// Per folder (and the root): the subfolders by position, then the items in the ranking order (spec 3).
+    fn ordered_tree(&self, tree: &FolderTree, now: Date) -> Vec<TreeEntry> {
+        let items: Vec<(String, Option<Uuid>)> = self
+            .ordered_items(now)
+            .iter()
+            .map(|item| {
+                let key = item.id();
+                let folder = self.placements.get(&key).and_then(|p| p.folder);
+                (key, folder)
+            })
+            .collect();
+        let names: HashMap<String, String> = self
+            .connections
+            .iter()
+            .map(|c| (uuid_string(&c.id), c.name.clone()))
+            .chain(self.system_services.iter().map(|s| (s.id.clone(), s.name.clone())))
+            .collect();
+        let name_of = |key: &str| names.get(key).cloned().unwrap_or_default();
+        order_tree(tree, &items, &self.ranking, now, name_of)
+    }
+}
+
+/// The folder part of a [`ManagerSnapshot`].
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct FolderSnapshot {
+    /// A folder store is configured (the UI offers folders).
+    pub enabled: bool,
+    pub folders: Vec<FolderNode>,
+    /// Every folder and item in display order (collapsed folders' contents included).
+    pub entries: Vec<TreeEntry>,
+    pub placements: HashMap<String, Placement>,
 }
 
 /// A consistent copy of everything the UI shows.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ManagerSnapshot {
     /// In ranking order (pinned first).
     pub items: Vec<(ConnectionItem, ConnectionState, bool)>,
@@ -498,6 +557,8 @@ pub struct ManagerSnapshot {
     pub has_active: bool,
     pub has_failure: bool,
     pub awaiting_auth: bool,
+    /// The folder tree and the placements (spec 3).
+    pub folders: FolderSnapshot,
 }
 
 pub struct ConnectionManager {
@@ -756,6 +817,12 @@ impl ConnectionManager {
                 has_active: i.has_active(),
                 has_failure: i.states.values().any(|s| matches!(s, ConnectionState::Failed(_))),
                 awaiting_auth: i.states.values().any(|s| matches!(s, ConnectionState::AwaitingAuth(_))),
+                folders: FolderSnapshot {
+                    enabled: self.deps.folders.is_some(),
+                    folders: i.folders.clone(),
+                    entries: i.ordered_tree(&i.folder_tree(), now),
+                    placements: i.placements.clone(),
+                },
             }
         })
     }
@@ -772,15 +839,164 @@ impl ConnectionManager {
         })
     }
 
+    /// Reads the connections again. The first successful read, and the first one after the vault was locked,
+    /// also reads the ranking and the system OTP settings again (they may have been unreadable before: the vault
+    /// was still locked when the manager was built, or [`Self::enter_locked`] dropped them).
     pub fn reload(&self) {
         let list = self.deps.store.list();
+        let restore = list.is_ok() && self.read(|i| i.locked || !i.loaded);
+        let stored = restore.then(|| {
+            let ranking = self.deps.ranking_store.as_ref().map(|s| s.load());
+            let otp = self.deps.system_otp_store.as_ref().map(|s| s.load());
+            (ranking, otp)
+        });
+        // Read only once the connections are readable: a locked vault keeps the folders dropped.
+        let folders = if list.is_ok() { self.load_folders() } else { None };
         self.mutate(|i| {
             if let Ok(list) = list {
                 i.connections = list;
                 i.loaded = true;
+                i.locked = false;
+            }
+            if let Some((ranking, otp)) = stored {
+                if let Some(ranking) = ranking {
+                    i.ranking = ranking;
+                }
+                if let Some(otp) = otp {
+                    i.system_otp = otp;
+                }
             }
             i.remote_addresses.clear();
+            if let Some((folders, placements)) = folders {
+                i.folders = folders;
+                i.placements = placements;
+            }
         });
+    }
+
+    /// Reads everything again, the ranking, the system OTP settings and the folders included: a restore replaced
+    /// the vault's contents.
+    pub fn reload_all(&self) {
+        self.lock().loaded = false;
+        self.reload();
+    }
+
+    // MARK: - Locked vault
+
+    /// The vault was locked (Lock now, or locked at launch): only what is needed to keep polling and to disconnect
+    /// the active connections stays (the id, the kind and the bound native service ID; the name is empty), every
+    /// other connection is dropped, and so are the ranking, the system OTP settings and the folders. Running VPNs are not
+    /// touched. Connecting, pinning and the OTP setting are refused until [`Self::reload`] after the unlock.
+    pub fn enter_locked(&self) {
+        // The connects still asking (credentials, a code): their prompts close, and the connects end before the
+        // next step (`connect_root` checks the lock).
+        let connecting: Vec<String> = self
+            .read(|i| i.ops.iter().filter(|(_, op)| matches!(op, Op::Connecting)).map(|(k, _)| k.clone()).collect());
+        self.mutate(|i| {
+            i.locked = true;
+            // No pruning of the (empty) ranking until the full list is back.
+            i.loaded = false;
+            let active: Vec<Connection> = i
+                .connections
+                .iter()
+                .filter(|c| {
+                    let key = uuid_string(&c.id);
+                    i.state(&key).is_active() || i.ops.contains_key(&key)
+                })
+                .map(redacted)
+                .collect();
+            i.connections = active;
+            i.ranking = ConnectionRanking::default();
+            i.system_otp.clear();
+            // The folder tree and the placements are in the vault: back with the reload after the unlock.
+            i.folders.clear();
+            i.placements.clear();
+            i.remote_addresses.clear();
+            // "Save" values of the credential prompt cannot be written any more: wiped.
+            i.pending_saves.clear();
+            i.ready_saves.clear();
+        });
+        for key in &connecting {
+            self.dismiss(key);
+            self.dismiss_credentials(key);
+        }
+    }
+
+    /// The vault is locked ([`Self::enter_locked`] until the next successful [`Self::reload`]).
+    pub fn is_locked(&self) -> bool {
+        self.read(|i| i.locked)
+    }
+
+    // MARK: - Folders (spec 3)
+
+    /// The folder store (`None`: no folders).
+    pub fn folder_store(&self) -> Option<Arc<dyn FolderStore>> {
+        self.deps.folders.clone()
+    }
+
+    /// The folders and placements from the store. `None` without a store; a store that cannot be read (the vault
+    /// locked) gives none, so nothing stale is shown.
+    fn load_folders(&self) -> Option<(Vec<FolderNode>, HashMap<String, Placement>)> {
+        let store = self.deps.folders.as_ref()?;
+        match (store.folders(), store.placements()) {
+            (Ok(folders), Ok(placements)) => {
+                Some((folders, placements.into_iter().map(|p| (p.key.clone(), p)).collect()))
+            }
+            _ => Some((Vec::new(), HashMap::new())),
+        }
+    }
+
+    /// Re-reads the folders and placements (after a folder edit).
+    pub fn reload_folders(&self) {
+        let Some((folders, placements)) = self.load_folders() else { return };
+        self.mutate(|i| {
+            i.folders = folders;
+            i.placements = placements;
+        });
+    }
+
+    pub fn folders(&self) -> Vec<FolderNode> {
+        self.read(|i| i.folders.clone())
+    }
+
+    pub fn folder_tree(&self) -> FolderTree {
+        self.read(Inner::folder_tree)
+    }
+
+    /// The item's placement (`None`: at the root, no own colour).
+    pub fn placement(&self, key: &str) -> Option<Placement> {
+        self.read(|i| i.placements.get(key).cloned())
+    }
+
+    /// Every folder and item in display order: per folder the subfolders by position, then the items pinned
+    /// first, then by usage (spec 3). The flat [`Self::ordered_items`] (the control API's `list`) is unchanged.
+    pub fn ordered_tree(&self) -> Vec<TreeEntry> {
+        let now = self.now();
+        self.read(|i| i.ordered_tree(&i.folder_tree(), now))
+    }
+
+    /// The folder path (root → leaf names) of an item in a folder, for the export's metadata line.
+    pub fn folder_path(&self, key: &str) -> Option<Vec<String>> {
+        self.read(|i| {
+            let folder = i.placements.get(key)?.folder?;
+            let path = i.folder_tree().path(folder);
+            (!path.is_empty()).then_some(path)
+        })
+    }
+
+    /// The system-VPN placement retention after a successful listing (spec 5): a placed service that is not
+    /// listed is marked missing, one listed again is cleared, one missing for 30 days loses its placement.
+    fn retain_system_items(&self, services: &[SystemService]) {
+        let Some(store) = &self.deps.folders else { return };
+        let Ok(items) = store.system_items() else { return };
+        let listed: HashSet<String> = services.iter().map(|s| s.id.clone()).collect();
+        let changes = crate::folders::retention(&items, &listed, self.now());
+        if changes.is_empty() {
+            return;
+        }
+        if store.apply(FolderOp::Retention(changes)).is_ok() {
+            self.reload_folders();
+        }
     }
 
     // MARK: - Order (pinning, usage)
@@ -807,6 +1023,9 @@ impl ConnectionManager {
 
     pub fn pin(&self, id: &str) {
         self.mutate(|i| {
+            if i.locked {
+                return;
+            }
             i.ranking.pin(id);
             self.save_ranking(&i.ranking);
         });
@@ -814,6 +1033,9 @@ impl ConnectionManager {
 
     pub fn unpin(&self, id: &str) {
         self.mutate(|i| {
+            if i.locked {
+                return;
+            }
             i.ranking.unpin(id);
             self.save_ranking(&i.ranking);
         });
@@ -823,6 +1045,9 @@ impl ConnectionManager {
     pub fn move_pinned(&self, source: &BTreeSet<usize>, destination: usize) {
         let now = self.now();
         self.mutate(|i| {
+            if i.locked {
+                return;
+            }
             let visible: Vec<String> =
                 i.ordered_items(now).iter().map(ConnectionItem::id).filter(|id| i.ranking.is_pinned(id)).collect();
             i.ranking.move_pinned(&visible, source, destination);
@@ -856,7 +1081,7 @@ impl ConnectionManager {
                 }
             }
         }
-        if changed {
+        if changed && !i.locked {
             self.save_ranking(&i.ranking);
         }
     }
@@ -948,6 +1173,7 @@ impl ConnectionManager {
         };
         if let Some(services) = &services {
             self.bind_native_services(services);
+            self.retain_system_items(services);
         }
 
         // The system VPN failure hints read the Keychain: computed before the locked section, for the services
@@ -1155,7 +1381,7 @@ impl ConnectionManager {
         l10n::tr("The connection did not come up.", &[])
     }
 
-    /// The PSK / password stored for a system VPN in MacVPN's keychain (L2TP / Cisco IPsec only).
+    /// The PSK / password MacVPN stores for a system VPN (in its secret store, the vault; L2TP / Cisco IPsec only).
     pub fn system_secrets(&self, s: &SystemService) -> Secrets {
         let (true, Some(id)) = (s.supports_stored_secrets(), s.secret_id()) else { return Secrets::default() };
         Secrets {
@@ -1168,6 +1394,10 @@ impl ConnectionManager {
     // MARK: - Connect / disconnect
 
     pub fn connect(&self, c: &Connection, debug: bool) {
+        // Locked: the menu offers no connect, and the control API answers `locked`; nothing reads the vault.
+        if self.is_locked() {
+            return;
+        }
         let (c, key, mut token) = self.mutate(|i| {
             let c = i.current(c);
             let key = uuid_string(&c.id);
@@ -1245,6 +1475,11 @@ impl ConnectionManager {
             self.abandon_connect(key, &c.name, *token);
             return Ok(());
         };
+        // The vault was locked meanwhile (Lock Now): nothing more is asked, nothing connects.
+        if self.is_locked() {
+            self.abandon_connect(key, &c.name, *token);
+            return Ok(());
+        }
         if !self.keep_save(key, *token, typed.save) {
             return Ok(());
         }
@@ -1253,7 +1488,8 @@ impl ConnectionManager {
             return Ok(());
         };
         drop(typed.secrets);
-        if self.read(|i| i.key_epoch(key)) != *token {
+        if self.read(|i| i.key_epoch(key)) != *token || self.is_locked() {
+            self.abandon_connect(key, &c.name, *token);
             return Ok(());
         }
         let started = self.deps.native.start(&service.id, NativeKind::from_kind(c.kind), &prepared);
@@ -1283,43 +1519,51 @@ impl ConnectionManager {
     }
 
     fn connect_root(&self, c: &Connection, key: &str, token: u64, debug: bool) -> Result<(), String> {
-        let config = if matches!(c.kind, VPNKind::Openvpn | VPNKind::Strongswan) {
-            self.deps.store.load_config(&c.id).ok()
-        } else {
-            None
+        // Root layer 8 gets the config on stdin: an unreadable one fails here, without calling `mvpn`.
+        let Ok(config) = self.deps.store.load_config(&c.id) else {
+            return Err(l10n::tr("Config not found", &[]));
         };
         if c.kind == VPNKind::Openvpn
-            && let Some(reason) = unacknowledged_risk_reason(c, config.as_deref())
+            && let Some(reason) = unacknowledged_risk_reason(c, Some(&config))
         {
             return Err(reason);
         }
-        let required = credentials::required_fields(c.kind, config.as_deref());
+        let required = credentials::required_fields(c.kind, Some(&config));
         let mut retry = false;
         loop {
             // Credentials first (the missing ones; after a sign-in failure the user name and password again),
             // then the MFA static challenge / "code after the password"; for OpenVPN the bridge's state file is
             // watched during `up` (dynamic challenge, web authentication).
+            // The vault was locked meanwhile (Lock Now): nothing more is asked, nothing connects.
+            if self.is_locked() {
+                self.abandon_connect(key, &c.name, token);
+                return Ok(());
+            }
             let base = Zeroizing::new(self.deps.secrets.secrets(&c.id));
             let Some(typed) = self.credential_secrets(key, &c.name, &c.id, c.kind, &required, None, base, retry) else {
                 self.abandon_connect(key, &c.name, token);
                 return Ok(());
             };
+            if self.is_locked() {
+                self.abandon_connect(key, &c.name, token);
+                return Ok(());
+            }
             if !self.keep_save(key, token, typed.save) {
                 return Ok(());
             }
-            let Some(prepared) = self.code_secrets(key, &c.name, c.kind, config.as_deref(), c.otp, &typed.secrets)?
-            else {
+            let Some(prepared) = self.code_secrets(key, &c.name, c.kind, Some(&config), c.otp, &typed.secrets)? else {
                 self.abandon_connect(key, &c.name, token);
                 return Ok(());
             };
             drop(typed.secrets);
-            if self.read(|i| i.key_epoch(key)) != token {
+            if self.read(|i| i.key_epoch(key)) != token || self.is_locked() {
+                self.abandon_connect(key, &c.name, token);
                 return Ok(());
             }
             let watch = (c.kind == VPNKind::Openvpn).then(|| self.start_auth_watch(c));
             let accept_risky =
                 if c.kind == VPNKind::Openvpn { c.acknowledged_risky_directives.clone() } else { Vec::new() };
-            let up = self.deps.root.up(c.kind, &c.id, &prepared, debug, &accept_risky);
+            let up = self.deps.root.up(c.kind, &c.id, config.as_bytes(), &prepared, debug, &accept_risky);
             drop(prepared);
             if let Some(watch) = watch {
                 self.stop_auth_watch(key, watch);
@@ -1423,6 +1667,9 @@ impl ConnectionManager {
     }
 
     pub fn connect_system(&self, s: &SystemService) {
+        if self.is_locked() {
+            return;
+        }
         let key = s.id.clone();
         let token = self.mutate(|i| {
             i.want_down.remove(&key);
@@ -1440,7 +1687,8 @@ impl ConnectionManager {
                     self.abandon_connect(&key, &s.name, token);
                     return Ok(());
                 };
-                if self.read(|i| i.key_epoch(&key)) != token {
+                if self.read(|i| i.key_epoch(&key)) != token || self.is_locked() {
+                    self.abandon_connect(&key, &s.name, token);
                     return Ok(());
                 }
                 secrets = prepared;
@@ -1526,6 +1774,9 @@ impl ConnectionManager {
 
     pub fn set_system_otp(&self, setting: OTPSetting, id: &str) {
         self.mutate(|i| {
+            if i.locked {
+                return;
+            }
             if setting.enabled {
                 i.system_otp.insert(id.to_string(), setting);
             } else {
@@ -1636,6 +1887,8 @@ impl ConnectionManager {
         if fields.is_empty() || self.hooks().credential_handler.is_none() {
             return Some(Prepared { secrets: base, save: None });
         }
+        let asked: Vec<SecretField> = fields.iter().copied().map(secret_field).collect();
+        let credential = crate::shared_credentials::prompt_credential(self.deps.secrets.as_ref(), id, &asked);
         let prompt = CredentialPrompt {
             connection_id: key.to_string(),
             connection_name: name.to_string(),
@@ -1644,6 +1897,7 @@ impl ConnectionManager {
             username,
             retry,
             deadline: PromptDeadline::new(self.now()),
+            credential,
         };
         let (values, save) = self.ask_credentials(prompt)?;
         let secrets = credentials::apply(&values, &base);
@@ -1713,7 +1967,9 @@ impl ConnectionManager {
             let target = secret_field(*field);
             let current = Zeroizing::new(self.deps.secrets.get(&save.id, target).unwrap_or_default());
             if *current == **prior {
-                writer.set(value, &save.id, target);
+                // The prompt's write (spec 3a): a linked item's username / password goes to its shared credential,
+                // which an editor's `set` may never change.
+                writer.save_prompted(value, &save.id, target);
             }
         }
         let Some(account) = save.values.get(CredentialField::Username).filter(|_| save.native) else { return };

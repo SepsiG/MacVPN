@@ -2,6 +2,7 @@
 //! Keychain are not included (for SSTP the user name is part of the config); key material and credentials inline
 //! in the config are handled by `secret_material` / `strip_secrets`.
 
+use crate::importer::{self, ExportMeta};
 use crate::l10n::{self, Arg};
 use crate::mobileconfig::{self, MobileconfigError};
 use crate::models::{Connection, VPNKind, uuid_string};
@@ -63,6 +64,31 @@ pub fn export(c: &Connection, store: &ConnectionStore) -> Result<Vec<u8>, Export
     store.load_config(&c.id).map(String::into_bytes).map_err(ExportError::Io)
 }
 
+/// The metadata line for an exported text config (`importer::take_export_meta` reads it back), with a line
+/// break; `None` when there is nothing to carry. Keys in sorted order, values JSON-escaped.
+pub fn meta_line(meta: &ExportMeta) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(name) = &meta.credential_name {
+        parts.push(format!("\"credentialName\":{}", serde_json::Value::from(name.as_str())));
+    }
+    if let Some(folder) = &meta.folder {
+        let path: Vec<serde_json::Value> = folder.iter().map(|f| serde_json::Value::from(f.as_str())).collect();
+        parts.push(format!("\"folder\":{}", serde_json::Value::Array(path)));
+    }
+    if parts.is_empty() {
+        return None;
+    }
+    Some(format!("{}{{{}}}\n", importer::EXPORT_META_PREFIX, parts.join(",")))
+}
+
+/// The exported text config with the metadata line on top (unchanged when there is none).
+pub fn with_meta(config: &[u8], meta: &ExportMeta) -> Vec<u8> {
+    match meta_line(meta) {
+        Some(line) => [line.as_bytes(), config].concat(),
+        None => config.to_vec(),
+    }
+}
+
 /// A write error with a user-facing message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WriteError {
@@ -78,7 +104,7 @@ impl std::fmt::Display for WriteError {
 impl std::error::Error for WriteError {}
 
 /// Creates the export with 0600 from the start: a temp file in the target folder (`O_EXCL`, no symlink followed),
-/// then an atomic rename. An existing file's permissions are not inherited.
+/// an fsync, then an atomic rename and an fsync of the folder. An existing file's permissions are not inherited.
 pub fn write(data: &[u8], path: &Path) -> Result<(), WriteError> {
     let display = path.to_string_lossy().into_owned();
     let cannot_write = || WriteError { message: l10n::tr("Cannot write: %@", &[Arg::Str(&display)]) };
@@ -94,6 +120,7 @@ pub fn write(data: &[u8], path: &Path) -> Result<(), WriteError> {
         .map_err(|_| cannot_write())?;
     let result = (|| {
         file.write_all(data).map_err(|_| cannot_write())?;
+        file.sync_all().map_err(|_| cannot_write())?;
         drop(file);
         fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))
             .map_err(|_| WriteError { message: l10n::tr("Cannot set the permissions: %@", &[Arg::Str(&display)]) })?;
@@ -101,6 +128,11 @@ pub fn write(data: &[u8], path: &Path) -> Result<(), WriteError> {
     })();
     if result.is_err() {
         let _ = fs::remove_file(&tmp);
+        return result;
+    }
+    // Durability of the rename; if the directory cannot be opened, the write still succeeded.
+    if let Ok(d) = fs::File::open(dir) {
+        let _ = d.sync_all();
     }
     result
 }

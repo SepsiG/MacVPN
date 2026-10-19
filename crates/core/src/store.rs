@@ -9,7 +9,7 @@ use crate::models::{Connection, uuid_string};
 use crate::swift_json;
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -163,6 +163,50 @@ pub fn write_private(data: &[u8], path: &Path) -> io::Result<()> {
     }
     // Durability of the rename; if the directory cannot be opened, the write still succeeded.
     if let Ok(d) = File::open(dir) {
+        let _ = d.sync_all();
+    }
+    Ok(())
+}
+
+/// Deletes a file after overwriting its contents in place with zeros of the same length and an `fsync` (the
+/// 1.2 migration's "overwrite, then unlink" of the 1.1 files).
+///
+/// - A symlink is only unlinked (never followed; its target is not touched).
+/// - The file is opened with `O_NOFOLLOW | O_NONBLOCK` and checked with `fstat` on the open descriptor: anything
+///   that is not a regular file (a directory, a FIFO, a device) is refused and left in place.
+/// - A file with more than one hard link is only unlinked: the other name is not ours to overwrite.
+/// - A missing file is fine (a resumed cleanup).
+///
+/// Best effort against later recovery: on APFS (copy-on-write) or an SSD the old blocks may survive the
+/// overwrite, so this narrows the window rather than guaranteeing erasure. The unlink is by path (no `unlinkat`
+/// without `unsafe` here); the caller checks that the parent directories are real directories.
+pub fn shred_file(path: &Path) -> io::Result<()> {
+    let meta = match fs::symlink_metadata(path) {
+        Ok(meta) => meta,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e),
+    };
+    if !meta.file_type().is_symlink() {
+        let mut file = OpenOptions::new().write(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)?;
+        let opened = file.metadata()?;
+        if !opened.file_type().is_file() {
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a regular file"));
+        }
+        if opened.nlink() <= 1 {
+            let mut left = opened.len();
+            let zeros = [0u8; 64 * 1024];
+            while left > 0 {
+                let n = usize::try_from(left).unwrap_or(usize::MAX).min(zeros.len());
+                file.write_all(&zeros[..n])?;
+                left -= n as u64;
+            }
+            file.sync_all()?;
+        }
+    }
+    fs::remove_file(path)?;
+    if let Some(dir) = path.parent()
+        && let Ok(d) = File::open(dir)
+    {
         let _ = d.sync_all();
     }
     Ok(())

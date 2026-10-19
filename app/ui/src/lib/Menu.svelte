@@ -3,16 +3,22 @@
   import {
     api,
     onViewModel,
+    type FolderTreeRow,
     type Notice,
     type QuitChoice,
     type Row,
+    type VaultWindowName,
     type ViewModel,
     type WindowName,
   } from './api';
   import { setLanguage, tr } from './l10n.svelte';
   import Icon from './Icon.svelte';
   import MenuRow from './MenuRow.svelte';
+  import FolderRow from './folders/FolderRow.svelte';
+  import { indentLevel, treeOf, visibleRows } from './folders/tree';
   import { versionLabel } from './format';
+  import LockedMenu from './vault/LockedMenu.svelte';
+  import { backupApi } from './vault/backupApi';
 
   let vm = $state<ViewModel | null>(null);
   let now = $state(Date.now());
@@ -28,11 +34,36 @@
   /// The list scrolls (its scroll bar then takes the right margin).
   let scrollable = $state(false);
   let settingsOpen = $state(false);
-  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null));
+  const unlocked = $derived(vm?.vault.state === 'unlocked');
+  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null || unlocked || vm.backupAvailable));
+  /// The vault is locked or not set up yet: the menu shows no connection (the backend sends none either).
+  const vaultClosed = $derived(vm?.vault.state === 'locked' || vm?.vault.state === 'notCreated');
+  /// "Unlock Automatically" is being turned off: the menu asks first.
+  let confirmAutoUnlockOff = $state(false);
+  /// The folder tree (spec 3); collapsed folders hide their contents. A toggle shows at once, then the backend
+  /// persists it.
+  let collapsedNow = $state<Record<string, boolean>>({});
+  const isCollapsed = (f: FolderTreeRow) => collapsedNow[f.id] ?? f.collapsed;
+  const tree = $derived(vm ? treeOf(vm) : []);
+  const entries = $derived(visibleRows(tree, isCollapsed));
+  const rowById = $derived(new Map((vm?.rows ?? []).map((r) => [r.id, r])));
+
+  function toggleFolder(folder: FolderTreeRow) {
+    const collapsed = !isCollapsed(folder);
+    collapsedNow = { ...collapsedNow, [folder.id]: collapsed };
+    api.folderSetCollapsed(folder.id, collapsed).catch(console.error);
+  }
 
   function apply(next: ViewModel) {
     setLanguage(next.language);
     vm = next;
+    // The backend caught up with the toggles.
+    const settled = Object.keys(collapsedNow).filter((id) => (next.tree ?? []).some((r) => r.type === 'folder' && r.id === id && r.collapsed === collapsedNow[id]));
+    if (settled.length > 0) {
+      const rest = { ...collapsedNow };
+      for (const id of settled) delete rest[id];
+      collapsedNow = rest;
+    }
   }
 
   onMount(() => {
@@ -93,6 +124,28 @@
     await api.quit(null);
   }
 
+  function showVault(window: VaultWindowName) {
+    api.vaultShow(window).catch(console.error);
+  }
+
+  /// The switch shows the backend's state: on opens the password confirmation, off asks first.
+  function setAutoUnlock(event: Event) {
+    const input = event.currentTarget as HTMLInputElement;
+    const on = input.checked;
+    input.checked = !on;
+    if (on) showVault('confirmPassword');
+    else confirmAutoUnlockOff = true;
+  }
+
+  async function autoUnlockOff() {
+    confirmAutoUnlockOff = false;
+    try {
+      await api.vaultAutoUnlockOff();
+    } catch (e) {
+      notice = { title: tr('Unlock automatically'), message: String(e) };
+    }
+  }
+
   async function answer(choice: QuitChoice) {
     busy = choice === 'disconnectAndQuit';
     try {
@@ -123,7 +176,30 @@
         <button disabled={busy} onclick={() => answer('cancel')}>{tr('Cancel')}</button>
       </div>
     </section>
+  {:else if confirmAutoUnlockOff}
+    <section class="question" aria-live="polite">
+      <h1>{tr('Turn off automatic unlock?')}</h1>
+      <p>{tr('MacVPN will ask for the master password at every launch.')}</p>
+      <div class="buttons">
+        <button class="primary" onclick={() => autoUnlockOff().catch(console.error)}>{tr('Turn Off')}</button>
+        <button onclick={() => (confirmAutoUnlockOff = false)}>{tr('Cancel')}</button>
+      </div>
+    </section>
+  {:else if vm && vaultClosed}
+    <LockedMenu
+      vault={vm.vault}
+      version={versionLabel(vm.appVersion)}
+      onunlock={() => showVault(vm?.vault.state === 'notCreated' ? 'create' : 'unlock')}
+      onquit={() => quit().catch(console.error)}
+    />
   {:else}
+    {#if vm?.vault.state === 'legacyReadOnly'}
+      <button class="banner update legacy" onclick={() => showVault('create')}>
+        <Icon name="lock" />
+        <span class="banner-text">{vm.vault.legacyError ? tr('The move into the vault did not finish. Try again…') : tr('Finish setting up the vault…')}</span>
+        <Icon name="chevron" class="chevron" />
+      </button>
+    {/if}
     {#if vm?.statusError}
       <button class="banner status-error" title={tr('Open System Status')} onclick={() => open('setup')}>
         <Icon name="warning" />
@@ -132,14 +208,22 @@
       </button>
     {/if}
     <div class="list" class:scrollable bind:this={list} style:max-height={listMax === null ? null : `${listMax}px`}>
-      {#if vm && vm.rows.length === 0}
+      {#if vm && tree.length === 0}
         <div class="empty">
           <Icon name="globe" />
           <p>{tr('No connections yet')}</p>
         </div>
       {/if}
-      {#each vm?.rows ?? [] as row (row.id)}
-        <MenuRow {row} {now} onToggle={toggle} />
+      {#each entries as entry (entry.id)}
+        {#if entry.type === 'folder'}
+          <div class="indent" style:--level={indentLevel(entry.depth)}>
+            <FolderRow folder={entry} collapsed={isCollapsed(entry)} ontoggle={() => toggleFolder(entry)} />
+          </div>
+        {:else if rowById.get(entry.id)}
+          <div class="indent" style:--level={indentLevel(entry.depth)}>
+            <MenuRow row={rowById.get(entry.id)!} {now} onToggle={toggle} color={entry.color} />
+          </div>
+        {/if}
       {/each}
     </div>
     {#if vm?.update.available}
@@ -183,6 +267,10 @@
               <span>{tr('Only Offer Updates Published at Least 24 Hours Ago')}</span>
               <input type="checkbox" class="switch" role="switch" checked={vm.update.delayUpdates} onchange={(e) => setUpdateOption('delayUpdates', e)} />
             </label>
+            <button class="setting action" disabled={vm.update.checking} onclick={() => checkNow().catch(console.error)}>
+              <span>{vm.update.checking ? tr('Checking for Updates…') : tr('Check for Updates Now')}</span>
+              {#if vm.update.checking}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="refresh" />{/if}
+            </button>
           {/if}
           {#if vm.loginItem}
             <label class="setting">
@@ -207,10 +295,39 @@
               </div>
             {/if}
           {/if}
-          {#if vm.update.enabled}
-            <button class="setting action" disabled={vm.update.checking} onclick={() => checkNow().catch(console.error)}>
-              <span>{vm.update.checking ? tr('Checking for Updates…') : tr('Check for Updates Now')}</span>
-              {#if vm.update.checking}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="refresh" />{/if}
+          <!-- The vault: unlocking, the master password and the recovery key, then the backup. -->
+          {#if unlocked}
+            <label class="setting">
+              <span>{tr('Unlock automatically')}</span>
+              <input type="checkbox" class="switch auto-unlock" role="switch" checked={vm.vault.autoUnlock} onchange={setAutoUnlock} />
+            </label>
+            <label class="setting">
+              <span>{tr('Show “Lock Now”')}</span>
+              <input
+                type="checkbox"
+                class="switch show-lock-now"
+                role="switch"
+                checked={vm.vault.showLockNowPref}
+                onchange={(e) => api.vaultSetShowLockNow(e.currentTarget.checked).catch(console.error)}
+              />
+            </label>
+            <button class="setting action change-password" onclick={() => showVault('changePassword')}>
+              <span>{tr('Change Master Password…')}</span>
+              <Icon name="lock" />
+            </button>
+            <button class="setting action new-recovery-key" onclick={() => showVault('newRecoveryKey')}>
+              <span>{tr('New Recovery Key…')}</span>
+              <Icon name="key" />
+            </button>
+          {/if}
+          {#if vm.backupAvailable}
+            <button class="setting action backup" onclick={() => backupApi.showWindow('backup').catch(console.error)}>
+              <span>{tr('Back Up Everything…')}</span>
+              <Icon name="download" />
+            </button>
+            <button class="setting action restore" onclick={() => backupApi.showWindow('restore').catch(console.error)}>
+              <span>{tr('Restore from Backup…')}</span>
+              <Icon name="refresh" />
             </button>
           {/if}
         </div>
@@ -222,6 +339,12 @@
         {tr('Help')}
       </button>
       <span class="spacer"></span>
+      {#if vm?.vault.showLockNow}
+        <button class="pill lock-now" onclick={() => api.vaultLockNow().catch(console.error)}>
+          <Icon name="lock" />
+          {tr('Lock Now')}
+        </button>
+      {/if}
       <button class="pill quit" onclick={quit}>
         <Icon name="power" />
         {tr('Quit MacVPN')}
@@ -253,6 +376,10 @@
     box-sizing: border-box;
     overflow-y: auto;
     overscroll-behavior: contain;
+  }
+  /* Nesting: indented, capped at three levels (deeper folders still work). */
+  .indent {
+    padding-left: calc(var(--level, 0) * 12px);
   }
   .list.scrollable {
     padding-right: calc(var(--space-4) - 8px);

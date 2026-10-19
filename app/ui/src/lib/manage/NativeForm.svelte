@@ -3,6 +3,7 @@
   // `NativeConfigForm`).
   import type { NativeFields } from '../api';
   import { tr } from '../l10n.svelte';
+  import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
   import SecretField from './SecretField.svelte';
@@ -18,11 +19,16 @@
   <section>
     <label class="field"><span>{tr('Name')}</span><input type="text" bind:value={fields.name} /></label>
     <label class="field"><span>{tr('Server')}</span><input type="text" autocomplete="off" bind:value={fields.server} /></label>
+    <CredentialSelector item={session.id} credential={view?.credential ?? null} onchanged={() => session.open()} />
     <label class="field"><span>{tr('Account name')}</span><input type="text" autocomplete="off" bind:value={fields.account} /></label>
-    <label class="field">
-      <span>{tr('Password')}</span>
-      <SecretField label={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
-    </label>
+    {#if view?.credential}
+      <p class="note">{tr('The account name is only written into the profile. MacVPN signs in with the shared credential.')}</p>
+    {:else}
+      <label class="field">
+        <span>{tr('Password')}</span>
+        <SecretField label={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
+      </label>
+    {/if}
     <label class="field">
       <span>{tr('Pre-shared key (PSK)')}</span>
       <SecretField label={tr('Pre-shared key (PSK)')} stored={view?.hasStoredSecret.psk ?? false} bind:value={fields.psk} />

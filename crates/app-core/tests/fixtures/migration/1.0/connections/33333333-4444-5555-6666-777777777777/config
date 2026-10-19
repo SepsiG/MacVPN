@@ -1,0 +1,5 @@
+connections {
+  office {
+    remote_addrs = ikev2.example.com
+  }
+}

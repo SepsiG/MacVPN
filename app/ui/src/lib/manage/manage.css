@@ -7,6 +7,7 @@
 .manage input[type='search'],
 .manage textarea,
 .manage select,
+.alert select,
 .alert input:not([type='checkbox']) {
   box-sizing: border-box;
   min-height: 28px;
@@ -36,7 +37,8 @@
   padding-left: 12px;
 }
 
-.manage select {
+.manage select,
+.alert select {
   -webkit-appearance: menulist-button;
   appearance: menulist-button;
   cursor: default;
@@ -46,6 +48,7 @@
 .manage input:focus,
 .manage textarea:focus,
 .manage select:focus-visible,
+.alert select:focus-visible,
 .alert input:not([type='checkbox']):focus {
   border-color: var(--focus-border);
   box-shadow: var(--focus-ring);

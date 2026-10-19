@@ -10,7 +10,9 @@
   import './manage.css';
   import Detail from './Detail.svelte';
   import Modal from './Modal.svelte';
+  import Credentials from './Credentials.svelte';
   import PairedApps from './PairedApps.svelte';
+  import { setSharedCredentials } from './sharedStore.svelte';
   import { flushActive } from './session.svelte';
   import Sidebar from './Sidebar.svelte';
   import SystemDetail from './SystemDetail.svelte';
@@ -22,8 +24,13 @@
   let notice = $state<Notice | null>(null);
   let dropping = $state(false);
   let resolving = $state(false);
-  /// The Paired apps section is shown (in place of a connection: the selection is cleared first).
-  let showPaired = $state(false);
+  /// The Paired apps or the Credentials section is shown (in place of a connection: the selection is cleared
+  /// first).
+  let section = $state<'paired' | 'credentials' | null>(null);
+  const showPaired = $derived(section === 'paired');
+  const showCredentials = $derived(section === 'credentials');
+  /// A choice question's pick (the import's shared credential): the option's index.
+  let choice = $state(0);
 
   const selected = $derived(vm?.manage.selected ?? null);
   /// The selected system VPN was removed from macOS: its last row stays shown (read-only).
@@ -41,6 +48,8 @@
 
   function apply(next: ViewModel) {
     setLanguage(next.language);
+    setSharedCredentials(next.credentials);
+    if (next.manage.question?.id !== vm?.manage.question?.id) choice = 0;
     vm = next;
   }
 
@@ -65,13 +74,13 @@
 
   async function select(id: string) {
     await flushActive();
-    showPaired = false;
+    section = null;
     await api.selectConnection(id);
   }
 
-  async function openPaired() {
+  async function openSection(name: 'paired' | 'credentials') {
     await flushActive();
-    showPaired = true;
+    section = name;
     // Through the unsaved-changes check, like any selection change.
     await api.selectConnection(null);
   }
@@ -101,13 +110,21 @@
 <div class="manage" class:dropping>
   <Sidebar
     rows={vm?.rows ?? []}
+    tree={vm?.tree}
+    foldersEnabled={vm?.foldersEnabled ?? false}
+    foldersNote={vm?.foldersNote ?? null}
+    palette={vm?.palette ?? []}
     {selected}
     kinds={vm?.manage.kinds ?? []}
     onselect={(id) => select(id).catch(console.error)}
     onimport={() => importFiles().catch(console.error)}
     paired={showPaired && !selected}
     pairedCount={vm?.control.clients.length ?? 0}
-    onpaired={() => openPaired().catch(console.error)}
+    onpaired={() => openSection('paired').catch(console.error)}
+    credentials={showCredentials && !selected}
+    credentialCount={vm?.credentials.items.length ?? 0}
+    oncredentials={() => openSection('credentials').catch(console.error)}
+    backupAvailable={vm?.backupAvailable ?? false}
   />
   <main class="main">
     {#if vm?.statusError}
@@ -119,6 +136,8 @@
     {/if}
     {#if showPaired && !selected && vm}
       <PairedApps control={vm.control} rows={vm.rows} />
+    {:else if showCredentials && !selected && vm}
+      <Credentials view={vm.credentials} rows={vm.rows} />
     {:else if row && row.managed && row.kind}
       {#key row.id}
         <Detail {row} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} />
@@ -147,6 +166,22 @@
       { label: tr('Save'), kind: 'primary', action: () => resolve('save').catch(console.error) },
     ]}
   />
+{:else if vm?.manage.question && vm.manage.question.options.length > 0}
+  {@const q = vm.manage.question}
+  <Modal
+    title={q.title}
+    message={q.message}
+    buttons={[
+      { label: q.no, kind: 'cancel', action: () => api.answerQuestionChoice(q.id, null).catch(console.error) },
+      { label: q.yes, kind: 'primary', action: () => api.answerQuestionChoice(q.id, choice).catch(console.error) },
+    ]}
+  >
+    <select class="question-choice" bind:value={choice}>
+      {#each q.options as option, i (i)}
+        <option value={i}>{option}</option>
+      {/each}
+    </select>
+  </Modal>
 {:else if vm?.manage.question}
   {@const q = vm.manage.question}
   <Modal
@@ -184,6 +219,10 @@
     min-width: 0;
     min-height: 0;
     background: var(--background);
+  }
+  .question-choice {
+    width: 100%;
+    margin-bottom: 16px;
   }
   .status-error {
     display: flex;

@@ -315,6 +315,26 @@ fn no_password_key_anywhere() {
     }
 }
 
+/// Guards the plan B Task 12 decision (vault spike report D.2): until the manual test D.3 shows that a profile
+/// without `SharedSecret` installs and still connects from System Settings, the PSK stays in the profile for both
+/// native kinds (macOS owns those profiles and keeps it in the System keychain), next to
+/// `AuthenticationMethod = SharedSecret`. The password never goes in. If D.3 passes, this test is replaced by its
+/// opposite (no `SharedSecret`) together with the `generate` change.
+#[test]
+fn psk_stays_in_the_profile_until_spike_d3_passes() {
+    for c in
+        [native_conn("A", VPNKind::L2tp, "s", "u", "", true), native_conn("B", VPNKind::Cisco, "s", "u", "g", true)]
+    {
+        let data = mobileconfig::generate(&c, "vault psk").unwrap();
+        let p = payload(&data);
+        let ipsec = sub(&p, "IPSec");
+        assert_eq!(ipsec.get("AuthenticationMethod").and_then(Value::as_string), Some("SharedSecret"), "{:?}", c.kind);
+        assert_eq!(ipsec.get("SharedSecret").and_then(Value::as_data), Some(&b"vault psk"[..]), "{:?}", c.kind);
+        let xml = String::from_utf8(data).unwrap();
+        assert!(!xml.contains("Password"), "{xml}");
+    }
+}
+
 #[test]
 fn cisco_requires_group_name() {
     lang(AppLanguage::Hu);

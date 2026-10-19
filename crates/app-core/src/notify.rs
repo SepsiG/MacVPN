@@ -37,17 +37,30 @@ pub fn credential_notification_id(connection_id: &str) -> String {
     format!("cred-{connection_id}")
 }
 
+/// "<name>: …", or without a name (a connection redacted while the vault is locked) the generic text.
+fn titled(name: &str, with_name: impl FnOnce(&str) -> String, generic: impl FnOnce() -> String) -> String {
+    if name.trim().is_empty() { generic() } else { with_name(name) }
+}
+
 /// A failure or a drop. `unique`: a fresh identifier (every event is its own notification).
 pub fn for_event(event: &ConnectionEvent, unique: String) -> NotificationContent {
     let (connection_id, title, body) = match event {
         ConnectionEvent::Failed { connection_id, name, .. } => (
             connection_id,
-            l10n::tr("%@: connection failed", &[Arg::Str(name)]),
+            titled(
+                name,
+                |n| l10n::tr("%@: connection failed", &[Arg::Str(n)]),
+                || l10n::tr("A VPN connection failed", &[]),
+            ),
             l10n::tr("Open MacVPN for details", &[]),
         ),
         ConnectionEvent::Dropped { connection_id, name } => (
             connection_id,
-            l10n::tr("%@: the connection dropped", &[Arg::Str(name)]),
+            titled(
+                name,
+                |n| l10n::tr("%@: the connection dropped", &[Arg::Str(n)]),
+                || l10n::tr("A VPN connection dropped", &[]),
+            ),
             l10n::tr("Click to see the log.", &[]),
         ),
     };
@@ -59,7 +72,11 @@ pub fn for_event(event: &ConnectionEvent, unique: String) -> NotificationContent
 pub fn for_prompt(prompt: &PromptView) -> NotificationContent {
     NotificationContent {
         id: auth_notification_id(&prompt.connection_id),
-        title: l10n::tr("%@: authentication needed", &[Arg::Str(&prompt.connection_name)]),
+        title: titled(
+            &prompt.connection_name,
+            |n| l10n::tr("%@: authentication needed", &[Arg::Str(n)]),
+            || l10n::tr("A VPN connection needs authentication", &[]),
+        ),
         body: l10n::tr("Click to enter the code or to sign in.", &[]),
         user_info: (AUTH_PROMPT_KEY, prompt.connection_id.clone()),
     }
@@ -70,7 +87,11 @@ pub fn for_prompt(prompt: &PromptView) -> NotificationContent {
 pub fn for_credential_prompt(prompt: &CredentialPromptView) -> NotificationContent {
     NotificationContent {
         id: credential_notification_id(&prompt.connection_id),
-        title: l10n::tr("%@: credentials needed", &[Arg::Str(&prompt.connection_name)]),
+        title: titled(
+            &prompt.connection_name,
+            |n| l10n::tr("%@: credentials needed", &[Arg::Str(n)]),
+            || l10n::tr("Credentials needed", &[]),
+        ),
         body: l10n::tr("Click to enter the user name or password.", &[]),
         user_info: (CREDENTIAL_PROMPT_KEY, prompt.connection_id.clone()),
     }

@@ -1,0 +1,13 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "2000-02-29T23:59:59Z",
+  "id" : "22222222-3333-4444-5555-666666666666",
+  "kind" : "wireguard",
+  "name" : "WG",
+  "otp" : {
+    "enabled" : false,
+    "separator" : "none"
+  }
+}

@@ -1,35 +1,17 @@
-//! The run directory (`/var/run/macvpn/<id>`, root 0700) and the copy of the config into it.
+//! The run directory (`/var/run/macvpn/<id>`, root 0700) and the config written into it.
 //!
-//! The source config is read with the user's rights (`sudo -n -u <user> /bin/cat --`), the copy is created by
-//! root in the root-only directory: a symlink / hardlink swap (TOCTOU) can at most bring in a file the user could
-//! read anyway. The symlink, owner and link-count checks stay as defence in depth. From here on only the copy is
-//! used. A dry-run gets its own `<id>.dryrun.XXXXXX` directory (removed at exit), so it never touches a live one.
+//! Since root layer 8 the config arrives on stdin (see [`crate::secrets`]): the root layer opens no user file, so
+//! there is no source path a symlink, hardlink or owner trick could redirect. The bytes go straight from memory
+//! into `run/config` (0600, created new, never through a symlink) in the freshly created root-only directory;
+//! from here on only that copy is used. A dry-run gets its own `<id>.dryrun.XXXXXX` directory (removed at exit),
+//! so it never touches a live one.
 
-use crate::cli::is_user_name;
 use crate::ctx::{Ctx, R, tr};
-use crate::exec::{self, Cmd};
+use crate::exec;
 use crate::fsx;
-use crate::paths::{SRC_MAX, is_file, is_symlink};
-use std::io::Read;
+use crate::paths::SRC_MAX;
 use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
-
-/// `resolve_src_base`: `<home>/Library/Application Support/MacVPN/connections` of the target user.
-pub fn resolve_src_base(ctx: &mut Ctx) -> R {
-    if ctx.s.src_base.is_some() {
-        return Ok(());
-    }
-    if !is_user_name(&ctx.s.target_user) {
-        return Err(ctx.die(tr("Invalid user", &[])));
-    }
-    let home = crate::sys::user_by_name(&ctx.s.target_user).map(|u| u.home).filter(|h| !h.is_empty());
-    let Some(home) = home else {
-        return Err(ctx.die(tr("The user's home directory was not found", &[])));
-    };
-    ctx.s.src_base = Some(PathBuf::from(home).join("Library/Application Support/MacVPN/connections"));
-    Ok(())
-}
 
 /// `mktemp -d <base>/<id>.dryrun.XXXXXX` (0700, created atomically).
 fn make_dry_dir(base: &Path, id: &str) -> Option<PathBuf> {
@@ -49,31 +31,18 @@ fn fail(ctx: &Ctx, run: &Path, msg: String) -> crate::ctx::Exit {
     ctx.die(msg)
 }
 
-/// `prepare_run`
-pub fn prepare(ctx: &mut Ctx) -> R {
-    let src_base = ctx.s.src_base.clone().unwrap_or_default();
-    let conn_dir = src_base.join(&ctx.id);
-    let src = conn_dir.join("config");
-    if !is_user_name(&ctx.s.target_user) {
-        return Err(ctx.die(tr("Invalid user", &[])));
-    }
-    if is_symlink(&conn_dir) {
-        return Err(ctx.die(tr("The connection directory must not be a symlink", &[])));
-    }
-    if is_symlink(&src) {
-        return Err(ctx.die(tr("The config must not be a symlink", &[])));
-    }
-    if !is_file(&src) {
-        return Err(ctx.die(tr("Config not found", &[])));
-    }
-    let Some(user) = ctx.user() else {
+/// `prepare_run`: a new run directory with `config` written from `config` (already framed and size-checked).
+pub fn prepare(ctx: &mut Ctx, config: &[u8]) -> R {
+    // The connection's user (`SUDO_USER`) must exist: the log and the MFA files are handed to it.
+    if ctx.user().is_none() {
         return Err(ctx.die(tr("Unknown user", &[])));
-    };
-    let Some(owner) = fsx::owner_and_links(&src) else {
-        return Err(ctx.die(tr("Cannot read the config", &[])));
-    };
-    if owner != (user.uid, 1) {
-        return Err(ctx.die(tr("The owner or link count of the config is wrong", &[])));
+    }
+    // The framing guarantees both; checked again because this is the only writer of `run/config`.
+    if config.is_empty() {
+        return Err(ctx.die(tr("Config not provided", &[])));
+    }
+    if config.len() as u64 > SRC_MAX {
+        return Err(ctx.die(tr("The config is too large (1 MB at most)", &[])));
     }
     let _ = std::fs::create_dir_all(&ctx.s.run_base);
     let _ = fsx::chmod(&ctx.s.run_base, 0o700);
@@ -91,45 +60,72 @@ pub fn prepare(ctx: &mut Ctx) -> R {
         run
     };
     ctx.run = Some(run.clone());
-
-    let cat = if ctx.s.test_mode {
-        Cmd::new("/bin/cat").arg("--").arg(&src)
-    } else {
-        Cmd::new("/usr/bin/sudo").args(["-n", "-u", &ctx.s.target_user, "/bin/cat", "--"]).arg(&src)
-    };
-    let dest = run.join("config");
-    let copied = copy_as_user(&cat, ctx.env_mode(), &dest);
-    if is_symlink(&dest) {
-        return Err(fail(ctx, &run, tr("The config must not be a symlink", &[])));
-    }
-    if !is_file(&dest) {
-        return Err(fail(ctx, &run, tr("The config is not a regular file", &[])));
-    }
-    if fsx::size(&dest).unwrap_or(u64::MAX) > SRC_MAX {
-        return Err(fail(ctx, &run, tr("The config is too large (1 MB at most)", &[])));
-    }
-    if !copied {
-        return Err(fail(ctx, &run, tr("Copying the config failed", &[])));
+    if fsx::create_new(&run.join("config"), config, 0o600).is_err() {
+        return Err(fail(ctx, &run, tr("Cannot write the config", &[])));
     }
     let _ = fsx::write_line(&run.join("kind"), &ctx.kind);
     let _ = fsx::write_line(&run.join("lang"), if ctx.a.lang_hu { "hu" } else { "en" });
     let _ = fsx::write_line(&run.join("started"), &exec::now().to_string());
-    ctx.log.step(&tr("config copied: %@/config", &[&run.display().to_string()]));
+    ctx.log.step(&tr("config written: %@/config", &[&run.display().to_string()]));
     Ok(())
 }
 
-/// Runs the reader, keeps at most `SRC_MAX + 1` bytes of its output in `dest` (created new, 0600); `true` if the
-/// reader succeeded.
-fn copy_as_user(cat: &Cmd, mode: exec::EnvMode, dest: &Path) -> bool {
-    let child = cat.command(mode).stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::inherit()).spawn();
-    let mut data = Vec::new();
-    let mut ok = false;
-    if let Ok(mut child) = child {
-        if let Some(out) = child.stdout.take() {
-            let _ = out.take(SRC_MAX + 1).read_to_end(&mut data);
-        }
-        ok = child.wait().is_ok_and(|s| s.success());
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::Args;
+    use crate::paths::Settings;
+    use crate::testmode::TestEnv;
+    use std::os::unix::fs::PermissionsExt;
+
+    fn ctx(base: &Path, dry: bool) -> Ctx {
+        let t = TestEnv { run_base: Some(base.display().to_string()), ..TestEnv::default() };
+        let a = Args {
+            cmd: "up".into(),
+            kind: "openvpn".into(),
+            id: "0F6B2C1E-6F1D-4C35-9C47-2B1A3E5D7F90".into(),
+            dry_run: dry,
+            ..Args::default()
+        };
+        Ctx::new(Settings::resolve(true, t, String::new()), a)
     }
-    let _ = fsx::write_file(dest, &data, 0o600);
-    ok
+
+    fn tmp() -> PathBuf {
+        std::env::temp_dir().join(format!("mvpn-run-{}", uuid::Uuid::new_v4()))
+    }
+
+    #[test]
+    fn writes_the_config_from_memory_into_a_private_directory() {
+        let base = tmp();
+        let mut c = ctx(&base, false);
+        prepare(&mut c, b"client\nremote a 1\n").unwrap();
+        let run = c.run().to_path_buf();
+        assert_eq!(run, base.join(&c.id));
+        assert_eq!(std::fs::read(run.join("config")).unwrap(), b"client\nremote a 1\n");
+        assert_eq!(std::fs::metadata(&run).unwrap().permissions().mode() & 0o777, 0o700);
+        assert_eq!(std::fs::metadata(run.join("config")).unwrap().permissions().mode() & 0o777, 0o600);
+        assert_eq!(fsx::cat(&run.join("kind")), "openvpn");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn a_dry_run_gets_its_own_directory() {
+        let base = tmp();
+        let mut c = ctx(&base, true);
+        prepare(&mut c, b"x").unwrap();
+        let name = c.run().file_name().unwrap().to_string_lossy().into_owned();
+        assert!(name.starts_with(&format!("{}.dryrun.", c.id)), "{name}");
+        assert_eq!(std::fs::read(c.run().join("config")).unwrap(), b"x");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn refuses_an_empty_or_oversize_config_without_a_run_directory() {
+        let base = tmp();
+        let mut c = ctx(&base, false);
+        assert!(prepare(&mut c, b"").is_err());
+        assert!(prepare(&mut c, &vec![b'#'; SRC_MAX as usize + 1]).is_err());
+        assert!(c.run.is_none() && !base.join(&c.id).exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
 }

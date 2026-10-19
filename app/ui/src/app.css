@@ -94,6 +94,21 @@
   --vpn-system: #9a9aa2;
   --vpn-system-2: #74747c;
 
+  /* Folder and connection colours (spec 3): text-safe on the card surface (contrast at least 4.5:1, checked by
+     folders/tree.test.ts) in both modes. */
+  --folder-red: #d63a30;
+  --folder-orange: #bd530b;
+  --folder-amber: #a66300;
+  --folder-yellow: #8a7000;
+  --folder-lime: #4b7a12;
+  --folder-green: #1a7f37;
+  --folder-teal: #0d7f78;
+  --folder-cyan: #0a78a3;
+  --folder-blue: #2563d9;
+  --folder-indigo: #5145d6;
+  --folder-purple: #8e3ec8;
+  --folder-pink: #c72a6e;
+
   /* Shadows. */
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.05), 0 1px 1px rgba(0, 0, 0, 0.03);
   --shadow-raised: 0 4px 12px rgba(0, 0, 0, 0.07), 0 1px 3px rgba(0, 0, 0, 0.06);
@@ -176,6 +191,19 @@
     --vpn-sstp-2: #d44a80;
     --vpn-system: #8e8e96;
     --vpn-system-2: #6a6a72;
+
+    --folder-red: #ff6b62;
+    --folder-orange: #ff9a4a;
+    --folder-amber: #ffb547;
+    --folder-yellow: #f0d040;
+    --folder-lime: #a5d94a;
+    --folder-green: #4cd471;
+    --folder-teal: #40d0c2;
+    --folder-cyan: #4fc6ee;
+    --folder-blue: #64a5ff;
+    --folder-indigo: #9b95ff;
+    --folder-purple: #cf8af5;
+    --folder-pink: #ff74a8;
 
     --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 0.5px 0 rgba(255, 255, 255, 0.05);
     --shadow-raised: 0 6px 16px rgba(0, 0, 0, 0.35), 0 1px 3px rgba(0, 0, 0, 0.3);

@@ -3,8 +3,9 @@
 //! source for tokens.
 //!
 //! Audit note: the `unsafe` blocks here are direct libc calls (`umask`, `flock`, `getpeereid`, `getsockopt`,
-//! `proc_pidpath`, `getentropy`) with plain integer arguments or with out-parameters / buffers that live on
-//! the stack for the duration of the call and whose length is passed alongside. No pointer is kept past a call.
+//! `proc_pidpath`) with plain integer arguments or with out-parameters / buffers that live on the stack for the
+//! duration of the call and whose length is passed alongside. No pointer is kept past a call. Randomness comes from
+//! the crate's one `getentropy` wrapper, [`crate::sys::getentropy`].
 //!
 //! Close-on-exec: `std` creates every socket close-on-exec on macOS (`socket`, `accept` and `socketpair` are
 //! followed by `FIOCLEX`), so the listener and every accepted stream are close-on-exec; the tests check it. The
@@ -267,12 +268,9 @@ pub fn same_user(peer_uid: u32) -> bool {
     peer_uid == sys::getuid()
 }
 
-/// 32 bytes from the kernel's CSPRNG (`getentropy`).
+/// 32 bytes from the kernel's CSPRNG ([`sys::getentropy`], the crate's one `getentropy` wrapper).
 pub fn random_32() -> io::Result<[u8; 32]> {
     let mut bytes = [0u8; 32];
-    // SAFETY: `bytes` is writable and its length (32, within getentropy's 256-byte limit) is passed.
-    if unsafe { libc::getentropy(bytes.as_mut_ptr().cast(), bytes.len()) } != 0 {
-        return Err(io::Error::last_os_error());
-    }
+    sys::getentropy(&mut bytes)?;
     Ok(bytes)
 }

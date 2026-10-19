@@ -316,6 +316,7 @@ fn error_codes_are_snake_case() {
         (ErrorCode::MfaCancelled, "mfa_cancelled"),
         (ErrorCode::MfaTimeout, "mfa_timeout"),
         (ErrorCode::CredentialsCancelled, "credentials_cancelled"),
+        (ErrorCode::Locked, "locked"),
         (ErrorCode::Failed, "failed"),
         (ErrorCode::AppQuitting, "app_quitting"),
         (ErrorCode::Disabled, "disabled"),

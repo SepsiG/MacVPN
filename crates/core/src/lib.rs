@@ -29,6 +29,8 @@ pub mod system_otp;
 pub mod update;
 pub mod url;
 pub mod validators;
+#[cfg(feature = "vault")]
+pub mod vault;
 
 /// The MacVPN version this crate belongs to.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

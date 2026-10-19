@@ -44,6 +44,15 @@ pub fn secrets_block(user: &[u8], pass: &[u8], psk: &[u8]) -> zeroize::Zeroizing
     b
 }
 
+/// A failed EAP sign-in in swanctl / charon output: `EAP_FAILURE`, or `EAP method … failed` on one line.
+pub fn is_eap_failure(out: &[u8]) -> bool {
+    crate::mask::lines(out).any(|l| {
+        crate::mask::find(l, b"EAP_FAILURE").is_some()
+            || crate::mask::find(l, b"EAP method ")
+                .is_some_and(|i| crate::mask::find(&l[i + b"EAP method ".len()..], b" failed").is_some())
+    })
+}
+
 /// `charon_pids`: root-owned `charon` processes (`pgrep -U 0 -x charon`) started from the expected binary (the
 /// `ps` comm is the start path). Another user's or another path's `charon` is not ours.
 pub fn charon_pids(charon: &Path) -> Vec<String> {
@@ -98,10 +107,15 @@ pub fn up(ctx: &mut Ctx) -> R {
     }
     let lvl = if ctx.a.debug { "2" } else { "1" };
     let initiate = Cmd::new(&swanctl).args(["--initiate", "--child", &child, "--timeout", "30", "--loglevel", lvl]);
-    if !ctx.run_logged(&initiate)? {
+    // The EAP verdict comes from swanctl's own (masked) output stream, not from the user-writable log.
+    let (initiated, eap) = ctx.run_logged_scan(&initiate, is_eap_failure)?;
+    if !initiated {
         ctx.run_logged(&Cmd::new(&swanctl).args(["--terminate", "--ike", &conn, "--timeout", "5"]))?;
         if !ctx.dry() {
             fsx::remove_rf(&run);
+        }
+        if eap {
+            return Err(ctx.die(tr("Authentication failed (EAP)", &[])));
         }
         return Err(ctx.die(tr("IKE negotiation failed (details in the log)", &[])));
     }
@@ -175,6 +189,17 @@ mod tests {
             secrets_block(b"", b"", b"psk").to_vec(),
             b"secrets {\n  ike-macvpn {\n    secret = \"psk\"\n  }\n}\n".to_vec()
         );
+    }
+
+    #[test]
+    fn eap_failures() {
+        assert!(is_eap_failure(b"[IKE] received EAP_FAILURE, EAP authentication failed\n"));
+        assert!(is_eap_failure(b"x\n[IKE] EAP method EAP_MSCHAPV2 failed for peer 10.0.0.1\ny\n"));
+        assert!(is_eap_failure(b"EAP method EAP_PEAP (id 0x02) failed"));
+        assert!(!is_eap_failure(b"[IKE] establishing CHILD_SA office-net failed\n"));
+        assert!(!is_eap_failure(b"EAP method\n failed\n"));
+        assert!(!is_eap_failure(b"initiate failed: establishing CHILD_SA 'office-net' failed\n"));
+        assert!(!is_eap_failure(b""));
     }
 
     #[test]

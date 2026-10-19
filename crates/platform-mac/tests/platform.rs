@@ -99,6 +99,7 @@ fn curl_client_follows_allowed_redirects_only() {
         assert!(has(["--proto", "=https"]) && has(["--max-redirs", "0"]) && has(["--user-agent", "MacVPN-Updater"]));
         assert_eq!(args[0], "-q", "no ~/.curlrc");
         assert_eq!(args[args.len() - 2], "--", "the URL is never an option");
+        assert!(args.iter().any(|a| a == "--globoff"), "a URL's [] and {{}} are never globbed");
     }
     assert!(calls[2].arguments.windows(2).any(|w| w[0] == "--header" && w[1] == "Accept: application/vnd.github+json"));
 }

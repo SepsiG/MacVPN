@@ -1,0 +1,8 @@
+[Interface]
+PrivateKey = AAAAfakefakefakefakefakefakefakefakefakefak=
+Address = 10.8.0.2/32
+
+[Peer]
+PublicKey = BBBBfakefakefakefakefakefakefakefakefakefak=
+Endpoint = wg.example.com:51820
+AllowedIPs = 0.0.0.0/0

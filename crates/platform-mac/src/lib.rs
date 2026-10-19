@@ -1,5 +1,5 @@
 //! MacVPN macOS platform layer (port of the macOS-specific parts of the Swift `MacVPNCore` and `MacVPN`):
-//! Keychain, native VPN (SCNetworkConnection + scutil), launch at login (SMAppService + LaunchAgent), the root
+//! Keychain (connection secrets and the vault key), native VPN (SCNetworkConnection + scutil), launch at login (SMAppService + LaunchAgent), the root
 //! installer / uninstaller, the update installer, Homebrew, the process runner, the `mvpn` client and the setup
 //! check, and the system VPN change watcher. The core's locale hooks (collation, preferred languages) are installed by [`install_core_hooks`].
 //!
@@ -15,6 +15,7 @@ pub mod control_socket;
 pub mod dialogs;
 pub mod http;
 mod keychain_ffi;
+pub mod legacy_store;
 pub mod log_stream;
 pub mod login_item;
 pub mod mvpn_client;
@@ -33,6 +34,7 @@ pub mod system;
 pub mod temp_dir;
 pub mod testing;
 pub mod update_installer;
+pub mod vault_keys;
 pub mod window_fit;
 pub mod window_shape;
 

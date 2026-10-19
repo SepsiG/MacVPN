@@ -99,6 +99,115 @@ pub struct PreparedImport {
     pub credentials: ImportedCredentials,
     /// OpenVPN: the config has an encrypted private key (it needs the "Private key password" field).
     pub has_encrypted_key: bool,
+    /// The exported metadata line (`# macvpn-meta: …`), removed from `config`; `None` when the file has none (an
+    /// older export, or a config from elsewhere) or it is invalid (then it stays in the config as a comment).
+    pub meta: Option<ExportMeta>,
+}
+
+/// The metadata line at the top of an exported text config (plan B, resolved points "Exported metadata"):
+/// `# macvpn-meta: {"credentialName":"Office AD","folder":["Work","Clients"]}`. Both keys are optional; it never
+/// carries a secret.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ExportMeta {
+    /// The folder path from the root (Task 16); every component passed the folder-name rule.
+    pub folder: Option<Vec<String>>,
+    /// The name of the shared credential the connection was linked to (spec 3a). On import it is only offered:
+    /// when a credential with exactly this name exists, the user is asked whether to use it for this connection's
+    /// server (a file must never send a stored password to a server of its choice by itself).
+    pub credential_name: Option<String>,
+}
+
+/// The metadata line's prefix.
+pub const EXPORT_META_PREFIX: &str = "# macvpn-meta: ";
+/// The longest metadata line (without the line break), in bytes.
+pub const MAX_EXPORT_META_BYTES: usize = 4096;
+
+/// The longest folder or credential name, in characters (grapheme clusters): the vault's
+/// `MAX_FOLDER_NAME_CHARACTERS` and `MAX_CREDENTIAL_NAME_CHARACTERS`.
+pub const MAX_META_NAME_CHARACTERS: usize = 64;
+
+/// A folder path component or a credential name in the metadata, through the vault's name rule
+/// ([`crate::mfa::clean_name`], as `validate_folder_name` / `validate_credential_name`): the cleaned name, or
+/// `None`, which refuses the whole line.
+fn meta_name(value: &serde_json::Value) -> Option<String> {
+    crate::mfa::clean_name(value.as_str()?, MAX_META_NAME_CHARACTERS)
+}
+
+fn parse_export_meta(json: &str) -> Option<ExportMeta> {
+    let serde_json::Value::Object(map) = serde_json::from_str::<serde_json::Value>(json).ok()? else { return None };
+    let folder = match map.get("folder") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::Array(parts)) => Some(parts.iter().map(meta_name).collect::<Option<Vec<_>>>()?),
+        Some(_) => return None,
+    };
+    let credential_name = match map.get("credentialName") {
+        None | Some(serde_json::Value::Null) => None,
+        Some(value) => Some(meta_name(value)?),
+    };
+    Some(ExportMeta { folder, credential_name })
+}
+
+/// Splits a valid metadata line off the top of an imported config: the metadata and the config without it. A
+/// missing or invalid line (not strict JSON, wrong types, over [`MAX_EXPORT_META_BYTES`]) gives `None` and the
+/// whole text, so the line stays in the config as an ordinary comment. Unknown keys are ignored.
+pub fn take_export_meta(content: &str) -> (Option<ExportMeta>, &str) {
+    let Some(after) = content.strip_prefix(EXPORT_META_PREFIX) else { return (None, content) };
+    let (line, rest) = match after.find('\n') {
+        Some(i) => (&after[..i], &after[i + 1..]),
+        None => (after, ""),
+    };
+    let line = line.strip_suffix('\r').unwrap_or(line);
+    if EXPORT_META_PREFIX.len() + line.len() > MAX_EXPORT_META_BYTES {
+        return (None, content);
+    }
+    match parse_export_meta(line) {
+        Some(meta) => (Some(meta), rest),
+        None => (None, content),
+    }
+}
+
+/// The longest host [`remote_host`] returns, in bytes (a DNS name has at most 253).
+pub const MAX_REMOTE_HOST_BYTES: usize = 253;
+
+/// The server a config connects to, for the import question "Use the shared credential 'X' for this connection
+/// to <host>?": OpenVPN's first `remote`, WireGuard's first `Endpoint` (without the port), strongSwan's first
+/// `remote_addrs` entry, SSTP's `server=`. Only for display: `None` when there is none, or it is empty, longer than
+/// [`MAX_REMOTE_HOST_BYTES`] or has a control character, a space or a quote.
+pub fn remote_host(kind: VPNKind, config: &str) -> Option<String> {
+    let host = config.lines().find_map(|raw| {
+        let line = raw.trim_matches(|c: char| c.is_whitespace());
+        if line.starts_with('#') || line.starts_with(';') {
+            return None;
+        }
+        match kind {
+            VPNKind::Openvpn => {
+                let mut words = line.split_whitespace();
+                (words.next()? == "remote").then(|| words.next()).flatten().map(str::to_string)
+            }
+            VPNKind::Wireguard => {
+                let (key, value) = line.split_once('=')?;
+                if !key.trim().eq_ignore_ascii_case("endpoint") {
+                    return None;
+                }
+                let value = value.trim();
+                Some(match value.strip_prefix('[') {
+                    Some(v6) => v6.split_once(']')?.0.to_string(),
+                    None => value.rsplit_once(':').map_or(value, |(host, _)| host).to_string(),
+                })
+            }
+            VPNKind::Strongswan => {
+                let (key, value) = line.split_once('=')?;
+                (key.trim() == "remote_addrs").then(|| value.split(',').next().unwrap_or("").trim().to_string())
+            }
+            VPNKind::Sstp => line.strip_prefix("server=").map(|s| s.trim().to_string()),
+            VPNKind::L2tp | VPNKind::Cisco => None,
+        }
+    })?;
+    let ok = !host.is_empty()
+        && host.len() <= MAX_REMOTE_HOST_BYTES
+        && !crate::mfa::has_control(&host)
+        && !host.chars().any(|c| c.is_whitespace() || c == '"' || c == '\'');
+    ok.then_some(host)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -213,6 +322,7 @@ pub fn kind(file_name: &str, content: &str) -> Result<VPNKind, ConfigImportError
 
 /// Kind detection, inlining of the referenced files (OpenVPN), then validation.
 pub fn prepare(file_name: &str, content: &str, base_directory: &Path) -> Result<PreparedImport, ConfigImportError> {
+    let (meta, content) = take_export_meta(content);
     let kind = kind(file_name, content)?;
     if kind == VPNKind::Openvpn {
         let result = inline_openvpn_files(content, base_directory)?;
@@ -226,6 +336,7 @@ pub fn prepare(file_name: &str, content: &str, base_directory: &Path) -> Result<
             risky: validation.risky,
             credentials: result.credentials,
             has_encrypted_key,
+            meta,
         });
     }
     let issues = crate::validators::validator(kind).map(|v| v.validate(content)).unwrap_or_default();
@@ -237,6 +348,7 @@ pub fn prepare(file_name: &str, content: &str, base_directory: &Path) -> Result<
         risky: Vec::new(),
         credentials: ImportedCredentials::default(),
         has_encrypted_key: false,
+        meta,
     })
 }
 

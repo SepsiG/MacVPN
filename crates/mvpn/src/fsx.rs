@@ -45,6 +45,12 @@ pub fn write_file(p: &Path, data: &[u8], mode: u32) -> std::io::Result<()> {
     f.write_all(data)
 }
 
+/// Creates a new file (`O_EXCL`, so never through a symlink or over an existing file) with `mode` and `data`.
+pub fn create_new(p: &Path, data: &[u8], mode: u32) -> std::io::Result<()> {
+    let mut f = OpenOptions::new().write(true).create_new(true).mode(mode).custom_flags(libc::O_NOFOLLOW).open(p)?;
+    f.write_all(data)
+}
+
 /// `printf '%s\n' value >file`
 pub fn write_line(p: &Path, value: &str) -> std::io::Result<()> {
     write_file(p, format!("{value}\n").as_bytes(), 0o600)
@@ -90,11 +96,6 @@ pub fn chmod(p: &Path, mode: u32) -> std::io::Result<()> {
         return Err(std::io::Error::other("symlink"));
     }
     fs::set_permissions(p, fs::Permissions::from_mode(mode))
-}
-
-/// Owner uid and link count (`stat -f '%u %l'`, no symlink followed).
-pub fn owner_and_links(p: &Path) -> Option<(u32, u64)> {
-    fs::symlink_metadata(p).ok().map(|m| (m.uid(), m.nlink()))
 }
 
 /// The modification time in nanoseconds since the epoch (no symlink followed).

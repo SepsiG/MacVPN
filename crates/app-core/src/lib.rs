@@ -9,22 +9,29 @@
 #![forbid(unsafe_code)]
 
 pub mod app;
+pub mod backup;
 pub mod connections;
 pub mod control;
 pub mod credential_prompt;
 pub mod deps;
 pub mod editor;
+pub mod folders;
 pub mod import_export;
 pub mod live;
 pub mod logs;
 pub mod manager;
+pub mod migration;
 pub mod notify;
 pub mod pairing;
 pub mod prompt;
 pub mod questions;
 pub mod quit;
 pub mod setup;
+pub mod shared_credentials;
 pub mod updates;
+pub mod vault;
+pub mod vault_setup;
+pub mod vault_stores;
 pub mod view_model;
 
 pub use manager::{ConnectionEvent, ConnectionItem, ConnectionManager, Dependencies, DisconnectCause, ManagerSnapshot};

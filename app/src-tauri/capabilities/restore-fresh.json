@@ -1,0 +1,16 @@
+{
+  "identifier": "restore-fresh",
+  "description": "The first-run restore in the create-vault window (vault-create, plan B Task 14): choosing and opening a backup, restoring it into the new vault, the preferences and the native profiles afterwards; and the migration's reminder step opening Back Up Everything. The window's other permissions come from its own capability.",
+  "windows": [
+    "vault-create"
+  ],
+  "permissions": [
+    "allow-backup-show-window",
+    "allow-restore-choose-file",
+    "allow-restore-open",
+    "allow-restore-fresh-apply",
+    "allow-restore-apply-preferences",
+    "allow-restore-reinstall-profile",
+    "allow-restore-discard"
+  ]
+}

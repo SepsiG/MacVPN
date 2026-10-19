@@ -1,5 +1,5 @@
 <script lang="ts">
-  // A password / PSK field over a Keychain value the web view never sees: empty with "Saved — type to replace"
+  // A password / PSK field over a vault value the web view never sees: empty with "Saved — type to replace"
   // while a value is stored, a typed text replaces it, "Remove saved password" deletes it on save.
   import type { SecretInput } from '../api';
   import { tr } from '../l10n.svelte';

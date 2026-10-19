@@ -41,6 +41,10 @@ pub struct CredentialPromptView {
     pub message: Option<String>,
     /// Unix time (seconds) when the prompt expires.
     pub deadline: f64,
+    /// The shared credential the asked password belongs to ("Password for <name> — used by N connections"), or
+    /// `None` for the connection's own fields.
+    pub credential_name: Option<String>,
+    pub used_by: Option<usize>,
 }
 
 /// An answer from the window before the broker's checks.
@@ -95,6 +99,8 @@ impl CredentialPromptView {
             username: prompt.username.clone().filter(|u| !u.is_empty()),
             message: prompt.retry.then(sign_in_failed_text),
             deadline: prompt.deadline.end().time_interval_since_1970(),
+            credential_name: prompt.credential.as_ref().map(|c| c.name.clone()),
+            used_by: prompt.credential.as_ref().map(|c| c.used_by),
         }
     }
 }

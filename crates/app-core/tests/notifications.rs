@@ -147,6 +147,18 @@ fn notification_texts_are_generic() {
     });
 }
 
+/// A connection redacted while the vault is locked has no name: the titles are generic, never ": …".
+#[test]
+fn a_connection_without_a_name_gets_a_generic_title() {
+    with_language(AppLanguage::En, || {
+        assert_eq!(for_event(&failed("ID", "", "x"), "U".into()).title, "A VPN connection failed");
+        assert_eq!(for_event(&dropped("ID", ""), "U".into()).title, "A VPN connection dropped");
+        let mut prompt = view(1, "K");
+        prompt.connection_name.clear();
+        assert_eq!(for_prompt(&prompt).title, "A VPN connection needs authentication");
+    });
+}
+
 fn view(id: u64, connection: &str) -> PromptView {
     PromptView {
         id,

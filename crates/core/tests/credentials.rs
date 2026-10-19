@@ -215,6 +215,8 @@ fn sign_in_failures_in_both_languages() {
         "Authentication failed (AUTH_FAILED)",
         "Authentication failed",
         "Authentication failed (wrong user name or password)",
+        // Root layer 8: strongSwan's EAP authentication failure.
+        "Authentication failed (EAP)",
     ] {
         let hu = l10n::hungarian(key).unwrap();
         assert!(is_sign_in_failure(key), "{key}");

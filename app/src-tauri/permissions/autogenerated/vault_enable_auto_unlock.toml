@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-enable-auto-unlock"
+description = "Enables the vault_enable_auto_unlock command without any pre-configured scope."
+commands.allow = ["vault_enable_auto_unlock"]
+
+[[permission]]
+identifier = "deny-vault-enable-auto-unlock"
+description = "Denies the vault_enable_auto_unlock command without any pre-configured scope."
+commands.deny = ["vault_enable_auto_unlock"]

@@ -31,6 +31,7 @@ fn prompt(key: &str, fields: Vec<CredentialField>, retry: bool, seconds: f64) ->
         username: Some("alice".into()),
         retry,
         deadline: PromptDeadline::with_duration(Date::now(), seconds),
+        credential: None,
     }
 }
 
@@ -259,6 +260,8 @@ fn view(id: u64, connection: &str) -> CredentialPromptView {
         username: None,
         message: None,
         deadline: 0.0,
+        credential_name: None,
+        used_by: None,
     }
 }
 

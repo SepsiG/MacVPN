@@ -106,6 +106,7 @@ enum KeySource {
 
 const VARIABLE_KEYS: &[(&str, &str, KeySource)] = &[
     ("commands.rs", "title", KeySource::Function("window_title")),
+    ("backup.rs", "title", KeySource::Function("window_title")),
     ("system.rs", "prefix", KeySource::CallArgument("installer_message")),
     ("login_item.rs", "key", KeySource::MatchBefore),
     ("update_installer.rs", "key", KeySource::MatchBefore),

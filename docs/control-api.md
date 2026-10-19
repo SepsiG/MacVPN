@@ -280,6 +280,7 @@ Error codes are generic. They never contain raw tool output.
 | `mfa_cancelled` | The user cancelled the code or sign-in prompt. | Do not retry on your own. |
 | `mfa_timeout` | The code or sign-in prompt timed out. | Let the user retry. |
 | `credentials_cancelled` | The user cancelled the credential prompt, or it expired after 2 minutes (from 1.1.0). | Do not retry on your own. |
+| `locked` | MacVPN's vault is locked (from 1.2.0): `pair`, `hello`, `list`, `up` and `status` are refused until the user unlocks it in MacVPN. `down` still works, and an existing session and its leases are kept. After `pair` or `hello` the connection is closed. | Tell the user to unlock MacVPN, then try again. |
 | `failed` | Any other failure. `message`, if present, is a short localized reason for the user. Also: the user disconnected the connection in MacVPN while it was coming up, or your own `down` cancelled the `up`. | Show the message. |
 | `app_quitting` | MacVPN is quitting. The connection closes next (also the `reason` of the [`closing` event](#510-the-closing-event)). | Reconnect after MacVPN runs again. |
 | `disabled` | The user turned **Allow other apps to control VPNs** off. The connection closes next (also the `reason` of the [`closing` event](#510-the-closing-event)). | — |
@@ -303,7 +304,7 @@ Treat any other code as `failed` (see [section 8](#8-forward-compatibility)).
 
 ## 8. Forward compatibility
 
-Later MacVPN versions add states and error codes without changing `api`. The state `waiting_for_credentials` and the error `credentials_cancelled` are such additions; they ship in the same release as API 1 (1.1.0), and a later version adds the error `locked`. Every client must follow these rules:
+Later MacVPN versions add states and error codes without changing `api`. The state `waiting_for_credentials` and the error `credentials_cancelled` are such additions; they ship in the same release as API 1 (1.1.0). The error `locked` is another one (1.2.0). Every client must follow these rules:
 
 - **An unknown state means "in progress".** Keep waiting for the final reply of `up`, and keep holding the lease.
 - **An unknown error code means `failed`.** Show the `message` if there is one, and log the code.

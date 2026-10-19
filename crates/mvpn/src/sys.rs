@@ -4,8 +4,7 @@
 //! alongside; none of them keeps a pointer past the call. Everything else in the crate is safe Rust.
 #![allow(unsafe_code)]
 
-use std::ffi::{CStr, CString, OsString};
-use std::os::unix::ffi::OsStringExt;
+use std::ffi::{CStr, CString};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 /// Effective user id.
@@ -49,7 +48,6 @@ pub struct User {
     pub name: String,
     pub uid: u32,
     pub gid: u32,
-    pub home: OsString,
 }
 
 /// Copies a `passwd` record; `p` must be a valid pointer returned by `getpw*_r`.
@@ -57,15 +55,9 @@ fn user_from(p: &libc::passwd) -> Option<User> {
     if p.pw_name.is_null() {
         return None;
     }
-    // SAFETY: `pw_name` / `pw_dir` point into the caller-owned buffer of the `getpw*_r` call, NUL terminated.
+    // SAFETY: `pw_name` points into the caller-owned buffer of the `getpw*_r` call, NUL terminated.
     let name = unsafe { CStr::from_ptr(p.pw_name) }.to_str().ok()?.to_string();
-    let home = if p.pw_dir.is_null() {
-        OsString::new()
-    } else {
-        // SAFETY: as above.
-        OsString::from_vec(unsafe { CStr::from_ptr(p.pw_dir) }.to_bytes().to_vec())
-    };
-    Some(User { name, uid: p.pw_uid, gid: p.pw_gid, home })
+    Some(User { name, uid: p.pw_uid, gid: p.pw_gid })
 }
 
 /// `getpwnam_r`.
@@ -95,6 +87,13 @@ pub fn user_by_uid(uid: u32) -> Option<User> {
         return None;
     }
     user_from(&pwd)
+}
+
+/// fd 0 as an unbuffered `File` that is never closed (no `std::io::stdin()` buffer holding a copy of the input).
+pub fn stdin_fd() -> std::mem::ManuallyDrop<std::fs::File> {
+    use std::os::fd::FromRawFd;
+    // SAFETY: fd 0 stays open for the whole process; `ManuallyDrop` keeps this `File` from closing it.
+    std::mem::ManuallyDrop::new(unsafe { std::fs::File::from_raw_fd(0) })
 }
 
 /// `isatty(0)` (the bash `[ -t 0 ]`).

@@ -1,5 +1,5 @@
 //! Thin, audited wrappers around the libc calls `std` does not offer (the user database, `mkdtemp`, `poll`,
-//! `fcntl`, `kill`, `access`, `confstr`, and the close-on-exec sweep for children).
+//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, and the close-on-exec sweep for children).
 //!
 //! Every function here is a direct call with plain integer arguments or with buffers whose length is passed
 //! alongside; none of them keeps a pointer past the call. Everything else in the crate is safe Rust.
@@ -22,6 +22,19 @@ pub struct User {
 pub fn getuid() -> u32 {
     // SAFETY: no arguments, cannot fail.
     unsafe { libc::getuid() }
+}
+
+/// `getentropy(2)` over the whole buffer, in chunks of at most 256 bytes (the call's limit). Fails rather than
+/// leaving any part unfilled.
+pub fn getentropy(buf: &mut [u8]) -> io::Result<()> {
+    for chunk in buf.chunks_mut(256) {
+        // SAFETY: `chunk` is a valid writable buffer of `chunk.len()` (≤ 256) bytes for the duration of the call.
+        let rc = unsafe { libc::getentropy(chunk.as_mut_ptr().cast(), chunk.len()) };
+        if rc != 0 {
+            return Err(io::Error::last_os_error());
+        }
+    }
+    Ok(())
 }
 
 /// `getpwuid_r(uid)`.

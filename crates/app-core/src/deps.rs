@@ -5,12 +5,13 @@
 
 use macvpn_core::date::Date;
 use macvpn_core::mfa::{AuthResponseKind, AuthUIState};
-use macvpn_core::models::{Connection, ConnectionState, OTPSetting, Secrets, VPNKind, parse_uuid};
+use macvpn_core::models::{Connection, ConnectionState, CredentialRef, OTPSetting, Secrets, VPNKind, parse_uuid};
 use macvpn_core::native::NativeKind;
 use macvpn_core::ranking::{ConnectionRanking, ConnectionRankingStore};
 use macvpn_core::status::RootStatus;
 use macvpn_core::store::ConnectionStore;
 use macvpn_core::system_otp::SystemOTPStore;
+use macvpn_core::vault::{DeleteMode, FolderColor, FolderNode, SystemItem};
 use std::collections::HashMap;
 use std::io;
 use std::sync::Mutex;
@@ -19,11 +20,13 @@ use uuid::Uuid;
 /// The root helper (`sudo -n mvpn …`), the Swift `MvpnClient`.
 pub trait RootClient: Send + Sync {
     fn status(&self) -> Result<Vec<RootStatus>, String>;
-    /// `accept_risky`: the acknowledged risky OpenVPN directives (`--accept-risky`).
+    /// `config`: the connection's stored config, sent on stdin ahead of the secrets (root layer 8 opens no user
+    /// file). `accept_risky`: the acknowledged risky OpenVPN directives (`--accept-risky`).
     fn up(
         &self,
         kind: VPNKind,
         id: &Uuid,
+        config: &[u8],
         secrets: &Secrets,
         debug: bool,
         accept_risky: &[String],
@@ -108,16 +111,12 @@ impl ConnectionRepository for ConnectionStore {
     }
 }
 
-/// The secret fields the manager reads.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SecretField {
-    Username,
-    Password,
-    Psk,
-    KeyPassword,
-}
+/// The secret fields the manager reads (defined in core, next to the vault's `secrets` table).
+pub use macvpn_core::models::SecretField;
 
-/// Read access to the Keychain items (`local.macvpn.secrets`, account `<UUID>.<field>`).
+/// Read access to the secrets (the vault's `secrets` table; before 1.2 the Keychain items `local.macvpn.secrets`,
+/// account `<UUID>.<field>`). A vault-backed reader resolves shared-credential links: a linked item's username
+/// and password are the credential's.
 pub trait SecretReader: Send + Sync {
     fn get(&self, id: &Uuid, field: SecretField) -> Option<String>;
 
@@ -130,15 +129,121 @@ pub trait SecretReader: Send + Sync {
             ..Secrets::default()
         }
     }
+
+    /// The shared credential the item's username and password come from (spec 3a), for the credential prompt's
+    /// "Password for <name> — used by N connections". `None`: the item uses its own fields (and every store
+    /// without shared credentials).
+    fn credential_for(&self, _id: &Uuid) -> Option<CredentialRef> {
+        None
+    }
 }
 
 /// Write access to the Keychain items (the editors' save and forget, import, delete).
 pub trait SecretWriter: Send + Sync {
-    /// An empty value deletes the item.
+    /// The editors' and the import's write: the item's own value; an empty value deletes the item. A vault-backed
+    /// writer refuses (drops, with a log line) a non-empty username or password of an item linked to a shared
+    /// credential, so editing one connection never changes the credential every linked connection uses; a linked
+    /// editor sends `None` for those fields (Task 19), and the editor save handlers refuse them with a message.
     fn set(&self, value: &str, id: &Uuid, field: SecretField);
+    /// The credential prompt's "Save" and the sign-in failure re-prompt only: a linked item's username or
+    /// password goes to its shared credential (spec 3a). Without shared credentials this is [`Self::set`].
+    fn save_prompted(&self, value: &str, id: &Uuid, field: SecretField) {
+        self.set(value, id, field);
+    }
     fn delete_all(&self, id: &Uuid);
     /// Every MacVPN item (uninstall with the user data; leftovers of deleted connections too).
     fn remove_all(&self);
+}
+
+/// Where an item (a managed connection or a system VPN, by its ranking key) sits in the folder tree, and its own
+/// colour (`None`: the folder's).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Placement {
+    pub key: String,
+    pub folder: Option<Uuid>,
+    pub color: Option<FolderColor>,
+}
+
+/// One change of the system-VPN placement retention (spec 5): a placed service macOS no longer lists keeps its
+/// folder and colour for [`crate::folders::SYSTEM_ITEM_RETENTION_DAYS`] days.
+#[derive(Debug, Clone, PartialEq)]
+pub enum SystemItemChange {
+    /// Not listed any more: `missing_since` is set to this date.
+    MarkMissing { service_id: String, since: Date },
+    /// Listed again: `missing_since` is cleared.
+    Clear { service_id: String },
+    /// Missing for longer than the retention: the placement is deleted.
+    Remove { service_id: String },
+}
+
+/// One folder edit (spec 3). Names are validated by the store (`validate_folder_name`), moves by the tree's cycle
+/// check.
+#[derive(Debug, Clone, PartialEq)]
+pub enum FolderOp {
+    /// A new folder at the end of `parent` (`None`: the root).
+    Create {
+        parent: Option<Uuid>,
+        name: String,
+    },
+    Rename {
+        id: Uuid,
+        name: String,
+    },
+    /// `None` clears the folder's own colour (it inherits again).
+    SetColor {
+        id: Uuid,
+        color: Option<FolderColor>,
+    },
+    /// The menu's persisted collapsed state.
+    SetCollapsed {
+        id: Uuid,
+        collapsed: bool,
+    },
+    /// Under `parent` at `position` among its subfolders (also a reorder in the same parent).
+    Move {
+        id: Uuid,
+        parent: Option<Uuid>,
+        position: usize,
+    },
+    Delete {
+        id: Uuid,
+        mode: DeleteMode,
+    },
+    /// An item into a folder (`None`: the root).
+    MoveItem {
+        key: String,
+        folder: Option<Uuid>,
+    },
+    /// An item's own colour (`None`: "Use folder colour").
+    SetItemColor {
+        key: String,
+        color: Option<FolderColor>,
+    },
+    /// The system-VPN placement retention.
+    Retention(Vec<SystemItemChange>),
+}
+
+/// What a [`FolderOp`] produced.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FolderOpResult {
+    Done,
+    /// [`FolderOp::Create`]: the new folder.
+    Created(Uuid),
+    /// [`FolderOp::Delete`] with [`DeleteMode::DeleteContents`]: the keys of the managed connections of the deleted
+    /// subtree, which the app deletes through its normal path (profiles, secrets). System VPNs are never in it:
+    /// the store moved them to the root.
+    Deleted(Vec<String>),
+}
+
+/// The folders and the placements (the vault's `folders` table and the `folder_id` / `color` columns; spec 3).
+/// Errors carry the user-facing (localized) message.
+pub trait FolderStore: Send + Sync {
+    fn folders(&self) -> io::Result<Vec<FolderNode>>;
+    /// Managed connections and system VPNs, every one with a folder or a colour (others are at the root).
+    fn placements(&self) -> io::Result<Vec<Placement>>;
+    /// The stored system-VPN placements (for the retention).
+    fn system_items(&self) -> io::Result<Vec<SystemItem>>;
+    fn apply(&self, op: FolderOp) -> io::Result<FolderOpResult>;
 }
 
 /// Installs a generated native (L2TP / Cisco) profile: staged in a private temp directory, opened for the user

@@ -16,11 +16,12 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager};
 
+use crate::backup::{BACKUP_WINDOW, RESTORE_WINDOW};
 use crate::manage::MANAGE_WINDOW;
 use crate::update_window::UPDATE_WINDOW;
 
 /// The window labels that show the Dock icon, in the order [`reopen`] prefers for the focus.
-pub const DOCK_WINDOWS: [&str; 3] = [MANAGE_WINDOW, "setup", UPDATE_WINDOW];
+pub const DOCK_WINDOWS: [&str; 5] = [MANAGE_WINDOW, "setup", UPDATE_WINDOW, BACKUP_WINDOW, RESTORE_WINDOW];
 
 /// Whether a window with this label shows the Dock icon.
 pub fn counts(label: &str) -> bool {
@@ -135,7 +136,8 @@ mod tests {
     #[test]
     fn labels_match_the_windows() {
         for label in DOCK_WINDOWS {
-            assert!(crate::commands::window_title(label).is_ok(), "{label}");
+            let known = crate::commands::window_title(label).is_ok() || crate::backup::window_title(label).is_ok();
+            assert!(known, "{label}");
         }
         assert!(!counts(crate::tray::MENU_WINDOW));
         assert!(!counts(&macvpn_app_core::notify::prompt_window_label(7)));

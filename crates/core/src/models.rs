@@ -143,6 +143,47 @@ impl OTPSetting {
     }
 }
 
+/// The shared credential a connection's username and password come from (spec 3a), as the credential prompt names
+/// it: "Password for Office AD — used by 4 connections". Never the username or the password.
+///
+/// Defined here (the vault and the secret readers use it without the credential prompt); `credentials.rs`
+/// re-exports it next to `CredentialPrompt`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CredentialRef {
+    pub name: String,
+    /// How many items (managed connections and system VPNs) are linked to it.
+    pub used_by: usize,
+}
+
+/// The secret fields of a connection (or a system VPN): the Keychain account suffix today (`<key>.<raw value>`),
+/// the `secrets.field` column in the vault.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum SecretField {
+    Username,
+    Password,
+    Psk,
+    /// The password of an OpenVPN private key (PKCS#12 / encrypted PEM).
+    KeyPassword,
+}
+
+impl SecretField {
+    pub const ALL: [SecretField; 4] =
+        [SecretField::Username, SecretField::Password, SecretField::Psk, SecretField::KeyPassword];
+
+    pub fn raw_value(self) -> &'static str {
+        match self {
+            SecretField::Username => "username",
+            SecretField::Password => "password",
+            SecretField::Psk => "psk",
+            SecretField::KeyPassword => "keypass",
+        }
+    }
+
+    pub fn from_raw_value(raw: &str) -> Option<SecretField> {
+        Self::ALL.into_iter().find(|f| f.raw_value() == raw)
+    }
+}
+
 /// A JSON decoding failure (Swift `DecodingError`). The message is for logs only.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodeError(pub String);

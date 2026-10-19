@@ -2,7 +2,7 @@
 
 [Magyar változat](how-to.hu.md)
 
-Short step-by-step instructions for MacVPN 1.1. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
+Short step-by-step instructions for MacVPN 1.2. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
 
 ## Contents
 
@@ -18,6 +18,11 @@ Short step-by-step instructions for MacVPN 1.1. The [user guide](user-guide.en.m
 10. [Start MacVPN at login](#10-start-macvpn-at-login)
 11. [Uninstall MacVPN](#11-uninstall-macvpn)
 12. [Troubleshooting FAQ](#12-troubleshooting-faq)
+13. [Upgrade from 1.1 to 1.2](#13-upgrade-from-11-to-12)
+14. [Set up, lock and unlock the vault](#14-set-up-lock-and-unlock-the-vault)
+15. [Organize connections in folders](#15-organize-connections-in-folders)
+16. [Share one sign-in between connections](#16-share-one-sign-in-between-connections)
+17. [Back up everything and restore](#17-back-up-everything-and-restore)
 
 ---
 
@@ -30,7 +35,7 @@ You need macOS 14 or later and an administrator account.
 3. Open MacVPN for the first time. It is ad-hoc signed (not with an Apple Developer ID), so Gatekeeper blocks a normal double-click:
    - **macOS 14:** in Applications, Control-click (right-click) **MacVPN**, choose **Open**, then click **Open**.
    - **macOS 15 or later:** double-click MacVPN, close the warning, then go to **System Settings → Privacy & Security**, click **Open Anyway**, enter your password and click **Open Anyway** again.
-4. A shield appears in the menu bar. MacVPN has no Dock icon.
+4. A shield appears in the menu bar, and the **Set Up the Vault** window opens: choose a master password and save the recovery key ([section 14](#14-set-up-lock-and-unlock-the-vault)).
 
 Details: [user guide, 1](user-guide.en.md#1-installation).
 
@@ -40,7 +45,7 @@ The **System Status** window opens by itself when something is missing (later: m
 
 1. **Homebrew:** if it is red, click **Install…**. Terminal opens with the official installer; follow it, then click **Check Again**.
 2. **VPN tools:** click **Install**. The `brew install` output appears in the window. You can close the window meanwhile; it keeps going.
-3. **Permissions (root scripts + sudoers):** click **Authorize** and enter your admin password once. This installs the `mvpn` root binary and the sudoers rule, so connecting needs no password later.
+3. **Permissions (root scripts + sudoers):** click **Authorize** and enter your admin password once (MacVPN 1.2 installs root layer 8). This installs the `mvpn` root binary and the sudoers rule, so connecting needs no password later.
 4. When all three rows are green, you are done.
 
 Details: [user guide, 2](user-guide.en.md#2-first-launch-and-the-system-status-window).
@@ -75,9 +80,9 @@ You can also use **Connect** / **Disconnect** in the Connections window. Several
 
 When you quit with active connections, MacVPN asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**.
 
-**If a password is not saved,** MacVPN asks for it in a **Credentials needed** window before connecting (only the missing fields). Click the window (it does not take the keyboard from your current app), type, and click **Connect**; Return does nothing. With **Save** ticked, the values go into the macOS Keychain once the connection is up. If the server rejects them, the window asks once more. **Cancel** stops the connect without an error.
+**If a password is not saved,** MacVPN asks for it in a **Credentials needed** window before connecting (only the missing fields). Click the window (it does not take the keyboard from your current app), type, and click **Connect**; Return does nothing. With **Save in vault** ticked, the values go into MacVPN's encrypted vault once the connection is up. If the server rejects them, the window asks once more. **Cancel** stops the connect without an error.
 
-**Connect without storing the password:** untick **Save** in the **Credentials needed** window before clicking **Connect**. The values are used for this connect only, and MacVPN asks again next time. To make it ask again for a password you saved earlier, open the connection in the Connections window and use **Remove saved password** (or **Forget saved secrets**).
+**Connect without storing the password:** untick **Save in vault** in the **Credentials needed** window before clicking **Connect**. The values are used for this connect only, and MacVPN asks again next time. To make it ask again for a password you saved earlier, open the connection in the Connections window and use **Remove saved password** (or **Forget saved secrets**).
 
 Details: [user guide, 5.3](user-guide.en.md#53-credentials-asked-when-connecting).
 
@@ -114,19 +119,19 @@ L2TP and Cisco IPsec only have a log in debug mode.
 2. If the config contains private keys or credentials, choose **Export Without Keys** (safer) or **Export With Keys** (only if the recipient needs them).
 3. Choose where to save the file. It is readable only by you.
 
-Exports never contain passwords or PSKs. To back up, export every connection and keep the passwords somewhere safe (for example in a password manager). `.ovpn`, WireGuard `.conf`, `.swanctl.conf` and `.sstp` files can be imported again; an L2TP / Cisco `.mobileconfig` export is installed on another Mac by double-clicking it in Finder.
+Exports never contain passwords or PSKs. They carry the connection's folder and the name of its shared credential, so an import puts it back in its folder. `.ovpn`, WireGuard `.conf`, `.swanctl.conf` and `.sstp` files can be imported again; an L2TP / Cisco `.mobileconfig` export is installed on another Mac by double-clicking it in Finder.
 
-Your connections live in `~/Library/Application Support/MacVPN`, and their passwords in the Keychain. Copying the folder alone does not copy the passwords.
+**To back up everything with the passwords,** use **Back Up Everything…** instead ([section 17](#17-back-up-everything-and-restore)). Your data lives in the encrypted vault in `~/Library/Application Support/MacVPN`; copying that folder copies the vault, but you need the master password or the recovery key to open it.
 
 ## 9. Update MacVPN
 
 1. When a new version is out, the menu shows **Update available: vX.Y.Z**. (Or choose **Check for Updates Now**.)
 2. Click it, read the notes, then click **Download and Install**.
 3. Answer the questions about unsaved changes and active connections. MacVPN checks the signature, replaces itself and restarts.
-4. If macOS asks whether MacVPN may use its Keychain items, click **Always Allow**, but only if the prompt names MacVPN at `/Applications/MacVPN.app`.
+4. If macOS asks whether MacVPN may use its Keychain item (the vault key, at most once per update), click **Always Allow**, but only if the prompt names MacVPN at `/Applications/MacVPN.app`.
 5. If **System Status** opens with **Update required**, click **Authorize** and enter your admin password.
 
-Coming from 0.x? Read [Upgrading from 0.x](user-guide.en.md#81-upgrading-from-0x) first. Details: [user guide, 8](user-guide.en.md#8-updates).
+Coming from 1.1? Follow [section 13](#13-upgrade-from-11-to-12). Coming from 0.x? Read [Upgrading from 0.x](user-guide.en.md#81-upgrading-from-0x) first. Details: [user guide, 8](user-guide.en.md#8-updates).
 
 ## 10. Start MacVPN at login
 
@@ -139,7 +144,7 @@ If the note says **Enabled via a login LaunchAgent (applies at next login).**, i
 ## 11. Uninstall MacVPN
 
 1. Open **System Status** and click **Uninstall MacVPN…**.
-2. To delete your connections and their passwords too, tick **Also delete user data (connections and Keychain passwords)**.
+2. To delete your data too, tick **Also delete user data**: the vault with every connection and password, the vault key in the Keychain, and the old MacVPN 1.1 Keychain items. Backup files you made are not deleted.
 3. Click **Uninstall** and enter your admin password. Active connections are disconnected first.
 4. Click **Quit MacVPN**, then drag `MacVPN.app` to the Trash.
 5. Optionally remove the Homebrew packages (`brew uninstall openvpn wireguard-tools strongswan sstp-client`) and any L2TP / Cisco profiles in **System Settings → General → Device Management**.
@@ -179,10 +184,107 @@ For a company CA, choose **Custom CA file** and load the CA in PEM format; use t
 Connect again and enter the code within 2 minutes (5 minutes for a browser sign-in). [More](user-guide.en.md#711-one-time-code-and-sign-in-in-the-browser-mfa)
 
 **macOS asks for Keychain access after an update.**
-This is expected once per update, because MacVPN is ad-hoc signed. Allow it only if the prompt names MacVPN at `/Applications/MacVPN.app`.
+With **Unlock automatically** on, this is expected once per update (for the vault key), because MacVPN is ad-hoc signed; with it off, an update asks nothing. Allow it only if the prompt names MacVPN at `/Applications/MacVPN.app`.
 
 **"Installation cancelled: /usr/local/libexec is not owned by root…" when clicking Authorize.**
 Fix the folder's owner in Terminal as the message says, then click **Authorize** again. [More](user-guide.en.md#78-other)
 
 **The update says the app's location is not writable.**
 Move MacVPN to the Applications folder and try again, or install the new DMG by hand.
+
+**I forgot the master password.**
+In the **Unlock MacVPN** window click **Use recovery key**, type the recovery key and a new master password, then **Reset and Unlock**. [More](user-guide.en.md#118-forgotten-master-password)
+
+**I lost the recovery key.**
+While you still know the master password: menu → **Settings** → **New Recovery Key…**. If both are lost, **Unlock automatically** still opens the vault (export what you need); without it nobody can open the vault. A backup made with your master password needs the master password of that time; the recovery key never opens a backup. Restore a backup you can open, or set MacVPN up again. [More](user-guide.en.md#15-vault-faq)
+
+**The menu only shows "Unlock…".**
+The vault is locked; running VPNs are still up. Click **Unlock…** and enter the master password. [More](user-guide.en.md#115-the-locked-menu)
+
+**The upgrade from 1.1 says "The migration did not finish".**
+Nothing was deleted, and MacVPN runs read-only from your 1.1 data. Click the banner in the menu and create the vault again with a new master password. [More](user-guide.en.md#82-upgrading-from-11)
+
+**macOS asked many times for Keychain access after the upgrade to 1.2.**
+Expected once: one prompt per old saved password during the migration. Choose **Always Allow** each time. Later updates ask at most once, and only while **Unlock automatically** is on. [More](user-guide.en.md#15-vault-faq)
+
+**A folder cannot be deleted.**
+A connection inside it is active. Disconnect it first. [More](user-guide.en.md#125-deleting-a-folder)
+
+**I cannot change the password field of a connection.**
+It uses a shared credential. Change it in **Credentials**. [More](user-guide.en.md#133-using-a-credential-in-a-connection)
+
+**The backup cannot be opened.**
+The backup password is wrong, or the file is damaged; MacVPN does not tell which. [More](user-guide.en.md#14-backup-and-restore)
+
+## 13. Upgrade from 1.1 to 1.2
+
+1. Quit MacVPN 1.1 and copy its data: `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.1`. Keep your passwords at hand (for example in a password manager). Start MacVPN again.
+2. Menu → **Check for Updates Now** → **Download and Install**.
+3. In the **Set Up the Vault** window, note how many Keychain prompts it announces, click **Continue**, choose a master password (at least 10 characters) and click **Create Vault**.
+4. Save the recovery key (it is shown only once), click **I Saved It**, type the group it asks for and click **Confirm**.
+5. While **Moving your data into the vault…** runs, answer every Keychain prompt that names MacVPN at `/Applications/MacVPN.app` with **Always Allow**.
+6. Check the result (**Your data is in the vault**) and click **Continue**, then **Done**.
+7. In **System Status**, click **Authorize** for **Update required (7 → 8)** and enter your admin password.
+8. Connect each connection once.
+
+If the migration fails, nothing is deleted: click the menu's banner and try again. Details: [user guide, 8.2](user-guide.en.md#82-upgrading-from-11).
+
+## 14. Set up, lock and unlock the vault
+
+**Lock it now:** click **Lock Now** at the bottom of the menu. If you do not see it, open **Settings** and switch on **Show “Lock Now”** (it is always shown when **Unlock automatically** is off). Running VPNs stay up.
+
+**Unlock it:** click **Unlock…** in the menu, type the master password and click **Unlock**.
+
+**Ask for the password at every launch:** **Settings** → switch off **Unlock automatically** → **Turn Off**. To go back, switch it on and enter the master password.
+
+**Change the master password:** **Settings** → **Change Master Password…** → the current password, the new one twice → **Change Password**. The recovery key stays the same.
+
+**Make a new recovery key:** **Settings** → **New Recovery Key…** → master password → **Make New Key**, save it, **I Saved It**, type the group, **Confirm**. The old key stops working.
+
+**Reset a forgotten master password:** in the **Unlock MacVPN** window, **Use recovery key** → the recovery key and a new password twice → **Reset and Unlock**.
+
+Details: [user guide, 11](user-guide.en.md#11-vault).
+
+## 15. Organize connections in folders
+
+1. Open the **Connections** window. Click **New** (+) → **New Folder**, type a name (up to 64 characters) and press Return.
+2. Drag connections onto the folder. Drag a folder onto another folder to nest it, or between folders to reorder. Drop on **Top level** to take something out of all folders.
+3. Right-click a folder for **Rename**, **Colour…**, **Move to Top Level** and **Delete…**; right-click a connection for **Colour…** (or **Use folder colour**) and **Pin to Top**.
+4. To delete a folder, choose **Delete…**. By default its contents move up one level; **Delete the connections too** asks again before deleting them.
+
+In the menu, click a folder to open or close it; its badge shows how many connections inside are active. Details: [user guide, 12](user-guide.en.md#12-folders-and-colours).
+
+## 16. Share one sign-in between connections
+
+**From scratch:**
+1. **Connections** window → **Credentials** in the sidebar → **Add Credential…**.
+2. Enter a **Name**, the **Username** and (optionally) the **Password**, and save.
+3. Open each connection that should use it, set **Password from** to **Use credential: <name>**, confirm with **Use Credential**, and save.
+
+**From a connection that already has the user name and password:**
+1. **Credentials** → **Create from Connection…**, pick the connection and a name, click **Next**.
+2. Tick the other connections with the same sign-in, and click **Create and Link**.
+
+**Change the password for all of them:** **Credentials** → the credential → **Edit…**, type the new password, save.
+
+**Stop sharing:** delete the credential and choose **Copy into Each Connection**.
+
+When you import a file that names a shared credential, MacVPN asks before linking it and shows the server; choose **Use Own Fields** unless you trust the file. Details: [user guide, 13](user-guide.en.md#13-shared-credentials).
+
+## 17. Back up everything and restore
+
+**Back up:**
+1. Menu → **Settings** → **Back Up Everything…**.
+2. Type a backup password (at least 10 characters) twice. (Or **Use my master password…**, which ties the file to your master password.)
+3. Click **Back Up…** and choose where to save `MacVPN-backup-<date>.macvpnbackup`.
+4. Keep the file and its password in different places.
+
+**Restore on a new Mac:**
+1. Install and start MacVPN. In the **Set Up the Vault** window click **Restore from backup…**.
+2. **Choose File…**, type the backup password, **Open Backup**.
+3. Choose a new master password and save the new recovery key.
+4. Tick the preferences you want, then **Apply Selected Preferences**. Reinstall the L2TP / Cisco profiles with **Reinstall … Native Profiles** and approve them in System Settings. Pair your paired apps again.
+
+**Restore into the current vault:** menu → **Settings** → **Restore from Backup…**, open the file, read the summary, then choose **Merge** (adds what is missing; choose what happens to items that already exist) or **Replace Everything…** (deletes what is not in the backup; you can **Back Up the Current State First…**).
+
+Details: [user guide, 14](user-guide.en.md#14-backup-and-restore).

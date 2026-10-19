@@ -134,6 +134,9 @@ pub enum LaunchStep {
     SweepStagedProfiles,
     /// `profile.mobileconfig` (with password and PSK) that old versions wrote into the connection directories.
     RemoveLegacyProfiles,
+    /// The vault (1.2): auto-unlock, else the unlock window; no vault: the create window (migration mode with 1.1
+    /// data). After the Keychain move, before the connections are read.
+    OpenVault,
     ReloadConnections,
     CheckSetup,
     RequestNotificationAuthorization,
@@ -145,10 +148,11 @@ pub enum LaunchStep {
     StartPolling,
 }
 
-pub const LAUNCH_SEQUENCE: [LaunchStep; 9] = [
+pub const LAUNCH_SEQUENCE: [LaunchStep; 10] = [
     LaunchStep::MigrateKeychain,
     LaunchStep::SweepStagedProfiles,
     LaunchStep::RemoveLegacyProfiles,
+    LaunchStep::OpenVault,
     LaunchStep::ReloadConnections,
     LaunchStep::CheckSetup,
     LaunchStep::RequestNotificationAuthorization,

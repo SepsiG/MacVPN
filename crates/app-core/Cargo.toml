@@ -15,13 +15,21 @@ workspace = true
 
 [dependencies]
 libc = "0.2.191"
-macvpn-core = { path = "../core" }
+macvpn-core = { path = "../core", features = ["vault"] }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 uuid = { version = "1.26.1", features = ["v4"] }
 zeroize = "1.9.1"
 
+[features]
+# Test-only hooks (failure injection, the Argon2id run counter, the migration's failure points). Enabled only by
+# this crate's own dev-dependency on itself, never by a production crate.
+test-support = []
+
 [dev-dependencies]
+macvpn-app-core = { path = ".", features = ["test-support"] }
+# The cheap `KdfParams::insecure_for_tests` for the vault lifecycle tests (never in a production build).
+macvpn-core = { path = "../core", features = ["vault", "test-support"] }
 # The control API example client, driven against the real server in `tests/control_example_client.rs`.
 macvpn-control-client = { path = "../../examples/macvpn-control-client" }
 regex = "1.13.1"

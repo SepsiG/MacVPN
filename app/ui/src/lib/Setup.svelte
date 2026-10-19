@@ -162,9 +162,9 @@
       { label: tr('Uninstall'), kind: 'destructive', action: () => uninstall().catch(console.error) },
     ]}
   >
-    <label class="check accessory" title={tr('~/Library/Application Support/MacVPN and the MacVPN Keychain items')}>
+    <label class="check accessory" title={tr('~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items')}>
       <input type="checkbox" bind:checked={removeUserData} />
-      {tr('Also delete user data (connections and Keychain passwords)')}
+      {tr('Also delete user data (connections, the vault and its key)')}
     </label>
   </Modal>
 {:else if uninstalled}

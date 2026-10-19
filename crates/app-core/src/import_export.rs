@@ -5,9 +5,9 @@
 use crate::deps::SecretField;
 use crate::editor::EditorDeps;
 use macvpn_core::exporter;
-use macvpn_core::importer;
+use macvpn_core::importer::{self, ExportMeta};
 use macvpn_core::l10n::{self, Arg};
-use macvpn_core::models::{Connection, ValidationIssue};
+use macvpn_core::models::{Connection, VPNKind, ValidationIssue, uuid_string};
 use serde::Serialize;
 use std::io::Read;
 use std::path::Path;
@@ -82,7 +82,7 @@ pub fn credential_question(files: &[String], config: &str) -> (String, String) {
     (
         l10n::tr("Use the credentials from %@ for this connection?", &[Arg::Str(&list)]),
         l10n::tr(
-            "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the Keychain for this connection. The files are never copied into the config.",
+            "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the vault for this connection. The files are never copied into the config.",
             &[Arg::Str(config)],
         ),
     )
@@ -93,6 +93,18 @@ pub struct ImportedFile {
     pub report: ImportReport,
     /// The new connection and its validation problems (shown once by the editor).
     pub imported: Option<(Uuid, Vec<ValidationIssue>)>,
+    /// The exported `credentialName` of the `# macvpn-meta` line, with the kind and the stored config: the caller
+    /// asks whether to use that shared credential (`SharedCredentials::link_imported`); nothing is linked here.
+    pub credential: Option<ImportedCredentialName>,
+}
+
+/// An imported config's `credentialName` (spec 3a: only ever offered, never linked by the file itself).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ImportedCredentialName {
+    pub name: String,
+    pub kind: VPNKind,
+    /// The stored config (without the metadata line): where the import question reads the server from.
+    pub config: String,
 }
 
 /// Imports one file. The config is saved even with validation problems (fixable in the editor). `confirm` asks
@@ -103,9 +115,11 @@ pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[Str
     let fail = |message: String| ImportedFile {
         report: ImportReport { errors: vec![format!("{file}: {message}")], notes: vec![] },
         imported: None,
+        credential: None,
     };
     let Some(content) = read_import_file(path) else { return fail(l10n::tr("Cannot read the file", &[])) };
     let base = path.parent().unwrap_or(Path::new("/"));
+    // A valid `# macvpn-meta` line (an export of MacVPN 1.2) is split off here: not part of the stored config.
     let prepared = match importer::prepare(&file, &content, base) {
         Ok(prepared) => prepared,
         Err(e) => return fail(e.message()),
@@ -115,6 +129,9 @@ pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[Str
     if let Err(e) = deps.store.save(&c, Some(&prepared.config)) {
         return fail(e.to_string());
     }
+    // The exported folder path: the missing folders are recreated; an older export lands at the root.
+    let folder = prepared.meta.as_ref().and_then(|m| m.folder.as_deref());
+    let placed = crate::folders::place_imported(&deps.manager, &c.id, folder);
     let creds = &prepared.credentials;
     let candidates = creds.candidate_files();
     let use_credentials = !candidates.is_empty() && confirm(&candidates, &file);
@@ -132,6 +149,9 @@ pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[Str
     }
     let mut report = ImportReport::default();
     let mut note = |text: String| report.notes.push(format!("{file}: {text}"));
+    if let Err(e) = placed {
+        note(l10n::tr("Imported to the top level: the folder could not be created (%@)", &[Arg::Str(&e.to_string())]));
+    }
     if !prepared.inlined_files.is_empty() {
         note(l10n::tr("Imported, inlined: %@", &[Arg::Str(&prepared.inlined_files.join(", "))]));
     }
@@ -140,12 +160,12 @@ pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[Str
     }
     if use_credentials && let Some(source) = &creds.credentials_file {
         note(l10n::tr(
-            "The username and password from %@ are stored in the Keychain; the file is not copied into the config.",
+            "The username and password from %@ are stored in the vault; the file is not copied into the config.",
             &[Arg::Str(source)],
         ));
     }
     if use_credentials && let Some(source) = &creds.key_password_file {
-        note(l10n::tr("The private key password from %@ is stored in the Keychain.", &[Arg::Str(source)]));
+        note(l10n::tr("The private key password from %@ is stored in the vault.", &[Arg::Str(source)]));
     }
     if !use_credentials && !candidates.is_empty() {
         note(l10n::tr(
@@ -173,7 +193,12 @@ pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[Str
             &[Arg::Str(&list)],
         ));
     }
-    ImportedFile { report, imported: Some((c.id, prepared.issues)) }
+    let credential = prepared
+        .meta
+        .as_ref()
+        .and_then(|m| m.credential_name.clone())
+        .map(|name| ImportedCredentialName { name, kind: prepared.kind, config: prepared.config.clone() });
+    ImportedFile { report, imported: Some((c.id, prepared.issues)), credential }
 }
 
 // MARK: - Export
@@ -203,6 +228,9 @@ fn exported_text(deps: &EditorDeps, c: &Connection) -> Result<String, String> {
 
 /// `None`: no key material, export at once; otherwise the question to ask first.
 pub fn export_warning(deps: &EditorDeps, c: &Connection) -> Result<Option<ExportWarning>, String> {
+    if deps.manager.is_locked() {
+        return Err(crate::vault_stores::locked_message());
+    }
     let text = exported_text(deps, c)?;
     let material = exporter::secret_material(&text, c.kind);
     if material.is_empty() {
@@ -226,8 +254,22 @@ pub struct ExportPlan {
     pub message: String,
 }
 
+/// The export's metadata line (`# macvpn-meta: …`): the folder path of a connection in a folder and the name of
+/// the shared credential it uses (spec 3, 3a). Never a secret: the line has only those names.
+pub fn export_meta(deps: &EditorDeps, c: &Connection) -> ExportMeta {
+    ExportMeta {
+        folder: deps.manager.folder_path(&uuid_string(&c.id)),
+        credential_name: deps.secrets.credential_for(&c.id).map(|credential| credential.name),
+    }
+}
+
 /// The export (`with_keys` false: the key material stripped). The Keychain's passwords and PSK are never in it.
+/// A text config starts with the metadata line when there is something to carry (`folder`, `credentialName`); a
+/// native profile carries none (the importer refuses it anyway).
 pub fn export_plan(deps: &EditorDeps, c: &Connection, with_keys: bool) -> Result<ExportPlan, String> {
+    if deps.manager.is_locked() {
+        return Err(crate::vault_stores::locked_message());
+    }
     let mut text = exported_text(deps, c)?;
     if !with_keys && !exporter::secret_material(&text, c.kind).is_empty() {
         text = exporter::strip_secrets(&text, c.kind);
@@ -237,11 +279,16 @@ pub fn export_plan(deps: &EditorDeps, c: &Connection, with_keys: bool) -> Result
         l10n::tr("Passwords and the PSK are not included in the export.", &[])
     } else {
         l10n::tr(
-            "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the Keychain are not included.",
+            "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the vault are not included.",
             &[Arg::Str(&included.join(", "))],
         )
     };
-    Ok(ExportPlan { data: text.into_bytes(), file_name: exporter::file_name(c), message })
+    let data = if c.kind.is_native() {
+        text.into_bytes()
+    } else {
+        exporter::with_meta(text.as_bytes(), &export_meta(deps, c))
+    };
+    Ok(ExportPlan { data, file_name: exporter::file_name(c), message })
 }
 
 #[cfg(test)]

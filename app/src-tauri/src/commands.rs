@@ -405,6 +405,9 @@ pub fn handle_quit(app: &AppHandle, state: &AppState, action: QuitAction) -> &'s
 /// thread: this may run on the main thread). A system terminate request waiting for the answer gets yes (AppKit
 /// then terminates the app); otherwise the event loop is stopped.
 pub fn terminate(app: &AppHandle, state: &AppState) {
+    // A smoke run leaves the connections for its checks (debug builds, the sandbox only).
+    #[cfg(debug_assertions)]
+    crate::smoke::dump(state);
     state.quit.confirm();
     state.stop_polling();
     let finish = |app: &AppHandle, state: &AppState| {
@@ -524,6 +527,16 @@ mod tests {
         };
         let (main, prompt, pairing) = (read("main.json"), read("prompt.json"), read("pairing.json"));
         let credentials = read("credentials.json");
+        let vault = read("vault.json");
+        assert_eq!(vault["windows"], serde_json::json!(crate::vault::VAULT_WINDOWS));
+        let vault_permissions = permissions(&vault);
+        assert_eq!(
+            vault_permissions[..4],
+            ["core:event:allow-listen", "core:event:allow-unlisten", "allow-get-view-model", "allow-fit-window"]
+        );
+        // The vault windows get only vault commands; the menu's vault commands (Lock now, the settings) are main's.
+        let vault_only: Vec<String> = vault_permissions[4..].to_vec();
+        assert!(vault_only.iter().all(|c| c.starts_with("allow-vault-") && commands.contains(c)), "{vault_only:?}");
         assert_eq!(credentials["windows"], serde_json::json!(["cred-*"]));
         assert_eq!(
             permissions(&credentials),
@@ -560,19 +573,74 @@ mod tests {
                 "allow-fit-window"
             ]
         );
+        // The backup and restore windows: the view model, events and the backup commands only; the create-vault
+        // window's first-run restore only the restore commands (its other permissions are its own capability's).
+        let backup = read("backup.json");
+        assert_eq!(backup["windows"], serde_json::json!(["backup", "restore"]));
+        let backup_permissions = permissions(&backup);
+        assert_eq!(
+            backup_permissions,
+            [
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "allow-get-view-model",
+                "allow-backup-show-window",
+                "allow-backup-close-window",
+                "allow-backup-choose-destination",
+                "allow-backup-save",
+                "allow-restore-choose-file",
+                "allow-restore-open",
+                "allow-restore-apply",
+                "allow-restore-apply-preferences",
+                "allow-restore-reinstall-profile",
+                "allow-restore-discard"
+            ]
+        );
+        let fresh = read("restore-fresh.json");
+        assert_eq!(fresh["windows"], serde_json::json!(["vault-create"]));
+        let fresh_permissions = permissions(&fresh);
+        assert_eq!(
+            fresh_permissions,
+            [
+                "allow-backup-show-window",
+                "allow-restore-choose-file",
+                "allow-restore-open",
+                "allow-restore-fresh-apply",
+                "allow-restore-apply-preferences",
+                "allow-restore-reinstall-profile",
+                "allow-restore-discard"
+            ]
+        );
+        for permission in backup_permissions.iter().chain(&fresh_permissions) {
+            assert!(
+                commands.contains(permission) || permission.starts_with("core:event:allow-"),
+                "unexpected permission {permission}"
+            );
+        }
         let main_permissions = permissions(&main);
         for command in &commands {
             let in_main = main_permissions.contains(command);
-            let window_only = [
-                "allow-answer-prompt",
-                "allow-prompt-ready",
-                "allow-pairing-answer",
-                "allow-pairing-ready",
-                "allow-answer-credentials",
-                "allow-credentials-ready",
-                "allow-fit-window",
-            ]
-            .contains(&command.as_str());
+            let window_only = vault_only.contains(command)
+                || [
+                    "allow-answer-prompt",
+                    "allow-prompt-ready",
+                    "allow-pairing-answer",
+                    "allow-pairing-ready",
+                    "allow-answer-credentials",
+                    "allow-credentials-ready",
+                    "allow-fit-window",
+                    "allow-backup-close-window",
+                    "allow-backup-choose-destination",
+                    "allow-backup-save",
+                    "allow-restore-choose-file",
+                    "allow-restore-open",
+                    "allow-restore-apply",
+                    "allow-restore-fresh-apply",
+                    "allow-restore-apply-preferences",
+                    "allow-restore-reinstall-profile",
+                    "allow-restore-discard",
+                ]
+                .contains(&command.as_str());
             assert_eq!(in_main, !window_only, "{command}");
         }
         for permission in &main_permissions {
@@ -585,7 +653,7 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(dir.join("tauri.conf.json")).unwrap()).unwrap();
         assert_eq!(
             config["app"]["security"]["capabilities"],
-            serde_json::json!(["main", "prompt", "pairing", "credentials"])
+            serde_json::json!(["main", "prompt", "pairing", "credentials", "vault", "backup", "restore-fresh"])
         );
         // The command list, the generated permissions and the handler agree.
         let main_rs = std::fs::read_to_string(dir.join("src/main.rs")).unwrap();

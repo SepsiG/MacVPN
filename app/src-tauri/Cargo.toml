@@ -25,6 +25,8 @@ macvpn-platform-mac = { path = "../../crates/platform-mac" }
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2.12.4", features = ["tray-icon", "image-png"] }
 uuid = { version = "1.26.1", features = ["v4"] }
+# Passwords and recovery keys from the vault windows are wiped after use.
+zeroize = "1.9.1"
 
 [dev-dependencies]
 serde_json = "1.0.154"

@@ -1,0 +1,29 @@
+{
+  "identifier": "vault",
+  "description": "The vault windows (vault-create, vault-unlock, vault-password, vault-recovery; local content only): the view model, listening to events, and the vault windows' commands (each checks the calling window's label). Nothing else.",
+  "windows": [
+    "vault-create",
+    "vault-unlock",
+    "vault-password",
+    "vault-recovery"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view-model",
+    "allow-fit-window",
+    "allow-vault-ready",
+    "allow-vault-setup-step",
+    "allow-vault-create",
+    "allow-vault-confirm-recovery",
+    "allow-vault-open-restore",
+    "allow-vault-unlock",
+    "allow-vault-recover",
+    "allow-vault-close",
+    "allow-vault-change-password",
+    "allow-vault-enable-auto-unlock",
+    "allow-vault-new-recovery-key",
+    "allow-vault-confirm-new-key",
+    "allow-vault-key-copied"
+  ]
+}

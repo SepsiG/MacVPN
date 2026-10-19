@@ -611,7 +611,7 @@ fn import_asks_about_credential_files() {
             assert_eq!(
                 report.notes,
                 [
-                    "office.ovpn: The username and password from auth.txt are stored in the Keychain; the file is not copied into the config."
+                    "office.ovpn: The username and password from auth.txt are stored in the vault; the file is not copied into the config."
                 ]
             );
         } else {

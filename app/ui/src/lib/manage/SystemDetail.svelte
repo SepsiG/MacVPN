@@ -8,6 +8,7 @@
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
   import TypeIcon from '../TypeIcon.svelte';
+  import CredentialSelector from './CredentialSelector.svelte';
   import { EditorSession } from './session.svelte';
   import { forgetDisabled } from './live';
   import OtpFields from './OtpFields.svelte';
@@ -80,17 +81,26 @@
             disabled={removed}
           />
         </label>
-        <label class="field">
-          <span>{tr('Password (optional, if not saved in macOS)')}</span>
-          <SecretField
-            label={tr('Password (optional, if not saved in macOS)')}
-            stored={view?.hasStoredSecret.password ?? false}
-            bind:value={fields.password}
-            disabled={removed}
-          />
-        </label>
+        <CredentialSelector
+          item={row.id}
+          credential={view?.credential ?? null}
+          passwordOnly
+          disabled={removed}
+          onchanged={() => session.open()}
+        />
+        {#if !view?.credential}
+          <label class="field">
+            <span>{tr('Password (optional, if not saved in macOS)')}</span>
+            <SecretField
+              label={tr('Password (optional, if not saved in macOS)')}
+              stored={view?.hasStoredSecret.password ?? false}
+              bind:value={fields.password}
+              disabled={removed}
+            />
+          </label>
+        {/if}
         <p class="note">
-          {tr('Stored in the MacVPN keychain and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own ("incorrect user shared secret").')}
+          {tr('Stored in the MacVPN vault and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own ("incorrect user shared secret").')}
         </p>
       </section>
       <section>

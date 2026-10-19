@@ -7,6 +7,8 @@
 
 use crate::l10n;
 use crate::mfa::PromptDeadline;
+/// The shared credential a prompt names (it lives in `models`, next to `SecretField`).
+pub use crate::models::CredentialRef;
 use crate::models::{Secrets, VPNKind};
 use crate::validators::{OpenVPNValidator, SSTPConfig, StrongSwanValidator};
 use crate::{importer, swift_str};
@@ -127,6 +129,10 @@ pub struct CredentialPrompt {
     /// The re-prompt after a sign-in failure ("Sign-in failed — check the username and password").
     pub retry: bool,
     pub deadline: PromptDeadline,
+    /// The shared credential the asked password belongs to (a linked credential without a password): the window
+    /// says "Password for Office AD — used by 4 connections", and "Save" updates the credential. `None`: the
+    /// connection's own fields.
+    pub credential: Option<CredentialRef>,
 }
 
 /// The window's answer.
@@ -243,13 +249,13 @@ pub fn validate_values(values: &CredentialValues, fields: &[CredentialField], ki
     }
 }
 
-/// The `mvpn` messages that mean a wrong user name or password (`openvpn.rs`, `sstp.rs` of the root layer).
-// TODO(1.2, root VERSION 8): add the strongSwan EAP key "Authentication failed (EAP)" here (and to the tests)
-// once root layer 8 and its l10n key are merged; root layer 7 has no distinct EAP failure message.
-const SIGN_IN_FAILURES: [&str; 3] = [
+/// The `mvpn` messages that mean a wrong user name or password (`openvpn.rs`, `sstp.rs` and, from root layer 8,
+/// the strongSwan EAP failure of `strongswan.rs`).
+const SIGN_IN_FAILURES: [&str; 4] = [
     "Authentication failed (AUTH_FAILED)",
     "Authentication failed",
     "Authentication failed (wrong user name or password)",
+    "Authentication failed (EAP)",
 ];
 
 /// The root layer's error (its last non-empty stderr line, trimmed) is one of its sign-in failure messages, in

@@ -61,6 +61,17 @@ fn large_stdin_is_delivered_fully() {
     assert_eq!(r.stdout.trim(), "3000000");
 }
 
+/// `run_bytes`: the stdin as raw bytes (not forced through UTF-8), large payloads delivered whole.
+#[test]
+fn bytes_stdin_is_delivered_unchanged() {
+    let mut data = b"config 3\n\xff\x00\x01".to_vec();
+    data.extend(std::iter::repeat_n(b'z', 1_200_000));
+    let r = ProcessCommandRunner::default().run_bytes("/usr/bin/wc", &args(&["-c"]), &data).unwrap();
+    assert_eq!(r.stdout.trim(), data.len().to_string());
+    let r = ProcessCommandRunner::default().run_bytes("/usr/bin/od", &args(&["-An", "-tx1", "-N12"]), &data).unwrap();
+    assert_eq!(r.stdout.split_whitespace().collect::<Vec<_>>()[9..], ["ff", "00", "01"]);
+}
+
 #[test]
 fn large_stdout_captured_fully() {
     let r = ProcessCommandRunner::default()

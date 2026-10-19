@@ -7,6 +7,12 @@
   import Prompt from './lib/Prompt.svelte';
   import Setup from './lib/Setup.svelte';
   import Update from './lib/Update.svelte';
+  import CreateVault from './lib/vault/CreateVault.svelte';
+  import NewKey from './lib/vault/NewKey.svelte';
+  import PasswordWindow from './lib/vault/PasswordWindow.svelte';
+  import Unlock from './lib/vault/Unlock.svelte';
+  import Backup from './lib/vault/Backup.svelte';
+  import Restore from './lib/vault/Restore.svelte';
 
   // The window's label (set by the backend) selects the view; no IPC needed to read it.
   const label = getCurrentWindow().label;
@@ -20,10 +26,22 @@
   <Setup />
 {:else if label === 'update'}
   <Update />
+{:else if label === 'backup'}
+  <Backup />
+{:else if label === 'restore'}
+  <Restore />
 {:else if label.startsWith('prompt-')}
   <Prompt />
 {:else if label.startsWith('cred-')}
   <CredentialPrompt />
 {:else if label.startsWith('pair-')}
   <Pairing />
+{:else if label === 'vault-create'}
+  <CreateVault />
+{:else if label === 'vault-unlock'}
+  <Unlock />
+{:else if label === 'vault-password'}
+  <PasswordWindow />
+{:else if label === 'vault-recovery'}
+  <NewKey />
 {/if}

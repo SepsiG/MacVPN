@@ -1,8 +1,9 @@
 <script lang="ts">
-  // SSTP: the config as a form, the password in the Keychain, the server certificate mode with the CA file
+  // SSTP: the config as a form, the password in the vault, the server certificate mode with the CA file
   // (the Swift `SSTPConfigForm`).
   import type { SstpFields } from '../api';
   import { tr } from '../l10n.svelte';
+  import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
   import SecretField from './SecretField.svelte';
@@ -30,14 +31,17 @@
       <span>{tr('Port')}</span><input type="text" inputmode="numeric" value={String(fields.port)} onchange={setPort} />
     </label>
     <label class="field"><span>{tr('Username')}</span><input type="text" autocomplete="off" bind:value={fields.user} /></label>
-    <label class="field">
-      <span>{tr('Password')}</span>
-      <SecretField label={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
-    </label>
+    <CredentialSelector item={session.id} credential={view?.credential ?? null} passwordOnly onchanged={() => session.open()} />
+    {#if !view?.credential}
+      <label class="field">
+        <span>{tr('Password')}</span>
+        <SecretField label={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
+      </label>
+    {/if}
     {#if view?.passwordRule}
       <p class="error">{view.passwordRule}</p>
     {/if}
-    <p class="note">{tr('The password is stored in the Keychain. Use user@domain instead of DOMAIN\\user.')}</p>
+    <p class="note">{tr('The password is stored in the vault. Use user@domain instead of DOMAIN\\user.')}</p>
   </section>
   <section>
     <label class="field">

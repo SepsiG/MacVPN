@@ -1,0 +1,23 @@
+{
+  "identifier": "backup",
+  "description": "The full backup and restore windows (backup, restore; local content only): the view model, events, and the backup and restore commands. The native panels run in the backend; no path, file or shell API.",
+  "windows": [
+    "backup",
+    "restore"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view-model",
+    "allow-backup-show-window",
+    "allow-backup-close-window",
+    "allow-backup-choose-destination",
+    "allow-backup-save",
+    "allow-restore-choose-file",
+    "allow-restore-open",
+    "allow-restore-apply",
+    "allow-restore-apply-preferences",
+    "allow-restore-reinstall-profile",
+    "allow-restore-discard"
+  ]
+}

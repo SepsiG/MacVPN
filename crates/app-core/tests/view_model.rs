@@ -21,6 +21,7 @@ fn snapshot(states: &[ConnectionState], status_error: Option<&str>) -> ManagerSn
         has_active: states.iter().any(ConnectionState::is_active),
         has_failure: states.iter().any(|s| matches!(s, ConnectionState::Failed(_))),
         awaiting_auth: states.iter().any(|s| matches!(s, ConnectionState::AwaitingAuth(_))),
+        ..ManagerSnapshot::default()
     }
 }
 

@@ -1,12 +1,18 @@
 <script lang="ts">
   // One connection of the menu as a card: the type's icon bubble with the state badge, the name (with the pin),
-  // the type and state line, and the switch.
-  import type { Row } from './api';
+  // the type and state line, and the switch. Its effective folder colour (spec 3) is a slim bar on the left edge.
+  import type { FolderColor, Row } from './api';
+  import { colorToken } from './folders/tree';
   import { tr } from './l10n.svelte';
   import { statusLine, statusText } from './status';
   import TypeIcon from './TypeIcon.svelte';
 
-  let { row, now, onToggle }: { row: Row; now: number; onToggle: (row: Row, debug: boolean) => void } = $props();
+  let {
+    row,
+    now,
+    onToggle,
+    color = null,
+  }: { row: Row; now: number; onToggle: (row: Row, debug: boolean) => void; color?: FolderColor | null } = $props();
 
   const line = $derived(statusLine(row, now));
 
@@ -16,7 +22,7 @@
   }
 </script>
 
-<div class="card {line.tone}" class:unavailable={!row.available}>
+<div class="card {line.tone}" class:unavailable={!row.available} class:tinted={color !== null} style:--tint={colorToken(color)}>
   <TypeIcon kind={row.kind} state={row.state} />
   <div class="text">
     <div class="name">
@@ -50,6 +56,7 @@
 <style>
   .card {
     --badge-ring: var(--surface);
+    position: relative;
     display: flex;
     align-items: center;
     gap: var(--space-4);
@@ -63,6 +70,17 @@
     transition:
       background-color var(--duration) var(--ease),
       outline-color var(--duration) var(--ease);
+  }
+  /* The folder colour: a bar inset on the left edge (the bubble keeps the type's colour). */
+  .card.tinted::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 10px;
+    bottom: 10px;
+    width: 3px;
+    border-radius: 0 3px 3px 0;
+    background: var(--tint);
   }
   .card.on {
     outline-color: color-mix(in srgb, var(--state-on) 45%, transparent);

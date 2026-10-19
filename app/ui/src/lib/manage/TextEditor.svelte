@@ -1,8 +1,9 @@
 <script lang="ts">
-  // OpenVPN, WireGuard, strongSwan: the config text with the error list and the risky panel, the Keychain
+  // OpenVPN, WireGuard, strongSwan: the config text with the error list and the risky panel, the vault
   // secrets, the one-time code setting (the Swift `TextConfigEditor`).
   import type { TextFields } from '../api';
   import { tr } from '../l10n.svelte';
+  import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
   import RiskyPanel from './RiskyPanel.svelte';
@@ -44,10 +45,13 @@
   {/if}
   {#if showsUser || showsPsk}
     <fieldset>
-      <legend>{tr('Authentication (stored in the Keychain)')}</legend>
+      <legend>{tr('Authentication (stored in the vault)')}</legend>
       {#if showsUser}
-        <input type="text" placeholder={tr('Username')} aria-label={tr('Username')} autocomplete="off" bind:value={fields.username} />
-        <SecretField label={tr('Password')} placeholder={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
+        <CredentialSelector item={session.id} credential={view?.credential ?? null} onchanged={() => session.open()} />
+        {#if !view?.credential}
+          <input type="text" placeholder={tr('Username')} aria-label={tr('Username')} autocomplete="off" bind:value={fields.username} />
+          <SecretField label={tr('Password')} placeholder={tr('Password')} stored={view?.hasStoredSecret.password ?? false} bind:value={fields.password} />
+        {/if}
       {/if}
       {#if showsKeyPassword}
         <SecretField

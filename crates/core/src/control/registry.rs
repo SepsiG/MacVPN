@@ -194,15 +194,7 @@ impl Registry {
     /// `{"clients":[…]}`; any malformed entry or a repeated id makes the whole file invalid.
     fn decode(data: &[u8]) -> Option<Vec<PairedClient>> {
         let value = swift_json::parse(data).ok()?;
-        let mut clients: Vec<PairedClient> = Vec::new();
-        for v in value.as_object()?.get("clients")?.as_array()? {
-            let client = PairedClient::from_json(v)?;
-            if clients.iter().any(|c| c.id == client.id) {
-                return None;
-            }
-            clients.push(client);
-        }
-        Some(clients)
+        Self::from_client_values(value.as_object()?.get("clients")?.as_array()?).map(|r| r.clients)
     }
 
     /// 0600, atomic; the directory is created 0700 if missing.
@@ -210,9 +202,28 @@ impl Registry {
         let path = Self::path(dir);
         ensure_private_parent(&path)?;
         let mut m = Map::new();
-        m.insert("clients".into(), Value::Array(self.clients.iter().map(PairedClient::to_json).collect()));
+        m.insert("clients".into(), Value::Array(self.client_values()));
         let json = swift_json::to_pretty_sorted(&Value::Object(m)).map_err(io::Error::other)?;
         write_private(json.as_bytes(), &path)
+    }
+
+    /// The clients as the JSON objects of the file's `clients` array (the vault keeps one row per client).
+    pub fn client_values(&self) -> Vec<Value> {
+        self.clients.iter().map(PairedClient::to_json).collect()
+    }
+
+    /// A registry from the JSON objects of [`Self::client_values`]. `None`: an entry is malformed or an id
+    /// repeats (the caller must not save over the source then).
+    pub fn from_client_values(values: &[Value]) -> Option<Registry> {
+        let mut clients: Vec<PairedClient> = Vec::new();
+        for v in values {
+            let client = PairedClient::from_json(v)?;
+            if clients.iter().any(|c| c.id == client.id) {
+                return None;
+            }
+            clients.push(client);
+        }
+        Some(Registry { clients, rejections: Vec::new() })
     }
 
     pub fn clients(&self) -> &[PairedClient] {

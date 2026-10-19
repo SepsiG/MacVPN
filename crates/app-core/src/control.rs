@@ -99,6 +99,35 @@ pub trait ControlHost: Send + Sync {
     /// The connection's last connect ended because the user cancelled (or let expire) the credential prompt
     /// (`ConnectionManager::credentials_cancelled`). Called with the server's mutex held: must return quickly.
     fn credentials_cancelled(&self, key: &str) -> bool;
+    /// The vault is locked (1.2.0): `pair`, `hello`, `list`, `up` and `status` answer `locked`; `down` of an
+    /// authenticated session still works (it only releases a lease). Never called with the server's mutex held;
+    /// it must return quickly.
+    fn locked(&self) -> bool {
+        false
+    }
+}
+
+/// Where the paired clients are kept: the vault (1.2, `vault_stores::VaultRegistry`) or, before the vault and in
+/// the tests, `control-clients.json` ([`FileRegistryStore`]). A store that exists but cannot be read is an error,
+/// never an empty registry (that would be saved over the real one at the next change and unpair every client).
+pub trait RegistryStore: Send + Sync {
+    fn load(&self) -> io::Result<Registry>;
+    fn save(&self, registry: &Registry) -> io::Result<()>;
+}
+
+/// `control-clients.json` in a directory (the 1.1 storage).
+pub struct FileRegistryStore {
+    pub dir: PathBuf,
+}
+
+impl RegistryStore for FileRegistryStore {
+    fn load(&self) -> io::Result<Registry> {
+        Registry::load(&self.dir)
+    }
+
+    fn save(&self, registry: &Registry) -> io::Result<()> {
+        registry.save(&self.dir)
+    }
 }
 
 /// What the pairing window shows.
@@ -199,15 +228,20 @@ impl Default for ControlLimits {
 pub struct ControlOptions {
     /// The socket's private directory (`<application support>/control`).
     pub socket_dir: PathBuf,
-    /// Where `control-clients.json` lives (`<application support>`).
-    pub registry_dir: PathBuf,
+    /// The paired clients (the vault in the app).
+    pub registry: Arc<dyn RegistryStore>,
     pub limits: ControlLimits,
     pub clock: Arc<dyn Clock>,
 }
 
 impl ControlOptions {
+    /// The registry in `control-clients.json` below `registry_dir`.
     pub fn new(socket_dir: PathBuf, registry_dir: PathBuf) -> Self {
-        ControlOptions { socket_dir, registry_dir, limits: ControlLimits::default(), clock: Arc::new(SystemClock) }
+        Self::with_registry(socket_dir, Arc::new(FileRegistryStore { dir: registry_dir }))
+    }
+
+    pub fn with_registry(socket_dir: PathBuf, registry: Arc<dyn RegistryStore>) -> Self {
+        ControlOptions { socket_dir, registry, limits: ControlLimits::default(), clock: Arc::new(SystemClock) }
     }
 }
 
@@ -405,7 +439,7 @@ impl State {
 struct Shared {
     host: Arc<dyn ControlHost>,
     transport: Arc<dyn ControlTransport>,
-    registry_dir: PathBuf,
+    registry: Arc<dyn RegistryStore>,
     limits: ControlLimits,
     clock: Arc<dyn Clock>,
     stopping: AtomicBool,
@@ -433,7 +467,7 @@ impl Shared {
     fn persist(&self) -> io::Result<()> {
         let _order = self.save_lock.lock().unwrap_or_else(PoisonError::into_inner);
         let snapshot = self.lock().registry.clone();
-        snapshot.save(&self.registry_dir)
+        self.registry.save(&snapshot)
     }
 
     fn end_release(&self, key: &str) {
@@ -485,12 +519,12 @@ impl ControlServer {
         host: Arc<dyn ControlHost>,
         transport: Arc<dyn ControlTransport>,
     ) -> io::Result<ControlServer> {
-        let registry = Registry::load(&options.registry_dir)?;
+        let registry = options.registry.load()?;
         let bound = transport.bind(&options.socket_dir)?;
         let shared = Arc::new(Shared {
             host,
             transport,
-            registry_dir: options.registry_dir,
+            registry: options.registry,
             limits: options.limits,
             clock: options.clock,
             stopping: AtomicBool::new(false),
@@ -1115,6 +1149,22 @@ impl Client<'_> {
 
     fn handle(&mut self, request: Request) -> Flow {
         let authed = self.client.is_some();
+        // Locked: nothing that reads the vault. A pairing or `hello` ends the connection as it would anyway (the
+        // client retries after the unlock); `down` only releases a lease and still works. A request before `hello`
+        // stays `unauthorized` (it learns nothing about the vault).
+        let refused = match request {
+            Request::Pair { .. } | Request::Hello { .. } => !authed,
+            Request::List { .. } | Request::Up { .. } | Request::Status { .. } => authed,
+            Request::Down { .. } => false,
+        };
+        if refused && self.shared.host.locked() {
+            self.send(reply_err(request.id(), ErrorCode::Locked, None));
+            if !authed {
+                self.shared.log(format!("refused {}: the vault is locked", self.who()));
+                return Flow::Close;
+            }
+            return Flow::Continue;
+        }
         match request {
             Request::Pair { id, name } if !authed => self.pair(id, name),
             Request::Hello { id, token } if !authed => self.hello(id, &token),

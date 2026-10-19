@@ -1,0 +1,14 @@
+{
+  "0F9E8D7C-6B5A-4938-2716-05F4E3D2C1B0" : {
+    "enabled" : true,
+    "separator" : "none"
+  },
+  "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4" : {
+    "enabled" : true,
+    "separator" : "comma"
+  },
+  "A1" : {
+    "enabled" : true,
+    "separator" : "colon"
+  }
+}

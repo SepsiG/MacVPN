@@ -1,5 +1,6 @@
 //! `mvpn up|down <kind> <id>`: the flow around the per-kind code — validation of the arguments, test-mode guard,
-//! log, lock, the previous run, config copy and validation, debug snapshots, and the cleanup on every exit.
+//! the framed stdin of `up` (config and secrets, see [`crate::secrets`]), log, lock, the previous run, the config
+//! written into the run directory and validated, debug snapshots, and the cleanup on every exit.
 
 use crate::cli::{is_kind, is_uuid};
 use crate::ctx::{Ctx, Exit, R, tr};
@@ -235,10 +236,17 @@ fn header(ctx: &Ctx, what: &str) {
     ));
 }
 
-fn up(ctx: &mut Ctx) -> R {
-    run_dir::resolve_src_base(ctx)?;
-    ctx.secrets = secrets::Secrets::read_stdin();
+fn up(ctx: &mut Ctx, input: Result<secrets::Framed, secrets::FrameError>) -> R {
     header(ctx, "up");
+    let config = match input {
+        Ok((config, s)) => {
+            ctx.secrets = s;
+            config
+        }
+        Err(e) => return Err(ctx.die(e.message())),
+    };
+    // Validated first: a bad new config must not tear down a working connection of this id.
+    validate::validate_config(ctx, &config)?;
     // A run directory left for this id (e.g. a connection never taken down) is closed first, otherwise the copy
     // would delete its pid / iface files and the process would be orphaned. A crashed openvpn (dead pid) gets
     // its DNS restored from dns-backup this way.
@@ -252,8 +260,8 @@ fn up(ctx: &mut Ctx) -> R {
         }
     }
     ctx.check_term()?;
-    run_dir::prepare(ctx)?;
-    validate::validate_config(ctx)?;
+    run_dir::prepare(ctx, &config)?;
+    drop(config);
     ctx.check_term()?;
     snapshot(ctx, &tr("before", &[]))?;
     up_kind(ctx)?;
@@ -263,7 +271,7 @@ fn up(ctx: &mut Ctx) -> R {
     Ok(())
 }
 
-fn body(ctx: &mut Ctx) -> R {
+fn body(ctx: &mut Ctx, input: Option<Result<secrets::Framed, secrets::FrameError>>) -> R {
     ctx.log = log::open(
         &ctx.s.log_base.clone(),
         &ctx.id.clone(),
@@ -272,8 +280,8 @@ fn body(ctx: &mut Ctx) -> R {
     );
     ctx.check_term()?;
     lock::acquire(ctx)?;
-    if ctx.a.cmd == "up" {
-        up(ctx)
+    if let Some(input) = input {
+        up(ctx, input)
     } else {
         header(ctx, "down");
         do_down(ctx)
@@ -301,8 +309,10 @@ pub fn main(ctx: &mut Ctx) -> i32 {
             return ctx.die(tr("Root privileges required (or --dry-run)", &[])).0;
         }
     }
+    // `up` reads its whole stdin at once, before waiting for the lock, so the caller's write never blocks on it.
+    let input = (ctx.a.cmd == "up").then(|| secrets::read_framed_stdin(true));
     crate::sys::install_sigterm_flag();
-    let r = body(ctx);
+    let r = body(ctx, input);
     on_exit(ctx);
     match r {
         Ok(()) => 0,

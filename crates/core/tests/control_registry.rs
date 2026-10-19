@@ -189,6 +189,21 @@ fn save_then_load_round_trips() {
 }
 
 #[test]
+fn client_values_round_trip_and_refuse_bad_entries() {
+    let (mut r, id_a, token_a, _, _) = registry();
+    r.touch(id_a, at(3600.0));
+    let values = r.client_values();
+    assert_eq!(values.len(), 2);
+    let back = Registry::from_client_values(&values).unwrap();
+    assert_eq!(back.clients(), r.clients());
+    assert_eq!(back.authenticate(&token_a, APP).unwrap().id, id_a);
+    // A repeated id or a malformed entry: nothing (never an incomplete registry).
+    assert!(Registry::from_client_values(&[values[0].clone(), values[0].clone()]).is_none());
+    assert!(Registry::from_client_values(&[values[0].clone(), serde_json::json!({"id": 1})]).is_none());
+    assert!(Registry::from_client_values(&[]).unwrap().clients().is_empty());
+}
+
+#[test]
 fn missing_file_is_empty_registry() {
     let tmp = TempDir::new();
     assert!(Registry::load(tmp.path()).unwrap().clients().is_empty());

@@ -133,13 +133,19 @@ impl Ctx {
 
     /// `run_logged`: the command line in the log; the output (stdout and stderr) masked into the log.
     pub fn run_logged(&self, cmd: &Cmd) -> R<bool> {
+        self.run_logged_scan(cmd, |_| false).map(|(ok, _)| ok)
+    }
+
+    /// [`Ctx::run_logged`] that also reports whether `pred` matched any (masked) line of the command's own output.
+    /// The decision comes from the in-memory stream, never from the log file (which the user can write).
+    pub fn run_logged_scan(&self, cmd: &Cmd, pred: impl Fn(&[u8]) -> bool + Send + 'static) -> R<(bool, bool)> {
         self.log.cmd(&cmd.display());
         if self.dry() {
             self.say(&format!("DRY: {}", cmd.display()));
-            return Ok(true);
+            return Ok((true, false));
         }
-        let Ok((reader, writer)) = std::io::pipe() else { return Ok(false) };
-        let Ok(writer2) = writer.try_clone() else { return Ok(false) };
+        let Ok((reader, writer)) = std::io::pipe() else { return Ok((false, false)) };
+        let Ok(writer2) = writer.try_clone() else { return Ok((false, false)) };
         let spawned = self
             .prepared(cmd)
             .command(self.env_mode())
@@ -151,15 +157,20 @@ impl Ctx {
             Ok(c) => c,
             Err(e) => {
                 self.log.line(&format!("{}: {e}", cmd.shown));
-                return Ok(false);
+                return Ok((false, false));
             }
         };
+        let matched = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let seen = matched.clone();
         // Streamed line by line through the masker into the log (live, bounded memory). A daemonizing child may
         // keep the pipe open: after the child exits the reader gets a short grace period, then it is left behind.
         let (done_tx, done_rx) = std::sync::mpsc::channel::<()>();
         let (log, masker) = (self.log.clone(), self.masker());
         let spawned_reader = std::thread::Builder::new().spawn(move || {
             masker.stream_lines(reader, crate::mask::MAX_LINE, |l| {
+                if pred(l) {
+                    seen.store(true, std::sync::atomic::Ordering::SeqCst);
+                }
                 log.bytes(l);
                 true
             });
@@ -169,7 +180,7 @@ impl Ctx {
         if spawned_reader.is_ok() {
             let _ = done_rx.recv_timeout(std::time::Duration::from_millis(500));
         }
-        Ok(ok)
+        Ok((ok, matched.load(std::sync::atomic::Ordering::SeqCst)))
     }
 
     /// `run_direct`: stdin `/dev/null`, output into the log (no secret in it), waits for the exit.
@@ -283,7 +294,7 @@ mod tests {
         let s = Settings::resolve(true, TestEnv::default(), String::new());
         let mut c = Ctx::new(s, Args::default());
         c.log = Log::at(log.to_path_buf());
-        c.secrets = Secrets::parse(b"password=pw1secret\n");
+        c.secrets = Secrets { pass: zeroize::Zeroizing::new(b"pw1secret".to_vec()), ..Secrets::default() };
         c
     }
 
@@ -312,6 +323,27 @@ mod tests {
         assert!(!early.contains("L2"));
         let all = std::fs::read_to_string(&log).unwrap();
         assert!(all.contains("L2\n") && !all.contains("pw1secret"), "{all}");
+        let _ = std::fs::remove_file(&log);
+    }
+
+    #[test]
+    fn scan_sees_only_the_masked_output_stream() {
+        let log = tmp_log();
+        let c = ctx(&log);
+        let eap = |l: &[u8]| crate::mask::find(l, b"EAP_FAILURE").is_some();
+        let out = Cmd::new("/bin/sh").args(["-c", "echo x; echo 'received EAP_FAILURE' >&2; exit 1"]);
+        assert_eq!(c.run_logged_scan(&out, eap).unwrap(), (false, true));
+        // Written into the log by the child itself (as another process could): not seen.
+        let direct =
+            Cmd::new("/bin/sh").args(["-c", "echo 'EAP_FAILURE' >>\"$L\"; echo y"]).env("L", log.to_str().unwrap());
+        assert_eq!(c.run_logged_scan(&direct, eap).unwrap(), (true, false));
+        assert!(std::fs::read_to_string(&log).unwrap().contains("EAP_FAILURE"));
+        // The predicate sees masked lines: a secret never reaches it.
+        let secret = Cmd::new("/bin/sh").args(["-c", "echo pw1secret"]);
+        assert_eq!(
+            c.run_logged_scan(&secret, |l| crate::mask::find(l, b"pw1secret").is_some()).unwrap(),
+            (true, false)
+        );
         let _ = std::fs::remove_file(&log);
     }
 

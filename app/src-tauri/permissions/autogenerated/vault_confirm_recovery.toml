@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-confirm-recovery"
+description = "Enables the vault_confirm_recovery command without any pre-configured scope."
+commands.allow = ["vault_confirm_recovery"]
+
+[[permission]]
+identifier = "deny-vault-confirm-recovery"
+description = "Denies the vault_confirm_recovery command without any pre-configured scope."
+commands.deny = ["vault_confirm_recovery"]

@@ -148,6 +148,38 @@ fn sstp_connect_uses_root_path() {
     assert!(f.root.lines().contains(&down_line(VPNKind::Sstp, &c.id)));
 }
 
+/// Root layer 8: every root kind sends its stored config to `mvpn up` (on stdin, ahead of the secrets).
+#[test]
+fn root_up_receives_the_config() {
+    let f = Fixture::new(HU);
+    for (kind, config) in [
+        (VPNKind::Wireguard, "[Interface]\nAddress = 10.0.0.2/32\n# árvíztűrő\n"),
+        (VPNKind::Openvpn, "client\nremote vpn.example.com 1194\n"),
+        (VPNKind::Strongswan, "connections {\n}\n"),
+        (VPNKind::Sstp, "server=vpn.example.com\nuser=bob\npassword=FromConfig\n"),
+    ] {
+        let c = Connection::new("Iroda", kind);
+        f.store.save(&c, Some(config)).unwrap();
+        f.secrets.set("Titok123", &c.id, SecretField::Password);
+        f.manager().connect(&c, false);
+        let call = f.root.calls().into_iter().find(|call| call.line == up_line(kind, &c.id)).expect("up call");
+        assert_eq!(call.config.as_deref(), Some(config.as_bytes()), "{kind:?}");
+        assert_eq!(call.stdin.as_deref(), Some("password=Titok123\n"), "{kind:?}");
+    }
+}
+
+/// A config that cannot be read fails the connect with the existing text, without calling `mvpn`.
+#[test]
+fn unreadable_config_fails_without_up() {
+    let f = Fixture::new(HU);
+    let c = Connection::new("WG", VPNKind::Wireguard);
+    f.store.save(&c, None).unwrap();
+    let m = f.manager();
+    m.connect(&c, false);
+    assert_eq!(m.state(&uuid_string(&c.id)), failed_state("A config nem található"));
+    assert!(f.root.lines().iter().all(|l| !l.starts_with("up ")), "{:?}", f.root.lines());
+}
+
 #[test]
 fn drop_detection() {
     let f = Fixture::new(HU);

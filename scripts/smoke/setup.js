@@ -1,5 +1,5 @@
 // Driven by scripts/smoke-manage.sh (MACVPN_SMOKE_DIR, debug build, sandbox only), in the System Status window
-// over the mock report (a missing tool, root layer 6 installed, 7 bundled). The sandbox runs no brew, no root
+// over the mock report (a missing tool, root layer 7 installed, 8 bundled). The sandbox runs no brew, no root
 // installer and no uninstaller (they answer "cancelled"). The result goes into a seeded connection's name.
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));

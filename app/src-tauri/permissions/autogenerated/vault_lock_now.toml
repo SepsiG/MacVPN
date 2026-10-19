@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-vault-lock-now"
+description = "Enables the vault_lock_now command without any pre-configured scope."
+commands.allow = ["vault_lock_now"]
+
+[[permission]]
+identifier = "deny-vault-lock-now"
+description = "Denies the vault_lock_now command without any pre-configured scope."
+commands.deny = ["vault_lock_now"]

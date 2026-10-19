@@ -92,6 +92,19 @@ pub fn has_control(s: &str) -> bool {
     })
 }
 
+/// A user-given name as stored (a folder, a shared credential, and the import metadata naming them): no control
+/// character (see [`has_control`]), Unicode format characters dropped, Foundation whitespace trimmed, then 1 to
+/// `max_characters` characters (grapheme clusters). `None`: refused.
+pub fn clean_name(name: &str, max_characters: usize) -> Option<String> {
+    if has_control(name) {
+        return None;
+    }
+    let cleaned: String = name.chars().filter(|&c| !is_format_character(c)).collect();
+    let trimmed = cleaned.trim_matches(swift_str::is_foundation_whitespace);
+    let count = swift_str::characters(trimmed).len();
+    (1..=max_characters).contains(&count).then(|| trimmed.to_string())
+}
+
 /// `SCRV1:<base64 password>:<base64 code>` (OpenVPN management-notes, "Static protocol").
 pub fn scrv1(password: &str, code: &str) -> String {
     // Built in one exact allocation, the base64 temporaries wiped (no unwiped copy of the password is freed).

@@ -116,6 +116,8 @@ pub enum ErrorCode {
     MfaTimeout,
     /// The credential prompt was cancelled (or expired). An addition to API v1 (1.1.0).
     CredentialsCancelled,
+    /// The vault is locked (1.2.0): everything that reads it is refused; `down` still works. An addition to API v1.
+    Locked,
     Failed,
     AppQuitting,
     Disabled,
@@ -135,6 +137,7 @@ impl ErrorCode {
             ErrorCode::MfaCancelled => "mfa_cancelled",
             ErrorCode::MfaTimeout => "mfa_timeout",
             ErrorCode::CredentialsCancelled => "credentials_cancelled",
+            ErrorCode::Locked => "locked",
             ErrorCode::Failed => "failed",
             ErrorCode::AppQuitting => "app_quitting",
             ErrorCode::Disabled => "disabled",

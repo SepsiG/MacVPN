@@ -30,7 +30,7 @@ use macvpn_platform_mac::native_vpn::BoxError;
 use macvpn_platform_mac::native_vpn::{NativeVPNController, SystemConfigurationDriver};
 use macvpn_platform_mac::preferences::CFPreferencesStore;
 use macvpn_platform_mac::profile_staging::{self, StagedProfiles};
-use macvpn_platform_mac::secrets::{self as keychain, KeychainBackend, KeychainSecretStore, SecretStore};
+use macvpn_platform_mac::secrets::{KeychainBackend, KeychainSecretStore, SecretStore};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -66,11 +66,12 @@ impl RootClient for Root {
         &self,
         kind: VPNKind,
         id: &Uuid,
+        config: &[u8],
         secrets: &Secrets,
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), String> {
-        self.client().up(kind, id, secrets, debug, accept_risky).map_err(|e| e.to_string())
+        self.client().up(kind, id, config, secrets, debug, accept_risky).map_err(|e| e.to_string())
     }
 
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {
@@ -120,24 +121,15 @@ impl NativeController for Native {
 /// The Keychain items (`local.macvpn.secrets`): read by the manager, written by the editors, import and delete.
 pub struct Keychain<B: KeychainBackend>(pub KeychainSecretStore<B>);
 
-fn keychain_field(field: SecretField) -> keychain::SecretField {
-    match field {
-        SecretField::Username => keychain::SecretField::Username,
-        SecretField::Password => keychain::SecretField::Password,
-        SecretField::Psk => keychain::SecretField::Psk,
-        SecretField::KeyPassword => keychain::SecretField::KeyPassword,
-    }
-}
-
 impl<B: KeychainBackend> SecretReader for Keychain<B> {
     fn get(&self, id: &Uuid, field: SecretField) -> Option<String> {
-        self.0.get(id, keychain_field(field))
+        self.0.get(id, field)
     }
 }
 
 impl<B: KeychainBackend> SecretWriter for Keychain<B> {
     fn set(&self, value: &str, id: &Uuid, field: SecretField) {
-        self.0.set(value, id, keychain_field(field));
+        self.0.set(value, id, field);
     }
 
     fn delete_all(&self, id: &Uuid) {
@@ -146,6 +138,32 @@ impl<B: KeychainBackend> SecretWriter for Keychain<B> {
 
     fn remove_all(&self) {
         self.0.remove_all();
+    }
+}
+
+/// One in-memory Keychain shared by several stores (the sandbox's old Keychain items: the migration reads them
+/// and the legacy read-only mode shows them).
+pub struct SharedKeychain(pub Arc<macvpn_platform_mac::secrets::InMemoryKeychain>);
+
+impl KeychainBackend for SharedKeychain {
+    fn read(&self, service: &str, account: &str) -> Option<Vec<u8>> {
+        self.0.read(service, account)
+    }
+
+    fn read_checked(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, i32> {
+        self.0.read_checked(service, account)
+    }
+
+    fn write(&self, data: &[u8], service: &str, account: &str) -> bool {
+        self.0.write(data, service, account)
+    }
+
+    fn delete(&self, service: &str, account: &str) {
+        self.0.delete(service, account);
+    }
+
+    fn accounts(&self, service: &str) -> Vec<String> {
+        self.0.accounts(service)
     }
 }
 
@@ -201,6 +219,16 @@ pub fn copy_to_pasteboard(text: &str) -> Result<(), String> {
         .run("/usr/bin/pbcopy", &[], Some(text))
         .map_err(|e| e.to_string())?;
     if result.exit_code == 0 { Ok(()) } else { Err(result.stderr.trim().to_string()) }
+}
+
+/// The general pasteboard's text (`/usr/bin/pbpaste`, UTF-8); `None` when it cannot be read.
+pub fn pasteboard_text() -> Option<String> {
+    let environment = BTreeMap::from([("LANG".to_string(), "en_US.UTF-8".to_string())]);
+    let result = ProcessCommandRunner::new(RunnerTimeouts::QUICK)
+        .with_environment(environment)
+        .run("/usr/bin/pbpaste", &[], None)
+        .ok()?;
+    (result.exit_code == 0).then_some(result.stdout)
 }
 
 /// `log stream --style compact --predicate …` for the native debug log.
@@ -434,10 +462,10 @@ mod tests {
 
     #[test]
     fn keychain_fields_map_to_the_platform_store() {
-        let store = KeychainSecretStore::new(keychain::InMemoryKeychain::new());
+        let store = KeychainSecretStore::new(macvpn_platform_mac::secrets::InMemoryKeychain::new());
         let id = Uuid::new_v4();
-        store.set("pw", &id, keychain::SecretField::Password);
-        store.set("k", &id, keychain::SecretField::Psk);
+        store.set("pw", &id, SecretField::Password);
+        store.set("k", &id, SecretField::Psk);
         let reader = Keychain(store);
         assert_eq!(reader.get(&id, SecretField::Password).as_deref(), Some("pw"));
         assert_eq!(reader.get(&id, SecretField::Psk).as_deref(), Some("k"));

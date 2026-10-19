@@ -1,9 +1,96 @@
-# MacVPN – kézi tesztlista (1.1.0, Rust/Tauri)
+# MacVPN – kézi tesztlista (1.2.0 és 1.1.0, Rust/Tauri)
 
 Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.1.0.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
 az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
+
+## 1.2.0: széf, mappák, közös hitelesítő adatok, mentés
+
+Előfeltétel: `scripts/build-dmg.sh` hiba nélkül lefutott (`dist/MacVPN-1.2.0.dmg`), a „release gate (SQLCipher with CommonCrypto, no OpenSSL; no SQLite in mvpn)” lépés mindkét architektúrára „SQLCipher with CommonCrypto, no OpenSSL” sort ír; a fenti tesztek és a smoke teszt mindkét nyelven zöld. A tesztet egy valódi 1.1.0-s telepítésen, valódi adatokkal végezd.
+
+### Csomag
+- [ ] `Contents/Resources/root/VERSION` = 8; `CFBundleShortVersionString` = `CFBundleVersion` = `1.2.0`
+- [ ] A bundle-ben ott van a `THIRD-PARTY-NOTICES.txt`, benne az SQLCipher BSD-licence (Zetetic LLC) és az MIT-értesítések; a repóban ott van a `LICENSE`
+- [ ] `otool -L dist/MacVPN.app/Contents/MacOS/MacVPN` nem listáz `libcrypto`/`libssl`/`openssl` könyvtárat; `grep -a -c sqlcipher …/root/mvpn` = 0
+
+### Mentés a frissítés előtt
+- [ ] Az 1.1.0-ban: legalább egy kapcsolat típusonként, egy kitűzött kapcsolat, egy rendszer VPN OTP-beállítással és mentett PSK-val, egy párosított app, bekapcsolt „Indítás bejelentkezéskor”
+- [ ] Kilépés az 1.1.0-ból, majd `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.1.0`; a Keychain `local.macvpn.secrets` bejegyzéseinek száma feljegyezve (`security dump-keychain | grep -c local.macvpn.secrets`, csak nevek, **soha `-d`**)
+
+### Frissítés 1.1 → 1.2 az appon belül
+- [ ] 1.1.0 menü → „Frissítések keresése most” → „Frissítés elérhető: v1.2.0”; „Letöltés és telepítés” egy futó kapcsolattal → „Kilépés, fussanak tovább” → az 1.2.0 indul, a futó kapcsolat aktívként látszik
+- [ ] `update.log` → `done`; nincs `com.apple.quarantine`, nincs `.MacVPN.app.update-*` / `.old-*`
+
+### Root 7 → 8
+- [ ] A Rendszerállapot „Frissítés szükséges (7 → 8)”; „Engedélyezés” → egy admin jelszó → „Telepítve (verzió 8)”; `sudo -n /usr/local/libexec/macvpn/mvpn version` = 8
+- [ ] Előtte az OpenVPN/WireGuard/IKEv2/SSTP kapcsolatokon „Hiányzó eszköz”, az L2TP/Cisco/rendszer VPN működik
+
+### Széf létrehozása és a valódi adatok átköltöztetése
+- [ ] Induláskor megnyílik a „Széf beállítása” ablak; jelzi az átköltöztetést és a várható Keychain kérdések számát („legfeljebb N alkalommal”); N egyezik a feljegyzett bejegyzésszámmal
+- [ ] 10 karakternél rövidebb mesterjelszó → „Túl rövid”, a „Széf létrehozása” tiltva; eltérő ismétlés → „A két jelszó nem egyezik”; az erősségjelzés változik
+- [ ] A helyreállítási kulcs `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX` alakú; „Másolás” → „Kimásolva”; rossz csoport → „Ez nem a helyreállítási kulcs N. csoportja”; jó csoport → tovább
+- [ ] Átköltöztetés közben a Keychain kérdések: **a ténylegesen megjelent kérdések száma: ___** (≤ N); mindegyik a MacVPN-t és a `/Applications/MacVPN.app`-ot nevezi meg; „Mindig engedélyez”
+- [ ] Eredmény: „Az adataid a széfben vannak”, a kapcsolatok és titkok száma helyes; nincs „nem olvasható” elem
+- [ ] Utána: a régi kapcsolatmappák és a `connection-order.json` eltűnt, van `vault.db` és `vault.keys` (0600, a mappa 0700); a `local.macvpn.secrets` bejegyzések törlődtek, egy `local.macvpn.vault` / `dek` bejegyzés van
+- [ ] Megmaradt: kitűzés és sorrend, rendszer VPN OTP-beállítás és PSK, a párosított app (újra kapcsolódik), „Indítás bejelentkezéskor”, frissítési beállítások
+- [ ] Hibaág (külön profilon / sandboxban): egy olvashatatlan elemmel vagy megszakított átköltöztetéssel → „Az átköltöztetés nem fejeződött be”, semmi sem törlődött; a menüben „Az átköltöztetés a széfbe nem fejeződött be. Újrapróbálás…” sáv; csatlakozni lehet, szerkeszteni nem („…írásvédetten használja…”); „Újra” új mesterjelszóval sikerül
+
+### Minden kapcsolat működik
+- [ ] Típusonként csatlakozás és bontás a menüből és a Kapcsolatok ablakból; a szerkesztőkben „Mentve – írj be újat a cseréhez”; csatlakozáskor nincs jelszókérés
+- [ ] Hiányzó jelszó → „Hitelesítő adatok szükségesek”, „Mentés a széfbe” bejelölve; rossz jelszó OpenVPN/SSTP/IKEv2 EAP esetén egyszer újra kérdez; a jó jelszó a széfbe kerül
+- [ ] A vezérlő API: a párosított app fel- és lekapcsol egy engedélyezett kapcsolatot
+
+### Zárolás és feloldás
+- [ ] Bekapcsolt „Automatikus feloldás” mellett a „Széf zárolása most” rejtett; a „„Széf zárolása most” megjelenítése” kapcsolóval megjelenik
+- [ ] „Széf zárolása most” futó VPN-nel → a menüben csak „Széf feloldása…”, „1 kapcsolat aktív”, „Kilépés”; nevek nem látszanak; a VPN fennmarad; a Kapcsolatok ablak nem mentett változása elveszett; a vezérlő API `locked`-ot ad, a `down` működik
+- [ ] „Széf feloldása…” → hibás jelszó → „Hibás jelszó vagy helyreállítási kulcs”, a várakozás nő (1, 2, 4 … 30 mp), nincs kizárás; jó jelszó → minden visszajön, a mappák is
+- [ ] Zárolás után az app újraindítása bekapcsolt automatikus feloldással → kérdés nélkül nyílik
+- [ ] „Automatikus feloldás” ki → „Kikapcsolod az automatikus feloldást?” → „Kikapcsolás”; a `local.macvpn.vault` bejegyzés törlődött; újraindítás → „A MacVPN feloldása” ablak; vissza be → mesterjelszó → „Bekapcsolás”, a bejegyzés újra ott van
+- [ ] „Mesterjelszó módosítása…”: rossz jelenlegi jelszó → elutasítás és várakozás; jóval → „A mesterjelszó megváltozott”; zárolás után csak az új jelszó nyit; a helyreállítási kulcs változatlanul működik
+- [ ] Helyreállítás: „Helyreállítási kulcs használata” → kulcs (kisbetűvel, kötőjelek nélkül is) + új jelszó → „Visszaállítás és feloldás”; a kapcsolatok változatlanok
+- [ ] „Új helyreállítási kulcs…” → mesterjelszó → új kulcs, csoport-ellenőrzés → „Az új helyreállítási kulcs elkészült”; a régi kulcs már nem működik, az új igen
+
+### Mappák
+- [ ] „Új” → „Új mappa”, átnevezés helyben; 65 karakteres név → „A mappa neve 1–64 karakter lehet, vezérlőkarakter nélkül”
+- [ ] Helyi menük: mappa (Új mappa, Átnevezés, Szín…, Áthelyezés a legfelső szintre, Törlés…), kapcsolat (Kitűzés / Kitűzés megszüntetése, Szín…, Áthelyezés a legfelső szintre, Új mappa)
+- [ ] 12 szín + „Nincs” a mappánál; a kapcsolat örökli a mappa színét; saját szín → „Saját szín” pötty; „A mappa színe” visszaállítja; világos és sötét módban is olvasható
+- [ ] Húzás: mappa mappába (beágyazás) és mappák közé (sorrend); kapcsolat mappára (áthelyezés); kitűzött kapcsolat egy másik kitűzöttre ugyanabban a mappában (sorrend); a „Legfelső szint” célterület húzás közben megjelenik; mappa a saját almappájába → „Egy mappa nem helyezhető önmagába vagy a saját almappájába”
+- [ ] Sorrend egy mappán belül: almappák, kitűzöttek, használat, név
+- [ ] Törlés: alapból a tartalom a szülőbe / legfelső szintre kerül; „A kapcsolatok is törlődjenek” → második megerősítés, a kapcsolatok és jelszavaik törlődnek, a rendszer VPN-ek a legfelső szintre kerülnek; aktív kapcsolattal → „Előbb bontsd a mappában lévő kapcsolatokat…”
+- [ ] Menü: a mappa csukható, újraindítás után is csukva marad; a jelvény az aktív kapcsolatok számát mutatja („2 aktív”); 4+ szint mélyen a behúzás 3 szintnél megáll
+- [ ] Export mappában lévő kapcsolatból → első sor `# macvpn-meta: {"folder":[…]}`; törölt mappa után import → a mappa újra létrejön, a kapcsolat benne
+- [ ] Rendszer VPN mappában → a Rendszerbeállításokban törölve, majd újra felvéve (30 napon belül) → visszakerül a mappájába
+- [ ] Zárolt széf mellett a mappák nem látszanak és nem módosíthatók
+
+### Közös hitelesítő adatok
+- [ ] Kapcsolatok ablak → „Hitelesítő adatok” → „Hitelesítő adat hozzáadása…”; névszabály (1–64 karakter), azonos név → „Már van … nevű hitelesítő adat”
+- [ ] „Létrehozás kapcsolatból…” egy OpenVPN kapcsolatból → „Összekapcsolod az azonos bejelentkezéseket?” felsorolja az azonos adatú kapcsolatokat, értékek nem látszanak; „Létrehozás és összekapcsolás” → „N kapcsolat használja”
+- [ ] Szerkesztőben „Jelszó forrása” → „Hitelesítő adat: …” → megerősítés → a saját mezők eltűnnek; a kapcsolat mentése nem változtatja a közös adatot
+- [ ] Jelszó nélküli közös adat → csatlakozáskor „A(z) … jelszava — N kapcsolat használja”; „Mentés a széfbe” → a közös adatba kerül, a többi kapcsolat is használja
+- [ ] Jelszócsere a „Szerkesztés…”-ben → minden kapcsolat az újjal jelentkezik be
+- [ ] Használatban lévő adat törlése → „Másolás minden kapcsolatba” → a kapcsolatok saját adatot kapnak és működnek
+- [ ] Export → `credentialName` a meta sorban, jelszó nincs; import → „Használod a(z) „…” közös hitelesítő adatot ehhez a(z) <szerver> szerverre csatlakozó kapcsolathoz?”, a szerver a fájlból jön; alapból a saját adatok maradnak
+- [ ] L2TP közös adattal: a profil a fióknevet tartalmazza, a csatlakozás a közös adattal sikerül
+
+### Mentés és visszaállítás friss profilon
+- [ ] „Teljes biztonsági mentés…” → 10 karakternél rövidebb jelszó elutasítva; „A mesterjelszavam használata…” → megerősítés; a fájl `MacVPN-backup-<dátum>.macvpnbackup`, `600`
+- [ ] Friss profil (új macOS felhasználó, vagy a `~/Library/Application Support/MacVPN` és a `local.macvpn.vault` bejegyzés félretéve): „Széf beállítása” → „Visszaállítás biztonsági mentésből…” → hibás jelszó → „A mentés nem nyitható meg…”; jó jelszó → új mesterjelszó és új helyreállítási kulcs → minden kapcsolat, mappa, szín, sorrend, közös adat és titok visszajött
+- [ ] Friss visszaállítás 1.1-es adatok fölé (az 1.1-es adatmappa és `local.macvpn.secrets` bejegyzések megvannak, széf nincs): „Széf beállítása” → „Visszaállítás biztonsági mentésből…” → figyelmeztetés: „A MacVPN 1.1 adataid nem kerülnek át. A mentés visszaállítása után törlődnek.” → „Mégse” visszavisz; megerősítve → mentés, új mesterjelszó, kulcs, visszaállítás → csak a mentés tartalma van a széfben; az 1.1-es `connections` mappa, `connection-order.json`, `system-otp.json` törlődött, a `local.macvpn.secrets` bejegyzések is (`security dump-keychain | grep -c local.macvpn.secrets` → 0), a `migrated-to-vault` jelölő megvan; újraindítás után nincs „Széf beállítása” ablak, nincs írásvédett mód; hibás mentésjelszónál / megszakított visszaállításnál az 1.1-es adatok érintetlenek
+- [ ] Visszaállítás után a beállítások csak bejelölve lépnek életbe; „Más appok vezérelhetik a VPN-eket” nincs előre bejelölve; a párosított appok nincsenek benne
+- [ ] „N natív profil újratelepítése” → a macOS mindegyik jóváhagyását kéri; utána az L2TP/Cisco csatlakozik
+- [ ] Meglévő széfbe: „Összefésülés” mindhárom ütközési móddal (felülírás, megtartás, mindkettő „(backup)” névvel); „Minden cseréje…” → a törlendő elemek száma, „Előbb a jelenlegi állapot mentése…” működik; jóváhagyott kockázatos OpenVPN-beállítás: összefésülésnél újra kérdez, cserénél megmarad
+- [ ] Módosított (egy bájtban elrontott) mentésfájl → ugyanaz az általános hibaüzenet; semmi sem változott
+
+### Keychain kérdések egy későbbi frissítés után
+- [ ] Egy újabb (1.2.x tesztverziós) build telepítése frissítésként, bekapcsolt automatikus feloldással: a macOS legfeljebb **egyszer** kérdez (a `local.macvpn.vault` miatt); **ténylegesen: ___**; kikapcsolt automatikus feloldással egyszer sem
+
+### Eltávolítás
+- [ ] „A felhasználói adatok törlése is” jelöléssel: a `vault.db`, a `vault.keys`, a `local.macvpn.vault` bejegyzés és a maradék `local.macvpn.secrets` bejegyzések is törlődnek; jelölés nélkül megmaradnak, és újratelepítés után a széf megnyílik
+- [ ] A felületen tárolt titkokra a „széf” szó szerepel, nem a „Keychain” (a Keychain csak a széfkulcsnál és a macOS kérdéseinél)
+
+### Opcionális: natív L2TP/Cisco profil PSK nélkül
+- [ ] A `docs/superpowers/spikes/2026-10-19-vault-spike.md` D.3 lépései (alapállapot a System keychainben csak nevekkel, PSK nélküli profil telepítése, indítás a MacVPN-ből és a Rendszerbeállításokból, takarítás); az eredmény feljegyezve, és ha mindkét indítás működik mindkét típussal, a „PSK only at start” ág mehet
 
 ## 1.1.0: csomag és aláírás
 - [ ] `plutil -p dist/MacVPN.app/Contents/Info.plist`: `CFBundleIdentifier` `local.macvpn`, `CFBundleName` / `CFBundleDisplayName` `MacVPN`, `CFBundleExecutable` `MacVPN`, `CFBundleShortVersionString` = `CFBundleVersion` = `1.1.0`, `LSMinimumSystemVersion` `14.0`, `LSUIElement` true, `CFBundleDevelopmentRegion` `en`, `CFBundleLocalizations` `[en, hu]`, `MacVPNUpdateRepo` `SepsiG/MacVPN`, `MacVPNUpdateRepoID` `1422472799`, `CFBundleIconFile` `AppIcon`
@@ -42,7 +129,7 @@ az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0
 - [ ] Titkosított PEM kulcs (`-----BEGIN ENCRYPTED PRIVATE KEY-----` és `Proc-Type: 4,ENCRYPTED`) → a „Privát kulcs jelszava” mezővel csatlakozik
 - [ ] Export `<pkcs12>`-vel → „Exportálás kulcsok nélkül” levágja a blokkot
 - [ ] MikroTik RouterOS v7: `/interface ovpn-server server export-client-config` kimenetének importja → nincs piros hiba, nincs sárga panel; „A privát kulcs titkosított…” üzenet; a Privát kulcs jelszava (export-jelszó) + felhasználó/jelszó megadása után csatlakozás sikerül (UDP és TCP szerverrel is)
-- [ ] MikroTik v6 wiki config külön fájlokkal (`ca.crt`, `client.crt`, titkosított `client.key`, `auth-user-pass auth.cfg`) → „beemelt fájlok: ca.crt, client.crt, client.key”, „A(z) auth.cfg fájlban lévő felhasználónév és jelszó a Keychainbe került…”; a szerkesztőben a mezők kitöltve, a configban `auth-user-pass` fájlnév nélkül
+- [ ] MikroTik v6 wiki config külön fájlokkal (`ca.crt`, `client.crt`, titkosított `client.key`, `auth-user-pass auth.cfg`) → „beemelt fájlok: ca.crt, client.crt, client.key”, „A(z) auth.cfg fájlban lévő felhasználónév és jelszó a széfbe került…”; a szerkesztőben a mezők kitöltve, a configban `auth-user-pass` fájlnév nélkül
 - [ ] `auth-user-pass auth.cfg` import → „Használod a(z) auth.cfg … hitelesítő adatokat…?” kérdés; „Mellőzés” → a mezők üresek, az üzenet szerint nincs felhasználva; „Használat” → a mezők kitöltve
 - [ ] `askpass pass.txt` import („Használat”) → a Privát kulcs jelszava mező kitöltve, a configban csak `askpass`
 - [ ] Config `echo msg Initialization Sequence Completed` / `parameter …` sorral → piros „Tiltott direktíva”; szerver által küldött `echo` nem teszi „csatlakozott”-tá a kapcsolatot
@@ -65,7 +152,7 @@ az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0
 - [ ] Meglévő `Office L2TP` rendszer VPN indítása és bontása a menüből
 - [ ] L2TP (MacVPN-ben létrehozott) csatlakozás: a PSK-t a MacVPN in-process adja át (`SCNetworkConnectionStart`), a naplóban nincs `L2TP: incorrect user shared secret found`; a `ps`/argv-ben nincs PSK vagy jelszó
 - [ ] `Office L2TP` rendszer VPN mentett PSK nélkül, ha a macOS nem találja a kulcsot → kb. 5–45 mp-en belül piros hiba a PSK-tippel („…add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → Office L2TP."), értesítéssel; nem csendes „bontva"
-- [ ] `Office L2TP` → Kapcsolatok ablak: „Közös kulcs (PSK)" és „Jelszó (nem kötelező…)" mező, Mentés → csatlakozás sikerül; „Mentett titkok törlése" után a mezők üresek, a Keychainben nincs `local.macvpn.secrets` bejegyzés a szolgáltatás UUID-jával
+- [ ] `Office L2TP` → Kapcsolatok ablak: „Közös kulcs (PSK)" és „Jelszó (nem kötelező…)" mező, Mentés → csatlakozás sikerül; „Mentett titkok törlése" után a mezők üresek, és a széfben nincs mentett titok a szolgáltatás UUID-jával (a Keychainben sincs `local.macvpn.secrets` bejegyzés)
 - [ ] Rendszer VPN PSK mezőjének mentetlen módosítása, majd másik kapcsolat kijelölése / Cmd+W → Mentés / Elvetés / Mégse kérdés
 - [ ] WireGuard / IKEv2 rendszer VPN-nél nincs PSK mező
 - [ ] Natív (L2TP / Cisco) kapcsolat fut, kilépés „fussanak tovább" → a VPN a MacVPN kilépése után is fennmarad (linger)
@@ -182,14 +269,14 @@ Előfeltétel: OpenVPN 2.6/2.7 szerver (pl. `openvpn-auth-*` plugin, `auth-user-
 - [ ] Kódbekérő 2 percig érintetlen → bezárul, „A hitelesítés nem fejeződött be időben”; nincs futási könyvtár, nincs `/var/run/macvpn-ui/<id>.json`
 - [ ] Bontás a kódbekérő nyitva tartása közben: az ablak bezárul, a bontás pár másodperc alatt kész (nem várja ki a zárat)
 - [ ] `/var/run/macvpn-ui` `root:wheel 755`, a `<id>.json` a felhasználóé, `600`, benne nincs jelszó, kód, token; a naplóban (debug módban is, `verb 5`) nincs kód és jelszó, csak `[mgmt]` eseménysorok
-- [ ] **Kód a jelszó végén** (szerveroldalon jelszó+OTP-t váró RADIUS / LDAP): OpenVPN, IKEv2 (EAP), SSTP, L2TP, Cisco IPsec és egy rendszer-VPN mentett jelszóval; mindhárom elválasztóval (nincs, `,`, `:`); a kód nem kerül a Keychainbe és a `meta.json`-ba (csak `otp.enabled` / `otp.separator`)
+- [ ] **Kód a jelszó végén** (szerveroldalon jelszó+OTP-t váró RADIUS / LDAP): OpenVPN, IKEv2 (EAP), SSTP, L2TP, Cisco IPsec és egy rendszer-VPN mentett jelszóval; mindhárom elválasztóval (nincs, `,`, `:`); a kód nem kerül a széfbe (a kapcsolat adataiban csak `otp.enabled` / `otp.separator`)
 - [ ] L2TP: a kód-beállítás puszta módosítása nem nyit új profilt jóváhagyásra
 - [ ] SSTP: `"`-t tartalmazó kódnál hibaüzenet, nincs csatlakozás
 
 ## 1.1: hitelesítő adatok bekérése (valódi OpenVPN szerver kell)
 - [ ] Valódi OpenVPN config `auth-user-pass` sorral (fájlnév és inline blokk nélkül), mentett felhasználónév és jelszó nélkül: csatlakozáskor „Hitelesítő adatok szükségesek” ablak csak a felhasználónév és jelszó mezővel; Csatlakozás, Mentés bepipálva → felépül; a következő csatlakozás már nem kérdez
-- [ ] Rossz jelszó → egyszer újra kérdez a „Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót” sorral (a felhasználónév kitöltve) → helyes jelszóval felépül, és csak a helyes jelszó kerül a Keychainbe; második rossz jelszó → a szokásos hiba és értesítés, harmadik ablak nincs
-- [ ] Mentés pipa nélkül → felépül, de a Keychainben nincs új elem; legközelebb újra kérdez
+- [ ] Rossz jelszó → egyszer újra kérdez a „Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót” sorral (a felhasználónév kitöltve) → helyes jelszóval felépül, és csak a helyes jelszó kerül a széfbe; második rossz jelszó → a szokásos hiba és értesítés, harmadik ablak nincs
+- [ ] Mentés pipa nélkül → felépül, de a széfben nincs új mentett titok; legközelebb újra kérdez
 - [ ] Mégse (és Escape, és az ablak bezárása) → nincs hiba, nincs értesítés; a sor „Nincs csatlakozva”
 - [ ] Az ablak megjelenésekor egy másik appban gépelve a leütések ott maradnak; „…: hitelesítő adatok szükségesek” értesítés jön, rákattintva az ablak fókuszt kap; az első másodpercben a mezők tiltottak; Enter a mezőkben nem küld
 - [ ] Bontás nyitott ablak mellett → az ablak bezárul, nincs `up`
@@ -244,15 +331,15 @@ Előfeltétel: OpenVPN 2.6/2.7 szerver (pl. `openvpn-auth-*` plugin, `auth-user-
 - [ ] „Csak a legalább 24 órája megjelent frissítések felajánlása" bekapcsolva, 24 óránál frissebb kiadás → nincs „Frissítés elérhető" sor; „Frissítések keresése most" → jelzi, hogy később lesz felajánlva; kikapcsolva → azonnal megjelenik
 - [ ] A frissítés közben a régi app nem lép ki 30 mp-en belül (pl. egy modális ablak nyitva marad) → a következő indításkor egyszeri értesítés a megszakadt frissítésről, a második indításkor már nincs
 - [ ] Kézzel létrehozott `.MacVPN.app.old-TESZT` mappa az app mellett → induláskor törlődik
-- [ ] Frissítés után a macOS Keychain kérdése (ha megjelenik) a MacVPN nevét és útvonalát mutatja; „Mindig engedélyezés" után nem kérdez újra
+- [ ] Frissítés után a macOS Keychain kérdése (ha megjelenik) a MacVPN nevét és útvonalát mutatja; „Mindig engedélyez" után nem kérdez újra
 
 ## Súgó és eltávolítás
 - [ ] „Súgó" / „Help": ha a preferált nyelvek közül az első magyar vagy angol a magyar, a `user-guide.hu.md`-t, egyébként az `user-guide.en.md`-t nyitja meg a GitHubon
 - [ ] Nyelv: `MacVPN.app/Contents/MacOS/MacVPN -AppleLanguages '(hu)'` → magyar felület (menü, ablakok, NSAlert-ek, értesítések, validátor-hibák); `'(en)'` → angol; `'(de)'` → angol; `'(de, hu)'` → magyar
 - [ ] Nyelv, root oldal: magyar felülettel egy hibás config csatlakozásakor a hiba és a Napló `▶ [mvpn]` sorai magyarok, angol felülettel angolok
 - [ ] „MacVPN eltávolítása…" aktív OpenVPN kapcsolattal → a kapcsolat lebomlik, a négy útvonal törlődik, a Homebrew csomagok megmaradnak
-- [ ] Régi verzió `macvpn` szolgáltatású Keychain bejegyzései az első indításkor átkerülnek a `local.macvpn.secrets` szolgáltatásba (a régiek törlődnek); a mentett jelszavak megmaradnak
-- [ ] A „felhasználói adatok" jelölővel az Application Support/MacVPN és a Keychain `local.macvpn.secrets` bejegyzései (és a régi `macvpn` szolgáltatás `<UUID>.<mező>` maradékai) is törlődnek (a rendszer VPN-ekhez mentett PSK/jelszó is); nélküle megmaradnak
+- [ ] Régi verzió `macvpn` szolgáltatású Keychain bejegyzései az első indításkor átkerülnek a `local.macvpn.secrets` szolgáltatásba, onnan az átköltöztetés a széfbe viszi őket (a régiek törlődnek); a mentett jelszavak megmaradnak
+- [ ] A „felhasználói adatok" jelölővel törlődik az Application Support/MacVPN a széffel (`vault.db`, `vault.keys`; benne a rendszer VPN-ekhez mentett PSK/jelszó is), a Keychainből a széfkulcs (`local.macvpn.vault`) és a régi 1.1-es `local.macvpn.secrets` bejegyzések (írásvédett módban is), valamint a régi `macvpn` szolgáltatás `<UUID>.<mező>` maradékai; nélküle mind megmarad
 - [ ] Az admin jelszókérés megszakítása → „Az eltávolítás megszakítva", semmi nem törlődik
 - [ ] Bekapcsolt „Indítás bejelentkezéskor” mellett eltávolítás → a MacVPN eltűnik a Bejelentkezési elemek közül, a `~/Library/LaunchAgents/local.macvpn.launcher.plist` is törlődik; kikapcsolt állapotnál nincs változás
 
@@ -281,7 +368,7 @@ A valódi frissítés csak a közzététel után próbálható (az 1.0.0 a `rele
 - [ ] 1.0.0 menü → „Frissítések keresése most” → „Frissítés elérhető: v1.1.0”; a Frissítés ablakban a kiadási jegyzet
 - [ ] Egy aktív VPN kapcsolattal „Letöltés és telepítés” → a lépések után a kilépési kérdés; „fussanak tovább” → az 1.0.0 kilép, pár másodpercen belül az 1.1.0 indul, a futó kapcsolat aktívként látszik
 - [ ] `defaults read /Applications/MacVPN.app/Contents/Info.plist CFBundleShortVersionString` → `1.1.0`; `codesign --verify --strict /Applications/MacVPN.app` sikeres; nincs `com.apple.quarantine`; az Applications mappában nincs `.MacVPN.app.update-*` / `.old-*`; `tail ~/Library/Caches/MacVPN/update.log` → `done`
-- [ ] Keychain: a macOS egyszer rákérdezhet (új ad-hoc aláírás); „Mindig engedélyezés” csak a `/Applications/MacVPN.app` MacVPN-nek; utána nincs újabb kérdés
+- [ ] Keychain: a macOS egyszer rákérdezhet (új ad-hoc aláírás); „Mindig engedélyez” csak a `/Applications/MacVPN.app` MacVPN-nek; utána nincs újabb kérdés
 - [ ] Adatok és beállítások megmaradtak (kapcsolatok, kitűzés, sorrend, OTP-beállítás, frissítési beállítások, „Indítás bejelentkezéskor”); a „Más appok vezérelhetik a VPN-eket” kikapcsolva indul
 - [ ] Rendszerállapot: a root réteg zöld („Telepítve (verzió 7)”), nem kér admin jelszót
 - [ ] Az új kártyás menü, a Dock ikon és a Párosított appok szakasz megjelenik; típusonként egy csatlakozás és bontás sikerül

@@ -152,3 +152,93 @@ fn removal_errors_are_localized() {
         .unwrap_err();
     assert_eq!(err.to_string(), "Nem törölhető: /tmp/Other");
 }
+
+// --- shred_file (plan B Task 13: the migration deletes the 1.1 files) -------------------------------------------
+
+/// The bytes behind an fd that was opened before the shred (the inode outlives the unlink while it is open).
+fn read_through(mut fd: fs::File) -> Vec<u8> {
+    use std::io::{Read, Seek, SeekFrom};
+    fd.seek(SeekFrom::Start(0)).unwrap();
+    let mut out = Vec::new();
+    fd.read_to_end(&mut out).unwrap();
+    out
+}
+
+#[test]
+fn shred_file_zeroes_the_contents_before_unlinking() {
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let file = tmp.path().join("config");
+    let content = b"remote vpn.example.com 1194\n<key>\nsecret material\n</key>\n";
+    fs::write(&file, content).unwrap();
+    let observer = fs::File::open(&file).unwrap();
+
+    store::shred_file(&file).unwrap();
+
+    assert!(fs::symlink_metadata(&file).is_err(), "the file is unlinked");
+    let after = read_through(observer);
+    assert_eq!(after.len(), content.len(), "same length");
+    assert!(after.iter().all(|b| *b == 0), "every byte is zero");
+}
+
+#[test]
+fn shred_file_handles_large_and_empty_files_and_a_missing_one() {
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let big = tmp.path().join("big");
+    fs::write(&big, vec![0xA5u8; 200_000]).unwrap();
+    let observer = fs::File::open(&big).unwrap();
+    store::shred_file(&big).unwrap();
+    let after = read_through(observer);
+    assert_eq!(after.len(), 200_000);
+    assert!(after.iter().all(|b| *b == 0));
+
+    let empty = tmp.path().join("empty");
+    fs::write(&empty, b"").unwrap();
+    store::shred_file(&empty).unwrap();
+    assert!(!empty.exists());
+
+    // Already gone: nothing to do (a resumed cleanup).
+    store::shred_file(&tmp.path().join("missing")).unwrap();
+}
+
+#[test]
+fn shred_file_only_unlinks_a_file_with_other_hard_links() {
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let file = tmp.path().join("config");
+    fs::write(&file, b"shared inode").unwrap();
+    let other = tmp.path().join("other-name");
+    fs::hard_link(&file, &other).unwrap();
+    store::shred_file(&file).unwrap();
+    assert!(fs::symlink_metadata(&file).is_err());
+    assert_eq!(fs::read(&other).unwrap(), b"shared inode", "the other link is not overwritten");
+}
+
+#[test]
+fn shred_file_removes_a_symlink_without_touching_its_target() {
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let target = tmp.path().join("target");
+    fs::write(&target, b"keep me").unwrap();
+    let link = tmp.path().join("link");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    store::shred_file(&link).unwrap();
+    assert!(fs::symlink_metadata(&link).is_err());
+    assert_eq!(fs::read(&target).unwrap(), b"keep me");
+}
+
+#[test]
+fn shred_file_refuses_a_directory_and_a_fifo() {
+    let tmp = TempDir::new();
+    let dir = tmp.path().join("dir");
+    fs::create_dir_all(&dir).unwrap();
+    assert!(store::shred_file(&dir).is_err());
+    assert!(dir.exists());
+
+    let fifo = tmp.path().join("fifo");
+    assert!(std::process::Command::new("/usr/bin/mkfifo").arg(&fifo).status().unwrap().success());
+    // Does not block (no reader) and does not unlink it.
+    assert!(store::shred_file(&fifo).is_err());
+    assert!(fs::symlink_metadata(&fifo).is_ok());
+}

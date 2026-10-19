@@ -1,0 +1,9 @@
+﻿client
+dev tun
+remote vpn.example.com 1194
+auth-user-pass
+<ca>
+-----BEGIN CERTIFICATE-----
+MIIBfakefakefake
+-----END CERTIFICATE-----
+</ca>

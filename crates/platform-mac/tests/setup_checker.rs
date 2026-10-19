@@ -69,7 +69,7 @@ fn intel_prefix_and_complete() {
         }
     }
     existing.extend(root_binaries());
-    let r = check(&existing, true, Some("7"), Some("7"));
+    let r = check(&existing, true, Some("8"), Some("8"));
     assert_eq!(r.brew_prefix.as_deref(), Some("/usr/local"));
     assert!(r.missing_tools.is_empty());
     assert!(r.is_complete());
@@ -79,24 +79,27 @@ fn intel_prefix_and_complete() {
 /// Even with a matching VERSION a reinstall is needed when the root binary is missing (an interrupted install).
 #[test]
 fn missing_root_binary_needs_reinstall() {
-    // Root layer 7 is a single binary (the Swift layer 6 had four executables).
+    // Root layers 7 and 8 are a single binary (the Swift layer 6 had four executables).
     assert_eq!(SetupChecker::ROOT_EXECUTABLES, ["mvpn"]);
-    let r = check(&["/opt/homebrew/bin/brew".to_string()], true, Some("7"), Some("7"));
+    let r = check(&["/opt/homebrew/bin/brew".to_string()], true, Some("8"), Some("8"));
     assert_eq!(r.missing_root_files, ["mvpn"]);
     assert!(!r.root_ok());
-    let none = check(&[], false, None, Some("7"));
+    let none = check(&[], false, None, Some("8"));
     assert!(none.missing_root_files.is_empty(), "an uninstalled layer does not show missing files");
 }
 
 #[test]
 fn version_mismatch_needs_reinstall() {
-    let r = check(&root_binaries(), true, Some("6"), Some("7"));
+    // An installed layer 7 cannot read the config on stdin: the app requires the bundled 8.
+    let r = check(&root_binaries(), true, Some("7"), Some("8"));
+    assert!(!r.root_ok());
+    let r = check(&root_binaries(), true, Some("6"), Some("8"));
     assert!(!r.root_ok());
 }
 
 #[test]
 fn sudo_failure_is_not_ok() {
-    let r = check(&root_binaries(), false, Some("7"), Some("7"));
+    let r = check(&root_binaries(), false, Some("8"), Some("8"));
     assert!(!r.sudo_works);
     assert!(!r.root_ok());
 }

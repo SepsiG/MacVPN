@@ -1,70 +1,60 @@
 #!/bin/bash
-# A root réteg tesztje nem-root, dry-run / tesztmódban. Ugyanez a fekete dobozos készlet mindkét megvalósítást teszteli:
-#   MVPN_IMPL=bash (a Swift-korszak referenciája, legacy/swift; csak helyben): legacy/swift/Resources/root/mvpn + ovpn-dns, a Swift mvpn-validate és mvpn-mgmt
-#   MVPN_IMPL=rust (alapértelmezett): a crates/mvpn bináris (mvpn, mvpn validate, mvpn hook ovpn-dns, mvpn-mgmt / mvpn mgmt-bridge);
-#     MVPN_BIN=<abszolút útvonal> egy kész binárist tesztel (pl. dist/MacVPN.app/Contents/Resources/root/mvpn)
+# A root réteg (crates/mvpn) fekete dobozos tesztje nem-root, dry-run / tesztmódban: mvpn, mvpn validate,
+# mvpn hook ovpn-dns, mvpn-mgmt / mvpn mgmt-bridge. MVPN_BIN=<abszolút útvonal> egy kész binárist tesztel (pl. a
+# dist/MacVPN.app/Contents/Resources/root/mvpn-t); enélkül a crates/mvpn debug buildjét.
 #
-# A Rust megvalósításhoz tartozó harness-eltérések (mind `[ "$MVPN_IMPL" = rust ]` ágban, "[rust]" megjegyzéssel):
+# Root réteg 8: az mvpn semmilyen felhasználói fájlt nem nyit meg. A config a standard bemeneten jön, hosszal
+# keretezve, utána a titok-sorok (lásd crates/mvpn/src/secrets.rs):
+#   config <hossz>\n<pontosan hossz bájt config>username=…\npassword=…\n…
+# A tesztkonfigok a $T/cfg/<id> alatt vannak (csak tesztadat, az mvpn sosem olvassa); a `feed <id>` írja ki a keretet.
+# Az expect_ok / expect_fail az `up <kind> <id>` hívásnak automatikusan a feed-et adja (ha van ilyen config),
+# a titkos up-ok: { feed "$ID"; printf 'username=…'; } | … up …
+#
+# A Swift-korszak bash referenciája (legacy/swift, MVPN_IMPL=bash) az új protokollt nem beszéli, ezért kikerült
+# innen; a legacy/swift fájlok a bash_messages_are_in_the_table teszthez maradnak. A korábbi bash-specifikus
+# statikus ellenőrzések helyett viselkedés-ellenőrzés fut:
 #   - "$SH" "$MVPN" …: SH=/usr/bin/env, így a bináris közvetlenül fut (az env exec-kel cseréli magát, a pid azonos).
 #   - A DNS hook: "$MVPN" hook ovpn-dns (OD_* tömbök); a hamis ovpn-dns elé a tesztkönyvtárakba ($FL, $FL2) egy `mvpn`
-#     átirányító kerül, mert a Rust réteg a hookot `$LIBEXEC/mvpn hook ovpn-dns`-ként hívja.
+#     átirányító kerül, mert a réteg a hookot `$LIBEXEC/mvpn hook ovpn-dns`-ként hívja.
 #   - A validátor: "$MVPN" validate (VALIDATE tömb); a közvetítő: MVPN_MGMT=$MVPN (argv[0] = mvpn-mgmt).
-#   - Bash-forrásra irányuló statikus ellenőrzések helyett viselkedés-ellenőrzés:
-#       ovpn-dns `#!/bin/bash -p` → a hook ellenséges környezet (PATH, IFS, locale, BASH_ENV, …) mellett is ugyanazt adja;
-#       környezet-allowlist sora → a hook check-env kimenete pontosan az engedélyezett nevek (+ PATH, LC_ALL); a
-#         POSIX-mód sor bash-specifikus, kimarad;
-#       ovpn-dns down `set -f` → a hook_dns::tests::backup_lines_never_glob egységteszt fut;
-#       `export MVPN_MASK` hiánya, `export LC_ALL=C`, sstp indítás export nélkül → a gyermekfolyamatok környezete
-#         (hamis openvpn / sstpc env-mentéssel): nincs benne titok, PATH és LC_ALL=C rögzített;
-#       `pgrep -U 0 -x charon` a scriptben → ugyanez a Rust forrásban (crates/mvpn/src/strongswan.rs);
-#       OVPN_DONE_RE a scriptből → a sorok a "$MVPN" __ovpn-done (csak tesztmódú) parancson át;
-#       do_respond here-string nélkül → a respond nem ír ideiglenes fájlt (üres TMPDIR marad), a kód csak a
-#         futási könyvtár mgmt-resp fájljában van;
-#       root verzió 6 (legacy/swift/Resources/root/VERSION) → 7 (crates/mvpn/VERSION);
-#       "validátor hiányzik" (MVPN_VALIDATOR=/nonexistent → hiba) → a validátor beépített, a változó hatástalan.
+#   - ovpn-dns `#!/bin/bash -p` → a hook ellenséges környezet (PATH, IFS, locale, BASH_ENV, …) mellett is ugyanazt adja;
+#     környezet-allowlist → a hook check-env kimenete pontosan az engedélyezett nevek (+ PATH, LC_ALL);
+#     ovpn-dns down `set -f` → a hook_dns::tests::backup_lines_never_glob egységteszt fut;
+#     `export MVPN_MASK` hiánya, `export LC_ALL=C`, sstp indítás export nélkül → a gyermekfolyamatok környezete
+#       (hamis openvpn / sstpc env-mentéssel): nincs benne titok, PATH és LC_ALL=C rögzített;
+#     `pgrep -U 0 -x charon` → ugyanez a Rust forrásban (crates/mvpn/src/strongswan.rs);
+#     OVPN_DONE_RE → a sorok a "$MVPN" __ovpn-done (csak tesztmódú) parancson át;
+#     do_respond here-string nélkül → a respond nem ír ideiglenes fájlt (üres TMPDIR marad), a kód csak a
+#       futási könyvtár mgmt-resp fájljában van;
+#     "validátor hiányzik" (MVPN_VALIDATOR=/nonexistent → hiba) → a validátor beépített, a változó hatástalan.
 set -u
 cd "$(dirname "$0")/.."
-MVPN_IMPL="${MVPN_IMPL:-rust}"
-case "$MVPN_IMPL" in bash|rust) ;; *) echo "MVPN_IMPL: bash vagy rust"; exit 2 ;; esac
 T=$(mktemp -d)
 # MFA tesztek: rövid útvonal, mert a unix socket útvonala legfeljebb 104 bájt (a $TMPDIR alatti túl hosszú lenne).
 MR=$(mktemp -d /tmp/mvmfa.XXXXXX)
 trap 'rm -rf "$T" "$MR"' EXIT
-if [ "$MVPN_IMPL" = rust ]; then
-  # MVPN_BIN=<abszolút útvonal>: egy kész bináris (pl. a DMG-be került, hardened runtime-mal aláírt universal mvpn).
-  if [ -n "${MVPN_BIN:-}" ]; then
-    case "$MVPN_BIN" in /*) ;; *) echo "MVPN_BIN: abszolút útvonal kell"; exit 2 ;; esac
-    MVPN="$MVPN_BIN"
-  else
-    PATH="$HOME/.cargo/bin:$PATH" cargo build -q -p mvpn --locked || { echo "mvpn (rust) build sikertelen"; exit 1; }
-    MVPN="$PWD/target/debug/mvpn"
-  fi
-  SH=/usr/bin/env   # [rust] "$SH" "$MVPN" … = a bináris közvetlen futtatása
-  export MVPN_MGMT="$MVPN"
-  VALIDATE=("$MVPN" validate)
-  OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-  VERSION_FILE="$PWD/crates/mvpn/VERSION"; EXPECT_VERSION=7
+# MVPN_BIN=<abszolút útvonal>: egy kész bináris (pl. a DMG-be került, hardened runtime-mal aláírt universal mvpn).
+if [ -n "${MVPN_BIN:-}" ]; then
+  case "$MVPN_BIN" in /*) ;; *) echo "MVPN_BIN: abszolút útvonal kell"; exit 2 ;; esac
+  MVPN="$MVPN_BIN"
 else
-  MVPN="$PWD/legacy/swift/Resources/root/mvpn"
-  SH=/bin/bash   # a rendszer bash 3.2-vel kell működnie (root alatt ez fut)
-  swift build --package-path legacy/swift --product mvpn-validate >/dev/null || { echo "mvpn-validate build sikertelen"; exit 1; }
-  swift build --package-path legacy/swift --product mvpn-mgmt >/dev/null || { echo "mvpn-mgmt build sikertelen"; exit 1; }
-  export MVPN_VALIDATOR="$PWD/legacy/swift/.build/debug/mvpn-validate"
-  export MVPN_MGMT="$PWD/legacy/swift/.build/debug/mvpn-mgmt"
-  VALIDATE=("$MVPN_VALIDATOR")
-  OD_SH=("$SH" "$PWD/legacy/swift/Resources/root/ovpn-dns"); OD_SELF=(legacy/swift/Resources/root/ovpn-dns); OD_P=(/bin/bash -p legacy/swift/Resources/root/ovpn-dns)
-  VERSION_FILE="$PWD/legacy/swift/Resources/root/VERSION"; EXPECT_VERSION=6
+  PATH="$HOME/.cargo/bin:$PATH" cargo build -q -p mvpn --locked || { echo "mvpn build sikertelen"; exit 1; }
+  MVPN="$PWD/target/debug/mvpn"
 fi
-# [rust] A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
+SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
+export MVPN_MGMT="$MVPN"
+VALIDATE=("$MVPN" validate)
+OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
+VERSION_FILE="$PWD/crates/mvpn/VERSION"; EXPECT_VERSION=8
+# A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
-  [ "$MVPN_IMPL" = rust ] || return 0
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
   chmod 755 "$1/mvpn"
 }
 export MVPN_UI_BASE="$T/ui"
-export MVPN_SRC_BASE="$T/src" MVPN_RUN_BASE="$T/run" MVPN_LOG_BASE="$T/log"
-mkdir -p "$T/emptybrew"
-mkdir -p "$MVPN_SRC_BASE"
+export MVPN_RUN_BASE="$T/run" MVPN_LOG_BASE="$T/log"
+CFG="$T/cfg"
+mkdir -p "$T/emptybrew" "$CFG"
 # Hamis "openvpn" folyamat: symlink a /bin/sleep-re (a másolatot az aláírás-ellenőrzés megölné),
 # így a ps comm neve openvpn-re végződik.
 mkdir -p "$T/bin"; ln -s /bin/sleep "$T/bin/openvpn"
@@ -72,14 +62,26 @@ PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); echo "ok   - $1"; }
 nok()  { FAIL=$((FAIL+1)); echo "FAIL - $1"; }
 
-new_conn() { # $1=config tartalom → id kiírva
+new_conn() { # $1=config tartalom → id kiírva; a config a $CFG/<id> fájlba (sorvéggel)
   local id; id=$(uuidgen)
-  mkdir -p "$MVPN_SRC_BASE/$id"
-  printf '%s\n' "$1" > "$MVPN_SRC_BASE/$id/config"
+  printf '%s\n' "$1" > "$CFG/$id"
   echo "$id"
 }
-expect_ok()   { if "$@" </dev/null >"$T/out" 2>&1; then ok "$DESC"; else nok "$DESC"; cat "$T/out"; fi; }
-expect_fail() { if "$@" </dev/null >"$T/out" 2>&1; then nok "$DESC"; cat "$T/out"; else ok "$DESC"; fi; }
+# feed <id>: a keretezett config (`config <bájtszám>\n` + a fájl). A bájtszám wc -c-vel, LC_ALL=C mellett (nem ${#var}).
+feed() {
+  local n; n=$(LC_ALL=C wc -c <"$CFG/$1" | tr -d ' ')
+  printf 'config %s\n' "$n"; cat "$CFG/$1"
+}
+# auto_feed <parancs…>: ha a parancsban `up <kind> <id>` áll és van $CFG/<id>, a feed-je; különben üres bemenet.
+auto_feed() {
+  local prev2="" prev1="" a
+  for a in "$@"; do
+    if [ "$prev2" = up ] && [ -f "$CFG/$a" ]; then feed "$a"; return; fi
+    prev2=$prev1; prev1=$a
+  done
+}
+expect_ok()   { if "$@" < <(auto_feed "$@") >"$T/out" 2>&1; then ok "$DESC"; else nok "$DESC"; cat "$T/out"; fi; }
+expect_fail() { if "$@" < <(auto_feed "$@") >"$T/out" 2>&1; then nok "$DESC"; cat "$T/out"; else ok "$DESC"; fi; }
 
 GOOD_OVPN=$'client\ndev tun\nremote vpn.example.com 1194\nauth-user-pass\n<ca>\nup /x\n</ca>'
 GOOD_WG=$'[Interface]\nPrivateKey = bWFjdnBuLXRlc3QtcHJpdmF0ZS1rZXktMzJieXRlcyE=\nAddress = 10.0.0.2/32\n\n[Peer]\nPublicKey = bWFjdnBuLXRlc3QtcHVibGljLS1rZXktMzJieXRlcyE=\nAllowedIPs = 0.0.0.0/0\nEndpoint = vpn.example.com:51820'
@@ -120,20 +122,14 @@ for v in 'User' 'a,,b' ',a' 'a;b' 'a b' '../x' ''; do
 done
 DESC="--accept-risky érték nélkül (utolsó argumentum)"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run --accept-risky
 DESC="tiltott setenv név: LD_PRELOAD"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nsetenv LD_PRELOAD x')" --dry-run --accept-risky ld-preload
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] A `-p` shebang helyett: ellenséges környezet (PATH, IFS, locale, BASH_ENV, GREP_OPTIONS) nem hat a hookra.
-  OUT=$(env PATH=/nonexistent IFS=x LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 BASH_ENV="$T/evil-env" GREP_OPTIONS=-v \
-    script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
-  [ "$OUT" = "DNS 10.0.0.53" ] && ok "hook: ellenséges környezet nem hat" || nok "hook: ellenséges környezet nem hat ($OUT)"
-  # [rust] Az allowlist-sor helyett: a hook pontosan az engedélyezett változókat olvassa (a többi nem is látszik).
-  OUT=$(env -i FOO=bar DYLD_FAKE=1 script_type=check-env dev=utun3 ifconfig_local=10.8.0.2 foreign_option_1=x foreign_option_3=y \
-    "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1 | tr '\n' ' ')
-  [ "$OUT" = "LC_ALL PATH dev foreign_option_1 ifconfig_local script_type " ] && ok "hook: környezet-allowlist" || nok "hook: környezet-allowlist ($OUT)"
-else
-head -1 legacy/swift/Resources/root/ovpn-dns | grep -qx '#!/bin/bash -p' && ok "ovpn-dns: #!/bin/bash -p" || nok "ovpn-dns: #!/bin/bash -p"
-grep -q 'script_type|dev|ifconfig_local|foreign_option_\[0-9\]\*) ;;' legacy/swift/Resources/root/ovpn-dns \
-  && grep -q '^set +o posix' legacy/swift/Resources/root/ovpn-dns && ok "ovpn-dns: környezet-allowlist a script elején" || nok "ovpn-dns: környezet-allowlist a script elején"
-fi
+# A `-p` shebang helyett: ellenséges környezet (PATH, IFS, locale, BASH_ENV, GREP_OPTIONS) nem hat a hookra.
+OUT=$(env PATH=/nonexistent IFS=x LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 BASH_ENV="$T/evil-env" GREP_OPTIONS=-v \
+  script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
+[ "$OUT" = "DNS 10.0.0.53" ] && ok "hook: ellenséges környezet nem hat" || nok "hook: ellenséges környezet nem hat ($OUT)"
+# Az allowlist-sor helyett: a hook pontosan az engedélyezett változókat olvassa (a többi nem is látszik).
+OUT=$(env -i FOO=bar DYLD_FAKE=1 script_type=check-env dev=utun3 ifconfig_local=10.8.0.2 foreign_option_1=x foreign_option_3=y \
+  "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1 | tr '\n' ' ')
+[ "$OUT" = "LC_ALL PATH dev foreign_option_1 ifconfig_local script_type " ] && ok "hook: környezet-allowlist" || nok "hook: környezet-allowlist ($OUT)"
 OUT=$(env BASH_ENV="$T/evil-env" ENV="$T/evil-env" script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' \
   "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
 [ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete" || nok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete ($OUT)"
@@ -143,9 +139,7 @@ OUT=$(env -i TMOUT=1 POSIXLY_CORRECT=1 CDPATH=/tmp GLOBIGNORE='*' BASH_ENV="$T/e
   "${OD_P[@]}" "$T" "$T/od-env.log" 2>&1)
 # A SHELLOPTS readonly: a bash a saját (a -p miatt a környezetből nem átvett) értékével exportálja; xtrace nincs.
 BADVARS=$(printf '%s\n' "$OUT" | grep -E '^(TMOUT|POSIXLY_CORRECT|CDPATH|GLOBIGNORE|BASH_ENV|FOO|OPENSSL_CONF|GREP_OPTIONS|[+].*)$')
-# [rust] A POSIX mód bash-specifikus: a Rust hooknál nincs mit ellenőrizni.
-POSIX_OFF=1; [ "$MVPN_IMPL" = rust ] || { printf '%s\n' "$OUT" | grep -qx 'POSIX off' || POSIX_OFF=0; }
-[ -z "$BADVARS" ] && [ "$POSIX_OFF" = 1 ] && printf '%s\n' "$OUT" | grep -qx script_type \
+[ -z "$BADVARS" ] && printf '%s\n' "$OUT" | grep -qx script_type \
   && printf '%s\n' "$OUT" | grep -qx foreign_option_1 && printf '%s\n' "$OUT" | grep -qx LC_ALL \
   && ok "ovpn-dns: környezet-allowlist (TMOUT, POSIXLY_CORRECT, CDPATH, … törölve, posix mód ki)" || { nok "ovpn-dns: környezet-allowlist"; echo "$OUT"; }
 OUT=$(env TMOUT=1 POSIXLY_CORRECT=1 script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
@@ -165,11 +159,11 @@ expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nscript-security
 
 # Privát kulcs jelszava: --askpass $RUN/askpass, a jelszó soha nem látszik.
 KID=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yP4ssTitok\n' | "$SH" "$MVPN" up openvpn "$KID" --dry-run --debug >"$T/kp.out" 2>&1
+{ feed "$KID"; printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yP4ssTitok\n'; } | "$SH" "$MVPN" up openvpn "$KID" --dry-run --debug >"$T/kp.out" 2>&1
 grep -q 'DRY: .*--askpass [^ ]*/askpass' "$T/kp.out" && ok "dry-run: --askpass \$RUN/askpass" || { nok "dry-run: --askpass \$RUN/askpass"; cat "$T/kp.out"; }
 grep -q 'K3yP4ssTitok' "$T/kp.out" "$MVPN_LOG_BASE/$KID.log" && nok "kulcsjelszó nem látszik" || ok "kulcsjelszó nem látszik"
 KID2=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=x1\n' | "$SH" "$MVPN" up openvpn "$KID2" --dry-run >"$T/kp2.out" 2>&1
+{ feed "$KID2"; printf 'username=bob\npassword=x1\n'; } | "$SH" "$MVPN" up openvpn "$KID2" --dry-run >"$T/kp2.out" 2>&1
 grep -q -- '--askpass' "$T/kp2.out" && nok "kulcsjelszó nélkül nincs --askpass" || ok "kulcsjelszó nélkül nincs --askpass"
 OUT=$(printf 'k K3yP4ss\n' | MVPN_MASK_3=K3yP4ss "$SH" "$MVPN" __mask)
 [ "$OUT" = "k ***" ] && ok "mask: kulcsjelszó" || nok "mask: kulcsjelszó ($OUT)"
@@ -205,51 +199,113 @@ DESC="strongswan crl_uris"; expect_fail "$SH" "$MVPN" up strongswan "$(new_conn 
 DESC="strongswan: értékben álló 'file' szó nem tiltott"
 expect_ok "$SH" "$MVPN" up strongswan "$(new_conn "$(swan_local 'id = file')")" --dry-run
 
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] A validátor beépített (a core validátorai), az MVPN_VALIDATOR nem hook: hatástalan.
-  DESC="validátor beépített (MVPN_VALIDATOR hatástalan)"; expect_ok env MVPN_VALIDATOR=/nonexistent "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run
-else
-DESC="validátor hiányzik";   expect_fail env MVPN_VALIDATOR=/nonexistent "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run
-fi
+# A validátor beépített (a core validátorai), az MVPN_VALIDATOR nem hook: hatástalan.
+DESC="validátor beépített (MVPN_VALIDATOR hatástalan)"; expect_ok env MVPN_VALIDATOR=/nonexistent "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run
 DESC="nem UUID id";          expect_fail "$SH" "$MVPN" up openvpn "../../etc" --dry-run
 DESC="ismeretlen kind";      expect_fail "$SH" "$MVPN" up pptp "$(uuidgen)" --dry-run
 DESC="hiányzó config";       expect_fail "$SH" "$MVPN" up openvpn "$(uuidgen)" --dry-run
-SID=$(uuidgen); mkdir -p "$MVPN_SRC_BASE/$SID"; ln -s /etc/hosts "$MVPN_SRC_BASE/$SID/config"
-DESC="symlink config";       expect_fail "$SH" "$MVPN" up openvpn "$SID" --dry-run
-SID=$(uuidgen); mkdir -p "$T/elsewhere"; printf '%s\n' "$GOOD_OVPN" >"$T/elsewhere/config"; ln -s "$T/elsewhere" "$MVPN_SRC_BASE/$SID"
-DESC="symlink kapcsolat-könyvtár"; expect_fail "$SH" "$MVPN" up openvpn "$SID" --dry-run
-SID=$(new_conn "$GOOD_OVPN"); ln "$MVPN_SRC_BASE/$SID/config" "$T/hardlink"
-DESC="hardlinkelt config";   expect_fail "$SH" "$MVPN" up openvpn "$SID" --dry-run
+
+# ---------- Root réteg 8: a config a standard bemeneten (keretezve) ----------
+# Minden elutasításnál: kilépés 1, pontosan az üzenet a stderr-en (és ✗-gel a naplóban), nincs futási könyvtár, és
+# a naplóba nem kerül titok (FrameS3cret) vagy config-sor (FRAMEMARK, a config utolsó sora).
+FR="$T/frames"; mkdir -p "$FR"
+FRAME_CFG="$GOOD_OVPN"$'\n# FRAMEMARK'
+printf '%s\n' "$FRAME_CFG" >"$FR/cfg"
+FRAME_LEN=$(LC_ALL=C wc -c <"$FR/cfg" | tr -d ' ')
+frame_case() { # $1=leírás $2=várt üzenet $3=bemenet-fájl, a többi: extra up argumentum
+  local desc=$1 msg=$2 in=$3 id out rc; shift 3
+  id=$(uuidgen)
+  out=$("$SH" "$MVPN" up openvpn "$id" --dry-run "$@" <"$in" 2>&1); rc=$?
+  if [ "$rc" = 1 ] && [ "$out" = "$msg" ] && [ -z "$(ls "$MVPN_RUN_BASE" 2>/dev/null)" ] \
+     && grep -qxF "✗ $msg" "$MVPN_LOG_BASE/$id.log" && ! grep -q 'FrameS3cret\|FRAMEMARK\|remote vpn' "$MVPN_LOG_BASE/$id.log"; then
+    ok "$desc"
+  else
+    nok "$desc"; echo "rc=$rc out=$out"; ls -la "$MVPN_RUN_BASE" 2>/dev/null; cat "$MVPN_LOG_BASE/$id.log"
+  fi
+}
+SECRETS_IN=$'username=bob\npassword=FrameS3cret\n'
+{ printf 'config %s\n' "$FRAME_LEN"; cat "$FR/cfg"; printf '%s' "$SECRETS_IN"; } >"$FR/good"
+DESC="stdin: jó keret titkokkal (kontroll)"; expect_ok "$SH" "$MVPN" up openvpn "$(new_conn "$FRAME_CFG")" --dry-run
+OUT=$("$SH" "$MVPN" up openvpn "$(uuidgen)" --dry-run <"$FR/good" 2>&1) && ! grep -q 'FrameS3cret\|FRAMEMARK' "$MVPN_LOG_BASE"/*.log \
+  && ok "stdin: jó keret a fájlból, a titok és a config nincs a naplóban" || { nok "stdin: jó keret a fájlból, a titok és a config nincs a naplóban"; echo "$OUT"; }
+{ printf 'config 100\n'; head -c 50 "$FR/cfg"; } >"$FR/trunc"
+frame_case "stdin: csonka folyam (len 100, 50 bájt)" "The config is incomplete" "$FR/trunc"
+frame_case "stdin: csonka folyam magyarul" "A config hiányos" "$FR/trunc" --lang hu
+{ printf 'config %s\n' "$((FRAME_LEN - 12))"; cat "$FR/cfg"; printf '%s' "$SECRETS_IN"; } >"$FR/short"
+frame_case "stdin: hosszeltérés (len rövidebb: config-sorok titok-sorként)" "Invalid input" "$FR/short"
+{ printf 'config %s\n' "$((FRAME_LEN + 5))"; cat "$FR/cfg"; printf '%s' "$SECRETS_IN"; } >"$FR/long"
+frame_case "stdin: hosszeltérés (len hosszabb: titok-sor csonkja marad)" "Invalid input" "$FR/long"
+{ printf 'config %s\n' "$((FRAME_LEN + 500))"; cat "$FR/cfg"; printf '%s' "$SECRETS_IN"; } >"$FR/longer"
+frame_case "stdin: hosszeltérés (len hosszabb a folyamnál)" "The config is incomplete" "$FR/longer"
+{ printf 'config 1048577\n'; head -c 1048577 /dev/zero | tr '\0' '#'; } >"$FR/over"
+frame_case "stdin: túl nagy config (len 1048577)" "The config is too large (1 MB at most)" "$FR/over"
+{ printf 'config 1048576\n'; head -c 1048576 /dev/zero | tr '\0' '#'; } >"$FR/max"
+OUT=$("$SH" "$MVPN" up openvpn "$(uuidgen)" --dry-run <"$FR/max" 2>&1); RC=$?
+[ "$RC" = 1 ] && case "$OUT" in "Invalid config:"*) true ;; *) false ;; esac && [ -z "$(ls "$MVPN_RUN_BASE" 2>/dev/null)" ] \
+  && ok "stdin: pontosan 1 MB átmegy a kereten (a validátor dönt)" || { nok "stdin: pontosan 1 MB átmegy a kereten (a validátor dönt)"; echo "$RC ${OUT:0:200}"; }
+{ printf 'client\n\0dev tun\n'; cat "$FR/cfg"; } >"$FR/nulcfg"
+{ printf 'config %s\n' "$(LC_ALL=C wc -c <"$FR/nulcfg" | tr -d ' ')"; cat "$FR/nulcfg"; printf '%s' "$SECRETS_IN"; } >"$FR/nul"
+frame_case "stdin: NUL bájt a configban" "The config must not contain NUL bytes" "$FR/nul"
+for h in 'config -1' 'config 01' 'config 1x' 'config +5' 'config  5' 'config'; do
+  { printf '%s\n' "$h"; cat "$FR/cfg"; } >"$FR/badhdr"
+  frame_case "stdin: rossz fejléc: '$h'" "Invalid input" "$FR/badhdr"
+done
+printf 'config %s' "$FRAME_LEN" >"$FR/nonl"
+frame_case "stdin: fejléc sorvég nélkül" "Invalid input" "$FR/nonl"
+{ printf '%s' "$SECRETS_IN"; printf 'config %s\n' "$FRAME_LEN"; cat "$FR/cfg"; } >"$FR/secfirst"
+frame_case "stdin: titok-sor a fejléc előtt" "Config not provided" "$FR/secfirst"
+{ printf 'xx'; cat "$FR/good"; } >"$FR/garbage"
+frame_case "stdin: szemét a keret előtt" "Config not provided" "$FR/garbage"
+{ printf 'config %s\n' "$FRAME_LEN"; cat "$FR/cfg"; printf 'username=bob\nFrameS3cret\n'; } >"$FR/badsecret"
+frame_case "stdin: ismeretlen sor a titkok között" "Invalid input" "$FR/badsecret"
+{ printf 'config %s\n' "$FRAME_LEN"; cat "$FR/cfg"; printf 'password=FrameS3cret'; } >"$FR/unterminated"
+frame_case "stdin: lezáratlan utolsó titok-sor" "Invalid input" "$FR/unterminated"
+: >"$FR/empty"
+frame_case "stdin: üres bemenet" "Config not provided" "$FR/empty"
+frame_case "stdin: üres bemenet magyarul" "Nincs megadva config" "$FR/empty" --lang hu
+# A régi útvonalon hagyott config hatástalan: a root réteg nem nyit meg felhasználói fájlt (MVPN_SRC_BASE sincs már).
+OLD_ID=$(uuidgen); mkdir -p "$T/src/$OLD_ID"; printf '%s\n' "$GOOD_OVPN" >"$T/src/$OLD_ID/config"
+OUT=$(printf '%s' "$SECRETS_IN" | env MVPN_SRC_BASE="$T/src" "$SH" "$MVPN" up openvpn "$OLD_ID" --dry-run 2>&1); RC=$?
+[ "$RC" = 1 ] && [ "$OUT" = "Config not provided" ] && [ -z "$(ls "$MVPN_RUN_BASE" 2>/dev/null)" ] \
+  && ok "stdin: a régi útvonalon hagyott config hatástalan (fejléc nélkül: Config not provided)" || { nok "stdin: a régi útvonalon hagyott config hatástalan (fejléc nélkül: Config not provided)"; echo "$RC $OUT"; }
+# Valódi (nem dry-run) up is ugyanígy utasít el, futási könyvtár nélkül.
+OUT=$(env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$T/emptybrew" "$SH" "$MVPN" up openvpn "$(uuidgen)" <"$FR/short" 2>&1); RC=$?
+[ "$RC" = 1 ] && [ "$OUT" = "Invalid input" ] && [ -z "$(ls "$MVPN_RUN_BASE" 2>/dev/null)" ] \
+  && ok "stdin: valódi up hosszeltéréssel → Invalid input, nincs futási könyvtár" || { nok "stdin: valódi up hosszeltéréssel → Invalid input, nincs futási könyvtár"; echo "$RC $OUT"; }
+# A config `password=` sorai configként maradnak (a hossz dönt), nem titokként: az SSTP validátor elutasítja a sort.
+PWC_ID=$(new_conn $'server=vpn.example.com\nuser=bob\npassword=CfgLineXYZ')
+OUT=$({ feed "$PWC_ID"; printf 'password=RealS3cretPw\n'; } | "$SH" "$MVPN" up sstp "$PWC_ID" --dry-run 2>&1); RC=$?
+[ "$RC" = 1 ] && case "$OUT" in *"Invalid config:"*"Line 3: Key not allowed: password"*) true ;; *) false ;; esac \
+  && ! grep -q 'RealS3cretPw\|CfgLineXYZ' "$MVPN_LOG_BASE/$PWC_ID.log" \
+  && ok "stdin: a config password= sora config marad, nem titok" || { nok "stdin: a config password= sora config marad, nem titok"; echo "$OUT"; }
 DESC="up dry-run nélkül nem-rootként"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")"
 DESC="dry-run nem hagy futási könyvtárat"
 [ -z "$(ls "$MVPN_RUN_BASE" 2>/dev/null)" ] && ok "$DESC" || { nok "$DESC"; ls -la "$MVPN_RUN_BASE"; }
 
 # Jelszó maszkolás és naplóformátum
 MID=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=Sup3rTitok\n' | "$SH" "$MVPN" up openvpn "$MID" --dry-run --debug >/dev/null 2>&1
+{ feed "$MID"; printf 'username=bob\npassword=Sup3rTitok\n'; } | "$SH" "$MVPN" up openvpn "$MID" --dry-run --debug >/dev/null 2>&1
 LOG="$MVPN_LOG_BASE/$MID.log"
 grep -q '^═══ ' "$LOG" && ok "napló fejléc" || nok "napló fejléc"
 grep -q '^\$ ' "$LOG" && ok "napló parancssor" || nok "napló parancssor"
 grep -q '^▶ \[mvpn\]' "$LOG" && ok "napló lépés" || nok "napló lépés"
 grep -q 'Sup3rTitok' "$LOG" && nok "jelszó nem kerülhet a naplóba" || ok "jelszó nem kerül a naplóba"
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] Az `export` keresése helyett a gyermekfolyamatok tényleges környezete: hamis openvpn / sstpc, ami a
-  # környezetét elmenti és hibával kilép. Nincs benne titok; PATH és LC_ALL=C rögzített.
-  EB="$T/envbrew"; mkdir -p "$EB/bin" "$EB/sbin" "$T/envlibexec"
-  printf '#!/bin/bash\n/usr/bin/env >"%s"\nexit 1\n' "$T/child-env.openvpn" >"$EB/bin/openvpn"
-  printf '#!/bin/bash\n/usr/bin/env >"%s"\nexit 1\n' "$T/child-env.sstpc" >"$EB/sbin/sstpc"
-  chmod 755 "$EB/bin/openvpn" "$EB/sbin/sstpc"
-  printf 'username=bob\npassword=EnvS3cretPw\nkeypass=EnvK3yPw77\n' | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$EB" MVPN_LIBEXEC="$T/envlibexec" \
-    "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" >/dev/null 2>&1
-  printf 'password=EnvS3cretPw\notp=EnvOtp4242\n' | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$EB" MVPN_LIBEXEC="$T/envlibexec" \
-    MVPN_PPP_OPTIONS="$T/envppp/options" MVPN_UP_TIMEOUT=3 "$MVPN" up sstp "$(new_conn $'server=vpn.example.com\nuser=bob')" >/dev/null 2>&1
-  [ -s "$T/child-env.openvpn" ] && [ -s "$T/child-env.sstpc" ] && ! grep -q 'EnvS3cretPw\|EnvK3yPw77\|EnvOtp4242\|MVPN_MASK' "$T/child-env.openvpn" "$T/child-env.sstpc" \
-    && ok "titkok nincsenek a gyermekfolyamatok környezetében (openvpn, sstpc)" || { nok "titkok nincsenek a gyermekfolyamatok környezetében (openvpn, sstpc)"; cat "$T/child-env.openvpn" "$T/child-env.sstpc"; }
-else
-grep -q 'export MVPN_MASK' "$MVPN" && nok "titkok nincsenek exportálva" || ok "titkok nincsenek exportálva"
-fi
+# Az `export` keresése helyett a gyermekfolyamatok tényleges környezete: hamis openvpn / sstpc, ami a
+# környezetét elmenti és hibával kilép. Nincs benne titok; PATH és LC_ALL=C rögzített.
+EB="$T/envbrew"; mkdir -p "$EB/bin" "$EB/sbin" "$T/envlibexec"
+printf '#!/bin/bash\n/usr/bin/env >"%s"\nexit 1\n' "$T/child-env.openvpn" >"$EB/bin/openvpn"
+printf '#!/bin/bash\n/usr/bin/env >"%s"\nexit 1\n' "$T/child-env.sstpc" >"$EB/sbin/sstpc"
+chmod 755 "$EB/bin/openvpn" "$EB/sbin/sstpc"
+ENVID=$(new_conn "$GOOD_OVPN")
+{ feed "$ENVID"; printf 'username=bob\npassword=EnvS3cretPw\nkeypass=EnvK3yPw77\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$EB" MVPN_LIBEXEC="$T/envlibexec" \
+  "$MVPN" up openvpn "$ENVID" >/dev/null 2>&1
+ENVID=$(new_conn $'server=vpn.example.com\nuser=bob')
+{ feed "$ENVID"; printf 'password=EnvS3cretPw\notp=EnvOtp4242\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$EB" MVPN_LIBEXEC="$T/envlibexec" \
+  MVPN_PPP_OPTIONS="$T/envppp/options" MVPN_UP_TIMEOUT=3 "$MVPN" up sstp "$ENVID" >/dev/null 2>&1
+[ -s "$T/child-env.openvpn" ] && [ -s "$T/child-env.sstpc" ] && ! grep -q 'EnvS3cretPw\|EnvK3yPw77\|EnvOtp4242\|MVPN_MASK' "$T/child-env.openvpn" "$T/child-env.sstpc" \
+  && ok "titkok nincsenek a gyermekfolyamatok környezetében (openvpn, sstpc)" || { nok "titkok nincsenek a gyermekfolyamatok környezetében (openvpn, sstpc)"; cat "$T/child-env.openvpn" "$T/child-env.sstpc"; }
 SWID=$(new_conn "$GOOD_SWAN")
-printf 'username=alice\npassword=EapTitok42\npsk=PskTitok99\n' | "$SH" "$MVPN" up strongswan "$SWID" --dry-run --debug >"$T/sw.out" 2>&1
+{ feed "$SWID"; printf 'username=alice\npassword=EapTitok42\npsk=PskTitok99\n'; } | "$SH" "$MVPN" up strongswan "$SWID" --dry-run --debug >"$T/sw.out" 2>&1
 grep -q 'EapTitok42\|PskTitok99' "$MVPN_LOG_BASE/$SWID.log" "$T/sw.out" && nok "strongswan titok nem kerül a naplóba" || ok "strongswan titok nem kerül a naplóba"
 grep -q 'DRY: .*charon' "$T/sw.out" && grep -q 'DRY: .*--initiate --child office-net' "$T/sw.out" && ok "strongswan dry-run parancsok" || { nok "strongswan dry-run parancsok"; cat "$T/sw.out"; }
 OUT=$(printf 'a Sup3rTitok b\n' | MVPN_MASK_1=Sup3rTitok "$SH" "$MVPN" __mask)
@@ -265,25 +321,17 @@ OUT=$(printf 'pw=%%s! end\n' | MVPN_MASK_1='%s!' "$SH" "$MVPN" __mask)
 [ "$OUT" = "pw=*** end" ] && ok "mask 3+ karakter bárhol" || nok "mask 3+ karakter bárhol ($OUT)"
 
 # Locale, verzió, charon: statikus ellenőrzések
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] `export LC_ALL=C` helyett: a gyermekfolyamatok LC_ALL=C-t és a rögzített PATH-t kapják.
-  grep -qx 'LC_ALL=C' "$T/child-env.openvpn" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.openvpn" \
-    && grep -qx 'LC_ALL=C' "$T/child-env.sstpc" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.sstpc" \
-    && ok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban" || nok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban"
-else
-grep -q '^export LC_ALL=C' "$MVPN" && grep -q '^export LC_ALL=C' legacy/swift/Resources/root/ovpn-dns && ok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben" || nok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben"
-fi
+# `export LC_ALL=C` helyett: a gyermekfolyamatok LC_ALL=C-t és a rögzített PATH-t kapják.
+grep -qx 'LC_ALL=C' "$T/child-env.openvpn" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.openvpn" \
+  && grep -qx 'LC_ALL=C' "$T/child-env.sstpc" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.sstpc" \
+  && ok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban" || nok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban"
 [ "$("$SH" "$MVPN" version)" = "$EXPECT_VERSION" ] && [ "$(cat "$VERSION_FILE")" = "$EXPECT_VERSION" ] && ok "root verzió: $EXPECT_VERSION" || nok "root verzió: $EXPECT_VERSION"
 OUT=$(printf 'Szép ÁRVÍZTŰRŐ\n' | env LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 MVPN_MASK_1=ŰR "$SH" "$MVPN" __mask)
 [ "$OUT" = "Szép ÁRVÍZT***Ő" ] && ok "mask felhasználói locale mellett is bájt-alapú" || nok "mask felhasználói locale mellett is bájt-alapú ($OUT)"
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] Ugyanez a Rust forrásban: a charon pid-ek csak a `pgrep -U 0 -x charon` (root) találatai lehetnek.
-  SW_SRC=crates/mvpn/src/strongswan.rs
-  grep -qF '"-U", "0", "-x", "charon"' "$SW_SRC" && [ "$(grep -c '"charon"' "$SW_SRC")" = 1 ] && ! grep -q 'pkill' crates/mvpn/src/*.rs \
-    && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
-else
-grep -q 'pgrep -U 0 -x charon' "$MVPN" && ! grep -qE 'p(grep|kill) -x charon' "$MVPN" && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
-fi
+# Ugyanez a Rust forrásban: a charon pid-ek csak a `pgrep -U 0 -x charon` (root) találatai lehetnek.
+SW_SRC=crates/mvpn/src/strongswan.rs
+grep -qF '"-U", "0", "-x", "charon"' "$SW_SRC" && [ "$(grep -c '"charon"' "$SW_SRC")" = 1 ] && ! grep -q 'pkill' crates/mvpn/src/*.rs \
+  && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
 
 # Kapcsolatonkénti zár. Tesztmódban a dry-run is a valódi zár-útvonalon megy (a futási könyvtár itt
 # a teszt temp könyvtára); az MVPN_LOCK_TRIES csak tesztmódban rövidíti a várakozást.
@@ -341,13 +389,9 @@ OUT=$(env -i script_type=check \
 ODR2="$T/odrun2"; mkdir -p "$ODR2"
 env -i script_type=up 'dev=utun1;x' 'ifconfig_local=10.0.0.2/24' "${OD_SH[@]}" "$ODR2" "$T/od4.log"
 [ ! -e "$ODR2/iface" ] && [ ! -e "$ODR2/ip" ] && ok "ovpn-dns érvénytelen dev/ip nem íródik" || nok "ovpn-dns érvénytelen dev/ip nem íródik"
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] `set -f` helyett: a dns-backup sorainak bontása soha nem glob-kifejt (egységteszt).
-  PATH="$HOME/.cargo/bin:$PATH" cargo test -q -p mvpn --locked -- hook_dns::tests::backup_lines_never_glob >"$T/glob.out" 2>&1 \
-    && grep -q '1 passed' "$T/glob.out" && ok "hook down: nincs glob-kifejtés" || { nok "hook down: nincs glob-kifejtés"; cat "$T/glob.out"; }
-else
-grep -q '^    set -f$' legacy/swift/Resources/root/ovpn-dns && ok "ovpn-dns down set -f" || nok "ovpn-dns down set -f"
-fi
+# `set -f` helyett: a dns-backup sorainak bontása soha nem glob-kifejt (egységteszt).
+PATH="$HOME/.cargo/bin:$PATH" cargo test -q -p mvpn --locked -- hook_dns::tests::backup_lines_never_glob >"$T/glob.out" 2>&1 \
+  && grep -q '1 passed' "$T/glob.out" && ok "hook down: nincs glob-kifejtés" || { nok "hook down: nincs glob-kifejtés"; cat "$T/glob.out"; }
 
 # down: a típus a futási könyvtárból jön
 DID=$(uuidgen); mkdir -p "$MVPN_RUN_BASE/$DID"; echo wireguard >"$MVPN_RUN_BASE/$DID/kind"; echo mv12345678 >"$MVPN_RUN_BASE/$DID/iface"
@@ -387,8 +431,8 @@ DESC="dry-run up élő futási könyvtár mellett"; expect_ok "$SH" "$MVPN" up o
 ls -d "$MVPN_RUN_BASE/$LIVE".dryrun.* >/dev/null 2>&1 && nok "dry-run könyvtár törölve" || ok "dry-run könyvtár törölve"
 rm -rf "$MVPN_RUN_BASE/$LIVE"
 
-# Túl nagy forrás config
-BIG=$(new_conn "$GOOD_OVPN"); head -c 1100000 /dev/zero | tr '\0' '#' >>"$MVPN_SRC_BASE/$BIG/config"
+# Túl nagy config (valódi tartalommal, helyes hosszal keretezve)
+BIG=$(new_conn "$GOOD_OVPN"); head -c 1100000 /dev/zero | tr '\0' '#' >>"$CFG/$BIG"
 DESC="1 MB-nál nagyobb config elutasítva"; expect_fail "$SH" "$MVPN" up openvpn "$BIG" --dry-run
 
 # Napló forgatás (5 MB fölött, up-nál), symlink-biztosan
@@ -401,15 +445,14 @@ DESC="up forgatással"; expect_ok "$SH" "$MVPN" up openvpn "$RID" --dry-run
 [ "$(stat -f %z "$RL")" -lt 100000 ] && ! grep -q OLDMARKER "$RL" && ok "új napló kicsi" || nok "új napló kicsi"
 [ "$(stat -f %Lp "$RL.1")" = 600 ] && [ "$(stat -f %Lp "$RL")" = 600 ] && ok "napló jogosultság 600" || nok "napló jogosultság 600"
 { echo NEWMARKER; head -c 5300000 /dev/zero | tr '\0' y; } >"$RL"
-"$SH" "$MVPN" up openvpn "$RID" --dry-run </dev/null >/dev/null 2>&1
+"$SH" "$MVPN" up openvpn "$RID" --dry-run < <(feed "$RID") >/dev/null 2>&1
 head -1 "$RL.1" | grep -q NEWMARKER && [ ! -e "$RL.2" ] && ok "csak egy .1 marad" || nok "csak egy .1 marad"
 SZ=$(stat -f %z "$RL"); "$SH" "$MVPN" down openvpn "$RID" --dry-run </dev/null >/dev/null 2>&1
 head -1 "$RL.1" | grep -q NEWMARKER && [ "$(stat -f %z "$RL")" -ge "$SZ" ] && ok "down nem forgat" || nok "down nem forgat"
 
 # A "kapcsolódva" minta minden valódi OpenVPN 2.7 naplóformátumra illeszkedik, és a hamisítványokra nem.
-# [rust] A minta a Rust forrásban van: a sorokat a tesztmódú `__ovpn-done` parancs ítéli meg.
-DONE_RE=$(sed -n "s/^OVPN_DONE_RE='\(.*\)'$/\1/p" legacy/swift/Resources/root/mvpn)
-done_match() { if [ "$MVPN_IMPL" = rust ]; then printf '%s\n' "$1" | "$MVPN" __ovpn-done; else printf '%s\n' "$1" | grep -q -E "$DONE_RE"; fi; }
+# A minta a Rust forrásban van: a sorokat a tesztmódú `__ovpn-done` parancs ítéli meg.
+done_match() { printf '%s\n' "$1" | "$MVPN" __ovpn-done; }
 for line in "2026-10-18 15:22:48 Initialization Sequence Completed" \
             "2026-10-18 15:42:51 us=411817 Initialization Sequence Completed" \
             "Initialization Sequence Completed" \
@@ -485,13 +528,13 @@ kill "$FP" 2>/dev/null; wait "$FP" 2>/dev/null
 
 # Inline hitelesítő blokkok (<auth-user-pass>, <http-proxy-user-pass>) tartalma nem kerül a naplóba (debug pillanatkép).
 IAID=$(new_conn $'client\ndev tun\n<auth-user-pass>\nremote INLINELEAK1\nremote INLINELEAK2\n</auth-user-pass>\nremote vpn.example.com 1194\n<connection>\nremote alt.example.com 443\nhttp-proxy proxy.example.com 8080 [inline]\n<http-proxy-user-pass>\nremote INLINELEAK3\nremote INLINELEAK4\n</http-proxy-user-pass>\n</connection>\n<ca>\nx\n</ca>')
-"$SH" "$MVPN" up openvpn "$IAID" --dry-run --debug </dev/null >"$T/ia.out" 2>&1
+"$SH" "$MVPN" up openvpn "$IAID" --dry-run --debug < <(feed "$IAID") >"$T/ia.out" 2>&1
 grep -q 'dscacheutil -q host -a name vpn.example.com' "$MVPN_LOG_BASE/$IAID.log" && ! grep -q INLINELEAK "$MVPN_LOG_BASE/$IAID.log" "$T/ia.out" \
   && ok "debug pillanatkép: inline hitelesítő blokk tartalma nem kerül a naplóba" || { nok "debug pillanatkép: inline hitelesítő blokk tartalma nem kerül a naplóba"; cat "$T/ia.out" "$MVPN_LOG_BASE/$IAID.log"; }
 
 # Nyelv (--lang): a hibaüzenet angol alapból és --lang en mellett, magyar --lang hu mellett; ismeretlen érték: angol.
 LANG_ID=$(new_conn "$GOOD_OVPN"$'\nup /tmp/x')
-lang_out() { "$SH" "$MVPN" up openvpn "$LANG_ID" --dry-run "$@" </dev/null 2>&1; }
+lang_out() { "$SH" "$MVPN" up openvpn "$LANG_ID" --dry-run "$@" < <(feed "$LANG_ID") 2>&1; }
 OUT=$(lang_out)
 case "$OUT" in *"Invalid config:"*"Line 8: Forbidden directive: up"*) ok "nyelv: alapból angol" ;; *) nok "nyelv: alapból angol"; echo "$OUT" ;; esac
 OUT=$(lang_out --lang en)
@@ -508,14 +551,35 @@ OUT=$("$SH" "$MVPN" up openvpn "../../etc" --dry-run 2>&1 </dev/null)
 [ "$OUT" = "Invalid ID" ] && ok "nyelv: mvpn saját hibája angolul" || nok "nyelv: mvpn saját hibája angolul ($OUT)"
 [ "$("$SH" "$MVPN" version --lang hu)" = "$(cat "$VERSION_FILE")" ] && ok "version --lang mellett is" || nok "version --lang mellett is"
 LANG_ID2=$(new_conn "$GOOD_OVPN")
-"$SH" "$MVPN" up openvpn "$LANG_ID2" --dry-run --lang hu </dev/null >/dev/null 2>&1
+"$SH" "$MVPN" up openvpn "$LANG_ID2" --dry-run --lang hu < <(feed "$LANG_ID2") >/dev/null 2>&1
 grep -q '^▶ \[mvpn\] config érvényes' "$MVPN_LOG_BASE/$LANG_ID2.log" && ok "nyelv: napló lépés magyarul" || nok "nyelv: napló lépés magyarul"
-"$SH" "$MVPN" up openvpn "$LANG_ID2" --dry-run </dev/null >/dev/null 2>&1
+"$SH" "$MVPN" up openvpn "$LANG_ID2" --dry-run < <(feed "$LANG_ID2") >/dev/null 2>&1
 grep -q '^▶ \[mvpn\] config is valid' "$MVPN_LOG_BASE/$LANG_ID2.log" && ok "nyelv: napló lépés angolul" || nok "nyelv: napló lépés angolul"
-OUT=$("${VALIDATE[@]}" --lang hu wireguard /nonexistent 2>&1)
-[ "$OUT" = "A fájl nem olvasható: /nonexistent" ] && ok "mvpn-validate --lang hu" || nok "mvpn-validate --lang hu ($OUT)"
-OUT=$("${VALIDATE[@]}" wireguard /nonexistent 2>&1)
-[ "$OUT" = "Cannot read the file: /nonexistent" ] && ok "mvpn-validate alapból angol" || nok "mvpn-validate alapból angol ($OUT)"
+OUT=$("${VALIDATE[@]}" --lang hu wireguard </dev/null 2>&1)
+[ "$OUT" = "Nincs megadva config" ] && ok "mvpn-validate --lang hu" || nok "mvpn-validate --lang hu ($OUT)"
+OUT=$("${VALIDATE[@]}" wireguard </dev/null 2>&1)
+[ "$OUT" = "Config not provided" ] && ok "mvpn-validate alapból angol" || nok "mvpn-validate alapból angol ($OUT)"
+# mvpn validate: a config a standard bemeneten, ugyanabban a keretben, titok-sor nélkül; a régi <fájl> argumentum megszűnt.
+vfeed() { local n; n=$(printf '%s\n' "$1" | LC_ALL=C wc -c | tr -d ' '); printf 'config %s\n%s\n' "$n" "$1"; }
+V_SSTP=$'server=vpn.example.com\nuser=bob'
+for kc in "openvpn|$GOOD_OVPN|up /tmp/x" "wireguard|$GOOD_WG|PostUp = x" "strongswan|$GOOD_SWAN|include /etc/x" "sstp|$V_SSTP|pppd_opts=x"; do
+  k=${kc%%|*}; rest=${kc#*|}; cfg=${rest%|*}; bad=${rest##*|}
+  OUT=$(vfeed "$cfg" | "${VALIDATE[@]}" "$k" 2>&1); RC=$?
+  [ "$RC" = 0 ] && [ -z "$OUT" ] && ok "mvpn validate $k (stdin): jó config" || { nok "mvpn validate $k (stdin): jó config"; echo "$RC $OUT"; }
+  OUT=$(vfeed "$cfg"$'\n'"$bad" | "${VALIDATE[@]}" "$k" 2>&1); RC=$?
+  [ "$RC" = 1 ] && [ -n "$OUT" ] && ok "mvpn validate $k (stdin): hibás config" || { nok "mvpn validate $k (stdin): hibás config"; echo "$RC $OUT"; }
+done
+OUT=$(vfeed "$GOOD_SWAN" | "${VALIDATE[@]}" --swan-names | tr '\n' '|')
+[ "$OUT" = "office|office-net|" ] && ok "mvpn validate --swan-names (stdin)" || nok "mvpn validate --swan-names (stdin) ($OUT)"
+OUT=$(vfeed "$GOOD_OVPN" | "${VALIDATE[@]}" --sstp-params 2>&1); RC=$?
+[ "$RC" = 1 ] && [ -z "$OUT" ] && ok "mvpn validate --sstp-params: nem SSTP config → 1" || nok "mvpn validate --sstp-params: nem SSTP config → 1 ($RC $OUT)"
+OUT=$({ vfeed "$GOOD_WG"; printf 'password=VS3cret\n'; } | "${VALIDATE[@]}" wireguard 2>&1); RC=$?
+[ "$RC" = 2 ] && [ "$OUT" = "Invalid input" ] && ok "mvpn validate: titok-sor a config után → Invalid input" || nok "mvpn validate: titok-sor a config után → Invalid input ($RC $OUT)"
+OUT=$(printf 'config 100\nclient\n' | "${VALIDATE[@]}" openvpn 2>&1); RC=$?
+[ "$RC" = 2 ] && [ "$OUT" = "The config is incomplete" ] && ok "mvpn validate: csonka folyam" || nok "mvpn validate: csonka folyam ($RC $OUT)"
+printf '%s\n' "$GOOD_WG" >"$T/wg.conf"
+OUT=$(vfeed "$GOOD_WG" | "${VALIDATE[@]}" wireguard "$T/wg.conf" 2>&1); RC=$?
+[ "$RC" = 2 ] && case "$OUT" in "Usage: mvpn validate"*) true ;; *) false ;; esac && ok "mvpn validate: a <fájl> argumentum megszűnt (használati hiba)" || nok "mvpn validate: a <fájl> argumentum megszűnt (használati hiba) ($RC $OUT)"
 
 # Valódi (nem dry-run) up tesztmódban: csak hamis brew könyvtárral (MVPN_BREW), hamis ovpn-dns-sel (MVPN_LIBEXEC),
 # így valódi VPN eszköz és networksetup nem fut. A sikertelen up nem hagyhat futási könyvtárat.
@@ -565,7 +629,7 @@ exit 0
 FAKE
 chmod 755 "$SB2/bin/openvpn"
 UID4=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yTitok77\n' | upt MVPN_BREW="$SB2" "$SH" "$MVPN" up openvpn "$UID4" >"$T/out" 2>&1 \
+{ feed "$UID4"; printf 'username=bob\npassword=Sup3rTitok\nkeypass=K3yTitok77\n'; } | upt MVPN_BREW="$SB2" "$SH" "$MVPN" up openvpn "$UID4" >"$T/out" 2>&1 \
   && ok "up openvpn (hamis) sikeres" || { nok "up openvpn (hamis) sikeres"; cat "$T/out"; }
 for i in 1 2 3 4 5 6 7 8 9 10; do [ -e "$MVPN_RUN_BASE/$UID4/mgmt-creds" ] || break; sleep 0.2; done
 [ ! -e "$MVPN_RUN_BASE/$UID4/auth" ] && [ ! -e "$MVPN_RUN_BASE/$UID4/mgmt-creds" ] && [ "$(stat -f %Lp "$MVPN_RUN_BASE/$UID4")" = 700 ] \
@@ -582,7 +646,7 @@ ps -p "$UID4_MGMT" -o comm= 2>/dev/null | grep -q 'mvpn-mgmt$' && nok "down utá
 
 # OpenVPN: a felépülésről/hibáról csak a root-only $RUN/openvpn.log dönt; a felhasználói naplóba injektált sor nem számít.
 DID=$(new_conn "$GOOD_OVPN")
-"$SH" "$MVPN" up openvpn "$DID" --dry-run </dev/null >"$T/out" 2>&1
+"$SH" "$MVPN" up openvpn "$DID" --dry-run < <(feed "$DID") >"$T/out" 2>&1
 grep -q -- "--log-append $MVPN_RUN_BASE/$DID.dryrun.[A-Za-z0-9]*/openvpn.log --daemon" "$T/out" \
   && ok "openvpn: --log-append a root-only futási könyvtárba" || { nok "openvpn: --log-append a root-only futási könyvtárba"; cat "$T/out"; }
 OI="$T/ovpninject"; mkdir -p "$OI/bin"
@@ -616,19 +680,19 @@ exit 0
 FAKE
 chmod 755 "$OI/bin/openvpn"
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" MVPN_UP_TIMEOUT=3 FAKE_OVPN_MODE=inject INJECT_LOG="$MVPN_LOG_BASE/$OID.log" "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" MVPN_UP_TIMEOUT=3 FAKE_OVPN_MODE=inject INJECT_LOG="$MVPN_LOG_BASE/$OID.log" "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Timed out: the connection was not established within 3 s"*) true ;; *) false ;; esac && [ ! -e "$MVPN_RUN_BASE/$OID" ] \
   && ok "openvpn: injektált 'Initialization Sequence Completed' a felhasználói naplóban nem számít" || { nok "openvpn: injektált 'Initialization Sequence Completed' a felhasználói naplóban nem számít"; echo "$OUT"; }
 [ "$(cat "$T/ovpn-logpath")" = "$MVPN_RUN_BASE/$OID/openvpn.log" ] && ok "openvpn: a napló a futási könyvtárban" || nok "openvpn: a napló a futási könyvtárban ($(cat "$T/ovpn-logpath"))"
 pgrep -f "$T/bin/openvpn 60" >/dev/null && sleep 1
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(printf 'username=bob\npassword=Sup3rTitok\n' | upt MVPN_BREW="$OI" FAKE_OVPN_MODE=authinject INJECT_LOG="$MVPN_LOG_BASE/$OID.log" "$SH" "$MVPN" up openvpn "$OID" 2>&1); RC=$?
+OUT=$({ feed "$OID"; printf 'username=bob\npassword=Sup3rTitok\n'; } | upt MVPN_BREW="$OI" FAKE_OVPN_MODE=authinject INJECT_LOG="$MVPN_LOG_BASE/$OID.log" "$SH" "$MVPN" up openvpn "$OID" 2>&1); RC=$?
 [ "$RC" = 0 ] && ok "openvpn: injektált AUTH_FAILED a felhasználói naplóban nem számít" || { nok "openvpn: injektált AUTH_FAILED a felhasználói naplóban nem számít"; echo "$OUT"; }
 [ "$(stat -f %Lp "$MVPN_RUN_BASE/$OID/openvpn.log" 2>/dev/null)" = 600 ] && grep -q '^2026-10-17 00:00:00 Initialization Sequence Completed$' "$MVPN_LOG_BASE/$OID.log" \
   && ok "openvpn: openvpn.log 600, tartalma a kapcsolat naplójába másolva" || { nok "openvpn: openvpn.log 600, tartalma a kapcsolat naplójába másolva"; cat "$MVPN_LOG_BASE/$OID.log"; }
 DESC="openvpn: down a felépült (hamis) kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=auth "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=auth "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Authentication failed (AUTH_FAILED)"*) true ;; *) false ;; esac && [ ! -e "$MVPN_RUN_BASE/$OID" ] \
   && grep -q 'AUTH: Received control message: AUTH_FAILED' "$MVPN_LOG_BASE/$OID.log" \
   && ok "openvpn: AUTH_FAILED a root-only naplóból → hiba, takarítás, napló átmásolva" || { nok "openvpn: AUTH_FAILED a root-only naplóból → hiba, takarítás, napló átmásolva"; echo "$OUT"; }
@@ -636,18 +700,18 @@ pgrep -f "$T/bin/openvpn 60" >/dev/null && nok "openvpn: nem maradt futó hamis 
 # ECHO / ECHO-PULL / PUSH_REPLY sor a root-only naplóban (config `echo`/`parameter`, vagy a szerver által küldött echo)
 # nem jelent felépülést és nem jelent AUTH_FAILED-et: csak az OpenVPN saját, horgonyzott sora számít.
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" MVPN_UP_TIMEOUT=3 FAKE_OVPN_MODE=echo "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" MVPN_UP_TIMEOUT=3 FAKE_OVPN_MODE=echo "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Timed out: the connection was not established within 3 s"*) true ;; *) false ;; esac \
   && ok "openvpn: 'ECHO:msg Initialization Sequence Completed' nem számít felépülésnek" || { nok "openvpn: 'ECHO:msg Initialization Sequence Completed' nem számít felépülésnek"; echo "$OUT"; }
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=echoauth "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=echoauth "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 [ "$RC" = 0 ] && ok "openvpn: 'ECHO:msg AUTH_FAILED' nem hitelesítési hiba" || { nok "openvpn: 'ECHO:msg AUTH_FAILED' nem hitelesítési hiba"; echo "$OUT"; }
 DESC="openvpn: down az echoauth kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
 # A management parancsok naplósorai (OpenVPN 2.7: `MANAGEMENT: CMD '…'`, verb >= 4-nél `SENT CONTROL …: 'CR_RESPONSE,…'`)
 # a válaszkódot base64-ben hordozzák: egyik másolási úton sem kerülhetnek a felhasználói naplóba. Csak a state / hold /
 # version parancs sora marad.
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=mgmtlog "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=mgmtlog "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 UL="$MVPN_LOG_BASE/$OID.log"
 [ "$RC" = 0 ] && ! grep -q "MTEyMjMz\|CMD 'username\|CMD 'password\|CMD 'signal" "$UL" \
   && grep -q "CMD 'state on'" "$UL" && grep -q "CMD 'hold release'" "$UL" && grep -q "CMD 'version 3'" "$UL" \
@@ -659,12 +723,12 @@ printf '%s\n' "2026-10-17 00:00:09 MANAGEMENT: CMD 'cr-response OTk5OTk5'" "2026
 grep -q STATUSMARK "$UL" && ! grep -q OTk5OTk5 "$UL" && ok "napló: a status-kori átmásolás is szűr" || { nok "napló: a status-kori átmásolás is szűr"; cat "$UL"; }
 DESC="openvpn: down a mgmtlog kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=mgmtexit "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=mgmtexit "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"openvpn exited: 2026-10-17 00:00:00 KEEPLINE"*) true ;; *) false ;; esac && ! grep -q MTEyMjMz "$MVPN_LOG_BASE/$OID.log" \
   && ok "napló: az \"openvpn exited\" üzenet sem idéz management parancsot" || { nok "napló: az \"openvpn exited\" üzenet sem idéz management parancsot"; echo "$OUT"; }
 # AUTH_FAILED,TEMP: átmeneti szerverhiba, az OpenVPN újrapróbál (mint a közvetítőben): nem végleges.
 OID=$(new_conn "$GOOD_OVPN")
-OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=temp "$SH" "$MVPN" up openvpn "$OID" 2>&1 </dev/null); RC=$?
+OUT=$(upt MVPN_BREW="$OI" FAKE_OVPN_MODE=temp "$SH" "$MVPN" up openvpn "$OID" 2>&1 < <(feed "$OID")); RC=$?
 [ "$RC" = 0 ] && ok "openvpn: AUTH_FAILED,TEMP nem végleges hiba" || { nok "openvpn: AUTH_FAILED,TEMP nem végleges hiba"; echo "$OUT"; }
 DESC="openvpn: down a temp kapcsolatra"; expect_ok env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="${MVPN_BREW:-$T/emptybrew}" MVPN_LIBEXEC="$FL" "$SH" "$MVPN" down openvpn "$OID"
 # status: csak ECHO sorral a kapcsolat nem "connected".
@@ -687,13 +751,55 @@ grep -q "^down $MVPN_RUN_BASE/$UID5\$" "$T/dns-restore.log" && ok "maradék: DNS
 grep -q 'closing the previous run' "$MVPN_LOG_BASE/$UID5.log" && ok "maradék: korábbi futás lebontva" || nok "maradék: korábbi futás lebontva"
 [ ! -e "$MVPN_RUN_BASE/$UID5" ] && ok "maradék: nincs futási könyvtár" || nok "maradék: nincs futási könyvtár"
 
+# Hibás új config nem bontja le a futó kapcsolatot: a validálás a korábbi futás lezárása előtt történik.
+LVID=$(new_conn "$GOOD_OVPN"$'\nup /tmp/x'); mkdir -m 700 "$MVPN_RUN_BASE/$LVID"; echo openvpn >"$MVPN_RUN_BASE/$LVID/kind"
+"$T/bin/openvpn" 60 & LVP=$!; echo "$LVP" >"$MVPN_RUN_BASE/$LVID/pid"; sleep 0.2
+OUT=$(upt MVPN_BREW="$T/emptybrew" "$SH" "$MVPN" up openvpn "$LVID" 2>&1 < <(feed "$LVID")); RC=$?
+[ "$RC" = 1 ] && case "$OUT" in "Invalid config:"*) true ;; *) false ;; esac && kill -0 "$LVP" 2>/dev/null \
+  && [ "$(cat "$MVPN_RUN_BASE/$LVID/pid" 2>/dev/null)" = "$LVP" ] && ! grep -q 'closing the previous run' "$MVPN_LOG_BASE/$LVID.log" \
+  && ok "hibás új config: a futó kapcsolat és a futási könyvtár érintetlen" || { nok "hibás új config: a futó kapcsolat és a futási könyvtár érintetlen"; echo "$RC $OUT"; }
+kill "$LVP" 2>/dev/null; wait "$LVP" 2>/dev/null; rm -rf "${MVPN_RUN_BASE:?}/$LVID"
+
 # SIGTERM a kapcsolódás közben (hamis openvpn, ami nem épül fel): 143, takarítás, nincs futási könyvtár.
 HB="$T/ovpnhang"; mkdir -p "$HB/bin"; printf '#!/bin/bash\nexit 0\n' >"$HB/bin/openvpn"; chmod 755 "$HB/bin/openvpn"
 UID6=$(new_conn "$GOOD_OVPN")
-MVPN_TEST_ALLOW_UP=1 MVPN_LIBEXEC="$FL" MVPN_BREW="$HB" "$SH" "$MVPN" up openvpn "$UID6" </dev/null >/dev/null 2>&1 & W=$!
+MVPN_TEST_ALLOW_UP=1 MVPN_LIBEXEC="$FL" MVPN_BREW="$HB" "$SH" "$MVPN" up openvpn "$UID6" < <(feed "$UID6") >/dev/null 2>&1 & W=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do [ -d "$MVPN_RUN_BASE/$UID6" ] && break; sleep 0.2; done
 sleep 0.5; kill -TERM "$W"; wait "$W"; RC=$?
 [ "$RC" = 143 ] && [ ! -e "$MVPN_RUN_BASE/$UID6" ] && ok "up SIGTERM: 143, nincs futási könyvtár" || { nok "up SIGTERM: 143, nincs futási könyvtár ($RC)"; ls -la "$MVPN_RUN_BASE/$UID6" 2>&1; }
+
+# strongSwan EAP hitelesítési hiba: hamis swanctl (eapfail módban az --initiate EAP_FAILURE-t ír és hibával kilép)
+# → "Authentication failed (EAP)"; más IKE hiba (ikefail) → a régi üzenet. Takarítás, a jelszó nincs a naplóban.
+SWB="$T/swanbrew"; mkdir -p "$SWB/bin" "$SWB/opt/strongswan/libexec/ipsec"
+printf '#!/bin/bash\nexit 0\n' >"$SWB/opt/strongswan/libexec/ipsec/charon"
+cat >"$SWB/bin/swanctl" <<'FAKE'
+#!/bin/bash
+case " $* " in
+  *" --initiate "*)
+    case "$FAKE_SWAN_MODE" in
+      eapfail) echo "[IKE] received EAP_FAILURE, EAP authentication failed"; echo "[IKE] EAP method EAP_MSCHAPV2 failed for peer 10.0.0.1"; exit 1 ;;
+      ikefail) echo "[IKE] establishing CHILD_SA office-net failed"; exit 1 ;;
+      # Más folyamat írja a felhasználói naplóba (nem a swanctl kimenete): nem dönthet.
+      ikeinject) echo "[IKE] received EAP_FAILURE (injected)" >>"$INJECT_LOG"; echo "[IKE] establishing CHILD_SA office-net failed"; exit 1 ;;
+    esac ;;
+esac
+exit 0
+FAKE
+chmod 755 "$SWB/bin/swanctl" "$SWB/opt/strongswan/libexec/ipsec/charon"
+for mode in eapfail ikefail; do
+  EID=$(new_conn "$GOOD_SWAN")
+  OUT=$({ feed "$EID"; printf 'username=alice\npassword=EapFailS3cret\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$SWB" FAKE_SWAN_MODE=$mode "$SH" "$MVPN" up strongswan "$EID" 2>&1); RC=$?
+  if [ "$mode" = eapfail ]; then WANT="Authentication failed (EAP)"; else WANT="IKE negotiation failed (details in the log)"; fi
+  [ "$RC" = 1 ] && [ "$OUT" = "$WANT" ] && [ ! -e "$MVPN_RUN_BASE/$EID" ] && ! grep -q EapFailS3cret "$MVPN_LOG_BASE/$EID.log" \
+    && ok "strongswan $mode: \"$WANT\", takarítás, jelszó nincs a naplóban" || { nok "strongswan $mode: \"$WANT\""; echo "$RC $OUT"; cat "$MVPN_LOG_BASE/$EID.log"; }
+done
+EID=$(new_conn "$GOOD_SWAN")
+OUT=$({ feed "$EID"; printf 'password=EapFailS3cret\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$SWB" FAKE_SWAN_MODE=ikeinject INJECT_LOG="$MVPN_LOG_BASE/$EID.log" "$SH" "$MVPN" up strongswan "$EID" 2>&1)
+[ "$OUT" = "IKE negotiation failed (details in the log)" ] && grep -q 'EAP_FAILURE (injected)' "$MVPN_LOG_BASE/$EID.log" \
+  && ok "strongswan: a felhasználói naplóba injektált EAP_FAILURE nem dönt (csak a swanctl kimenete)" || { nok "strongswan: a felhasználói naplóba injektált EAP_FAILURE nem dönt (csak a swanctl kimenete)"; echo "$OUT"; }
+EID=$(new_conn "$GOOD_SWAN")
+OUT=$({ feed "$EID"; printf 'password=EapFailS3cret\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$SWB" FAKE_SWAN_MODE=eapfail "$SH" "$MVPN" up strongswan "$EID" --lang hu 2>&1)
+[ "$OUT" = "Hitelesítési hiba (EAP)" ] && ok "strongswan eapfail magyarul" || nok "strongswan eapfail magyarul ($OUT)"
 
 # ---------- MFA: management közvetítő (mvpn-mgmt) ----------
 # Hamis openvpn + hamis management szerver (perl, unix socket a futási könyvtárban): a valódi közvetítő a valódi
@@ -819,7 +925,7 @@ allowlisted() { [ -s "$1" ] && ! grep -vE "$ALLOWED" "$1" >/dev/null; }
 
 # Dry-run: a management opciók a config után, puszta --auth-user-pass, a közvetítő argv-jében nincs titok.
 MD=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=Sup3rTitok\n' | "$SH" "$MVPN" up openvpn "$MD" --dry-run >"$T/mfa-dry.out" 2>&1
+{ feed "$MD"; printf 'username=bob\npassword=Sup3rTitok\n'; } | "$SH" "$MVPN" up openvpn "$MD" --dry-run >"$T/mfa-dry.out" 2>&1
 grep -q -- "--verb 3 --management $MVPN_RUN_BASE/$MD.dryrun.[A-Za-z0-9]*/mgmt.sock unix --management-client-user root --management-hold --management-query-passwords --auth-retry interact --setenv IV_SSO openurl,webauth,crtext --auth-user-pass\$" "$T/mfa-dry.out" \
   && ok "mfa dry-run: management opciók a config után, puszta --auth-user-pass" || { nok "mfa dry-run: management opciók a config után, puszta --auth-user-pass"; cat "$T/mfa-dry.out"; }
 grep -qF -- "mvpn-mgmt --id $MD --run $MVPN_RUN_BASE/$MD.dryrun." "$T/mfa-dry.out" && grep -qF -- "--ui $MVPN_UI_BASE --uid $(id -u) --gid $(id -g)" "$T/mfa-dry.out" \
@@ -837,7 +943,7 @@ expect_fail mfa_env MVPN_MGMT=/nonexistent FAKE_MGMT_MODE=plain "$SH" "$MVPN" up
 # Sima felhasználónév/jelszó a managementen át; hold release; a jelszó-válasz; a UI könyvtár symlink-biztos.
 mkdir -p "$MR/uitarget"; ln -s "$MR/uitarget" "$MUI"
 P1=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=Pl4in"S3c\\ret\n' | mfa_env FAKE_MGMT_MODE=plain "$SH" "$MVPN" up openvpn "$P1" >"$T/out" 2>&1 \
+{ feed "$P1"; printf 'username=bob\npassword=Pl4in"S3c\\ret\n'; } | mfa_env FAKE_MGMT_MODE=plain "$SH" "$MVPN" up openvpn "$P1" >"$T/out" 2>&1 \
   && ok "mfa: sima hitelesítés a közvetítőn át" || { nok "mfa: sima hitelesítés a közvetítőn át"; cat "$T/out" "$T/fakemgmt.err"; }
 TR="$T/mgmt-transcript.plain"
 grep -qx 'hold release' "$TR" && ok "mfa: hold release" || { nok "mfa: hold release"; cat "$TR"; }
@@ -858,7 +964,7 @@ mfa_down "$P1" && ok "mfa: down" || { nok "mfa: down"; cat "$T/out"; }
 
 # CRV1 (dinamikus challenge): AUTH_FAILED,CRV1 nem hiba; a challenge az állapotfájlba kerül; a válasz a respond-dal.
 C1=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=CrvS3cret\n' | mfa_env FAKE_MGMT_MODE=crv1 "$SH" "$MVPN" up openvpn "$C1" >"$T/c1.out" 2>&1 & W=$!
+{ feed "$C1"; printf 'username=bob\npassword=CrvS3cret\n'; } | mfa_env FAKE_MGMT_MODE=crv1 "$SH" "$MVPN" up openvpn "$C1" >"$T/c1.out" 2>&1 & W=$!
 if wait_ui "$C1" challenge; then ok "crv1: challenge az állapotfájlban"; else nok "crv1: challenge az állapotfájlban"; cat "$T/c1.out"; fi
 [ "$(ui "$C1" method)" = crv1 ] && [ "$(ui "$C1" text)" = "Enter PIN" ] && [ "$(ui "$C1" echo)" = False ] \
   && ok "crv1: szöveg és echo" || nok "crv1: szöveg és echo ($(cat "$MUI/$C1.json" 2>/dev/null))"
@@ -877,7 +983,7 @@ mfa_down "$C1"
 # Injektálás a challenge szövegében: túl hosszú sor eldobva, vezérlőkarakter és JSON-szerű szöveg ártalmatlan,
 # a hosszú szöveg csonkolva, a "sortörés utáni" sor (nem > kezdetű) figyelmen kívül, javascript: URL eldobva.
 I1=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=InjS3cret\n' | mfa_env FAKE_MGMT_MODE=inject "$SH" "$MVPN" up openvpn "$I1" >"$T/i1.out" 2>&1 & W=$!
+{ feed "$I1"; printf 'username=bob\npassword=InjS3cret\n'; } | mfa_env FAKE_MGMT_MODE=inject "$SH" "$MVPN" up openvpn "$I1" >"$T/i1.out" 2>&1 & W=$!
 wait_ui "$I1" challenge
 python3 -c 'import json,sys
 d=json.load(open(sys.argv[1])); t=d["text"]
@@ -893,7 +999,7 @@ mfa_down "$I1"
 
 # Webes hitelesítés: az http URL eldobva (pending, URL nélkül), a https URL megmarad; a naplóba csak a hoszt kerül.
 W1=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=WebS3cret\n' | mfa_env FAKE_MGMT_MODE=web "$SH" "$MVPN" up openvpn "$W1" >"$T/w1.out" 2>&1 & W=$!
+{ feed "$W1"; printf 'username=bob\npassword=WebS3cret\n'; } | mfa_env FAKE_MGMT_MODE=web "$SH" "$MVPN" up openvpn "$W1" >"$T/w1.out" 2>&1 & W=$!
 wait_ui "$W1" pending && [ -z "$(ui "$W1" url)" ] && ok "web: http URL eldobva (pending, URL nélkül)" || { nok "web: http URL eldobva (pending, URL nélkül)"; cat "$MUI/$W1.json"; }
 wait_ui "$W1" webauth && [ "$(ui "$W1" url)" = "https://sso.example.com/auth?session=abc" ] && [ -n "$(ui "$W1" deadline)" ] \
   && ok "web: https URL az állapotfájlban, határidővel" || { nok "web: https URL az állapotfájlban, határidővel"; cat "$MUI/$W1.json"; }
@@ -905,7 +1011,7 @@ mfa_down "$W1"
 
 # CR_TEXT: a válasz cr-response <base64> formában.
 X1=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=CrtS3cret\n' | mfa_env FAKE_MGMT_MODE=crtext "$SH" "$MVPN" up openvpn "$X1" >"$T/x1.out" 2>&1 & W=$!
+{ feed "$X1"; printf 'username=bob\npassword=CrtS3cret\n'; } | mfa_env FAKE_MGMT_MODE=crtext "$SH" "$MVPN" up openvpn "$X1" >"$T/x1.out" 2>&1 & W=$!
 wait_ui "$X1" challenge && [ "$(ui "$X1" method)" = crtext ] && [ "$(ui "$X1" echo)" = True ] \
   && ok "crtext: challenge (echo)" || nok "crtext: challenge (echo)"
 mfa_respond "$X1" $'kind=crv1\nresponse=112233\n'
@@ -915,7 +1021,7 @@ mfa_down "$X1"
 # Statikus challenge: az app SCRV1-be csomagolja (challenge=packed), a közvetítő változatlanul adja át; a kód maszkolva.
 S1=$(new_conn "$GOOD_OVPN"$'\nstatic-challenge "Enter OTP" 1')
 SCRV="SCRV1:$(printf StatPass | base64):$(printf 246810 | base64)"
-printf 'username=bob\npassword=%s\notp=246810\nchallenge=packed\n' "$SCRV" | mfa_env FAKE_MGMT_MODE=static "$SH" "$MVPN" up openvpn "$S1" >"$T/out" 2>&1 \
+{ feed "$S1"; printf 'username=bob\npassword=%s\notp=246810\nchallenge=packed\n' "$SCRV"; } | mfa_env FAKE_MGMT_MODE=static "$SH" "$MVPN" up openvpn "$S1" >"$T/out" 2>&1 \
   && grep -qx "password \"Auth\" \"$SCRV\"" "$T/mgmt-transcript.static" \
   && ok "static: SCRV1 jelszó változatlanul" || { nok "static: SCRV1 jelszó változatlanul"; cat "$T/out" "$T/mgmt-transcript.static"; }
 [ "$SCRV" = "SCRV1:U3RhdFBhc3M=:MjQ2ODEw" ] && ok "static: SCRV1 formátum" || nok "static: SCRV1 formátum ($SCRV)"
@@ -924,7 +1030,7 @@ mfa_down "$S1"
 # Tartalék: csomagolatlan jelszó → a közvetítő kéri a kódot (static), és ő csomagol.
 S2=$(new_conn "$GOOD_OVPN")
 : >"$T/mgmt-transcript.static"
-printf 'username=bob\npassword=FallPass\n' | mfa_env FAKE_MGMT_MODE=static "$SH" "$MVPN" up openvpn "$S2" >"$T/s2.out" 2>&1 & W=$!
+{ feed "$S2"; printf 'username=bob\npassword=FallPass\n'; } | mfa_env FAKE_MGMT_MODE=static "$SH" "$MVPN" up openvpn "$S2" >"$T/s2.out" 2>&1 & W=$!
 wait_ui "$S2" challenge && [ "$(ui "$S2" method)" = static ] && [ "$(ui "$S2" text)" = "Enter OTP" ] && [ "$(ui "$S2" echo)" = True ] \
   && ok "static tartalék: challenge az állapotfájlban" || nok "static tartalék: challenge az állapotfájlban"
 mfa_respond "$S2" $'kind=static\nresponse=135790\n'
@@ -934,7 +1040,7 @@ mfa_down "$S2"
 
 # Végleges hitelesítési hiba: a közvetítő nem küld újra, leállítja az openvpn-t; az up takarít.
 A1=$(new_conn "$GOOD_OVPN")
-OUT=$(printf 'username=bob\npassword=BadS3cret\n' | mfa_env FAKE_MGMT_MODE=authfail "$SH" "$MVPN" up openvpn "$A1" 2>&1); RC=$?
+OUT=$({ feed "$A1"; printf 'username=bob\npassword=BadS3cret\n'; } | mfa_env FAKE_MGMT_MODE=authfail "$SH" "$MVPN" up openvpn "$A1" 2>&1); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Authentication failed"*) true ;; *) false ;; esac \
   && ok "authfail: hiba" || { nok "authfail: hiba"; echo "$OUT"; }
 [ "$(grep -c '^password "Auth"' "$T/mgmt-transcript.authfail")" = 1 ] && allowlisted "$T/mgmt-transcript.authfail" \
@@ -944,7 +1050,7 @@ OUT=$(printf 'username=bob\npassword=BadS3cret\n' | mfa_env FAKE_MGMT_MODE=authf
 
 # Megszakítás a kódbekérőből (kind=cancel): az up "megszakítva" hibával és takarítással ér véget.
 K1=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=CanS3cret\n' | mfa_env FAKE_MGMT_MODE=cancel "$SH" "$MVPN" up openvpn "$K1" >"$T/k1.out" 2>&1 & W=$!
+{ feed "$K1"; printf 'username=bob\npassword=CanS3cret\n'; } | mfa_env FAKE_MGMT_MODE=cancel "$SH" "$MVPN" up openvpn "$K1" >"$T/k1.out" 2>&1 & W=$!
 wait_ui "$K1" challenge
 mfa_respond "$K1" $'kind=cancel\nresponse=\n'
 wait "$W"; RC=$?
@@ -980,28 +1086,23 @@ resp $'kind=crv1\nresponse=1\n' openvpn "$(uuidgen)" && nok "respond: nincs fut�
 kill "$FMP" 2>/dev/null; wait "$FMP" 2>/dev/null
 resp $'kind=crv1\nresponse=1\n' && nok "respond: a közvetítő nem fut" || ok "respond: a közvetítő nem fut"
 [ ! -e "$RB/$RID/mgmt-resp" ] && ok "respond: hibás esetekben nincs válaszfájl" || nok "respond: hibás esetekben nincs válaszfájl"
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] A here-string keresése helyett: a respond nem ír ideiglenes fájlt (az üres TMPDIR üres marad), és a kód
-  # csak a futási könyvtár mgmt-resp fájljában van (a naplóban és máshol a futási könyvtárban nincs).
-  "$T/mgmtsleep/mvpn-mgmt" 60 & FMP=$!; echo "$FMP" >"$RB/$RID/mgmt.pid"; sleep 0.2; mkdir -p "$T/rtmp"
-  printf 'kind=crv1\nresponse=DISKC0DE77\n' | env TMPDIR="$T/rtmp" MVPN_RUN_BASE="$RB" "$SH" "$MVPN" respond openvpn "$RID" >"$T/out" 2>&1
-  [ -z "$(ls -A "$T/rtmp")" ] && [ "$(grep -rl DISKC0DE77 "$RB/$RID" "$MVPN_LOG_BASE" 2>/dev/null)" = "$RB/$RID/mgmt-resp" ] \
-    && ok "respond: a kód nem kerül lemezre (csak a mgmt-resp-be)" || { nok "respond: a kód nem kerül lemezre (csak a mgmt-resp-be)"; cat "$T/out"; ls -la "$T/rtmp" "$RB/$RID"; }
-  rm -f "$RB/$RID/mgmt-resp"; kill "$FMP" 2>/dev/null; wait "$FMP" 2>/dev/null
-else
-# A bash 3.2 a here-stringet (<<<) átmeneti fájlba írja: a kód nem mehet így át.
-sed -n '/^do_respond()/,/^}/p' "$MVPN" | grep -q '<<<' && nok "respond: nincs here-string (a kód nem kerül lemezre)" || ok "respond: nincs here-string (a kód nem kerül lemezre)"
-fi
+# A here-string keresése helyett: a respond nem ír ideiglenes fájlt (az üres TMPDIR üres marad), és a kód
+# csak a futási könyvtár mgmt-resp fájljában van (a naplóban és máshol a futási könyvtárban nincs).
+"$T/mgmtsleep/mvpn-mgmt" 60 & FMP=$!; echo "$FMP" >"$RB/$RID/mgmt.pid"; sleep 0.2; mkdir -p "$T/rtmp"
+printf 'kind=crv1\nresponse=DISKC0DE77\n' | env TMPDIR="$T/rtmp" MVPN_RUN_BASE="$RB" "$SH" "$MVPN" respond openvpn "$RID" >"$T/out" 2>&1
+[ -z "$(ls -A "$T/rtmp")" ] && [ "$(grep -rl DISKC0DE77 "$RB/$RID" "$MVPN_LOG_BASE" 2>/dev/null)" = "$RB/$RID/mgmt-resp" ] \
+  && ok "respond: a kód nem kerül lemezre (csak a mgmt-resp-be)" || { nok "respond: a kód nem kerül lemezre (csak a mgmt-resp-be)"; cat "$T/out"; ls -la "$T/rtmp" "$RB/$RID"; }
+rm -f "$RB/$RID/mgmt-resp"; kill "$FMP" 2>/dev/null; wait "$FMP" 2>/dev/null
 
 # Összesített várakozási korlát: az ismétlődő WEB_AUTH nem nyújtja a határidőt MFA_MAX fölé.
 WL=$(new_conn "$GOOD_OVPN"); START=$(date +%s)
-OUT=$(printf 'username=bob\npassword=LoopS3cret\n' | mfa_env MVPN_MFA_MAX=4 MVPN_UP_TIMEOUT=3 FAKE_MGMT_MODE=webloop "$SH" "$MVPN" up openvpn "$WL" 2>&1); RC=$?
+OUT=$({ feed "$WL"; printf 'username=bob\npassword=LoopS3cret\n'; } | mfa_env MVPN_MFA_MAX=4 MVPN_UP_TIMEOUT=3 FAKE_MGMT_MODE=webloop "$SH" "$MVPN" up openvpn "$WL" 2>&1); RC=$?
 EL=$(( $(date +%s) - START ))
 [ "$RC" != 0 ] && [ "$EL" -le 20 ] && case "$OUT" in *"Timed out waiting for authentication"*) true ;; *) false ;; esac && [ ! -e "$MRUN/$WL" ] \
   && ok "mfa: ismétlődő WEB_AUTH mellett is lejár a korlát ($EL mp)" || { nok "mfa: ismétlődő WEB_AUTH mellett is lejár a korlát ($EL mp)"; echo "$OUT"; }
 # Felépülés utáni challenge (újracsatlakozás, nincs figyelő app): a korlát után a közvetítő leállítja az openvpn-t.
 PC=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=PostS3cret\n' | mfa_env MVPN_MFA_MAX=3 FAKE_MGMT_MODE=postconnect "$SH" "$MVPN" up openvpn "$PC" >"$T/out" 2>&1 \
+{ feed "$PC"; printf 'username=bob\npassword=PostS3cret\n'; } | mfa_env MVPN_MFA_MAX=3 FAKE_MGMT_MODE=postconnect "$SH" "$MVPN" up openvpn "$PC" >"$T/out" 2>&1 \
   && ok "mfa: postconnect felépült" || { nok "mfa: postconnect felépült"; cat "$T/out"; }
 PCP=$(cat "$MRUN/$PC/pid" 2>/dev/null)
 for i in $(seq 1 75); do ps -p "$PCP" >/dev/null 2>&1 || break; sleep 0.2; done
@@ -1010,7 +1111,7 @@ for i in $(seq 1 75); do ps -p "$PCP" >/dev/null 2>&1 || break; sleep 0.2; done
 mfa_down "$PC"
 # A közvetítő leáll hitelesítés közben: az up nem vár a végtelenségig, hibával takarít.
 BK=$(new_conn "$GOOD_OVPN")
-printf 'username=bob\npassword=DeadS3cret\n' | mfa_env FAKE_MGMT_MODE=wait "$SH" "$MVPN" up openvpn "$BK" >"$T/bk.out" 2>&1 & W=$!
+{ feed "$BK"; printf 'username=bob\npassword=DeadS3cret\n'; } | mfa_env FAKE_MGMT_MODE=wait "$SH" "$MVPN" up openvpn "$BK" >"$T/bk.out" 2>&1 & W=$!
 wait_ui "$BK" pending
 kill -9 "$(cat "$MRUN/$BK/mgmt.pid")" 2>/dev/null
 wait "$W"; RC=$?
@@ -1037,7 +1138,7 @@ export MVPN_SSTP_TMP="$T/sstptmp"   # a sstp-pppd.* takarítás tesztmódban csa
 mkdir -p "$MVPN_SSTP_TMP"
 sstp_dry() { # $1=config, többi: extra argumentumok → stdout+stderr a $T/sd.out-ba, az id a $SDID-be
   SDID=$(new_conn "$1"); shift
-  printf 'password=%s\n' "$SPW" | "$SH" "$MVPN" up sstp "$SDID" --dry-run "$@" >"$T/sd.out" 2>&1
+  { feed "$SDID"; printf 'password=%s\n' "$SPW"; } | "$SH" "$MVPN" up sstp "$SDID" --dry-run "$@" >"$T/sd.out" 2>&1
 }
 if sstp_dry "$GOOD_SSTP"; then ok "sstp dry-run"; else nok "sstp dry-run"; cat "$T/sd.out"; fi
 SLOG="$MVPN_LOG_BASE/$SDID.log"
@@ -1066,15 +1167,19 @@ grep -q -- "DRY: .*--ca-cert $MVPN_RUN_BASE/$SDID.dryrun.[A-Za-z0-9]*/ca.pem --u
 sstp_dry $'server=fd00::1\nuser=bob\nroute_all=no\npeer_dns=no'
 grep -q -- 'DRY: .* \[fd00::1\]:443 -- logfile .* nodetach$' "$T/sd.out" \
   && ok "sstp: IPv6 cél, route_all/peer_dns=no" || { nok "sstp: IPv6 cél, route_all/peer_dns=no"; cat "$T/sd.out"; }
+# A sortöréssel injektált sor (`"` + új sor + `plugin …`) már a szigorú titok-sorokon elakad: Invalid input.
 for bpw in 'a"b' 'a\b' "$(printf 'a\tb')" '"
 plugin /tmp/x.so'; do
   DESC="sstp: tiltott karakter a jelszóban ($(printf '%s' "$bpw" | head -1 | tr -d '\t'))"
+  WANT="must not contain quotation marks, backslashes or control characters"
+  case "$bpw" in *"$NL"*) WANT="Invalid input"; DESC="$DESC + sortöréssel injektált sor" ;; esac
   BID=$(new_conn "$GOOD_SSTP")
-  OUT=$(printf 'password=%s\n' "$bpw" | "$SH" "$MVPN" up sstp "$BID" --dry-run 2>&1); RC=$?
-  if [ "$RC" != 0 ] && case "$OUT" in *"must not contain quotation marks, backslashes or control characters"*) true ;; *) false ;; esac \
+  OUT=$({ feed "$BID"; printf 'password=%s\n' "$bpw"; } | "$SH" "$MVPN" up sstp "$BID" --dry-run 2>&1); RC=$?
+  if [ "$RC" != 0 ] && case "$OUT" in *"$WANT"*) true ;; *) false ;; esac \
      && ! printf '%s' "$OUT" | grep -q 'DRY: .*sstpc'; then ok "$DESC"; else nok "$DESC"; echo "$OUT"; fi
 done
-OUT=$(printf 'password=a"b\n' | "$SH" "$MVPN" up sstp "$(new_conn "$GOOD_SSTP")" --dry-run --lang hu 2>&1)
+QID=$(new_conn "$GOOD_SSTP")
+OUT=$({ feed "$QID"; printf 'password=a"b\n'; } | "$SH" "$MVPN" up sstp "$QID" --dry-run --lang hu 2>&1)
 case "$OUT" in *"Az SSTP jelszóban nem lehet idézőjel"*) ok "sstp: jelszó-szabály magyarul" ;; *) nok "sstp: jelszó-szabály magyarul"; echo "$OUT" ;; esac
 EVIL_SSTP=$'<ca>\nserver=evil\n'"$PEM"$'\n</ca>\nserver=vpn.example.com\nuser=bob\ncert=ca'
 sstp_dry "$EVIL_SSTP" --debug
@@ -1090,18 +1195,19 @@ for bad in $'server=vpn example.com\nuser=bob' $'server=-x.example\nuser=bob' $'
            $'server=a.example\nuser=bob\n<ca>\n$(touch /tmp/x)\n</ca>' $'user=bob' $'server=a.example\nuser=bob\nserver=b.example'; do
   DESC="sstp érvénytelen: $(printf '%s' "$bad" | tr '\n' '|')"
   SBID=$(new_conn "$bad")
-  if printf 'password=%s\n' "$SPW" | "$SH" "$MVPN" up sstp "$SBID" --dry-run >"$T/out" 2>&1; then nok "$DESC"; cat "$T/out"
+  if { feed "$SBID"; printf 'password=%s\n' "$SPW"; } | "$SH" "$MVPN" up sstp "$SBID" --dry-run >"$T/out" 2>&1; then nok "$DESC"; cat "$T/out"
   elif grep -q 'DRY: .*sstpc' "$T/out"; then nok "$DESC (sstpc parancs mégis megjelent)"
   else ok "$DESC"; fi
 done
 DESC="sstp: vezérlőkarakter"; expect_fail "$SH" "$MVPN" up sstp "$(new_conn $'server=a.example\nuser=bo\001b')" --dry-run
-OUT=$(printf 'password=%s\n' "$SPW" | "$SH" "$MVPN" up sstp "$(new_conn $'server=a b\nuser=bob')" --dry-run --lang hu 2>&1)
+QID=$(new_conn $'server=a b\nuser=bob')
+OUT=$({ feed "$QID"; printf 'password=%s\n' "$SPW"; } | "$SH" "$MVPN" up sstp "$QID" --dry-run --lang hu 2>&1)
 case "$OUT" in *"Érvénytelen config:"*"1. sor: Érvénytelen szerver"*) ok "sstp: magyar validátor-üzenet, érték idézése nélkül" ;;
   *) nok "sstp: magyar validátor-üzenet, érték idézése nélkül"; echo "$OUT" ;; esac
-printf '%s\n' "$CA_SSTP" >"$T/ca.sstp"
-OUT=$("${VALIDATE[@]}" --sstp-params "$T/ca.sstp" | tr '\n' '|')
+CAID=$(new_conn "$CA_SSTP")
+OUT=$(feed "$CAID" | "${VALIDATE[@]}" --sstp-params | tr '\n' '|')
 [ "$OUT" = "vpn.example.com|4443|bob|ca|yes|yes|" ] && ok "mvpn-validate --sstp-params" || nok "mvpn-validate --sstp-params ($OUT)"
-"${VALIDATE[@]}" --sstp-ca "$T/ca.sstp" | diff -q - <(printf '%s\n' "$PEM") >/dev/null && ok "mvpn-validate --sstp-ca" || nok "mvpn-validate --sstp-ca"
+feed "$CAID" | "${VALIDATE[@]}" --sstp-ca | diff -q - <(printf '%s\n' "$PEM") >/dev/null && ok "mvpn-validate --sstp-ca" || nok "mvpn-validate --sstp-ca"
 
 # Valódi up tesztmódban, hamis sstpc-vel ($BREW/sbin). A hamis sstpc rögzíti az argv-t, a jelszót a stderr-re is
 # kiírja (mint a sstpc PAP dumpja), pppd-szerű sorokat ír a logfile-ba, majd sstpc nevű sleep-pé válik.
@@ -1149,7 +1255,7 @@ echo old >"$ST/sstp-pppd.AAAAAA"; echo old >"$ST/sstp-pppd.AB"; ln -s "$T/sweep-
 mkdir "$ST/sstp-pppd.DIRDIR"; echo new >"$ST/sstp-pppd.NEWNEW"
 touch -h -t 202001010000 "$ST/sstp-pppd.AAAAAA" "$ST/sstp-pppd.AB" "$ST/sstp-pppd.SYMSYM" "$ST/sstp-pppd.DIRDIR"
 touch -t 209901010000 "$ST/sstp-pppd.NEWNEW"
-printf 'username=ignored\npassword=%s\n' "$SPW" | sstp_up FAKE_SSTP_MODE=ok INJECT_LOG="$MVPN_LOG_BASE/$SUID.log" "$SH" "$MVPN" up sstp "$SUID" >"$T/out" 2>&1 \
+{ feed "$SUID"; printf 'username=ignored\npassword=%s\n' "$SPW"; } | sstp_up FAKE_SSTP_MODE=ok INJECT_LOG="$MVPN_LOG_BASE/$SUID.log" "$SH" "$MVPN" up sstp "$SUID" >"$T/out" 2>&1 \
   && ok "sstp up (hamis sstpc) sikeres" || { nok "sstp up (hamis sstpc) sikeres"; cat "$T/out"; }
 SR="$MVPN_RUN_BASE/$SUID"; SLOG="$MVPN_LOG_BASE/$SUID.log"
 [ "$(cat "$SR/iface" 2>/dev/null)" = ppp9 ] && [ "$(cat "$SR/ip" 2>/dev/null)" = 10.0.0.7 ] && sstp_alive_t "$(cat "$SR/pid" 2>/dev/null)" \
@@ -1173,12 +1279,8 @@ grep -q 'ppp6\|ppp7' "$T/sstp-route.log" "$SR/iface" || grep -q '6\.6\.6' "$T/ss
 [ "$(wc -l <"$T/sstp-route.log" | tr -d ' ')" = 2 ] && [ "$(wc -l <"$T/sstp-dns.log" | tr -d ' ')" = 1 ] && ok "sstp: pontosan 2 útvonal, 1 DNS-hívás" || nok "sstp: pontosan 2 útvonal, 1 DNS-hívás"
 [ "$(stat -f %Lp "$SR/pppd.log" 2>/dev/null)" = 600 ] && grep -q '^\[pppd\] Fri Oct 16 22:58:59 2026 : Using interface ppp9$' "$SLOG" \
   && ok "sstp: pppd.log root-only (600), a naplóba [pppd] előtaggal átmásolva" || { nok "sstp: pppd.log root-only (600), a naplóba [pppd] előtaggal átmásolva"; ls -la "$SR"; }
-if [ "$MVPN_IMPL" = rust ]; then
-  # [rust] Az export keresése helyett: a sstpc környezetében nincs jelszó (lásd a gyermek-környezet ellenőrzést fent).
-  [ -s "$T/child-env.sstpc" ] && ! grep -q 'EnvS3cretPw' "$T/child-env.sstpc" && ok "sstp: nincs titok az indítás környezetében" || nok "sstp: nincs titok az indítás környezetében"
-else
-sed -n '/^start_sstpc()/,/^}/p;/^up_sstp()/,/^}/p' "$MVPN" | grep -q 'export' && nok "sstp: nincs export az indításban" || ok "sstp: nincs export az indításban"
-fi
+# Az export keresése helyett: a sstpc környezetében nincs jelszó (lásd a gyermek-környezet ellenőrzést fent).
+[ -s "$T/child-env.sstpc" ] && ! grep -q 'EnvS3cretPw' "$T/child-env.sstpc" && ok "sstp: nincs titok az indítás környezetében" || nok "sstp: nincs titok az indítás környezetében"
 SJ=$(env MVPN_TEST_IFACE_OK=1 "$SH" "$MVPN" status)
 printf '%s' "$SJ" | python3 -c '
 import json, sys
@@ -1198,7 +1300,7 @@ grep -qx -- '-n delete -net 0.0.0.0/1 -interface ppp9' "$T/sstp-route.log" && gr
 
 # Részleges hiba: a második útvonal nem áll be → hiba, a már felvett útvonal törölve, nincs futási könyvtár.
 SUID=$(new_conn "$GOOD_SSTP"); : >"$T/sstp-route.log"
-OUT=$(printf 'password=%s\n' "$SPW" | sstp_up FAKE_SSTP_MODE=ok FAKE_ROUTE_FAIL=1 "$SH" "$MVPN" up sstp "$SUID" 2>&1); RC=$?
+OUT=$({ feed "$SUID"; printf 'password=%s\n' "$SPW"; } | sstp_up FAKE_SSTP_MODE=ok FAKE_ROUTE_FAIL=1 "$SH" "$MVPN" up sstp "$SUID" 2>&1); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Setting the routes failed"*) true ;; *) false ;; esac && [ ! -e "$MVPN_RUN_BASE/$SUID" ] \
   && grep -qx -- '-n delete -net 0.0.0.0/1 -interface ppp9' "$T/sstp-route.log" && grep -qx -- '-n delete -net 128.0.0.0/1 -interface ppp9' "$T/sstp-route.log" \
   && ok "sstp: útvonal-hiba → takarítás az útvonalakkal együtt" || { nok "sstp: útvonal-hiba → takarítás az útvonalakkal együtt"; echo "$OUT"; cat "$T/sstp-route.log"; }
@@ -1207,7 +1309,7 @@ OUT=$(printf 'password=%s\n' "$SPW" | sstp_up FAKE_SSTP_MODE=ok FAKE_ROUTE_FAIL=
 
 # A maszk-fájlt az awk beolvasás után azonnal törli (kapcsolódás közben sincs meg, SIGKILL után sem maradna).
 SUID=$(new_conn "$GOOD_SSTP")
-printf 'password=%s\n' "$SPW" | sstp_up FAKE_SSTP_MODE=hang MVPN_UP_TIMEOUT=4 "$SH" "$MVPN" up sstp "$SUID" >"$T/hang.out" 2>&1 & W=$!
+{ feed "$SUID"; printf 'password=%s\n' "$SPW"; } | sstp_up FAKE_SSTP_MODE=hang MVPN_UP_TIMEOUT=4 "$SH" "$MVPN" up sstp "$SUID" >"$T/hang.out" 2>&1 & W=$!
 for i in 1 2 3 4 5 6 7 8 9 10; do [ -f "$MVPN_RUN_BASE/$SUID/pid" ] && break; sleep 0.2; done
 sleep 1
 [ -d "$MVPN_RUN_BASE/$SUID" ] && [ ! -e "$MVPN_RUN_BASE/$SUID/mask" ] && ok "sstp: maszk-fájl törölve már kapcsolódás közben" || { nok "sstp: maszk-fájl törölve már kapcsolódás közben"; ls -la "$MVPN_RUN_BASE/$SUID"; }
@@ -1215,12 +1317,12 @@ wait "$W"; RC=$?
 [ "$RC" != 0 ] && grep -q 'Timed out' "$T/hang.out" && [ ! -e "$MVPN_RUN_BASE/$SUID" ] && ok "sstp: időtúllépés → takarítás" || { nok "sstp: időtúllépés → takarítás"; cat "$T/hang.out"; }
 
 SUID=$(new_conn "$GOOD_SSTP")
-OUT=$(printf 'password=%s\n' "$SPW" | sstp_up FAKE_SSTP_MODE=auth "$SH" "$MVPN" up sstp "$SUID" 2>&1); RC=$?
+OUT=$({ feed "$SUID"; printf 'password=%s\n' "$SPW"; } | sstp_up FAKE_SSTP_MODE=auth "$SH" "$MVPN" up sstp "$SUID" 2>&1); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Authentication failed"*) true ;; *) false ;; esac && [ ! -e "$MVPN_RUN_BASE/$SUID" ] \
   && ok "sstp: hitelesítési hiba → hiba, takarítás" || { nok "sstp: hitelesítési hiba → hiba, takarítás"; echo "$OUT"; }
 pgrep -f "$T/sstpsleep/sstpc" >/dev/null && nok "sstp: hitelesítési hiba után nem fut sstpc" || ok "sstp: hitelesítési hiba után nem fut sstpc"
 SUID=$(new_conn "$GOOD_SSTP")
-OUT=$(printf 'password=%s\n' "$SPW" | sstp_up FAKE_SSTP_MODE=cert "$SH" "$MVPN" up sstp "$SUID" 2>&1); RC=$?
+OUT=$({ feed "$SUID"; printf 'password=%s\n' "$SPW"; } | sstp_up FAKE_SSTP_MODE=cert "$SH" "$MVPN" up sstp "$SUID" 2>&1); RC=$?
 [ "$RC" != 0 ] && case "$OUT" in *"Server certificate error"*) true ;; *) false ;; esac && [ ! -e "$MVPN_RUN_BASE/$SUID" ] \
   && ok "sstp: tanúsítványhiba → hiba, takarítás" || { nok "sstp: tanúsítványhiba → hiba, takarítás"; echo "$OUT"; }
 grep -qF "$SPW" "$MVPN_LOG_BASE/$SUID.log" && nok "sstp: jelszó nincs a naplóban (hiba után)" || ok "sstp: jelszó nincs a naplóban (hiba után)"

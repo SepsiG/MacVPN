@@ -376,6 +376,46 @@ fn down_releases_and_disconnects() {
     assert!(h.host.logs().iter().any(|l| l.starts_with(&format!("down {key} by “Remote Desktop”"))));
 }
 
+/// Locked (1.2): `pair`, `hello`, `list`, `up` and `status` answer `locked`; the session and its lease stay, and
+/// `down` still releases; after the unlock `hello` works again.
+#[test]
+fn locked_refuses_everything_but_down() {
+    let h = Harness::new();
+    let (key, item) = managed("Office");
+    h.host.add(item);
+    let token = h.pair(&[&key]);
+    let mut c = h.hello(&token);
+    c.send(json!({"id":1,"op":"up","connection":key}));
+    c.reply_to(1);
+    h.host.locked.store(true, Ordering::SeqCst);
+    for (id, op) in [(2, json!({"id":2,"op":"list"})), (3, json!({"id":3,"op":"status"}))] {
+        c.send(op);
+        assert_eq!(c.reply_to(id).1, json!({"id":id,"ok":false,"error":"locked"}));
+    }
+    c.send(json!({"id":4,"op":"up","connection":key}));
+    assert_eq!(c.reply_to(4).1, json!({"id":4,"ok":false,"error":"locked"}));
+    // A new client: `hello` and `pair` are refused and the connection ends.
+    let mut other = h.connect();
+    other.send(json!({"id":1,"op":"hello","token":token}));
+    assert_eq!(other.read(), json!({"id":1,"ok":false,"error":"locked"}));
+    other.expect_closed();
+    let mut pairing = h.connect();
+    pairing.send(json!({"op":"pair","name":"Other"}));
+    assert_eq!(pairing.read(), json!({"ok":false,"error":"locked"}));
+    pairing.expect_closed();
+    assert_eq!(h.host.asks.load(Ordering::SeqCst), 1, "no pairing window while locked");
+    // The lease survived the lock; `down` releases it.
+    assert_eq!(h.server().holders().len(), 1);
+    c.send(json!({"id":5,"op":"down","connection":key}));
+    assert_eq!(c.reply_to(5).1, json!({"id":5,"ok":true}));
+    assert_eq!(h.host.count(&format!("disconnect {key}")), 1);
+    // Unlocked: `hello` works again.
+    h.host.locked.store(false, Ordering::SeqCst);
+    let mut again = h.hello(&token);
+    again.send(json!({"id":1,"op":"list"}));
+    assert_eq!(again.read()["connections"][0]["id"], key.as_str());
+}
+
 #[test]
 fn client_eof_disconnects() {
     let h = Harness::new();

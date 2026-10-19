@@ -78,6 +78,10 @@ pub struct AppState {
     pub control: crate::control::ControlApp,
     /// The pairing windows shown.
     pub pairing_windows: crate::pairing::PairingWindows,
+    /// The vault: its lifecycle, the 1.1 storage, the create window's steps, the vault windows' input locks.
+    pub vault: crate::vault::VaultApp,
+    /// The full backup and restore (once the vault is attached).
+    pub backup: crate::backup::BackupApp,
 }
 
 impl AppState {
@@ -130,6 +134,12 @@ impl AppState {
         vm.control = self.control.view(self.prefs.bool(crate::control::ENABLED_KEY).unwrap_or(false));
         vm.pairings = self.control.pairing.pending();
         vm.credential_prompts = self.credential_broker.pending();
+        vm.credentials = self.connections.credentials_view();
+        vm.backup_available = self.backup.available();
+        // Last: while locked (or before the vault exists) the rows and paired apps are removed again.
+        let (vault, setup) = self.vault.view(self.prefs.bool(crate::vault::SHOW_LOCK_NOW_KEY).unwrap_or(false));
+        vm.apply_vault(vault);
+        vm.vault_setup = setup;
         vm
     }
 

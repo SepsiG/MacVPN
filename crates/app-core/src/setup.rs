@@ -6,9 +6,11 @@
 use crate::connections::ConnectionsModel;
 use crate::deps::SecretWriter;
 use crate::manager::ConnectionManager;
+use crate::migration::LegacyKeychain;
 use crate::updates::Notice;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::uuid_string;
+use macvpn_core::vault::KeyStore;
 use serde::Serialize;
 
 /// What the system check found (the platform's `SetupReport`, mapped by the app).
@@ -198,6 +200,14 @@ pub trait UninstallSystem {
     fn remove_user_files(&self);
 }
 
+/// The keys the user data has outside its files: the vault key's key-store item (`local.macvpn.vault`, for the
+/// automatic unlock) and the old service's Keychain items (`local.macvpn.secrets`, left by a 1.1 install that was
+/// never migrated, or by a migration that could not delete them).
+pub struct UserDataStores<'a> {
+    pub key_store: &'a dyn KeyStore,
+    pub legacy_keychain: &'a dyn LegacyKeychain,
+}
+
 /// The answer to the confirmation (Uninstall with or without "Also delete user data").
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct UninstallChoice {
@@ -207,13 +217,15 @@ pub struct UninstallChoice {
 /// The Swift `AppModel.uninstall` after the confirmation. The root layer goes first (its script disconnects the
 /// root connections); if that fails, nothing else happens (`Err`: the "Uninstall failed" alert, then the system is
 /// checked again). Then the active native connections are disconnected, polling stops, the login item is
-/// unregistered, and with `remove_user_data` the Keychain items, the unsaved edits and the user files go. `Ok`:
+/// unregistered, and with `remove_user_data` the saved secrets, the vault key, the old Keychain items, the unsaved
+/// edits and the user files go. `Ok`:
 /// the final message ("MacVPN has been uninstalled"; the window's button quits).
 pub fn uninstall(
     manager: &ConnectionManager,
     connections: &ConnectionsModel,
     secrets: &dyn SecretWriter,
     system: &dyn UninstallSystem,
+    stores: UserDataStores<'_>,
     choice: UninstallChoice,
 ) -> Result<Notice, Notice> {
     if let Err(message) = system.uninstall_root() {
@@ -236,6 +248,12 @@ pub fn uninstall(
             secrets.delete_all(&c.id);
         }
         secrets.remove_all();
+        // Also in the legacy read-only mode (where the stores write nothing): the old items are deleted one by one.
+        for (account, field) in stores.legacy_keychain.items() {
+            stores.legacy_keychain.delete(&account, field);
+        }
+        // The vault file goes with the files below; its key must not stay behind.
+        let _ = stores.key_store.delete();
         connections.discard_unsaved();
         system.remove_user_files();
     }

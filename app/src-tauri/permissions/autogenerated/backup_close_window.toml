@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-backup-close-window"
+description = "Enables the backup_close_window command without any pre-configured scope."
+commands.allow = ["backup_close_window"]
+
+[[permission]]
+identifier = "deny-backup-close-window"
+description = "Denies the backup_close_window command without any pre-configured scope."
+commands.deny = ["backup_close_window"]

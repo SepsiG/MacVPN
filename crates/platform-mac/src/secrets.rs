@@ -10,38 +10,14 @@ use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum SecretField {
-    Username,
-    Password,
-    Psk,
-    /// The password of an OpenVPN private key (PKCS#12 / encrypted PEM).
-    KeyPassword,
-}
+/// One enum for the secret fields across the workspace (core's, also the vault's `secrets.field` column).
+pub use macvpn_core::models::SecretField;
 
-impl SecretField {
-    pub const ALL: [SecretField; 4] =
-        [SecretField::Username, SecretField::Password, SecretField::Psk, SecretField::KeyPassword];
-
-    pub fn raw_value(self) -> &'static str {
-        match self {
-            SecretField::Username => "username",
-            SecretField::Password => "password",
-            SecretField::Psk => "psk",
-            SecretField::KeyPassword => "keypass",
-        }
-    }
-
-    pub fn from_raw_value(raw: &str) -> Option<SecretField> {
-        Self::ALL.into_iter().find(|f| f.raw_value() == raw)
-    }
-
-    /// Swift's `"\(field)"` (the case name), used by the in-memory store's keys.
-    fn case_name(self) -> &'static str {
-        match self {
-            SecretField::KeyPassword => "keyPassword",
-            other => other.raw_value(),
-        }
+/// Swift's `"\(field)"` (the case name), used by the in-memory store's keys.
+fn case_name(field: SecretField) -> &'static str {
+    match field {
+        SecretField::KeyPassword => "keyPassword",
+        other => other.raw_value(),
     }
 }
 
@@ -67,6 +43,11 @@ pub trait SecretStore: Send + Sync {
 /// Raw generic-password access.
 pub trait KeychainBackend: Send + Sync {
     fn read(&self, service: &str, account: &str) -> Option<Vec<u8>>;
+    /// [`Self::read`] that tells a missing item (`Ok(None)`) from a failed read (`Err(OSStatus)`: a denied or
+    /// cancelled prompt, a locked keychain).
+    fn read_checked(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, i32> {
+        Ok(self.read(service, account))
+    }
     /// Creates or updates the item. False on error.
     fn write(&self, data: &[u8], service: &str, account: &str) -> bool;
     fn delete(&self, service: &str, account: &str);
@@ -89,6 +70,10 @@ impl KeychainBackend for SystemKeychain {
         crate::keychain_ffi::read(service, account)
     }
 
+    fn read_checked(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, i32> {
+        crate::keychain_ffi::read_checked(service, account)
+    }
+
     fn write(&self, data: &[u8], service: &str, account: &str) -> bool {
         crate::keychain_ffi::write(data, service, account)
     }
@@ -108,6 +93,8 @@ pub struct InMemoryKeychain {
     items: Mutex<HashMap<String, BTreeMap<String, Vec<u8>>>>,
     /// Simulates a failing keychain write.
     pub fail_writes: AtomicBool,
+    /// Accounts whose `read_checked` fails with the given `OSStatus`.
+    read_failures: Mutex<HashMap<String, i32>>,
 }
 
 impl InMemoryKeychain {
@@ -118,11 +105,28 @@ impl InMemoryKeychain {
     pub fn set_fail_writes(&self, fail: bool) {
         self.fail_writes.store(fail, Ordering::SeqCst);
     }
+
+    /// `Some(status)`: every `read_checked` of `account` (any service) fails with it; `None` clears it.
+    pub fn fail_read(&self, account: &str, status: Option<i32>) {
+        if let Ok(mut failures) = self.read_failures.lock() {
+            match status {
+                Some(status) => failures.insert(account.to_string(), status),
+                None => failures.remove(account),
+            };
+        }
+    }
 }
 
 impl KeychainBackend for InMemoryKeychain {
     fn read(&self, service: &str, account: &str) -> Option<Vec<u8>> {
         self.items.lock().ok()?.get(service)?.get(account).cloned()
+    }
+
+    fn read_checked(&self, service: &str, account: &str) -> Result<Option<Vec<u8>>, i32> {
+        if let Some(status) = self.read_failures.lock().ok().and_then(|f| f.get(account).copied()) {
+            return Err(status);
+        }
+        Ok(self.read(service, account))
     }
 
     fn write(&self, data: &[u8], service: &str, account: &str) -> bool {
@@ -259,7 +263,7 @@ impl InMemorySecretStore {
     }
 
     fn key(id: &Uuid, field: SecretField) -> String {
-        format!("{}.{}", uuid_string(id), field.case_name())
+        format!("{}.{}", uuid_string(id), case_name(field))
     }
 }
 

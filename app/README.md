@@ -54,6 +54,29 @@ list comes from `CFBundleLocalizations` (no `.lproj` needed: the app reads the p
 `MVPN_IMPL=rust MVPN_BIN=$PWD/dist/MacVPN.app/Contents/Resources/root/mvpn scripts/test-root.sh` runs the root
 layer tests against the signed binary.
 
+### The vault database: SQLCipher with CommonCrypto
+
+The vault (`crates/core`, behind the `vault` cargo feature, enabled by `macvpn-app-core` and
+`macvpn-platform-mac` only) is SQLCipher 4 through `rusqlite` with `bundled-sqlcipher`. On macOS, `libsqlite3-sys`
+builds SQLCipher with Apple's **CommonCrypto** provider, but only when no OpenSSL location is set: with any
+`OPENSSL_DIR`, `OPENSSL_LIB_DIR`, `OPENSSL_INCLUDE_DIR`, `OPENSSL_STATIC` or `OPENSSL_LIBS` (also the
+`AARCH64_APPLE_DARWIN_` / `X86_64_APPLE_DARWIN_` prefixed forms) it silently links that `libcrypto` dylib (for
+example Homebrew's). Its build script does not track these variables for rebuilds, so an exported variable can
+also leave a stale build behind. Keep them unset when you build (`unset OPENSSL_DIR …`, then `cargo clean -p
+libsqlite3-sys` if one was set); `scripts/build-dmg.sh` unsets all of them itself.
+
+**Release gates** in `scripts/build-dmg.sh` (the build fails if one does not hold):
+
+- the app binary contains none of the debug-only markers (`setInspectable`, `developerExtrasEnabled`,
+  `MACVPN_SANDBOX_HOME`, `MACVPN_SMOKE`);
+- `otool -L` of the app binary lists no `libcrypto`, `libssl` or `openssl`;
+- in each architecture slice, the app binary contains no `openssl` / `libcrypto` string, and the linked SQLCipher
+  carries the `commoncrypto` provider name;
+- `mvpn` contains neither `sqlcipher` nor `SQLite format`: the vault code must never reach the root layer
+  (`crates/mvpn` uses `crates/core` without the `vault` feature);
+- the bundle carries `THIRD-PARTY-NOTICES.txt` (see `docs/RELEASING.md`), and the usual Info.plist, signature and
+  symlink checks pass.
+
 ## Tests
 
 - `cargo test --workspace`: unit, compatibility and l10n coverage tests (also of this app's logic in `crates/app-core`)
@@ -157,7 +180,7 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
 - Secrets: the stored passwords, PSKs and the private key password never reach the web view. An editor gets
   `null` for each secret field and a `hasStoredSecret` flag; the field shows "Saved — type to replace". A value
   is only sent to the backend when the user types a new one (or `""` after "Remove saved password"); saving with
-  an untouched field keeps the Keychain item. Only the non-secret user name is shown.
+  an untouched field keeps the stored value (in the vault). Only the non-secret user name is shown.
 - Files: no command takes or returns a path. Import, the SSTP CA file, export and the log's Save… use an
   `NSOpenPanel` / `NSSavePanel` sheet shown by the Rust side (`platform-mac::dialogs`), and a drop on the
   Connections window arrives as the window's drag-drop event (system paths, not from the web view); the import

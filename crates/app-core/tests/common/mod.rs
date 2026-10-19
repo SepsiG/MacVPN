@@ -40,7 +40,10 @@ impl Drop for TempDir {
 pub struct Call {
     /// `status`, `up <kind> <id> [--debug] [--accept-risky a,b]`, `down <kind> <id>`, `respond openvpn <id>`.
     pub line: String,
+    /// The secret lines (`up`, `respond`); the config of an `up` is in `config`.
     pub stdin: Option<String>,
+    /// `up`: the config sent on stdin ahead of the secrets (root layer 8).
+    pub config: Option<Vec<u8>>,
 }
 
 /// The root helper: a response per command line (default: success with empty output), optional delays.
@@ -92,9 +95,13 @@ impl MockRoot {
 
     /// The response is decided when the call starts (as the Swift mock does); the delay comes after.
     fn run(&self, line: String, stdin: Option<String>) -> Result<String, String> {
+        self.run_with(line, stdin, None)
+    }
+
+    fn run_with(&self, line: String, stdin: Option<String>, config: Option<Vec<u8>>) -> Result<String, String> {
         let (response, delay) = {
             let mut calls = self.calls.lock().unwrap();
-            calls.push(Call { line: line.clone(), stdin });
+            calls.push(Call { line: line.clone(), stdin, config });
             let once = self.once.lock().unwrap().get_mut(&line).and_then(|q| q.pop_front());
             (
                 once.or_else(|| self.responses.lock().unwrap().get(&line).cloned()),
@@ -130,6 +137,7 @@ impl RootClient for MockRoot {
         &self,
         kind: VPNKind,
         id: &Uuid,
+        config: &[u8],
         secrets: &Secrets,
         debug: bool,
         accept_risky: &[String],
@@ -142,7 +150,7 @@ impl RootClient for MockRoot {
             line.push_str(" --accept-risky ");
             line.push_str(&accept_risky.join(","));
         }
-        self.run(line, Some(secrets.stdin_payload().to_string())).map(|_| ())
+        self.run_with(line, Some(secrets.stdin_payload().to_string()), Some(config.to_vec())).map(|_| ())
     }
 
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {

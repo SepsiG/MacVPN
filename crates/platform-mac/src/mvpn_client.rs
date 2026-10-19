@@ -9,6 +9,7 @@ use macvpn_core::swift_str;
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum MvpnError {
@@ -110,20 +111,40 @@ impl<'a> MvpnClient<'a> {
         Ok(runner.unwrap_or(self.runner).run("/usr/bin/sudo", &Self::sudo_arguments(args, language), stdin)?)
     }
 
-    /// `accept_risky`: the risky OpenVPN directives acknowledged for the connection; when not empty
-    /// `--accept-risky a,b` (sorted), before `--lang`. Only `^[a-z0-9-]+$` names pass.
+    /// `mvpn up` (root layer 8). The root layer opens no user file: `config` goes on stdin, framed, followed by
+    /// the secret lines, and stdin is closed after them:
+    ///
+    /// ```text
+    /// config <exact byte length of config>\n<config bytes>username=…\npassword=…\n…
+    /// ```
+    ///
+    /// The whole payload is built in one buffer that is zeroed when dropped; neither the config nor a secret is
+    /// ever in the arguments. `accept_risky`: the risky OpenVPN directives acknowledged for the connection; when
+    /// not empty `--accept-risky a,b` (sorted), before `--lang`. Only `^[a-z0-9-]+$` names pass.
     pub fn up(
         &self,
         kind: VPNKind,
         id: &Uuid,
+        config: &[u8],
         secrets: &Secrets,
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), ClientError> {
         let args = Self::up_arguments(kind, id, debug, accept_risky);
-        // Wiped once `sudo` has it (the binding outlives the call).
-        let payload = secrets.stdin_payload();
-        check(self.sudo(&args, Some(payload.as_str()), Some(self.up_runner))?)
+        let payload = Self::up_stdin(config, secrets);
+        let language = self.language.unwrap_or_else(AppLanguage::current);
+        check(self.up_runner.run_bytes("/usr/bin/sudo", &Self::sudo_arguments(&args, language), &payload)?)
+    }
+
+    /// The framed stdin of `mvpn up` (see [`MvpnClient::up`]).
+    pub fn up_stdin(config: &[u8], secrets: &Secrets) -> Zeroizing<Vec<u8>> {
+        let lines = secrets.stdin_payload();
+        let header = format!("config {}\n", config.len());
+        let mut payload = Zeroizing::new(Vec::with_capacity(header.len() + config.len() + lines.len()));
+        payload.extend_from_slice(header.as_bytes());
+        payload.extend_from_slice(config);
+        payload.extend_from_slice(lines.as_bytes());
+        payload
     }
 
     pub fn up_arguments(kind: VPNKind, id: &Uuid, debug: bool, accept_risky: &[String]) -> Vec<String> {

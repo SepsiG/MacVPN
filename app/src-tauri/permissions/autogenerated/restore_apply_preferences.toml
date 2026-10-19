@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-restore-apply-preferences"
+description = "Enables the restore_apply_preferences command without any pre-configured scope."
+commands.allow = ["restore_apply_preferences"]
+
+[[permission]]
+identifier = "deny-restore-apply-preferences"
+description = "Denies the restore_apply_preferences command without any pre-configured scope."
+commands.deny = ["restore_apply_preferences"]

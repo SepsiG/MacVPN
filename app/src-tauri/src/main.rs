@@ -6,45 +6,61 @@
 //! the view-model publisher and every connect / disconnect run on their own threads or the blocking pool,
 //! because the platform calls are synchronous.
 
+mod backup;
 mod commands;
 mod control;
 mod credentials;
 mod dialogs;
 mod dock;
 mod fit;
+mod folders;
 mod manage;
 mod navigation;
 mod notifications;
 mod pairing;
 mod platform;
 mod prompts;
+mod shared_credentials;
 #[cfg(debug_assertions)]
 mod smoke;
 mod state;
 mod system;
 mod tray;
 mod update_window;
+mod vault;
 
 use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, MemoryPreferences, POLL_TICK, Poller, PreferenceStore};
+use macvpn_app_core::backup::BackupService;
 use macvpn_app_core::connections::ConnectionsModel;
+use macvpn_app_core::control::FileRegistryStore;
 use macvpn_app_core::credential_prompt::CredentialBroker;
-use macvpn_app_core::deps::{SecretReader, SecretWriter, SystemClock};
+use macvpn_app_core::deps::{SecretReader, SystemClock};
 use macvpn_app_core::editor::EditorDeps;
+use macvpn_app_core::folders::VaultFolders;
 use macvpn_app_core::live::{LiveReload, WATCHER_TRUSTED};
 use macvpn_app_core::logs::{NativeLogCollector, NativeLogs};
+use macvpn_app_core::migration::{LegacyKeychain, LegacySources};
 use macvpn_app_core::prompt::PromptBroker;
 use macvpn_app_core::quit::{QuitAction, QuitGuard, QuitOrigin};
+use macvpn_app_core::shared_credentials::SharedCredentials;
 use macvpn_app_core::updates::UpdateController;
+use macvpn_app_core::vault::VaultLifecycle;
+use macvpn_app_core::vault_stores::{
+    ReadOnly, VaultConnections, VaultRanking, VaultRegistry, VaultSecrets, VaultSystemOtp,
+};
 use macvpn_app_core::{ConnectionManager, Dependencies};
 use macvpn_core::date::Date;
 use macvpn_core::l10n;
 use macvpn_core::ranking::ConnectionRankingStore;
 use macvpn_core::store::ConnectionStore;
 use macvpn_core::system_otp::SystemOTPStore;
+use macvpn_core::vault::{Entropy, KdfParams, KeyStore, MemoryKeyStore, VAULT_FILE};
 use macvpn_platform_mac::app_hooks::{self, TerminateReply};
+use macvpn_platform_mac::legacy_store::KeychainLegacy;
 use macvpn_platform_mac::profile_staging::{self, StagedProfiles};
 use macvpn_platform_mac::secrets::{InMemoryKeychain, KeychainSecretStore};
 use macvpn_platform_mac::setup_checker::SetupReport;
+use macvpn_platform_mac::vault_keys::{KeychainKeyStore, SystemEntropy};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
@@ -54,31 +70,76 @@ use macvpn_platform_mac::http::CurlHttpClient;
 use macvpn_platform_mac::preferences::CFPreferencesStore;
 use platform::{
     AuthStateFiles, Environment, GitHubReleases, Keychain, LogStreams, Native, Preferences, ProfileFiles, Root,
+    SharedKeychain,
 };
 use state::{AppState, Publisher};
 
-/// The Keychain (one store, read and written) and the one-time legacy migration.
-struct Secrets {
-    reader: Arc<dyn SecretReader>,
-    writer: Arc<dyn SecretWriter>,
+/// Every store the app uses, backed by the vault; the 1.1 storage is the migration's source and, in the legacy
+/// read-only mode, the stores' fallback.
+struct Storage {
+    vault: Arc<VaultLifecycle>,
+    legacy: Arc<LegacySources>,
+    entropy: Arc<dyn Entropy>,
+    connections: Arc<VaultConnections>,
+    secrets: Arc<VaultSecrets>,
+    ranking: Arc<VaultRanking>,
+    system_otp: Arc<VaultSystemOtp>,
+    registry: Arc<VaultRegistry>,
 }
 
-fn secrets(env: &Environment) -> (Secrets, Box<dyn FnOnce() + Send>) {
-    if env.sandbox {
-        let store = Arc::new(Keychain(KeychainSecretStore::new(InMemoryKeychain::new())));
-        return (Secrets { reader: store.clone(), writer: store }, Box::new(|| {}));
-    }
-    let store = Arc::new(Keychain(KeychainSecretStore::system()));
-    let migrating = store.clone();
-    (
-        Secrets { reader: store.clone(), writer: store },
-        Box::new(move || {
-            migrating.0.migrate_legacy_items();
-        }),
-    )
+/// The auto-unlock key store, the old Keychain items (as the migration and as the read-only mode read them) and the
+/// one-time move of the older service's items.
+type Platform = (Arc<dyn KeyStore>, Arc<dyn LegacyKeychain>, Arc<dyn SecretReader>, Box<dyn FnOnce() + Send>);
+
+/// The storage and the one-time move of the Keychain items of the older service (`macvpn`), before anything is
+/// read. The sandbox keeps the old Keychain items and the auto-unlock key in memory (never the real Keychain).
+fn storage(env: &Environment, legacy_store: Arc<ConnectionStore>) -> (Storage, Box<dyn FnOnce() + Send>) {
+    let support = env.application_support();
+    let entropy: Arc<dyn Entropy> = Arc::new(SystemEntropy);
+    let (keystore, keychain, legacy_secrets, migrate): Platform = if env.sandbox {
+        let memory = Arc::new(InMemoryKeychain::new());
+        #[cfg(debug_assertions)]
+        smoke::seed_legacy_keychain(env, &memory);
+        (
+            Arc::new(MemoryKeyStore::new()),
+            Arc::new(KeychainLegacy::new(KeychainSecretStore::new(SharedKeychain(memory.clone())))),
+            Arc::new(Keychain(KeychainSecretStore::new(SharedKeychain(memory)))),
+            Box::new(|| {}),
+        )
+    } else {
+        (
+            Arc::new(KeychainKeyStore::new()),
+            Arc::new(KeychainLegacy::system()),
+            Arc::new(Keychain(KeychainSecretStore::system())),
+            Box::new(|| {
+                KeychainSecretStore::system().migrate_legacy_items();
+            }),
+        )
+    };
+    let vault = Arc::new(VaultLifecycle::new(support.clone(), keystore, entropy.clone(), KdfParams::DEFAULT));
+    let legacy = Arc::new(LegacySources::new(support.clone(), keychain));
+    let storage = Storage {
+        connections: Arc::new(VaultConnections::new(vault.clone()).with_legacy(Arc::new(ReadOnly(legacy_store)))),
+        secrets: Arc::new(VaultSecrets::new(vault.clone()).with_legacy(Arc::new(ReadOnly(legacy_secrets)))),
+        ranking: Arc::new(VaultRanking::new(vault.clone()).with_legacy(Arc::new(ReadOnly(Arc::new(
+            ConnectionRankingStore::new(ConnectionRankingStore::default_path(&support)),
+        ))))),
+        system_otp: Arc::new(
+            VaultSystemOtp::new(vault.clone())
+                .with_legacy(Arc::new(ReadOnly(Arc::new(SystemOTPStore::new(SystemOTPStore::default_path(&support)))))),
+        ),
+        registry: Arc::new(
+            VaultRegistry::new(vault.clone())
+                .with_legacy(Arc::new(ReadOnly(Arc::new(FileRegistryStore { dir: support.clone() })))),
+        ),
+        vault,
+        legacy,
+        entropy,
+    };
+    (storage, migrate)
 }
 
-fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) -> Arc<AppState> {
+fn build_state(env: Environment, storage: Storage) -> Arc<AppState> {
     let support = env.application_support();
     let root: Arc<dyn macvpn_app_core::deps::RootClient> = Arc::new(Root::new());
     // The smoke run never reaches the root helper: its connects go to a stand-in (debug builds only).
@@ -88,12 +149,14 @@ fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) 
     // The smoke run's system VPN list is a stand-in the driver changes (debug builds only).
     #[cfg(debug_assertions)]
     let native = smoke::fake_native(&env).unwrap_or(native);
-    let mut deps = Dependencies::new(store.clone(), secrets.reader.clone(), root, native);
-    deps.ranking_store = Some(Arc::new(ConnectionRankingStore::new(ConnectionRankingStore::default_path(&support))));
-    deps.system_otp_store = Some(Arc::new(SystemOTPStore::new(SystemOTPStore::default_path(&support))));
+    let mut deps = Dependencies::new(storage.connections.clone(), storage.secrets.clone(), root, native);
+    deps.ranking_store = Some(storage.ranking.clone());
+    deps.system_otp_store = Some(storage.system_otp.clone());
     deps.auth_state = Arc::new(AuthStateFiles { uid: macvpn_platform_mac::system::user_id() });
-    // "Save" in the credential prompt writes to the same store as the editors (in the sandbox: in memory).
-    deps.secret_writer = Some(secrets.writer.clone());
+    // "Save in vault" of the credential prompt writes to the same store as the editors.
+    deps.secret_writer = Some(storage.secrets.clone());
+    // Folders and colours live in the vault (dropped while it is locked).
+    deps.folders = Some(Arc::new(VaultFolders::new(storage.vault.clone())));
     // The Swift app's UserDefaults domain; the sandbox keeps them in memory.
     let prefs: Arc<dyn PreferenceStore> =
         if env.sandbox { Arc::new(MemoryPreferences::new()) } else { Arc::new(Preferences(CFPreferencesStore::app())) };
@@ -113,12 +176,14 @@ fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) 
     };
     let connections = Arc::new(ConnectionsModel::new(EditorDeps {
         manager: manager.clone(),
-        store,
-        secrets: secrets.reader,
-        secret_writer: secrets.writer,
+        store: storage.connections.clone(),
+        secrets: storage.secrets.clone(),
+        secret_writer: storage.secrets.clone(),
         profiles: Arc::new(profiles),
         clock: Arc::new(SystemClock),
     }));
+    // The shared credentials live in the vault (the section answers "locked" while it is locked).
+    connections.set_shared_credentials(SharedCredentials::new(storage.vault.clone()));
     let native_logs = Arc::new(NativeLogs::new(Box::new(|| {
         NativeLogCollector::new(
             Arc::new(LogStreams),
@@ -132,6 +197,14 @@ fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) 
             std::time::Duration::from_secs_f64(macvpn_app_core::logs::NATIVE_LOG_MAX_SECONDS),
         )
     })));
+    // The full backup and restore work on the vault (the service answers "locked" while it is not open).
+    let backup = backup::BackupApp::default();
+    backup.attach(Arc::new(BackupService::new(
+        storage.vault.clone(),
+        storage.entropy.clone(),
+        KdfParams::DEFAULT,
+        macvpn_core::VERSION,
+    )));
     Arc::new(AppState {
         updates,
         login_item: RwLock::new(None),
@@ -162,8 +235,10 @@ fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) 
         credential_tracker: Mutex::default(),
         tray_anchor: Mutex::new(None),
         hidden_on_blur: Mutex::new(None),
-        control: control::ControlApp::new(&support),
+        control: control::ControlApp::new(&support, storage.registry.clone(), support.join(VAULT_FILE)),
+        vault: vault::VaultApp::new(storage.vault, storage.legacy, storage.entropy),
         pairing_windows: pairing::PairingWindows::default(),
+        backup,
     })
 }
 
@@ -265,6 +340,7 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                 })
                 .expect("poller thread");
         }
+        LaunchStep::OpenVault => vault::launch(app, state),
         LaunchStep::MigrateKeychain | LaunchStep::SweepStagedProfiles | LaunchStep::RemoveLegacyProfiles => {}
     }
 }
@@ -365,8 +441,9 @@ fn main() {
             std::process::exit(1);
         }
     };
+    // The 1.1 connection store: only the migration's source and the legacy read-only mode's fallback.
     let store = Arc::new(ConnectionStore::new(env.connections_dir()));
-    let (secrets, migrate) = secrets(&env);
+    let (storage, migrate) = storage(&env, store.clone());
     // The Swift `AppModel.init` part, before anything else (and before any secret is read): the Keychain
     // migration, the sweep of the native profiles staged by the previous run, and the legacy profile removal.
     let mut migrate = Some(migrate);
@@ -388,7 +465,7 @@ fn main() {
             _ => unreachable!("the first three launch steps"),
         }
     }
-    let state = build_state(env, store, secrets);
+    let state = build_state(env, storage);
 
     let app = tauri::Builder::default()
         .manage(state.clone())
@@ -445,6 +522,49 @@ fn main() {
             control::control_set_allowed,
             control::control_revoke,
             control::control_audit_save,
+            vault::vault_ready,
+            vault::vault_setup_step,
+            vault::vault_create,
+            vault::vault_confirm_recovery,
+            vault::vault_open_restore,
+            vault::vault_unlock,
+            vault::vault_recover,
+            vault::vault_close,
+            vault::vault_change_password,
+            vault::vault_enable_auto_unlock,
+            vault::vault_new_recovery_key,
+            vault::vault_confirm_new_key,
+            vault::vault_show,
+            vault::vault_lock_now,
+            vault::vault_auto_unlock_off,
+            vault::vault_set_show_lock_now,
+            vault::vault_key_copied,
+            folders::folder_create,
+            folders::folder_rename,
+            folders::folder_set_color,
+            folders::folder_set_collapsed,
+            folders::folder_move,
+            folders::folder_delete,
+            folders::item_move,
+            folders::item_set_color,
+            shared_credentials::credential_create,
+            shared_credentials::credential_update,
+            shared_credentials::credential_delete,
+            shared_credentials::credential_link,
+            shared_credentials::credential_matches,
+            shared_credentials::credential_from_connection,
+            shared_credentials::answer_question_choice,
+            backup::backup_show_window,
+            backup::backup_close_window,
+            backup::backup_choose_destination,
+            backup::backup_save,
+            backup::restore_choose_file,
+            backup::restore_open,
+            backup::restore_apply,
+            backup::restore_fresh_apply,
+            backup::restore_apply_preferences,
+            backup::restore_reinstall_profile,
+            backup::restore_discard,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {
@@ -470,6 +590,14 @@ fn main() {
             }
             if credentials::is_credential_window(window.label()) {
                 credentials::on_window_event(window, event);
+                return;
+            }
+            if vault::is_vault_window(window.label()) {
+                vault::on_window_event(window, event);
+                return;
+            }
+            if backup::is_backup_window(window.label()) {
+                backup::on_window_event(window, event);
                 return;
             }
             if pairing::is_pairing_window(window.label()) {
