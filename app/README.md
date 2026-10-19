@@ -7,7 +7,15 @@
 - The logic (connection manager, view model, polling, launch order, quit decision, update schedule) is in
   `crates/app-core`, tested without a UI.
 
+The rest of the repository: `crates/core` (platform-independent logic and the EN/HU text table), `crates/mvpn` (the
+root binary), `crates/platform-mac` (macOS services), `scripts/` (build, test and signing scripts). `legacy/swift` is
+the 0.x Swift app, kept only as the reference of a few compatibility tests; it is not built and will be removed.
+
 ## Build
+
+Toolchain: `rust-toolchain.toml` pins the exact Rust version (1.99.1, with clippy, rustfmt and both macOS targets),
+which `rustup` uses inside the repository (`rustup toolchain install` installs it). CI and the release workflow use
+Node.js 26.8.2; `package.json` requires at least 22.12.
 
 ```sh
 cd app/ui
@@ -37,13 +45,23 @@ link): `npm ci && npm run build`, then `tauri build --target universal-apple-dar
 bundle's Info.plist), the universal `mvpn` and `crates/mvpn/VERSION` into `Contents/Resources/root/` (where the
 root installer looks), `Resources/AppIcon.icns` as the icon. Every Info.plist key the updater and macOS rely on
 is checked (`local.macvpn`, `MacVPN`, the version, 14.0, `LSUIElement`, `en` / `[en, hu]`, the update source).
-`mvpn` is signed ad-hoc with the hardened runtime (dyld ignores `DYLD_*`, loads no foreign library), the bundle
-ad-hoc; `codesign --verify --strict` and the symlink check must pass. The version is the one in
+`mvpn` and the bundle are signed ad-hoc with the hardened runtime and no entitlements (dyld ignores `DYLD_*` and
+loads no foreign library, so nothing can be injected into the app that reads the Keychain); `codesign --verify
+--strict` (also `--deep`) and the symlink check must pass. The version is the one in
 `tauri.conf.json`, which must equal the workspace `Cargo.toml` and `app/ui/package.json` versions. The language
 list comes from `CFBundleLocalizations` (no `.lproj` needed: the app reads the preferred languages through
 `CFLocaleCopyPreferredLanguages`, which honours a per-app language set in System Settings).
 `MVPN_IMPL=rust MVPN_BIN=$PWD/dist/MacVPN.app/Contents/Resources/root/mvpn scripts/test-root.sh` runs the root
 layer tests against the signed binary.
+
+## Tests
+
+- `cargo test --workspace`: unit, compatibility and l10n coverage tests (also of this app's logic in `crates/app-core`)
+- `scripts/test-root.sh`: black-box tests of the `mvpn` root binary (dry run, no root needed; `MVPN_BIN=` tests a
+  built binary)
+- `npm test` and `npm run build` in `app/ui`: the UI tests, then `svelte-check` and the build
+- `scripts/smoke-manage.sh`: the smoke test of the real windows (below), with `SMOKE_LANG=en` and `SMOKE_LANG=hu`
+- the manual checklist: `docs/manual-test-checklist.md`
 
 ## Running a development build without touching real data
 
@@ -145,12 +163,12 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
   Connections window arrives as the window's drag-drop event (system paths, not from the web view); the import
   reads only regular UTF-8 files of at most 1 MB. Exports and saved logs are written 0600 without following a
   symlink. No dialog / fs plugin and no extra permission.
-- Preferences: the Swift app's `UserDefaults` keys in the `local.macvpn` domain (CFPreferences); the sandbox keeps
-  them in memory. The update check only runs from a bundle whose Info.plist names the update source.
+- Preferences: the same `UserDefaults` keys as 0.x in the `local.macvpn` domain (CFPreferences), so the settings
+  carry over from 0.x; the sandbox keeps them in memory. The update check only runs from a bundle whose Info.plist names the update source.
 
 ## Notifications
 
-Only from a real app bundle (as in the Swift app; `UNUserNotificationCenter` needs a bundle identifier), through
+Only from a real app bundle (`UNUserNotificationCenter` needs a bundle identifier), through
 `objc2-user-notifications`: permission for alerts with sound at launch, banners with sound in the foreground too,
 "…: connection failed" / "…: the connection dropped" / "…: authentication needed" with generic bodies (a
 failure's reason, server or user name never appears on the lock screen; the details stay in the app). A click
@@ -168,8 +186,8 @@ then "There are active VPN connections" (in the menu; for an update in the Updat
   (`RunEvent::ExitRequested` comes only from closing the last window, `code: None`, which the app ignores, or
   from `app.exit`). The app adds the method to tao's delegate class at launch (`platform-mac::app_hooks`): with
   nothing to ask it answers "now"; otherwise "later", shows the question, and replies once it is answered (yes:
-  AppKit terminates the app; no: the logout is cancelled). As with the Swift app, macOS cancels a logout whose
-  question stays unanswered for too long. `app.exit` stops the event loop without `terminate:`, so the app's own
+  AppKit terminates the app; no: the logout is cancelled). macOS cancels a logout whose question stays unanswered
+  for too long. `app.exit` stops the event loop without `terminate:`, so the app's own
   quit is not asked twice.
 - "Download and Install" asks the same questions on its worker thread, just before launching the helper; once
   the helper runs, the app quits at once without asking again. Its active-connections question is shown only in
@@ -196,5 +214,6 @@ their window closes; the MFA prompt broker blocks the connecting thread until th
 
 ## Tray icons
 
-`src-tauri/icons/tray/*.png` are template images rendered from the Swift app's SF Symbols:
+`src-tauri/icons/tray/*.png` are template images rendered from SF Symbols (the same symbols as 0.x). To regenerate
+them (needs the Xcode command line tools for `swift`; not part of the build):
 `swift scripts/make-tray-icons.swift app/src-tauri/icons/tray`.

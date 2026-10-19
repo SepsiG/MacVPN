@@ -2,7 +2,9 @@
 
 [Magyar változat](user-guide.hu.md)
 
-MacVPN is a menu bar app for macOS 14 or later. It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, passwords are kept in the Keychain, and every connection has a live log.
+MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, passwords are kept in the Keychain, and every connection has a live log. This guide describes version 1.0. The menu's **Help** item opens it.
+
+For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference.
 
 > **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
 
@@ -15,7 +17,7 @@ MacVPN is a menu bar app for macOS 14 or later. It manages OpenVPN, WireGuard, I
 5. [Connecting](#5-connecting)
 6. [Debug mode and the log](#6-debug-mode-and-the-log)
 7. [Troubleshooting from the log](#7-troubleshooting-from-the-log)
-8. [Updates](#8-updates)
+8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x))
 9. [Uninstalling](#9-uninstalling)
 10. [Security notes](#10-security-notes)
 
@@ -31,7 +33,15 @@ MacVPN is a menu bar app for macOS 14 or later. It manages OpenVPN, WireGuard, I
 
 ### 1.2 Allow the first launch (Gatekeeper)
 
-The app is not signed with an Apple Developer ID, so macOS blocks it on first launch ("cannot be opened because Apple cannot check it…"). To allow it:
+The app is ad-hoc signed (with the hardened runtime), not signed with an Apple Developer ID and not notarized, so macOS blocks it on first launch ("cannot be opened because Apple cannot check it…"). To allow it:
+
+**macOS 14:**
+
+1. In Finder, open the Applications folder.
+2. Control-click (or right-click) **MacVPN** and choose **Open**.
+3. Click **Open** in the dialog.
+
+**macOS 15 or later** (the Control-click shortcut no longer works there):
 
 1. Launch MacVPN once from the Applications folder. Close the warning (**Done** or **OK**).
 2. Open **System Settings → Privacy & Security**.
@@ -42,13 +52,23 @@ You only need to do this once. Later updates are installed from inside the app (
 
 ### 1.3 Homebrew and the VPN tools
 
-For OpenVPN, WireGuard, IKEv2 and SSTP connections, MacVPN uses tools installed with the [Homebrew](https://brew.sh) package manager: `openvpn`, `wireguard-tools`, `strongswan`, `sstp-client`, `bash`. You can install them from the System Status window (see the next chapter). If you already have Homebrew, you can also do it in Terminal:
+For OpenVPN, WireGuard, IKEv2 and SSTP connections, MacVPN uses tools installed with the [Homebrew](https://brew.sh) package manager. You can install them from the System Status window (see the next chapter).
+
+| Type | Homebrew package | Tools MacVPN looks for |
+|---|---|---|
+| OpenVPN | `openvpn` | `openvpn` |
+| WireGuard | `wireguard-tools`, `bash` | `wg`, `wg-quick`, `wireguard-go`, `bash` (version 4 or later, for `wg-quick`) |
+| IKEv2 (strongSwan) | `strongswan` | `swanctl`, `charon` |
+| SSTP | `sstp-client` | `sstpc` (plus the `pppd` built into macOS) |
+| L2TP/IPsec, Cisco IPsec | none | the built-in macOS VPN |
+
+If you already have Homebrew, you can also install everything in Terminal:
 
 ```
 brew install openvpn wireguard-tools strongswan sstp-client bash
 ```
 
-L2TP and Cisco IPsec connections use the built-in macOS VPN and do not need Homebrew.
+If a tool is missing, only the connections of that type are greyed out; the other types still work.
 
 ---
 
@@ -59,12 +79,15 @@ After launch, MacVPN appears as a shield icon in the menu bar. It has no Dock ic
 - **grey shield:** no active connection
 - **shield with a check mark:** at least one connection is active
 - **shield with an exclamation mark:** an error (a failed connection, or the status cannot be queried)
+- **key:** a connection is waiting for authentication (see [5.2](#52-multi-factor-authentication-mfa))
 
-If anything is missing, the **System Status** window opens automatically on first launch. You can open it later from the menu (**System Status**). It shows three checks, each green or red:
+Click the icon to open the menu. It lists your connections, each with a switch, and these items: **New Connection / Import…**, **Manage Connections…**, **System Status**, **Help** (opens this guide), **Check for Updates Now**, **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Launch at Login** and **Quit MacVPN**. When an update is available, **Update available: vX.Y.Z** appears too. The hint at the bottom reminds you: **Option-click a switch: debug mode**.
+
+If anything is missing, the **System Status** window opens automatically at launch. You can open it any time from the menu (**System Status**). It shows three checks, each green or red:
 
 1. **Homebrew.** If it is missing, the **Install…** button opens Terminal with the official installer. The installer asks for your administrator password. If the installer cannot be downloaded, the Terminal window says so and stops without running anything. When it finishes, come back and press **Check Again**.
 2. **VPN tools.** Next to the list of missing tools, the **Install** button runs `brew install`. The output is shown live in the window. The installation continues even if you close the window.
-3. **Permissions (root scripts + sudoers).** The **Authorize** button asks for the admin password once. It installs the `/usr/local/libexec/macvpn` scripts and the `/etc/sudoers.d/macvpn` rule. After that, connecting and disconnecting work without a password. If an app update brings newer root scripts, this row says **Update required**. Press **Authorize** again.
+3. **Permissions (root scripts + sudoers).** The **Authorize** button asks for the admin password once. It installs MacVPN's root layer: the single root binary `/usr/local/libexec/macvpn/mvpn` with its `VERSION` file (root layer 7), and the `/etc/sudoers.d/macvpn` rule. After that, connecting and disconnecting work without a password. The row shows **Installed (version 7)** when it is up to date. If an app update brings a newer root layer, it says **Update required (6 → 7)** (with the installed and the new version); if a file is missing, **Incomplete installation**. Press **Authorize** again. If connections are active, the window warns first: **Updating the system component will disconnect active VPN connections.**
 
 When all three are green, setup is done. L2TP and Cisco IPsec work without them.
 
@@ -84,12 +107,15 @@ MacVPN does not start automatically by default. To start it every time you log i
 You add connections in the **Connections** window. To open it, use the menu: **Manage Connections…** or **New Connection / Import…**.
 
 - The list is on the left: the connections created in MacVPN and the **system VPNs** (VPNs configured elsewhere in macOS, marked **System VPN** under their name) in one list, pinned ones on top under **Pinned** (see [5.1](#51-order-of-connections)). You can only start and stop system VPNs. For L2TP and Cisco IPsec system VPNs you can also store the shared secret in MacVPN (see [3.5](#35-system-vpns-shared-secret-for-l2tp--cisco)).
-- From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec) or **Import from File…**.
-- The selected connection has two tabs on the right: **Settings** and **Log**.
+- From the toolbar **New** (+) menu, pick a type (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec) or **Import from File…**. A new connection starts with a template and a name like "New OpenVPN"; rename it in the name field.
+- The selected connection's header has **Connect** / **Disconnect**, **Connect in Debug Mode**, the export icon and the delete icon (**Delete**, with a confirmation). Below it are two tabs: **Settings** and **Log**.
+- If the status cannot be queried (for example the root layer is missing), a warning banner with a **System Status** button appears at the top of the window.
 
-Text-based types (OpenVPN, WireGuard, IKEv2) have a monospace editor. **Save** (⌘S) checks the config first. If it finds errors, the faulty lines are shown in red with their line numbers (for example `Line 3: Forbidden directive: up – delete the line or comment it out (#)`), and nothing is saved. Passwords have their own fields (**Authentication (stored in the Keychain)**). They go into the macOS Keychain, not into the config.
+Text-based types (OpenVPN, WireGuard, IKEv2) have a monospace editor. **Save** (⌘S) checks the config first. If it finds errors, they are listed in red under the editor with their line numbers (for example `Line 3: Forbidden directive: up – delete the line or comment it out (#)`), and nothing is saved. Risky OpenVPN settings appear in a yellow panel while you type (see [3.1](#31-openvpn)). Passwords have their own fields (**Authentication (stored in the Keychain)**). They go into the macOS Keychain, not into the config.
 
-SSTP has a form instead of a text editor (see [3.6](#36-sstp)).
+SSTP, L2TP and Cisco IPsec have a form instead of a text editor (see [3.4](#34-l2tpipsec-and-cisco-ipsec) and [3.6](#36-sstp)).
+
+**Stored passwords are never shown.** A password field that has a stored value says **Saved — type to replace**. Leave it alone to keep the stored value, type to replace it, or click **Remove saved password** and save to delete it. The status line under the editor shows **Unsaved changes** or **Saved: <time>**.
 
 If you switch connections or close the window with unsaved changes, the app asks: **Save**, **Discard** or **Cancel**.
 
@@ -230,12 +256,12 @@ With `cert=ca` the CA certificate follows in a `<ca>…</ca>` block.
 
 ## 4. Import and export
 
-**Import.** Use **New → Import from File…**, or drag one or more files into the Connections window. The type is detected from the extension and the content:
+**Import.** Use **New → Import from File…** (you can select several files), or drag one or more files into the Connections window (an empty window says **Or drop an .ovpn / .conf / .sstp file here.**). Each file must be a regular UTF-8 text file of at most 1 MB. The type is detected from the extension and the content:
 
 - `.ovpn`, or a `client` / `dev tun` line plus a `remote` line → OpenVPN
 - `[Interface]` + `PrivateKey` → WireGuard
 - `connections {` → IKEv2 (strongSwan)
-- `.sstp`, or a `server=…` line plus a `user=` / `cert=` line → SSTP
+- `.sstp`, or a `server=…` line plus a `user=`, `cert=`, `route_all=` or `peer_dns=` line → SSTP
 
 If one file cannot be recognized or cannot be imported, the other files are still imported. One dialog lists all the errors.
 
@@ -254,7 +280,7 @@ A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` b
 **Export.** The export icon in the connection header (**Export… (passwords are never included)**) saves the config in its original format: `.ovpn`, WireGuard `.conf`, `.swanctl.conf`, `.sstp`, or `.mobileconfig` for native connections.
 
 - The password, PSK and username are **not** exported. In native profiles they are left empty. The SSTP user name is part of the config, so it is in the `.sstp` export; the password is not.
-- **Private keys:** keys that are part of the config can be. If the config contains an OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>` or `<pkcs12>` block, a WireGuard `PrivateKey` / `PresharedKey`, or a strongSwan `secrets` section, MacVPN warns you (**The config contains private keys**) and offers three choices: **Export Without Keys** (the default: OpenVPN key blocks and the strongSwan `secrets` section are removed, WireGuard keys are left empty), **Export With Keys**, or **Cancel**. Anyone who has the keys can connect as you: export them only if the recipient needs them, and keep the file in a trusted place.
+- **Private keys:** keys that are part of the config can be. If the config contains an OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<pkcs12>`, `<auth-user-pass>` or `<http-proxy-user-pass>` block, a WireGuard `PrivateKey` / `PresharedKey`, or a strongSwan `secrets` section, MacVPN warns you (**The config contains private keys or credentials**) and offers three choices: **Export Without Keys** (the default: these OpenVPN blocks and the strongSwan `secrets` section are removed, WireGuard keys are left empty), **Export With Keys**, or **Cancel**. Anyone who has the keys can connect as you: export them only if the recipient needs them, and keep the file in a trusted place.
 - The exported file is created with `600` permissions (only you can read it).
 - `.ovpn`, WireGuard `.conf`, `.swanctl.conf` and `.sstp` exports can be imported into MacVPN again.
 - A `.mobileconfig` export (L2TP, Cisco IPSec) **cannot** be imported into MacVPN. To use it on another Mac, double-click it in Finder: macOS installs it as a profile, then approve it in **System Settings → General → Device Management** (Profiles). If you drop a `.mobileconfig` file on MacVPN's import, it tells you the same.
@@ -272,8 +298,8 @@ A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` b
 - **From the Connections window:** the **Connect** / **Disconnect** button.
 - Several connections can be active at the same time.
 - If a tool is missing for a type, the connection is greyed out and shows **Missing tool**. Check the **System Status** window.
-- When a connection fails, a macOS notification appears ("…: connection failed", with the text **Open MacVPN for details**). The notification does not contain the error message itself, because notifications can be seen on the lock screen; the full reason is shown in MacVPN. Clicking it opens the connection's **Log** tab. You also get a notification if a live connection drops unexpectedly. There is no automatic reconnect.
-- **On quit**, if a connection is active, the app asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**. MacVPN recognizes connections that kept running on its next launch.
+- **Notifications.** When a connection fails, a macOS notification appears ("…: connection failed", with the text **Open MacVPN for details**). The notification does not contain the error message itself, because notifications can be seen on the lock screen; the full reason is shown in MacVPN. Clicking it opens the connection in the **Connections** window, on its **Log** tab. You also get a notification if a live connection drops unexpectedly ("…: the connection dropped"), and when a connection waits for a code or a sign-in ("…: authentication needed"; clicking it brings the code window forward). macOS asks once for permission to show notifications. There is no automatic reconnect.
+- **On quit** (**Quit MacVPN**, ⌘Q, and also logout, restart or shutdown), MacVPN first asks about unsaved changes in the Connections window (**Save**, **Discard** or **Cancel**). Then, if a connection is active, it asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**. Cancel keeps MacVPN running (and cancels the logout). MacVPN recognizes connections that kept running on its next launch.
 
 ### 5.1 Order of connections
 
@@ -295,9 +321,9 @@ MacVPN handles one-time codes (OTP, TOTP, token PIN) and sign-in in the browser 
 - **Challenge sent by the server** (dynamic challenge `CRV1`, or a text challenge): the code window opens during the connection, with the server's text.
 - **Sign-in in the browser** (`OPEN_URL`, `WEB_AUTH`: SAML, SSO, push): MacVPN shows the host of the address (in plain ASCII, lowercase) and the full address, and asks **Open in Browser** (it is not the default button: click it). Only `https://` addresses are opened; any other address is ignored. After you sign in (or approve the push on your phone), the connection comes up. MacVPN waits up to 5 minutes (or the server's shorter limit).
 
-**All types: code appended to the password.** Some servers expect the code typed after the password (for example `password123456` or `password,123456`). In the connection's settings, turn on **Ask for a one-time code at connect and append it to the password** and choose the **Separator**: none, `,` or `:`. It is available for OpenVPN, IKEv2, SSTP, L2TP and Cisco IPsec, and for system VPNs with a password saved in MacVPN (in their window under **Connections**). At connect, MacVPN asks for the code and sends password + separator + code. If no password is saved in MacVPN, the code alone is sent as the password. For SSTP the password with the code must not contain `"`, `\` or control characters. For an OpenVPN config with `static-challenge` the setting is not used, because the static challenge already carries the code.
+**All types: code appended to the password.** Some servers expect the code typed after the password (for example `password123456` or `password,123456`). In the connection's settings, turn on **Ask for a one-time code at connect and append it to the password** and choose the **Separator**: none, `,` or `:`. It is available for OpenVPN, IKEv2, SSTP, L2TP and Cisco IPsec, and for L2TP / Cisco IPsec system VPNs (in their detail view in the **Connections** window). At connect, MacVPN asks for the code and sends password + separator + code. If no password is saved in MacVPN, the code alone is sent as the password. For SSTP the password with the code must not contain `"`, `\` or control characters. For an OpenVPN config with `static-challenge` the setting is not used, because the static challenge already carries the code.
 
-**How it works (OpenVPN).** MacVPN starts OpenVPN with its management interface on a socket that only root can reach. Only MacVPN's root helper (the `mgmt-bridge` subcommand of the root binary `mvpn`, running as `mvpn-mgmt`) talks to it, with a fixed list of commands. The helper passes only the question, the `https` address and the state to the app (in `/var/run/macvpn-ui/<id>.json`, readable only by you), and your answer back to OpenVPN.
+**How it works (OpenVPN).** MacVPN starts OpenVPN with its management interface on a socket that only root can reach. Only MacVPN's root helper (the `mgmt-bridge` subcommand of the root binary `mvpn`; process lists show it as `mvpn-mgmt`) talks to it, with a fixed list of commands. The helper passes only the question, the `https` address and the state to the app (in `/var/run/macvpn-ui/<id>.json`, readable only by you), and your answer back to OpenVPN.
 
 ---
 
@@ -331,7 +357,9 @@ In debug mode:
 | `✗` | an error |
 | other | the tool's own output (openvpn, wg-quick, charon, sstpc, pppd) |
 
-**Log actions:** filters (**All**, **Commands**, **Errors**), **Search**, **Follow** (auto-scroll), **Copy**, **Save…**. Passwords, PSKs and private keys never appear in the log, so you can share a saved log (for example with your network administrator).
+**The Log tab** shows the last 5000 lines of the connection's log and follows it live, also outside debug mode (L2TP and Cisco IPsec only have a log in debug mode: **Native connections only have a log when connected in debug mode.**). The log files themselves are in `/var/log/macvpn`.
+
+**Log actions:** filters (**All**, **Commands**, **Errors**), **Search**, **Follow** (auto-scroll), **Copy** (copies the filtered lines), **Save…** (saves the log as `<name>-log.txt`, readable only by you). Passwords, PSKs and private keys never appear in the log, so you can share a saved log (for example with your network administrator). A debug log of an SSTP connection is the exception, see above.
 
 ---
 
@@ -407,7 +435,7 @@ MacVPN starts the VPN tools as root, so it only allows known, safe settings. To 
 
 - **Forbidden directive / key** (for example `up`, `down`, `script-security`, `PostUp`): these would run external commands. Delete the line or put `#` in front of it. MacVPN handles DNS and routes itself, so these scripts are not needed.
 - **Risky directive, acknowledgement required / Risky settings are not acknowledged:** the setting is allowed only after you acknowledge it. Read the reason in the yellow panel; if you want the setting, tick **I acknowledge these settings and the security risks** and **Save**, otherwise comment the line out. If you added a new risky line after acknowledging, tick the box again.
-- **setenv not allowed:** the variable name could influence MacVPN's root DNS script (for example `PATH`, `BASH_ENV`, `LD_*`, `DYLD_*`). Delete the line; it is not needed for the connection.
+- **setenv not allowed:** the variable name could influence MacVPN's root DNS hook (for example `PATH`, `BASH_ENV`, `LD_*`, `DYLD_*`). Delete the line; it is not needed for the connection.
 - **Invalid argument** on an unknown or risky directive: its arguments cannot contain paths (`/`, `..`, `~`, `file:`), a leading `-` or shell characters (`` ` $ ; | & < > ``).
 - **Invalid argument / value, wrong number of arguments:** the setting is allowed, but its value is not in the expected form (for example a device path after `dev`, a word instead of a number). The message names the setting, not the value. Check the line against the provider's original config.
 - **External file reference:** a certificate refers to a file (`ca ca.crt`). Import the `.ovpn` again with the referenced files next to it, or paste their contents into a `<ca>…</ca>` block.
@@ -415,12 +443,12 @@ MacVPN starts the VPN tools as root, so it only allows known, safe settings. To 
 
 ### 7.8 Other
 
-- **"Installation cancelled: /usr/local/libexec is not owned by root or is writable by other users…"** (or the same for `/usr/local`) when you press **Authorize**: a parent folder of the root scripts belongs to your user or can be written by other users. Then anything running as that user could replace MacVPN's root scripts, so MacVPN refuses to install there and does not change the folder itself. Fix it in Terminal and press **Authorize** again:
+- **"Installation cancelled: /usr/local/libexec is not owned by root or is writable by other users…"** (or the same for `/usr/local`) when you press **Authorize**: a parent folder of the root layer belongs to your user or can be written by other users. Then anything running as that user could replace MacVPN's root binary, so MacVPN refuses to install there and does not change the folder itself. Fix it in Terminal and press **Authorize** again:
   ```
   sudo chown root:wheel /usr/local/libexec && sudo chmod go-w /usr/local/libexec
   ```
   (use the folder named in the message). On Intel Macs Homebrew may own `/usr/local/libexec`; after this change Homebrew can no longer write there without `sudo`, which may affect some formulae.
-- **"Cannot query the status: …"** warning in the menu: the root scripts or the sudoers rule are missing or outdated. Open the **System Status** window and press **Authorize**.
+- **"Cannot query the status: …"** warning in the menu: the root layer or the sudoers rule is missing or outdated. Open the **System Status** window and press **Authorize**.
 - **"openvpn not found (brew install openvpn)"** and similar: install the missing tool from the **System Status** window.
 
 ### 7.9 SSTP: certificate error
@@ -450,29 +478,40 @@ Message: **Authentication failed (wrong user name or password)**. Typical log li
 - **No browser window appears**: MacVPN opens only `https://` addresses with a plain ASCII host name (international names only in their `xn--` form, no `%` or `@` before the path). The log then shows `web authentication URL dropped (only https with a plain ASCII host is accepted)`. Ask your provider for such a sign-in address.
 - **The management bridge stopped**: MacVPN's root helper ended unexpectedly while signing in. Connect again; if it repeats, connect in debug mode and check the `[mgmt]` lines.
 - **No connection is waiting for authentication**: the attempt had already ended (time limit or error) before your answer arrived. Connect again.
-- **mvpn-mgmt not found** (the OpenVPN helper of the root binary `mvpn` could not start), or **Incomplete installation** in **System Status**: the root layer is from an older version. Click **Authorize** in **System Status** to update it.
+- **mvpn-mgmt not found** (the OpenVPN helper of the root binary `mvpn` could not start; `mvpn-mgmt` is the name it runs under), or **Incomplete installation** in **System Status**: the root layer is from an older version or incomplete. Click **Authorize** in **System Status** to reinstall it.
 - The `[mgmt]` lines in the log are the helper's steps (for example `hold released`, `credentials sent`, `dynamic challenge received`). They never contain the code or the password, and for a sign-in address only its host is logged.
 
 ---
 
 ## 8. Updates
 
-MacVPN looks for new versions on the GitHub Releases page: at launch, then every 24 hours.
+MacVPN looks for new versions on the GitHub Releases page: at launch, then once every 24 hours.
 
-- When a newer version exists, the menu shows **Update available: vX.Y.Z**. Clicking it opens a window with the release notes.
+- When a newer version exists, the menu shows **Update available: vX.Y.Z**. Clicking it opens the **Update** window with the release notes and the installed version. **Later** closes it; **Open the Release on GitHub** opens the release page.
 - The **Download and Install** button:
   1. downloads the DMG, its `.sha256` file and its `.sig` signature, verifies the SHA-256 checksum, and checks that the signature was made by the MacVPN maintainer's offline key for exactly this version and this file. If the signature is missing or not valid, it stops with **The update is not signed by the MacVPN maintainer** and installs nothing;
-  2. mounts the DMG, and checks that the app inside is MacVPN (`local.macvpn`) and that its version matches the release;
+  2. mounts the DMG, and checks that the app inside is MacVPN (`local.macvpn`), that its version matches the release and that its code signature is valid;
   3. asks about unsaved changes and active connections, just like quitting;
   4. quits, replaces the app where it runs from (usually `/Applications/MacVPN.app`), and restarts it.
-- **Signed updates (from version 0.2.2):** every release is signed by the maintainer with an Ed25519 key that is kept offline, never on GitHub. MacVPN only offers a release that has a signature file, and only installs it if the signature is valid. A newer release that is not signed yet is not offered; **Check for Updates Now** then says **Update waiting for signature**. Version 0.2.1 and older do not check signatures, so update to 0.2.2 or later to get this protection.
-- To check manually: menu → **Check for Updates Now**.
+  The window shows each step (**Checking the install location…**, **Downloading…**, **Mounting the disk image…**, **Verifying the app…**, **Preparing the installation…**, **Quitting and restarting…**). If anything fails before the quit, the installed version stays and MacVPN keeps running.
+- **Signed updates:** every release is signed by the maintainer with an Ed25519 key that is kept offline, never on GitHub. MacVPN only offers a release that has a signature file, and only installs it if the signature is valid. A newer release that is not signed yet is not offered; **Check for Updates Now** then says **Update waiting for signature**.
+- To check manually: menu → **Check for Updates Now**. If you are up to date, it says **MacVPN is up to date**.
 - To turn off automatic checks: menu → the **Check for Updates Automatically** checkbox.
 - **Optional delay:** with the **Only Offer Updates Published at Least 24 Hours Ago** checkbox (off by default), MacVPN offers a new release only once it has been public for 24 hours (based on the release's publish time on GitHub). This gives time for a bad or malicious release to be noticed and removed before you install it. **Check for Updates Now** then tells you if a newer version exists but is not offered yet.
 - **Keychain prompt after an update:** because MacVPN is ad-hoc signed (no Developer ID), macOS treats each new version as a new program, and may ask once after each update whether MacVPN may access its own Keychain items. Click **Always Allow** only if the prompt is MacVPN's own: it names MacVPN and its path (usually `/Applications/MacVPN.app`). If the prompt names another program, click **Deny**.
-- If an update brings new root scripts, the **System Status** window shows **Update required**. Update them with **Authorize** and one admin password.
+- If an update brings a new root layer, the **System Status** window opens and shows **Update required**. Update it with **Authorize** and one admin password.
 - If the app's location is not writable (for example it runs directly from Downloads or from the DMG), the update reports an error. Move the app to the Applications folder, or update manually: download the new DMG and replace the app with it.
 - The update log is at `~/Library/Caches/MacVPN/update.log`. If the previous update was cancelled (because MacVPN did not quit within 30 seconds) or failed, MacVPN shows a one-time notice at the next launch; the installed version stays in place. At launch MacVPN also removes leftovers of an interrupted update (hidden `.MacVPN.app.update-…` and `.MacVPN.app.old-…` folders next to the app).
+
+### 8.1 Upgrading from 0.x
+
+MacVPN 1.0 replaces the 0.x Swift app. The upgrade works like any other update:
+
+1. **Update in the app.** In MacVPN 0.x, choose **Check for Updates Now**, then **Download and Install** in the Update window. The 0.x updater checks the 1.0 release's signature like any other update. (Versions before 0.2.2 do not check signatures: on those, download the DMG from the [Releases](https://github.com/SepsiG/MacVPN/releases) page instead, quit MacVPN, and replace the app in Applications.)
+2. **Your data is kept.** Connections, passwords, pinned connections and their order, the one-time code settings of system VPNs, the update settings and **Launch at Login** carry over. Connections you left running stay connected. Nothing needs to be imported again.
+3. **The Keychain asks once.** Version 1.0 has a new signature, so macOS may ask whether MacVPN may access its Keychain items. Click **Always Allow** if the prompt names MacVPN at `/Applications/MacVPN.app`. After that, the editors show **Saved — type to replace** for every stored password, and connecting asks no more. (Items that very old versions stored under the Keychain service `macvpn` are moved to `local.macvpn.secrets` automatically at launch.)
+4. **Reinstall the root layer.** 1.0 replaces the separate root scripts of 0.x with the single `mvpn` binary (root layer 7). The **System Status** window opens with **Update required**, for example **Update required (6 → 7)** when coming from 0.4.0. Click **Authorize** and enter the admin password. Active VPN connections are disconnected first; the old files (`ovpn-dns`, `mvpn-validate`, `mvpn-mgmt`) are removed. Until you do this, OpenVPN, WireGuard, IKEv2 and SSTP connections show **Missing tool** and cannot connect.
+5. **Hardened runtime.** The 1.0 app and its root binary are signed with the hardened runtime, so macOS refuses to load foreign libraries into them. This protects the passwords the app reads from the Keychain. Nothing changes for you; it is still ad-hoc signed, so Gatekeeper asks again only if you install the DMG manually.
 
 ---
 
@@ -480,7 +519,7 @@ MacVPN looks for new versions on the GitHub Releases page: at launch, then every
 
 1. Open the **System Status** window and click **Uninstall MacVPN…**.
 2. The confirmation dialog lists what will be removed:
-   - `/usr/local/libexec/macvpn` (root scripts)
+   - `/usr/local/libexec/macvpn` (root scripts: the `mvpn` root binary and its `VERSION` file)
    - `/etc/sudoers.d/macvpn` (sudoers rule)
    - `/var/run/macvpn`, `/var/run/macvpn-ui` (runtime data)
    - `/var/log/macvpn` (connection logs)
@@ -513,12 +552,12 @@ If MacVPN created `/etc/ppp/options` for SSTP (it leaves a marker when it does) 
 
 **Threat model.** MacVPN protects against dangerous *configs*: a downloaded or imported `.ovpn`, WireGuard or IKEv2 file cannot run commands, read or write arbitrary files as root, or fake a successful connection, because the root side checks every setting against an allowlist and decides only from root-only files. It does **not** protect against *programs already running in your user account*. Such a program can, in practice, become root: it can replace the Homebrew VPN tools (which your user can write) and then ask MacVPN's passwordless sudo rule to run them. Treat MacVPN like any tool that grants your account admin-level power, and only use it on a Mac where you are the administrator and trust the software running under your account.
 
-- **Unsigned app.** MacVPN is not signed with an Apple Developer ID and is not notarized. That is why you need the "Open Anyway" step on first launch. Only download it from the official [Releases](https://github.com/SepsiG/MacVPN/releases) page.
-- **Passwords.** Passwords and PSKs are stored in the macOS Keychain (service `local.macvpn.secrets`; items from older versions, stored under `macvpn`, are moved there automatically at launch). Usernames of the text-based types are in the Keychain too; the account name of L2TP / Cisco connections is in the connection's `meta.json` in plain text, as it is not a secret. Passwords and PSKs are masked (`***`) in the log, and exports do not contain them. Keys that are part of a config (WireGuard `PrivateKey`, OpenVPN `<key>` and similar) are only exported if you choose **Export With Keys**. The L2TP / Cisco profile contains the PSK (but not the password) and is deleted from disk once installed. User names, passwords and PSKs cannot contain line breaks or control characters (MacVPN refuses to save them). A saved log is created with `600` permissions. For OpenVPN, the username and password go to MacVPN's root helper (`mvpn mgmt-bridge`, running as `mvpn-mgmt`) through a root-only file (permissions `600` in a `700` directory) that the helper deletes right after reading it. The helper keeps them in memory, so OpenVPN can log in again when it reconnects, and hands them to OpenVPN through its root-only management socket. One-time codes are never stored: they exist only in memory while connecting, and are masked in the log.
-- **Root layer integrity.** The installer copies the root scripts to a root-only staging folder and installs them only if their SHA-256 matches what the app computed just before asking for the admin password. It makes `/usr/local/libexec/macvpn` root-owned and not writable by others. If `/usr/local` or `/usr/local/libexec` is not root-owned or is writable by others, it stops with instructions instead of changing them (see [section 7.8](#78-other)). The sudoers rule starts `mvpn` with a clean environment (no `LANG`, `LC_*` or other variables from your session).
-- **Sudoers and Homebrew (known limitation).** To connect, MacVPN uses a sudoers rule to run the `/usr/local/libexec/macvpn/mvpn` script as root without a password, and that script runs the Homebrew tools (`openvpn`, `wg-quick`, `charon`, `sstpc`). The Homebrew directory (`/opt/homebrew`) is writable by your user. Malware running in your user account could replace those programs and gain root that way. Config filtering protects against accidental or imported dangerous settings, not against malware already running in your account. On a single-user Mac that you administer yourself, this is an acceptable risk. If it is not for you, do not enable the root layer, and use only L2TP / Cisco connections.
+- **Ad-hoc signed app.** MacVPN is not signed with an Apple Developer ID and is not notarized. That is why you need the Gatekeeper step on first launch (see [1.2](#12-allow-the-first-launch-gatekeeper)). Only download it from the official [Releases](https://github.com/SepsiG/MacVPN/releases) page. The app and the `mvpn` root binary are signed with the hardened runtime and no entitlements, so macOS does not let other programs inject a library into them (for example through `DYLD_INSERT_LIBRARIES`) to read the passwords MacVPN takes from the Keychain.
+- **Passwords.** Passwords and PSKs are stored in the macOS Keychain (service `local.macvpn.secrets`). Usernames of the text-based types are in the Keychain too; the account name of L2TP / Cisco connections is in the connection's `meta.json` in plain text, as it is not a secret. Passwords and PSKs are masked (`***`) in the log, and exports do not contain them. Keys that are part of a config (WireGuard `PrivateKey`, OpenVPN `<key>` and similar) are only exported if you choose **Export With Keys**. The L2TP / Cisco profile contains the PSK (but not the password) and is deleted from disk once installed. User names, passwords and PSKs cannot contain line breaks or control characters (MacVPN refuses to save them). A saved log is created with `600` permissions. For OpenVPN, the username and password go to MacVPN's root helper (`mvpn mgmt-bridge`, shown as `mvpn-mgmt` in process lists) through a root-only file (permissions `600` in a `700` directory) that the helper deletes right after reading it. The helper keeps them in memory, so OpenVPN can log in again when it reconnects, and hands them to OpenVPN through its root-only management socket. One-time codes are never stored: they exist only in memory while connecting, and are masked in the log.
+- **Root layer integrity.** The installer copies the root files (`mvpn` and `VERSION`) to a root-only staging folder and installs them only if their SHA-256 matches what the app computed just before asking for the admin password. It makes `/usr/local/libexec/macvpn` root-owned and not writable by others. If `/usr/local` or `/usr/local/libexec` is not root-owned or is writable by others, it stops with instructions instead of changing them (see [section 7.8](#78-other)). The sudoers rule starts `mvpn` with a clean environment (no `LANG`, `LC_*` or other variables from your session).
+- **Sudoers and Homebrew (known limitation).** To connect, MacVPN uses a sudoers rule to run the `/usr/local/libexec/macvpn/mvpn` binary as root without a password, and that binary runs the Homebrew tools (`openvpn`, `wg-quick`, `charon`, `sstpc`). The Homebrew directory (`/opt/homebrew`) is writable by your user. Malware running in your user account could replace those programs and gain root that way. Config filtering protects against accidental or imported dangerous settings, not against malware already running in your account. On a single-user Mac that you administer yourself, this is an acceptable risk. If it is not for you, do not enable the root layer, and use only L2TP / Cisco connections.
 - **SSTP password on the command line (known limitation).** The Homebrew `sstpc` computes the SSTP crypto binding keys from the password itself, so it only starts when the password is given on its command line (`--password`). MacVPN passes it there and never writes it into the log (`***`). `sstpc` masks its own command line right after reading it, but for that first moment other local users could see the password with `ps`. On a single-user Mac this is an acceptable risk. If it is not for you, do not use SSTP.
-- **Update integrity.** From version 0.2.2, MacVPN installs an update only if it carries a valid Ed25519 signature made with the maintainer's offline key. The public keys (a primary and a backup) are built into the app; the private keys are never on GitHub or in the build system. So even if someone takes over the GitHub account or repository, they cannot push an update to MacVPN 0.2.2 or later: a release without a valid signature is not offered, or is refused with **The update is not signed by the MacVPN maintainer**. The signature covers the version and the SHA-256 of the DMG that MacVPN computes itself after downloading. **Remaining risk:** whoever holds the maintainer's signing key can sign an update. **Older versions:** MacVPN 0.2.1 and older do not check signatures; for them the authenticity rests only on HTTPS and the SHA-256 checksum from the same release, so a compromised GitHub account could still reach them. Update to 0.2.2 or later.
+- **Update integrity.** MacVPN installs an update only if it carries a valid Ed25519 signature made with the maintainer's offline key. The public keys (a primary and a backup) are built into the app; the private keys are never on GitHub or in the build system. So even if someone takes over the GitHub account or repository, they cannot push an update to MacVPN: a release without a valid signature is not offered, or is refused with **The update is not signed by the MacVPN maintainer**. The signature covers the version and the SHA-256 of the DMG that MacVPN computes itself after downloading. **Remaining risk:** whoever holds the maintainer's signing key can sign an update.
 - **How the updater limits the risk further.**
   - It asks GitHub for the latest release by the repository's fixed numeric ID (`MacVPNUpdateRepoID` in the app's `Info.plist`), not by its name. If the repository were renamed or deleted and someone created a new one under the old name, the app would not take updates from it. Without the ID, the app does not check for updates at all.
   - It accepts the DMG, its `.sha256` file and its `.sig` signature only from `https://github.com/SepsiG/MacVPN/releases/download/<tag>/<file name>`, for exactly the tag of the release; redirects may only lead to GitHub's own download hosts.
