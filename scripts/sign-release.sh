@@ -12,7 +12,8 @@
 # signing key. This script downloads both, checks the SHA-256 locally, signs
 #   "macvpn-update-v1\n" + X.Y.Z + "\n" + sha256hex + "\n"
 # with Ed25519 (OpenSSL 3, pkeyutl -rawin), verifies the signature against the public keys embedded in the app
-# (parsed from Sources/MacVPNCore/UpdateSignature.swift), uploads MacVPN-X.Y.Z.dmg.sig and publishes the release.
+# (parsed from the Rust core, crates/core/src/update.rs, UpdateSignature::PRIMARY_/BACKUP_PUBLIC_KEY_BASE64; the same
+# keys as in every app since 0.2.2), uploads MacVPN-X.Y.Z.dmg.sig and publishes the release.
 #
 # The primary private key is read from the login Keychain (generic password, service "MacVPN release signing",
 # account "primary", value = base64 of the PEM) through a process substitution: it never touches the disk and is
@@ -29,7 +30,7 @@ SIG_DOMAIN="macvpn-update-v1"
 ED25519_SPKI_PREFIX='\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00'
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-SWIFT_KEYS="$ROOT/Sources/MacVPNCore/UpdateSignature.swift"
+KEYS_SOURCE="$ROOT/crates/core/src/update.rs"
 
 die() { echo "error: $*" >&2; exit 1; }
 usage() { sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
@@ -54,13 +55,15 @@ while [ $# -gt 0 ]; do
   shift
 done
 
-# --- Embedded public keys (the single source of truth is the Swift source) -------------------------------------
+# --- Embedded public keys (the single source of truth is the Rust core source) ---------------------------------
 embedded_keys() {
-  [ -f "$SWIFT_KEYS" ] || die "not found: $SWIFT_KEYS"
-  sed -nE 's/^[[:space:]]*public static let (primary|backup)PublicKeyBase64 = "([A-Za-z0-9+\/]{43}=)"$/\1 \2/p' "$SWIFT_KEYS"
+  [ -f "$KEYS_SOURCE" ] || die "not found: $KEYS_SOURCE"
+  sed -nE "s/^[[:space:]]*pub const (PRIMARY|BACKUP)_PUBLIC_KEY_BASE64: &'static str = \"([A-Za-z0-9+\/]{43}=)\";\$/\1 \2/p" \
+    "$KEYS_SOURCE" | sed -e 's/^PRIMARY /primary /' -e 's/^BACKUP /backup /'
 }
 KEYS="$(embedded_keys)"
-[ "$(printf '%s\n' "$KEYS" | grep -c .)" = 2 ] || die "cannot parse exactly two public keys from $SWIFT_KEYS"
+[ "$(printf '%s\n' "$KEYS" | grep -c .)" = 2 ] || die "cannot parse exactly two public keys from $KEYS_SOURCE"
+[ "$(printf '%s\n' "$KEYS" | awk '{print $1}' | tr '\n' ' ')" = "primary backup " ] || die "unexpected key order in $KEYS_SOURCE"
 while read -r _ b64; do
   [ "$(printf %s "$b64" | base64 -d | wc -c | tr -d ' ')" = 32 ] || die "embedded public key is not 32 bytes: $b64"
 done <<<"$KEYS"

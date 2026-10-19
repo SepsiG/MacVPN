@@ -17,11 +17,27 @@ else
   echo "skip - shellcheck nincs telepítve"
 fi
 
-# A script a Swift forrásból olvassa a kulcsokat: ugyanazok, mint a konstansok.
+# A script a Rust core forrásából olvassa a kulcsokat: ugyanazok, mint a konstansok.
 KEYS="$("$SCRIPT" --print-public-keys)"
-SWIFT="Sources/MacVPNCore/UpdateSignature.swift"
-check "elsődleges kulcs = Swift konstans" grep -q "primaryPublicKeyBase64 = \"$(echo "$KEYS" | awk '$1=="primary"{print $2}')\"" "$SWIFT"
-check "tartalék kulcs = Swift konstans" grep -q "backupPublicKeyBase64 = \"$(echo "$KEYS" | awk '$1=="backup"{print $2}')\"" "$SWIFT"
+PRIMARY="$(echo "$KEYS" | awk '$1=="primary"{print $2}')"
+BACKUP="$(echo "$KEYS" | awk '$1=="backup"{print $2}')"
+RUST="crates/core/src/update.rs"
+check "két kulcs, elsődleges és tartalék" test "$(echo "$KEYS" | awk '{print $1}' | tr '\n' ' ')" = "primary backup "
+check "elsődleges kulcs = Rust konstans" grep -q "PRIMARY_PUBLIC_KEY_BASE64: &'static str = \"$PRIMARY\";" "$RUST"
+check "tartalék kulcs = Rust konstans" grep -q "BACKUP_PUBLIC_KEY_BASE64: &'static str = \"$BACKUP\";" "$RUST"
+# A kiadott (Swift) appok ugyanezeket a kulcsokat ellenőrzik: a v0.4.0 forrása (git tag), ha elérhető, és a
+# legacy/swift másolat, amíg a repóban van.
+if V040="$(git show v0.4.0:Sources/MacVPNCore/UpdateSignature.swift 2>/dev/null)"; then
+  check "elsődleges kulcs = v0.4.0" grep -q "primaryPublicKeyBase64 = \"$PRIMARY\"" <<<"$V040"
+  check "tartalék kulcs = v0.4.0" grep -q "backupPublicKeyBase64 = \"$BACKUP\"" <<<"$V040"
+else
+  echo "skip - a v0.4.0 tag nem érhető el (sekély klón)"
+fi
+SWIFT="legacy/swift/Sources/MacVPNCore/UpdateSignature.swift"
+if [ -f "$SWIFT" ]; then
+  check "elsődleges kulcs = legacy Swift konstans" grep -q "primaryPublicKeyBase64 = \"$PRIMARY\"" "$SWIFT"
+  check "tartalék kulcs = legacy Swift konstans" grep -q "backupPublicKeyBase64 = \"$BACKUP\"" "$SWIFT"
+fi
 
 OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl
 if [ ! -x "$OPENSSL" ] && command -v brew >/dev/null 2>&1; then OPENSSL="$(brew --prefix openssl@3 2>/dev/null)/bin/openssl"; fi

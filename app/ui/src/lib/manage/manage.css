@@ -1,0 +1,221 @@
+/* The Connections window's shared form styles (macOS-like controls under the app's colours). */
+
+.manage input[type='text'],
+.manage input[type='password'],
+.manage input[type='search'],
+.manage textarea,
+.manage select,
+.alert input {
+  font: inherit;
+  color: inherit;
+  background: var(--field);
+  border: 1px solid var(--field-border);
+  border-radius: 5px;
+  padding: 4px 6px;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
+}
+
+.manage select {
+  cursor: default;
+  padding: 3px 4px;
+}
+
+.manage input:focus-visible,
+.manage textarea:focus-visible,
+.manage select:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 0;
+}
+
+.manage button,
+.alert button {
+  font: inherit;
+  color: inherit;
+  padding: 3px 10px;
+  border-radius: 5px;
+  border: 1px solid var(--field-border);
+  background: var(--button);
+}
+
+.manage button:disabled,
+.alert button:disabled {
+  opacity: 0.5;
+}
+
+.manage button.primary,
+.alert button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.manage button.icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 6px;
+}
+
+.manage button.icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.manage button.destructive,
+.alert button.destructive {
+  color: var(--red);
+}
+
+.manage .segmented {
+  display: inline-flex;
+  border: 1px solid var(--field-border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--button);
+}
+
+.manage .segmented button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 3px 12px;
+}
+
+.manage .segmented button + button {
+  border-left: 1px solid var(--field-border);
+}
+
+.manage .segmented button.on {
+  background: var(--accent);
+  color: #fff;
+}
+
+.manage .editor,
+.manage .form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+}
+
+.manage .wide {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.manage .config {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 220px;
+  resize: vertical;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre;
+}
+
+.manage .config.invalid {
+  border-color: var(--red);
+}
+
+.manage .issues {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--red);
+  font-size: 12px;
+}
+
+.manage .issues li::before {
+  content: '✕ ';
+}
+
+.manage fieldset {
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  padding: 8px 10px 10px;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.manage legend {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 4px;
+}
+
+.manage section {
+  border: 1px solid var(--separator);
+  border-radius: 8px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--group);
+}
+
+.manage section h2 {
+  font-size: 12px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.manage .field {
+  display: grid;
+  grid-template-columns: minmax(120px, 34%) 1fr;
+  align-items: center;
+  gap: 8px;
+}
+
+.manage .check {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.manage .check input {
+  margin: 2px 0 0;
+}
+
+.manage .note,
+.manage .secondary {
+  color: var(--secondary);
+}
+
+.manage .note,
+.manage .info,
+.manage .error,
+.manage .warn,
+.manage .ok {
+  margin: 0;
+  font-size: 12px;
+}
+
+.manage .error {
+  color: var(--red);
+}
+
+.manage .warn {
+  color: var(--orange);
+}
+
+.manage .ok {
+  color: var(--green);
+}
+
+.manage .pad {
+  padding: 16px;
+}
+
+.manage .footer,
+.manage .row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.manage .spacer {
+  flex: 1;
+}

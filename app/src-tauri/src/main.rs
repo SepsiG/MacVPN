@@ -1,0 +1,427 @@
+//! MacVPN: the menu bar app (Tauri 2 shell). The logic lives in `macvpn-app-core` (connection manager, view
+//! model, orchestration) over the macOS implementations in `macvpn-platform-mac`; this crate wires them to the
+//! tray icon, the menu popover and the windows.
+//!
+//! Threads: the main thread runs the event loop only. The launch steps after the first three, the status poller,
+//! the view-model publisher and every connect / disconnect run on their own threads or the blocking pool,
+//! because the platform calls are synchronous.
+
+mod commands;
+mod dialogs;
+mod manage;
+mod navigation;
+mod notifications;
+mod platform;
+mod prompts;
+#[cfg(debug_assertions)]
+mod smoke;
+mod state;
+mod system;
+mod tray;
+mod update_window;
+
+use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, MemoryPreferences, POLL_TICK, Poller, PreferenceStore};
+use macvpn_app_core::connections::ConnectionsModel;
+use macvpn_app_core::deps::{SecretReader, SecretWriter, SystemClock};
+use macvpn_app_core::editor::EditorDeps;
+use macvpn_app_core::logs::{NativeLogCollector, NativeLogs};
+use macvpn_app_core::prompt::PromptBroker;
+use macvpn_app_core::quit::{QuitAction, QuitGuard, QuitOrigin};
+use macvpn_app_core::updates::UpdateController;
+use macvpn_app_core::{ConnectionManager, Dependencies};
+use macvpn_core::date::Date;
+use macvpn_core::l10n;
+use macvpn_core::ranking::ConnectionRankingStore;
+use macvpn_core::store::ConnectionStore;
+use macvpn_core::system_otp::SystemOTPStore;
+use macvpn_platform_mac::app_hooks::{self, TerminateReply};
+use macvpn_platform_mac::profile_staging::{self, StagedProfiles};
+use macvpn_platform_mac::secrets::{InMemoryKeychain, KeychainSecretStore};
+use macvpn_platform_mac::setup_checker::SetupReport;
+use std::sync::atomic::{AtomicBool, AtomicU64};
+use std::sync::{Arc, Mutex, PoisonError, RwLock};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
+use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
+
+use macvpn_platform_mac::http::CurlHttpClient;
+use macvpn_platform_mac::preferences::CFPreferencesStore;
+use platform::{
+    AuthStateFiles, Environment, GitHubReleases, Keychain, LogStreams, Native, Preferences, ProfileFiles, Root,
+};
+use state::{AppState, Publisher};
+
+/// The Keychain (one store, read and written) and the one-time legacy migration.
+struct Secrets {
+    reader: Arc<dyn SecretReader>,
+    writer: Arc<dyn SecretWriter>,
+}
+
+fn secrets(env: &Environment) -> (Secrets, Box<dyn FnOnce() + Send>) {
+    if env.sandbox {
+        let store = Arc::new(Keychain(KeychainSecretStore::new(InMemoryKeychain::new())));
+        return (Secrets { reader: store.clone(), writer: store }, Box::new(|| {}));
+    }
+    let store = Arc::new(Keychain(KeychainSecretStore::system()));
+    let migrating = store.clone();
+    (
+        Secrets { reader: store.clone(), writer: store },
+        Box::new(move || {
+            migrating.0.migrate_legacy_items();
+        }),
+    )
+}
+
+fn build_state(env: Environment, store: Arc<ConnectionStore>, secrets: Secrets) -> Arc<AppState> {
+    let support = env.application_support();
+    let mut deps =
+        Dependencies::new(store.clone(), secrets.reader.clone(), Arc::new(Root::new()), Arc::new(Native::new()));
+    deps.ranking_store = Some(Arc::new(ConnectionRankingStore::new(ConnectionRankingStore::default_path(&support))));
+    deps.system_otp_store = Some(Arc::new(SystemOTPStore::new(SystemOTPStore::default_path(&support))));
+    deps.auth_state = Arc::new(AuthStateFiles { uid: macvpn_platform_mac::system::user_id() });
+    // The Swift app's UserDefaults domain; the sandbox keeps them in memory.
+    let prefs: Arc<dyn PreferenceStore> =
+        if env.sandbox { Arc::new(MemoryPreferences::new()) } else { Arc::new(Preferences(CFPreferencesStore::app())) };
+    let updates = Arc::new(UpdateController::new(
+        env.update_source(),
+        env!("CARGO_PKG_VERSION"),
+        prefs.clone(),
+        Arc::new(GitHubReleases(CurlHttpClient::default())),
+        Arc::new(SystemClock),
+    ));
+    let manager = ConnectionManager::new(deps);
+    let staged_profiles = Arc::new(Mutex::new(StagedProfiles::default()));
+    let profiles = ProfileFiles {
+        parent: env.staging_parent().unwrap_or_else(std::env::temp_dir),
+        staged: staged_profiles.clone(),
+        open: !env.sandbox,
+    };
+    let connections = Arc::new(ConnectionsModel::new(EditorDeps {
+        manager: manager.clone(),
+        store,
+        secrets: secrets.reader,
+        secret_writer: secrets.writer,
+        profiles: Arc::new(profiles),
+        clock: Arc::new(SystemClock),
+    }));
+    let native_logs = Arc::new(NativeLogs::new(Box::new(|| {
+        NativeLogCollector::new(
+            Arc::new(LogStreams),
+            Arc::new(|date: Date| {
+                macvpn_platform_mac::system::local_date_time(
+                    date.time_interval_since_1970(),
+                    l10n::AppLanguage::current(),
+                )
+            }),
+            Arc::new(SystemClock),
+            std::time::Duration::from_secs_f64(macvpn_app_core::logs::NATIVE_LOG_MAX_SECONDS),
+        )
+    })));
+    Arc::new(AppState {
+        updates,
+        login_item: RwLock::new(None),
+        connections,
+        native_logs,
+        staged_profiles,
+        log_feed: Mutex::new(None),
+        log_generation: AtomicU64::new(0),
+        log_poller: AtomicBool::new(false),
+        dialog_open: AtomicBool::new(false),
+        manager,
+        broker: Arc::new(PromptBroker::new()),
+        poller: Arc::new(Poller::new()),
+        publisher: Arc::new(Publisher::default()),
+        setup: RwLock::new(SetupReport::unknown()),
+        setup_checked: AtomicBool::new(false),
+        brew: Mutex::default(),
+        setup_ops: Mutex::default(),
+        uninstalled: AtomicBool::new(false),
+        prefs,
+        env,
+        quit: Arc::new(QuitGuard::new()),
+        prompt_tracker: Mutex::default(),
+        tray_anchor: Mutex::new(None),
+        hidden_on_blur: Mutex::new(None),
+    })
+}
+
+/// Hooks the manager and the prompt broker to the UI.
+fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
+    let publisher = state.publisher.clone();
+    state.manager.set_on_change(move || publisher.mark());
+    let publisher = state.publisher.clone();
+    state.broker.set_on_change(move || publisher.mark());
+    let publisher = state.publisher.clone();
+    state.updates.set_on_change(move || publisher.mark());
+    let publisher = state.publisher.clone();
+    state.connections.set_on_change(move || publisher.mark());
+    let publisher = state.publisher.clone();
+    state.quit.set_on_change(move || publisher.mark());
+    // A staged native profile is deleted once its service is listed (the Swift `stagedProfiles.servicesSeen`).
+    let staged = state.staged_profiles.clone();
+    state.manager.set_on_native_services_seen(move |ids| {
+        staged.lock().unwrap_or_else(PoisonError::into_inner).services_seen(ids);
+    });
+    let broker = state.broker.clone();
+    state.manager.set_prompt_handler(move |prompt| broker.present(prompt, Date::now()));
+    let broker = state.broker.clone();
+    state.manager.set_dismiss_prompt(move |key| broker.dismiss(key));
+    // Failures and drops: a notification (bundle only; generic text) and the UI event.
+    let handle = app.clone();
+    let notifying = state.clone();
+    state.manager.set_on_event(move |event| {
+        notifications::event(&notifying, &event);
+        let _ = handle.emit("connection-event", event);
+    });
+}
+
+/// The steps after the Swift `AppModel.init` part (reload, setup check, …, polling), off the main thread.
+fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep) {
+    match step {
+        LaunchStep::ReloadConnections => state.manager.reload(),
+        LaunchStep::CheckSetup => {
+            state.refresh_login_item();
+            let complete = system::check(state).is_complete();
+            if !complete {
+                // As the Swift app: the System Status window opens at launch when something is missing.
+                let _ = commands::open(app, "setup");
+            }
+        }
+        // Bundle only (UNUserNotificationCenter needs a bundle identifier).
+        LaunchStep::RequestNotificationAuthorization => notifications::start(app, state),
+        // Bundle only (the Swift `launchHousekeeping`): the leftovers of an interrupted update, the previous
+        // update's notice.
+        LaunchStep::UpdateHousekeeping => update_window::launch_housekeeping(app, state),
+        // Only from a bundle with the update source in Info.plist (otherwise `run_scheduler` returns at once).
+        LaunchStep::StartUpdateScheduler => {
+            if state.updates.enabled() {
+                let updates = state.updates.clone();
+                std::thread::Builder::new()
+                    .name("macvpn-updates".into())
+                    .spawn(move || {
+                        updates.run_scheduler(|wake| {
+                            std::thread::sleep(wake);
+                            true
+                        })
+                    })
+                    .expect("update scheduler thread");
+            }
+        }
+        LaunchStep::StartPolling => {
+            let state = state.clone();
+            std::thread::Builder::new()
+                .name("macvpn-poll".into())
+                .spawn(move || {
+                    let manager = state.manager.clone();
+                    state.poller.run(
+                        || manager.refresh(),
+                        || manager.has_active(),
+                        &SystemClock,
+                        || state.poller.wait(POLL_TICK),
+                    );
+                })
+                .expect("poller thread");
+        }
+        LaunchStep::MigrateKeychain | LaunchStep::SweepStagedProfiles | LaunchStep::RemoveLegacyProfiles => {}
+    }
+}
+
+/// `applicationShouldTerminate:` (logout, restart, shutdown, a quit Apple Event): the same quit questions. With
+/// nothing to ask the app terminates at once; otherwise AppKit waits ("later") until the questions are answered
+/// (the reply comes from `commands::handle_quit` / `commands::terminate`); macOS cancels a logout that waits too
+/// long, as with the Swift app.
+fn system_terminate_request(app: &AppHandle) -> TerminateReply {
+    let Some(state) = app.try_state::<Arc<AppState>>() else { return TerminateReply::Now };
+    let state = state.inner().clone();
+    let unsaved = state.connections.has_unsaved_changes();
+    match state.quit.request(QuitOrigin::System, unsaved, state.manager.has_active()).0 {
+        QuitAction::Finished { proceed: true, .. } => {
+            state.quit.confirm();
+            state.poller.stop();
+            TerminateReply::Now
+        }
+        QuitAction::Finished { proceed: false, .. } => TerminateReply::Cancel,
+        action @ (QuitAction::Ask(_) | QuitAction::Joined(_)) => {
+            state.quit.set_system_waiting();
+            let app = app.clone();
+            std::thread::spawn(move || commands::handle_quit(&app, &state, action));
+            TerminateReply::Later
+        }
+    }
+}
+
+/// Cmd+Q goes through the quit question; the Edit items keep text editing shortcuts working in the windows.
+fn install_menu(app: &AppHandle) -> tauri::Result<()> {
+    let quit = MenuItemBuilder::with_id("quit", l10n::tr("Quit MacVPN", &[])).accelerator("CmdOrCtrl+Q").build(app)?;
+    let app_menu = SubmenuBuilder::new(app, "MacVPN").item(&quit).build()?;
+    let edit = SubmenuBuilder::new(app, "Edit")
+        .undo()
+        .redo()
+        .separator()
+        .cut()
+        .copy()
+        .paste()
+        .select_all()
+        .separator()
+        .close_window()
+        .build()?;
+    app.set_menu(MenuBuilder::new(app).items(&[&app_menu, &edit]).build()?)?;
+    app.on_menu_event(|app, event| {
+        if event.id() == "quit"
+            && let Some(state) = app.try_state::<Arc<AppState>>()
+        {
+            commands::request_quit(app, &state, QuitOrigin::Menu);
+        }
+    });
+    Ok(())
+}
+
+fn main() {
+    macvpn_platform_mac::install_core_hooks();
+    let env = match Environment::detect() {
+        Ok(env) => env,
+        Err(e) => {
+            eprintln!("MacVPN: {e}");
+            std::process::exit(1);
+        }
+    };
+    let store = Arc::new(ConnectionStore::new(env.connections_dir()));
+    let (secrets, migrate) = secrets(&env);
+    // The Swift `AppModel.init` part, before anything else (and before any secret is read): the Keychain
+    // migration, the sweep of the native profiles staged by the previous run, and the legacy profile removal.
+    let mut migrate = Some(migrate);
+    for step in &LAUNCH_SEQUENCE[..3] {
+        match step {
+            LaunchStep::MigrateKeychain => {
+                if let Some(migrate) = migrate.take() {
+                    migrate();
+                }
+            }
+            LaunchStep::SweepStagedProfiles => {
+                if let Some(parent) = env.staging_parent() {
+                    profile_staging::sweep(&parent);
+                }
+            }
+            LaunchStep::RemoveLegacyProfiles => {
+                store.remove_legacy_profiles();
+            }
+            _ => unreachable!("the first three launch steps"),
+        }
+    }
+    let state = build_state(env, store, secrets);
+
+    let app = tauri::Builder::default()
+        .manage(state.clone())
+        .invoke_handler(tauri::generate_handler![
+            commands::get_view_model,
+            commands::connect,
+            commands::disconnect,
+            commands::pin,
+            commands::unpin,
+            commands::move_pinned,
+            commands::open_window,
+            commands::close_window,
+            commands::set_menu_height,
+            commands::quit,
+            commands::check_for_updates,
+            commands::set_update_option,
+            commands::set_launch_at_login,
+            commands::open_login_items_settings,
+            commands::open_user_guide,
+            manage::select_connection,
+            manage::resolve_unsaved,
+            manage::take_tab_request,
+            manage::editor_open,
+            manage::editor_update,
+            manage::editor_save,
+            manage::editor_forget,
+            manage::editor_choose_ca,
+            manage::create_connection,
+            manage::import_files,
+            manage::answer_question,
+            manage::export_check,
+            manage::export_connection,
+            manage::delete_connection,
+            manage::log_subscribe,
+            manage::log_copy,
+            manage::log_save,
+            system::setup_check,
+            system::setup_install_homebrew,
+            system::setup_install_tools,
+            system::setup_install_root,
+            system::setup_uninstall,
+            system::quit_after_uninstall,
+            update_window::update_install,
+            update_window::update_open_page,
+            update_window::update_dismiss_notice,
+            prompts::answer_prompt,
+            prompts::prompt_ready,
+        ])
+        .on_window_event(|window, event| {
+            if window.label() == manage::MANAGE_WINDOW {
+                manage::on_window_event(window, event);
+                return;
+            }
+            if prompts::is_prompt_window(window.label()) {
+                prompts::on_window_event(window, event);
+                return;
+            }
+            if window.label() == update_window::UPDATE_WINDOW {
+                if let WindowEvent::Destroyed = event
+                    && let Some(state) = window.app_handle().try_state::<Arc<AppState>>()
+                {
+                    update_window::window_destroyed(window.app_handle(), &state);
+                }
+                return;
+            }
+            if window.label() != tray::MENU_WINDOW {
+                return;
+            }
+            match event {
+                WindowEvent::Focused(false) => tray::hide_on_blur(window.app_handle()),
+                // The popover is never closed (Cmd+W), only hidden.
+                WindowEvent::CloseRequested { api, .. } => {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                _ => {}
+            }
+        })
+        .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            let handle = app.handle().clone();
+            // A system quit goes through the quit questions too (tao does not implement this delegate method).
+            let terminating = handle.clone();
+            if !app_hooks::install_terminate_handler(move || system_terminate_request(&terminating)) {
+                eprintln!("MacVPN: applicationShouldTerminate could not be installed");
+            }
+            // A woken Mac refreshes at once (the Swift `didWakeNotification`).
+            let poller = state.poller.clone();
+            app_hooks::observe_wake(move || poller.wake());
+            install_menu(&handle)?;
+            tray::create_menu_window(&handle)?;
+            tray::create(&handle)?;
+            connect_hooks(&handle, &state);
+            Publisher::spawn(handle.clone(), state.clone());
+            #[cfg(debug_assertions)]
+            smoke::start(&handle, &state);
+            std::thread::Builder::new().name("macvpn-launch".into()).spawn(move || {
+                for step in &LAUNCH_SEQUENCE[3..] {
+                    run_late_launch_step(&handle, &state, *step);
+                }
+            })?;
+            Ok(())
+        })
+        .build(tauri::generate_context!())
+        .unwrap_or_else(|e| {
+            eprintln!("MacVPN: {e}");
+            std::process::exit(1);
+        });
+
+    app.run(|_, event| {
+        // Closing the last window does not quit a menu bar app; only `app.exit` (the quit flow) does.
+        if let RunEvent::ExitRequested { code: None, api, .. } = event {
+            api.prevent_exit();
+        }
+    });
+}

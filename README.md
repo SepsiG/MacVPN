@@ -26,12 +26,16 @@ Root operations are performed by `/usr/local/libexec/macvpn/mvpn` through a sudo
 - [Hungarian user guide](docs/user-guide.hu.md)
 
 ### Development
-- `swift test` – unit tests
-- `scripts/test-root.sh` – tests of the root scripts (dry-run, no root needed)
-- `scripts/check-l10n.sh` – checks that every UI string has a Hungarian translation in the catalog
-- `swift run MacVPN` – run during development. To install the root layer from a `swift run` build, first build the validator and the management bridge and copy them next to the root scripts: `swift build --product mvpn-validate && swift build --product mvpn-mgmt && cp .build/debug/mvpn-validate .build/debug/mvpn-mgmt Resources/root/` (`.build/debug` is the bin path that `swift build --show-bin-path` prints; the copy is git-ignored)
-- `scripts/build-dmg.sh` – builds `dist/MacVPN-x.y.z.dmg`
-- Localization: English is the source language, Hungarian the translation. App UI strings live in `Sources/MacVPN/Resources/Localizable.xcstrings` (keys are the English text); the catalog is not a SwiftPM resource: `build-dmg.sh` compiles it with `xcrun xcstringstool compile` straight into `MacVPN.app/Contents/Resources/<lang>.lproj`, and the app reads it from the main bundle. `swift run MacVPN` therefore always shows English. MacVPNCore and `mvpn-validate` messages live in an embedded table (`Sources/MacVPNCore/L10n.swift`); the root scripts get the language via `--lang en|hu` and keep both languages next to each other (`msg "English" "Magyar"`).
+MacVPN 1.0 is written in Rust (a Cargo workspace) with a Tauri 2 user interface (Svelte + TypeScript). Needs Rust stable (`rustup`; for the universal build also `rustup target add aarch64-apple-darwin x86_64-apple-darwin`) and Node.js 22.12+.
+- `crates/core` – platform-independent logic (models, storage, validators, import/export, MFA, update checks, the EN/HU text table `crates/core/l10n/strings.json`); `crates/mvpn` – the root helper (`/usr/local/libexec/macvpn/mvpn`); `crates/platform-mac` – macOS services (Keychain, native VPN, login item, installers); `crates/app-core` – the app logic without a UI; `app/` – the Tauri app (`app/src-tauri`) and its web UI (`app/ui`). Details: [`app/README.md`](app/README.md).
+- `cargo test --workspace` – unit and compatibility tests; `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check`
+- `scripts/test-root.sh` – black-box tests of the root helper (dry-run, no root needed)
+- `cd app/ui && npm ci && npm test && npm run build` – UI tests (language rule, l10n coverage) and the UI build
+- `scripts/check-l10n.sh` – checks that every text (UI and Rust) has a Hungarian translation
+- Development run without touching real data: `MACVPN_SANDBOX_HOME="$PWD/target/sandbox-home" target/debug/macvpn-app` after `cargo build -p macvpn-app --features custom-protocol` (see `app/README.md`); `scripts/smoke-manage.sh` drives the windows in such a sandbox (`SMOKE_LANG=en|hu`)
+- `scripts/build-dmg.sh` – builds the universal `dist/MacVPN.app` and `dist/MacVPN-x.y.z.dmg`
+- Localization: English is the source language, Hungarian the translation; every text (UI, app, root helper) is in `crates/core/l10n/strings.json` (the key is the English text). The language follows the macOS preferred languages (the first Hungarian or English one, else English; per-app language in System Settings works too); the root helper gets it via `--lang en|hu`.
+- The Swift implementation (up to 0.4.0) stays in `legacy/swift` until 1.0.0 ships, as the reference for the compatibility tests; CI does not build it (`cd legacy/swift && swift test` runs locally).
 - Manual GUI checklist: `docs/manual-test-checklist.md`
 - Release procedure and repository security settings: `docs/RELEASING.md`
 
@@ -62,12 +66,16 @@ A root műveleteket a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabá
 - [Angol útmutató](docs/user-guide.en.md)
 
 ### Fejlesztés
-- `swift test` – unit tesztek
-- `scripts/test-root.sh` – a root scriptek tesztje (dry-run, nem kell root)
-- `scripts/check-l10n.sh` – ellenőrzi, hogy az app minden szövegének van magyar fordítása a catalogban
-- `swift run MacVPN` – futtatás fejlesztéskor. Ha egy `swift run` buildből telepíted a root réteget, előbb fordítsd le a validátort és a management közvetítőt, és másold őket a root scriptek mellé: `swift build --product mvpn-validate && swift build --product mvpn-mgmt && cp .build/debug/mvpn-validate .build/debug/mvpn-mgmt Resources/root/` (a `.build/debug` a `swift build --show-bin-path` által kiírt bin könyvtár; a másolatot a git figyelmen kívül hagyja)
-- `scripts/build-dmg.sh` – `dist/MacVPN-x.y.z.dmg`
-- Lokalizáció: az angol a forrásnyelv, a magyar a fordítás. Az app szövegei a `Sources/MacVPN/Resources/Localizable.xcstrings` fájlban vannak (a kulcs az angol szöveg); a catalog nem SwiftPM resource: a `build-dmg.sh` `xcrun xcstringstool compile`-lal közvetlenül a `MacVPN.app/Contents/Resources/<nyelv>.lproj`-ba fordítja, és az app a main bundle-ből olvassa. Ezért a `swift run MacVPN` mindig angol. A MacVPNCore és a `mvpn-validate` üzenetei egy beágyazott táblában vannak (`Sources/MacVPNCore/L10n.swift`); a root scriptek a nyelvet a `--lang en|hu` kapcsolóból kapják, és a két nyelvet egymás mellett tartják (`msg "English" "Magyar"`).
+A MacVPN 1.0 Rustban készül (Cargo workspace), a felület Tauri 2 (Svelte + TypeScript). Kell hozzá Rust stable (`rustup`; a universal buildhez `rustup target add aarch64-apple-darwin x86_64-apple-darwin` is) és Node.js 22.12+.
+- `crates/core` – platformfüggetlen logika (modellek, tárolás, validátorok, import/export, MFA, frissítés-ellenőrzés, az EN/HU szövegtábla: `crates/core/l10n/strings.json`); `crates/mvpn` – a root segédprogram (`/usr/local/libexec/macvpn/mvpn`); `crates/platform-mac` – macOS-szolgáltatások (Keychain, natív VPN, bejelentkezési elem, telepítők); `crates/app-core` – az app logikája felület nélkül; `app/` – a Tauri app (`app/src-tauri`) és a webes felülete (`app/ui`). Részletek: [`app/README.md`](app/README.md) (angolul).
+- `cargo test --workspace` – unit- és kompatibilitási tesztek; `cargo clippy --workspace --all-targets -- -D warnings`, `cargo fmt --all --check`
+- `scripts/test-root.sh` – a root segédprogram fekete dobozos tesztje (dry-run, nem kell root)
+- `cd app/ui && npm ci && npm test && npm run build` – a felület tesztjei (nyelvválasztás, lokalizáció-lefedettség) és buildje
+- `scripts/check-l10n.sh` – ellenőrzi, hogy minden szövegnek (felület és Rust) van magyar fordítása
+- Fejlesztői futtatás a valódi adatok érintése nélkül: `cargo build -p macvpn-app --features custom-protocol` után `MACVPN_SANDBOX_HOME="$PWD/target/sandbox-home" target/debug/macvpn-app` (lásd `app/README.md`); a `scripts/smoke-manage.sh` egy ilyen sandboxban végigkattintja az ablakokat (`SMOKE_LANG=en|hu`)
+- `scripts/build-dmg.sh` – a universal `dist/MacVPN.app` és `dist/MacVPN-x.y.z.dmg`
+- Lokalizáció: az angol a forrásnyelv, a magyar a fordítás; minden szöveg (felület, app, root segédprogram) a `crates/core/l10n/strings.json`-ban van (a kulcs az angol szöveg). A nyelv a macOS preferált nyelveit követi (az első magyar vagy angol, különben angol; a Rendszerbeállításokban appra beállított nyelv is működik); a root segédprogram a `--lang en|hu` kapcsolóból kapja.
+- A Swift-változat (0.4.0-ig) a `legacy/swift` alatt marad az 1.0.0 kiadásáig, a kompatibilitási tesztek referenciájaként; a CI nem fordítja (helyben: `cd legacy/swift && swift test`).
 - Kézi GUI tesztlista: `docs/manual-test-checklist.md`
 - Kiadás menete és a repó biztonsági beállításai: `docs/RELEASING.md` (angolul)
 

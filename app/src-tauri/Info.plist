@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Merged into MacVPN.app/Contents/Info.plist by the Tauri bundler (port spec, section 4). -->
+<plist version="1.0">
+<dict>
+	<key>LSUIElement</key>
+	<true/>
+	<key>CFBundleDevelopmentRegion</key>
+	<string>en</string>
+	<key>CFBundleLocalizations</key>
+	<array>
+		<string>en</string>
+		<string>hu</string>
+	</array>
+	<key>MacVPNUpdateRepo</key>
+	<string>SepsiG/MacVPN</string>
+	<key>MacVPNUpdateRepoID</key>
+	<string>1422472799</string>
+</dict>
+</plist>

@@ -26,28 +26,58 @@ jobs:
         env:
           REPO_ID: ${{ github.repository_id }}
         run: |
-          # Az app a rögzített numerikus repo ID-ről frissít (Resources/Info.plist, MacVPNUpdateRepoID); a workflow
-          # nem írja át. Ha a repó ID-je vagy neve nem egyezik vele, a kiadás nem készül el.
-          ID=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepoID" Resources/Info.plist)
-          NAME=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepo" Resources/Info.plist)
+          # Az app a rögzített numerikus repo ID-ről frissít (app/src-tauri/Info.plist, MacVPNUpdateRepoID, a Tauri
+          # bundler ezt fésüli a bundle Info.plist-jébe); a workflow nem írja át. Ha a repó ID-je vagy neve nem egyezik
+          # vele, a kiadás nem készül el. A kész bundle-t a DMG után újra ellenőrizzük.
+          ID=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepoID" app/src-tauri/Info.plist)
+          NAME=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepo" app/src-tauri/Info.plist)
           [ "$ID" = "$REPO_ID" ] || { echo "MacVPNUpdateRepoID ($ID) != repository_id ($REPO_ID)"; exit 1; }
           [ "$(printf %s "$NAME" | tr '[:upper:]' '[:lower:]')" = "$(printf %s "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')" ] \
             || { echo "MacVPNUpdateRepo ($NAME) != $GITHUB_REPOSITORY"; exit 1; }
+      - name: A verzió egyezik a taggel
+        run: |
+          # A verzió a repóban rögzített (tauri.conf.json = Cargo.toml = package.json, a build-dmg.sh ellenőrzi);
+          # a workflow nem írja át: eltérő tagnél a kiadás nem készül el.
+          V="${GITHUB_REF_NAME#v}"
+          CONF=$(plutil -extract version raw -o - app/src-tauri/tauri.conf.json)
+          [ "$CONF" = "$V" ] || { echo "tauri.conf.json version ($CONF) != tag ($V)"; exit 1; }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "26.8.2"
       - name: Toolchain versions
         run: |
-          xcodebuild -version
-          swift --version
-      - name: Verzió a tagből
-        run: |
-          V="${GITHUB_REF_NAME#v}"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $V" Resources/Info.plist
-          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $V" Resources/Info.plist
+          # A rust-toolchain.toml-ban rögzített pontos verzió (a rustup a repóban amúgy is ezt használja).
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t aarch64-apple-darwin,x86_64-apple-darwin
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+          node --version
       - name: Tesztek
-        run: swift test && scripts/test-root.sh
+        run: |
+          cargo test --workspace --locked
+          MVPN_IMPL=rust scripts/test-root.sh
       - name: Tesztek (release, optimalizált – ugyanaz a fordítási mód, mint a DMG-é)
-        run: swift test -c release -Xswiftc -enable-testing
+        run: cargo test --workspace --locked --release
+      - name: UI tesztek
+        working-directory: app/ui
+        run: |
+          npm ci --no-audit --no-fund
+          npm test
       - name: DMG
         run: scripts/build-dmg.sh
+      - name: A kész bundle ellenőrzése
+        env:
+          REPO_ID: ${{ github.repository_id }}
+        run: |
+          P=dist/MacVPN.app/Contents/Info.plist
+          V="${GITHUB_REF_NAME#v}"
+          [ "$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepoID" "$P")" = "$REPO_ID" ] || { echo "bundle: MacVPNUpdateRepoID"; exit 1; }
+          [ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$P")" = "$V" ] || { echo "bundle: version"; exit 1; }
+          [ "$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$P")" = local.macvpn ] || { echo "bundle: identifier"; exit 1; }
+          codesign --verify --strict --verbose=2 dist/MacVPN.app
+          [ -f "dist/MacVPN-$V.dmg" ] || { echo "missing dist/MacVPN-$V.dmg"; exit 1; }
       - name: SHA-256
         run: |
           cd dist

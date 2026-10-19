@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-menu-height"
+description = "Enables the set_menu_height command without any pre-configured scope."
+commands.allow = ["set_menu_height"]
+
+[[permission]]
+identifier = "deny-set-menu-height"
+description = "Denies the set_menu_height command without any pre-configured scope."
+commands.deny = ["set_menu_height"]

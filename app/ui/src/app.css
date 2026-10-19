@@ -1,0 +1,68 @@
+:root {
+  color-scheme: light dark;
+  --text: #1d1d1f;
+  --secondary: rgba(60, 60, 67, 0.6);
+  --tertiary: rgba(60, 60, 67, 0.3);
+  --separator: rgba(60, 60, 67, 0.18);
+  --hover: rgba(0, 122, 255, 0.15);
+  --background: #f5f5f7;
+  --button: #ffffff;
+  --switch-off: rgba(120, 120, 128, 0.32);
+  --accent: #007aff;
+  --green: #34c759;
+  --red: #ff3b30;
+  --orange: #ff9500;
+  --blue: #007aff;
+  --purple: #af52de;
+  --panel: #ffffff;
+  --sidebar: #ebebed;
+  --selection: rgba(0, 0, 0, 0.1);
+  --field: #ffffff;
+  --field-border: rgba(0, 0, 0, 0.18);
+  --focus: rgba(0, 122, 255, 0.5);
+  --group: rgba(0, 0, 0, 0.025);
+  --text-background: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #f5f5f7;
+    --secondary: rgba(235, 235, 245, 0.6);
+    --tertiary: rgba(235, 235, 245, 0.3);
+    --separator: rgba(84, 84, 88, 0.6);
+    --hover: rgba(10, 132, 255, 0.25);
+    --background: #2b2b2d;
+    --button: #3a3a3c;
+    --switch-off: rgba(120, 120, 128, 0.36);
+    --accent: #0a84ff;
+    --green: #30d158;
+    --red: #ff453a;
+    --orange: #ff9f0a;
+    --blue: #0a84ff;
+    --purple: #bf5af2;
+    --panel: #323234;
+    --sidebar: #262628;
+    --selection: rgba(255, 255, 255, 0.12);
+    --field: #1e1e1e;
+    --field-border: rgba(255, 255, 255, 0.16);
+    --focus: rgba(10, 132, 255, 0.6);
+    --group: rgba(255, 255, 255, 0.03);
+    --text-background: #1e1e1e;
+  }
+}
+
+html,
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--text);
+  font: 13px -apple-system, BlinkMacSystemFont, 'Helvetica Neue', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+button {
+  cursor: default;
+}

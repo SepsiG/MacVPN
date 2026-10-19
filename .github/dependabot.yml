@@ -1,6 +1,17 @@
 version: 2
 updates:
+  # The workflows' actions (checkout, setup-node, upload/download-artifact), pinned by commit SHA.
   - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+  # The web UI's npm packages (app/ui/package-lock.json, exact versions).
+  - package-ecosystem: npm
+    directory: /app/ui
+    schedule:
+      interval: weekly
+  # The Rust workspace (Cargo.lock).
+  - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly

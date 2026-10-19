@@ -1,0 +1,10 @@
+{
+  "X" : {
+    "enabled" : true,
+    "separator" : "comma"
+  },
+  "Z" : {
+    "enabled" : true,
+    "separator" : "none"
+  }
+}

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-take-tab-request"
+description = "Enables the take_tab_request command without any pre-configured scope."
+commands.allow = ["take_tab_request"]
+
+[[permission]]
+identifier = "deny-take-tab-request"
+description = "Denies the take_tab_request command without any pre-configured scope."
+commands.deny = ["take_tab_request"]

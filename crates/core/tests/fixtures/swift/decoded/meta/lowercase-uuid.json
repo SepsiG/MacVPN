@@ -1,0 +1,13 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "2026-10-16T17:55:00Z",
+  "id" : "0A1B2C3D-4E5F-4061-8273-94A5B6C7D8E9",
+  "kind" : "sstp",
+  "name" : "x",
+  "otp" : {
+    "enabled" : false,
+    "separator" : "none"
+  }
+}

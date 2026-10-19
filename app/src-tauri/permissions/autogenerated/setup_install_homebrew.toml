@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-setup-install-homebrew"
+description = "Enables the setup_install_homebrew command without any pre-configured scope."
+commands.allow = ["setup_install_homebrew"]
+
+[[permission]]
+identifier = "deny-setup-install-homebrew"
+description = "Denies the setup_install_homebrew command without any pre-configured scope."
+commands.deny = ["setup_install_homebrew"]

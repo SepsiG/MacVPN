@@ -1,0 +1,24 @@
+[package]
+name = "macvpn-app-core"
+description = "MacVPN app logic without a UI: the connection manager state machine, the view model and the app orchestration"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "macvpn_app_core"
+
+[lints]
+workspace = true
+
+[dependencies]
+libc = "0.2.191"
+macvpn-core = { path = "../core" }
+serde = { version = "1.0.229", features = ["derive"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+regex = "1.13.1"
+serde_json = "1.0.154"

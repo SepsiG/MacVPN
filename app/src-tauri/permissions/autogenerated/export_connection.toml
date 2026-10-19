@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-export-connection"
+description = "Enables the export_connection command without any pre-configured scope."
+commands.allow = ["export_connection"]
+
+[[permission]]
+identifier = "deny-export-connection"
+description = "Denies the export_connection command without any pre-configured scope."
+commands.deny = ["export_connection"]

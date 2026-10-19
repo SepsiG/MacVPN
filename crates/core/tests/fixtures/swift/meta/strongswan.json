@@ -1,0 +1,13 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "1970-01-01T00:00:00Z",
+  "id" : "33333333-4444-5555-6666-777777777777",
+  "kind" : "strongswan",
+  "name" : "IKEv2 – Iroda",
+  "otp" : {
+    "enabled" : true,
+    "separator" : "none"
+  }
+}

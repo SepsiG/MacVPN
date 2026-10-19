@@ -1,0 +1,55 @@
+//! Generates the app's command permissions (`allow-<command>`) from [`COMMANDS`]: the capability file can only
+//! grant these, and a command not listed here is not reachable from the web view at all.
+
+const COMMANDS: &[&str] = &[
+    "get_view_model",
+    "connect",
+    "disconnect",
+    "pin",
+    "unpin",
+    "move_pinned",
+    "open_window",
+    "close_window",
+    "set_menu_height",
+    "quit",
+    "check_for_updates",
+    "set_update_option",
+    "set_launch_at_login",
+    "open_login_items_settings",
+    "open_user_guide",
+    "select_connection",
+    "resolve_unsaved",
+    "take_tab_request",
+    "editor_open",
+    "editor_update",
+    "editor_save",
+    "editor_forget",
+    "editor_choose_ca",
+    "create_connection",
+    "import_files",
+    "answer_question",
+    "export_check",
+    "export_connection",
+    "delete_connection",
+    "log_subscribe",
+    "log_copy",
+    "log_save",
+    "setup_check",
+    "setup_install_homebrew",
+    "setup_install_tools",
+    "setup_install_root",
+    "setup_uninstall",
+    "quit_after_uninstall",
+    "update_install",
+    "update_open_page",
+    "update_dismiss_notice",
+    "answer_prompt",
+    "prompt_ready",
+];
+
+fn main() {
+    tauri_build::try_build(
+        tauri_build::Attributes::new().app_manifest(tauri_build::AppManifest::new().commands(COMMANDS)),
+    )
+    .expect("tauri-build");
+}

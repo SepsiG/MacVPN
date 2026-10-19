@@ -1,0 +1,13 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "1969-12-31T23:59:59Z",
+  "id" : "11111111-2222-3333-4444-555555555555",
+  "kind" : "openvpn",
+  "name" : "x",
+  "otp" : {
+    "enabled" : false,
+    "separator" : "none"
+  }
+}

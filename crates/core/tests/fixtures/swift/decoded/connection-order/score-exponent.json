@@ -1,0 +1,19 @@
+{
+  "pinned" : [
+
+  ],
+  "usage" : {
+    "a" : {
+      "lastUpdated" : "2027-01-15T08:00:00Z",
+      "score" : 1e-07
+    },
+    "b" : {
+      "lastUpdated" : "2027-01-15T08:00:00Z",
+      "score" : -0
+    },
+    "c" : {
+      "lastUpdated" : "2027-01-15T08:00:00Z",
+      "score" : 100
+    }
+  }
+}

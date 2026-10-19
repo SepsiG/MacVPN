@@ -1,0 +1,1791 @@
+{
+  "comment": "The single EN/HU text table of MacVPN. The key is the English text (also the en value); scope core = core/root messages (was L10n.swift), app = UI texts (was Localizable.xcstrings), mvpn = root layer messages (were the msg texts of the bash mvpn / ovpn-dns), platform = messages new in the Rust platform layer. String(format:) specifiers.",
+  "sourceLanguage": "en",
+  "strings": {
+    " – delete the line or comment it out (#)": {
+      "hu": " – töröld vagy tedd megjegyzésbe (#) a sort",
+      "scope": "core"
+    },
+    "%@ not found": {
+      "hu": "%@ nem található",
+      "scope": "core"
+    },
+    "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the Keychain for this connection. The files are never copied into the config.": {
+      "hu": "A(z) %@ ezekre a fájlokra hivatkozik. A Használat választásakor a bennük lévő felhasználónév, jelszó vagy privát kulcs jelszó a Keychainbe kerül ehhez a kapcsolathoz. A fájlok sosem kerülnek a configba.",
+      "scope": "app"
+    },
+    "%@ was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor.": {
+      "hu": "A(z) %@ nincs beolvasva (hiányzik, a config mappáján kívül van, nagyobb 1 KB-nál, vagy nem a várt formájú). Add meg a hitelesítő adatokat a szerkesztőben.",
+      "scope": "app"
+    },
+    "%@ · Missing tool": {
+      "hu": "%@ · Hiányzó eszköz",
+      "scope": "app"
+    },
+    "%@ · System VPN": {
+      "hu": "%@ · Rendszer-VPN",
+      "scope": "app"
+    },
+    "%@ · Waiting for authentication": {
+      "hu": "%@ · Hitelesítésre vár",
+      "scope": "app"
+    },
+    "%@ · system VPN (not created by MacVPN)": {
+      "hu": "%@ · rendszer VPN (nem a MacVPN hozta létre)",
+      "scope": "app"
+    },
+    "%@-log.txt": {
+      "hu": "%@-naplo.txt",
+      "scope": "app"
+    },
+    "%@: authentication needed": {
+      "hu": "%@: hitelesítés szükséges",
+      "scope": "app"
+    },
+    "%@: connection failed": {
+      "hu": "%@: sikertelen csatlakozás",
+      "scope": "app"
+    },
+    "%@: the connection dropped": {
+      "hu": "%@: a kapcsolat megszakadt",
+      "scope": "app"
+    },
+    "<angol>": {
+      "hu": "<magyar>",
+      "scope": "mvpn"
+    },
+    "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).": {
+      "hu": "A .mobileconfig profil nem importálható a MacVPN-be. Kattints rá duplán a Finderben: a macOS profilként telepíti, utána a Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt hagyd jóvá.",
+      "scope": "core"
+    },
+    "A connection could not be disconnected, installation cancelled.\n\n%@": {
+      "hu": "Egy kapcsolat nem bontható, a telepítés megszakítva.\n\n%@",
+      "scope": "platform"
+    },
+    "A connection could not be disconnected, uninstall cancelled.\n\n%@": {
+      "hu": "Egy kapcsolat nem bontható, az eltávolítás megszakítva.\n\n%@",
+      "scope": "core"
+    },
+    "A connection or child name must not start with \"-\"": {
+      "hu": "A kapcsolat és a child neve nem kezdődhet „-” jellel",
+      "scope": "core-rust"
+    },
+    "A profile can only be generated for L2TP and Cisco IPsec connections": {
+      "hu": "Csak L2TP és Cisco IPsec kapcsolathoz generálható profil",
+      "scope": "core"
+    },
+    "Account name": {
+      "hu": "Fióknév",
+      "scope": "app"
+    },
+    "Acknowledge the risky settings (tick the checkbox) before saving: %@": {
+      "hu": "Mentés előtt vedd tudomásul a kockázatos beállításokat (jelöld be a négyzetet): %@",
+      "scope": "core"
+    },
+    "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.": {
+      "hu": "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn, /var/run/macvpn-ui (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak.",
+      "scope": "app"
+    },
+    "All": {
+      "hu": "Minden",
+      "scope": "core"
+    },
+    "All tools are installed": {
+      "hu": "Minden eszköz megvan",
+      "scope": "app"
+    },
+    "Allows routing that can bypass or loop the tunnel": {
+      "hu": "Olyan útválasztást enged, amely megkerülheti vagy hurokba viheti a tunnelt",
+      "scope": "core"
+    },
+    "Also delete user data (connections and Keychain passwords)": {
+      "hu": "A felhasználói adatok törlése is (kapcsolatok és Keychain jelszavak)",
+      "scope": "app"
+    },
+    "Another operation is already running on this connection (lock: %@)": {
+      "hu": "A kapcsolaton már fut egy művelet (zár: %@)",
+      "scope": "mvpn"
+    },
+    "Approve MacVPN in System Settings → General → Login Items.": {
+      "hu": "Engedélyezd a MacVPN-t a Rendszerbeállítások → Általános → Bejelentkezési elemek alatt.",
+      "scope": "core"
+    },
+    "Ask for a one-time code at connect and append it to the password": {
+      "hu": "Egyszer használatos kód kérése csatlakozáskor, a jelszó végére fűzve",
+      "scope": "app"
+    },
+    "Asks for the admin password once: installs the scripts in /usr/local/libexec/macvpn and the /etc/sudoers.d/macvpn rule.": {
+      "hu": "Egyszer kéri az admin jelszót: telepíti a /usr/local/libexec/macvpn scripteket és a /etc/sudoers.d/macvpn szabályt.",
+      "scope": "app"
+    },
+    "At least one [Peer] with a PublicKey is required": {
+      "hu": "Legalább egy [Peer] kell PublicKey-jel",
+      "scope": "core"
+    },
+    "Authentication (stored in the Keychain)": {
+      "hu": "Hitelesítés (Keychainben tárolva)",
+      "scope": "app"
+    },
+    "Authentication cancelled": {
+      "hu": "A hitelesítés megszakítva",
+      "scope": "mvpn"
+    },
+    "Authentication failed": {
+      "hu": "Hitelesítési hiba",
+      "scope": "mvpn"
+    },
+    "Authentication failed (AUTH_FAILED)": {
+      "hu": "Hitelesítési hiba (AUTH_FAILED)",
+      "scope": "mvpn"
+    },
+    "Authentication failed (wrong user name or password)": {
+      "hu": "Hitelesítési hiba (rossz felhasználónév vagy jelszó)",
+      "scope": "mvpn"
+    },
+    "Authentication was not completed in time": {
+      "hu": "A hitelesítés nem fejeződött be időben",
+      "scope": "core"
+    },
+    "Authorize": {
+      "hu": "Engedélyezés",
+      "scope": "app"
+    },
+    "CA certificate written: %@/ca.pem": {
+      "hu": "CA tanúsítvány kiírva: %@/ca.pem",
+      "scope": "mvpn"
+    },
+    "Cancel": {
+      "hu": "Mégse",
+      "scope": "app"
+    },
+    "Cannot close the previous connection": {
+      "hu": "A korábbi kapcsolat nem bontható le",
+      "scope": "mvpn"
+    },
+    "Cannot create %@": {
+      "hu": "Nem hozható létre: %@",
+      "scope": "mvpn"
+    },
+    "Cannot create a temporary directory": {
+      "hu": "Nem hozható létre ideiglenes könyvtár",
+      "scope": "core"
+    },
+    "Cannot create the dry-run directory": {
+      "hu": "Nem hozható létre dry-run könyvtár",
+      "scope": "mvpn"
+    },
+    "Cannot create: %@": {
+      "hu": "Nem hozható létre: %@",
+      "scope": "mvpn"
+    },
+    "Cannot delete: %@": {
+      "hu": "Nem törölhető: %@",
+      "scope": "core"
+    },
+    "Cannot detect the config type": {
+      "hu": "Nem ismerhető fel a config típusa",
+      "scope": "core"
+    },
+    "Cannot enter the run directory": {
+      "hu": "A futási könyvtár nem érhető el",
+      "scope": "mvpn"
+    },
+    "Cannot mount the disk image: %@": {
+      "hu": "A lemezkép nem csatolható: %@",
+      "scope": "core"
+    },
+    "Cannot open the VPN service: %@": {
+      "hu": "A VPN szolgáltatás nem nyitható meg: %@",
+      "scope": "core"
+    },
+    "Cannot pass the response": {
+      "hu": "A válasz nem adható át",
+      "scope": "mvpn"
+    },
+    "Cannot query the status: %@": {
+      "hu": "Az állapot nem kérdezhető le: %@",
+      "scope": "core"
+    },
+    "Cannot read the config": {
+      "hu": "A config nem olvasható",
+      "scope": "mvpn"
+    },
+    "Cannot read the file": {
+      "hu": "A fájl nem olvasható",
+      "scope": "app"
+    },
+    "Cannot read the file: %@": {
+      "hu": "A fájl nem olvasható: %@",
+      "scope": "core"
+    },
+    "Cannot set the permissions of the script": {
+      "hu": "Nem állítható be a script jogosultsága",
+      "scope": "core"
+    },
+    "Cannot set the permissions of the temporary directory": {
+      "hu": "Nem állítható be az ideiglenes könyvtár jogosultsága",
+      "scope": "core"
+    },
+    "Cannot set the permissions: %@": {
+      "hu": "Nem állítható be a jogosultság: %@",
+      "scope": "core"
+    },
+    "Cannot start the VPN service: %@": {
+      "hu": "A VPN szolgáltatás nem indítható: %@",
+      "scope": "core"
+    },
+    "Cannot start the installer helper script: %@": {
+      "hu": "A telepítő segédscript nem indítható: %@",
+      "scope": "core"
+    },
+    "Cannot stop the VPN service: %@": {
+      "hu": "A VPN szolgáltatás nem állítható le: %@",
+      "scope": "core"
+    },
+    "Cannot write the installer script": {
+      "hu": "Nem írható a telepítő script",
+      "scope": "core"
+    },
+    "Cannot write: %@": {
+      "hu": "Nem írható: %@",
+      "scope": "core"
+    },
+    "Certificates loaded: %lld": {
+      "hu": "Betöltött tanúsítványok: %lld",
+      "scope": "app"
+    },
+    "Changes when MacVPN's DNS hooks run": {
+      "hu": "Megváltoztatja, mikor futnak a MacVPN DNS-hookjai",
+      "scope": "core"
+    },
+    "Character not allowed: \\": {
+      "hu": "Nem engedélyezett karakter: \\",
+      "scope": "core"
+    },
+    "Check Again": {
+      "hu": "Újraellenőrzés",
+      "scope": "app"
+    },
+    "Check for Updates Automatically": {
+      "hu": "Frissítések automatikus keresése",
+      "scope": "app"
+    },
+    "Check for Updates Now": {
+      "hu": "Frissítések keresése most",
+      "scope": "app"
+    },
+    "Checking for Updates…": {
+      "hu": "Frissítések keresése…",
+      "scope": "app"
+    },
+    "Checking the install location…": {
+      "hu": "Célhely ellenőrzése…",
+      "scope": "app"
+    },
+    "Choose PEM File…": {
+      "hu": "PEM fájl kiválasztása…",
+      "scope": "app"
+    },
+    "Cisco IPsec requires a group name": {
+      "hu": "Cisco IPsec-hez csoportnév szükséges",
+      "scope": "core"
+    },
+    "Click to enter the code or to sign in.": {
+      "hu": "Kattints a kód megadásához vagy a bejelentkezéshez.",
+      "scope": "app"
+    },
+    "Click to see the log.": {
+      "hu": "Kattints a naplóért.",
+      "scope": "app"
+    },
+    "Close": {
+      "hu": "Bezárás",
+      "scope": "app"
+    },
+    "Code": {
+      "hu": "Kód",
+      "scope": "app"
+    },
+    "Codes and web sign-in requested by the server during the connection (challenge/response, SAML, push) are asked for automatically.": {
+      "hu": "A szerver által csatlakozás közben kért kódot és webes bejelentkezést (challenge/response, SAML, push) a MacVPN automatikusan bekéri.",
+      "scope": "app"
+    },
+    "Commands": {
+      "hu": "Parancsok",
+      "scope": "core"
+    },
+    "Config not found": {
+      "hu": "A config nem található",
+      "scope": "mvpn"
+    },
+    "Connect": {
+      "hu": "Csatlakozás",
+      "scope": "app"
+    },
+    "Connect in Debug Mode": {
+      "hu": "Csatlakozás debug módban",
+      "scope": "app"
+    },
+    "Connections": {
+      "hu": "Kapcsolatok",
+      "scope": "app"
+    },
+    "Continue": {
+      "hu": "Tovább",
+      "scope": "app"
+    },
+    "Control character not allowed": {
+      "hu": "Nem engedélyezett vezérlőkarakter",
+      "scope": "core"
+    },
+    "Copy": {
+      "hu": "Másolás",
+      "scope": "app"
+    },
+    "Copying the config failed": {
+      "hu": "A config másolása sikertelen",
+      "scope": "mvpn"
+    },
+    "Could not disconnect:": {
+      "hu": "Nem bontható kapcsolat:",
+      "scope": "core"
+    },
+    "Could not download the Homebrew installer. Check the internet connection, then try again.": {
+      "hu": "Nem sikerült letölteni a Homebrew telepítőt. Ellenőrizd az internetkapcsolatot, majd próbáld újra.",
+      "scope": "app"
+    },
+    "Could not remove %@: %@": {
+      "hu": "A(z) %@ nem törölhető: %@",
+      "scope": "core"
+    },
+    "Could not save the log": {
+      "hu": "A napló nem menthető",
+      "scope": "app"
+    },
+    "Could not start the Homebrew installer": {
+      "hu": "Nem indítható a Homebrew telepítő",
+      "scope": "app"
+    },
+    "Could not turn off launch at login": {
+      "hu": "Nem sikerült kikapcsolni az indítást bejelentkezéskor",
+      "scope": "app"
+    },
+    "Could not turn on launch at login": {
+      "hu": "Nem sikerült bekapcsolni az indítást bejelentkezéskor",
+      "scope": "app"
+    },
+    "Could not write %@: %@": {
+      "hu": "A(z) %@ nem írható: %@",
+      "scope": "core"
+    },
+    "Custom CA file": {
+      "hu": "Saját CA fájl",
+      "scope": "app"
+    },
+    "Debugging option that deliberately disrupts the connection": {
+      "hu": "Hibakereső beállítás, amely szándékosan zavarja a kapcsolatot",
+      "scope": "core"
+    },
+    "Delete": {
+      "hu": "Törlés",
+      "scope": "app"
+    },
+    "Delete %@?": {
+      "hu": "Törlöd: %@?",
+      "scope": "app"
+    },
+    "Directive not allowed in a <connection> block: %@": {
+      "hu": "Nem engedélyezett direktíva <connection> blokkban: %@",
+      "scope": "core"
+    },
+    "Directive not supported for import: %@": {
+      "hu": "Nem támogatott direktíva importnál: %@",
+      "scope": "core"
+    },
+    "Discard": {
+      "hu": "Elvetés",
+      "scope": "app"
+    },
+    "Disconnect": {
+      "hu": "Bontás",
+      "scope": "app"
+    },
+    "Disconnect and Quit": {
+      "hu": "Leállítás és kilépés",
+      "scope": "app"
+    },
+    "Disconnect failed, the connection is still running (the run directory is kept)": {
+      "hu": "A bontás sikertelen, a kapcsolat még fut (a futási könyvtár megmarad)",
+      "scope": "mvpn"
+    },
+    "Disconnect them before quitting?": {
+      "hu": "Leállítsam őket kilépés előtt?",
+      "scope": "app"
+    },
+    "Done.": {
+      "hu": "Kész.",
+      "scope": "app"
+    },
+    "Done. Go back to MacVPN and click Check Again.": {
+      "hu": "Kész. Térj vissza a MacVPN-hez és nyomd meg az Újraellenőrzés gombot.",
+      "scope": "app"
+    },
+    "Download address not allowed: %@": {
+      "hu": "Nem megengedett letöltési cím: %@",
+      "scope": "core"
+    },
+    "Download and Install": {
+      "hu": "Letöltés és telepítés",
+      "scope": "app"
+    },
+    "Downloading…": {
+      "hu": "Letöltés…",
+      "scope": "app"
+    },
+    "Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects": {
+      "hu": "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat, és a DNS-t csak a MacVPN bontása állítja vissza",
+      "scope": "core"
+    },
+    "Duplicate key: %@": {
+      "hu": "Ismétlődő kulcs: %@",
+      "scope": "core"
+    },
+    "Enabled via a login LaunchAgent (applies at next login).": {
+      "hu": "Bejelentkezési LaunchAgenttel bekapcsolva (a következő bejelentkezéstől érvényes).",
+      "scope": "core"
+    },
+    "Enter the one-time code. MacVPN appends it to the password for this connection.": {
+      "hu": "Add meg az egyszer használatos kódot. A MacVPN ennél a kapcsolatnál a jelszó végére fűzi.",
+      "scope": "core"
+    },
+    "Errors": {
+      "hu": "Hibák",
+      "scope": "core"
+    },
+    "Establishing the connection failed": {
+      "hu": "A kapcsolat felépítése sikertelen",
+      "scope": "mvpn"
+    },
+    "Exactly one [Interface] section is required": {
+      "hu": "Pontosan egy [Interface] szakasz kell",
+      "scope": "core"
+    },
+    "Expires in %@": {
+      "hu": "Lejár: %@",
+      "scope": "app"
+    },
+    "Export With Keys": {
+      "hu": "Exportálás kulcsokkal",
+      "scope": "app"
+    },
+    "Export Without Keys": {
+      "hu": "Exportálás kulcsok nélkül",
+      "scope": "app"
+    },
+    "Export… (passwords are never included)": {
+      "hu": "Exportálás… (jelszavak sosem kerülnek bele)",
+      "scope": "app"
+    },
+    "External file reference, use an inline block: %@": {
+      "hu": "Külső fájl hivatkozás, inline blokk kell: %@",
+      "scope": "core"
+    },
+    "Follow": {
+      "hu": "Követés",
+      "scope": "app"
+    },
+    "Forbidden directive: %@": {
+      "hu": "Tiltott direktíva: %@",
+      "scope": "core"
+    },
+    "Forbidden key: %@": {
+      "hu": "Tiltott kulcs: %@",
+      "scope": "core"
+    },
+    "Forbidden: file: URI": {
+      "hu": "Tiltott: file: URI",
+      "scope": "core"
+    },
+    "Forbidden: include": {
+      "hu": "Tiltott: include",
+      "scope": "core"
+    },
+    "Forget saved secrets": {
+      "hu": "Mentett titkok törlése",
+      "scope": "app"
+    },
+    "GitHub is temporarily limiting requests (HTTP 403). Try again later.": {
+      "hu": "A GitHub átmenetileg korlátozza a lekérdezéseket (HTTP 403). Próbáld később.",
+      "scope": "core"
+    },
+    "Group name": {
+      "hu": "Csoportnév (group name)",
+      "scope": "app"
+    },
+    "Help": {
+      "hu": "Súgó",
+      "scope": "app"
+    },
+    "Homebrew": {
+      "hu": "Homebrew",
+      "scope": "app"
+    },
+    "I acknowledge these settings and the security risks": {
+      "hu": "Tudomásul veszem a beállításokat és a biztonsági kockázatokat",
+      "scope": "app"
+    },
+    "IKE negotiation failed (details in the log)": {
+      "hu": "Az IKE egyeztetés sikertelen (részletek a naplóban)",
+      "scope": "mvpn"
+    },
+    "Ignore": {
+      "hu": "Mellőzés",
+      "scope": "app"
+    },
+    "Import": {
+      "hu": "Importálás",
+      "scope": "app"
+    },
+    "Import Error": {
+      "hu": "Import hiba",
+      "scope": "app"
+    },
+    "Import from File…": {
+      "hu": "Import fájlból…",
+      "scope": "app"
+    },
+    "Imported, but the config has problems. Fix them in the editor (red list).": {
+      "hu": "Importálva, de a config hibás. Javítsd a szerkesztőben (piros lista).",
+      "scope": "app"
+    },
+    "Imported, inlined: %@": {
+      "hu": "Importálva, beemelt fájlok: %@",
+      "scope": "app"
+    },
+    "Imported. It contains risky settings (%@): review them in the editor’s yellow panel and tick the checkbox before connecting.": {
+      "hu": "Importálva. Kockázatos beállításokat tartalmaz (%@): nézd át őket a szerkesztő sárga paneljén, és csatlakozás előtt jelöld be a négyzetet.",
+      "scope": "app"
+    },
+    "Incomplete installation (missing: %@). Reinstall: asks for the admin password once.": {
+      "hu": "Hiányos telepítés (hiányzik: %@). Újratelepítés: egyszer kéri az admin jelszót.",
+      "scope": "app"
+    },
+    "Inline block not allowed: %@": {
+      "hu": "Nem engedélyezett inline blokk: %@",
+      "scope": "core"
+    },
+    "Install": {
+      "hu": "Telepítés",
+      "scope": "app"
+    },
+    "Installation cancelled": {
+      "hu": "A telepítés megszakítva",
+      "scope": "core"
+    },
+    "Installation cancelled: %@ is not owned by root or is writable by other users, so anything running as that user could replace the MacVPN root scripts. Fix it in Terminal, then try again: sudo chown root:wheel %@ && sudo chmod go-w %@ (on Intel Macs this may affect Homebrew).": {
+      "hu": "A telepítés megszakítva: a(z) %@ nem a root tulajdona, vagy más felhasználó is írhatja, így bármi, ami ennek a felhasználónak a nevében fut, kicserélhetné a MacVPN root scriptjeit. Javítsd a Terminálban, majd próbáld újra: sudo chown root:wheel %@ && sudo chmod go-w %@ (Intel Macen ez érintheti a Homebrew-t).",
+      "scope": "core"
+    },
+    "Installation error": {
+      "hu": "Telepítési hiba",
+      "scope": "core"
+    },
+    "Installed (version %@)": {
+      "hu": "Telepítve (verzió %@)",
+      "scope": "app"
+    },
+    "Installed version: %@": {
+      "hu": "Telepített verzió: %@",
+      "scope": "app"
+    },
+    "Installing Homebrew (with the official installer)…": {
+      "hu": "Homebrew telepítése (a hivatalos telepítővel)…",
+      "scope": "app"
+    },
+    "Installing…": {
+      "hu": "Telepítés…",
+      "scope": "app"
+    },
+    "Install…": {
+      "hu": "Telepítés…",
+      "scope": "app"
+    },
+    "Integrity check failed, installation cancelled:": {
+      "hu": "A sértetlenség-ellenőrzés sikertelen, a telepítés megszakítva:",
+      "scope": "core"
+    },
+    "Invalid --accept-risky value": {
+      "hu": "Érvénytelen --accept-risky érték",
+      "scope": "core"
+    },
+    "Invalid ID": {
+      "hu": "Érvénytelen azonosító",
+      "scope": "mvpn"
+    },
+    "Invalid SSTP parameters": {
+      "hu": "Érvénytelen SSTP paraméterek",
+      "scope": "mvpn"
+    },
+    "Invalid argument: %@": {
+      "hu": "Érvénytelen argumentum: %@",
+      "scope": "core"
+    },
+    "Invalid checksum file (.sha256)": {
+      "hu": "Hibás ellenőrzőösszeg-fájl (.sha256)",
+      "scope": "core"
+    },
+    "Invalid closing tag": {
+      "hu": "Hibás záró tag",
+      "scope": "core"
+    },
+    "Invalid config:": {
+      "hu": "Érvénytelen config:",
+      "scope": "mvpn"
+    },
+    "Invalid directive": {
+      "hu": "Érvénytelen direktíva",
+      "scope": "core"
+    },
+    "Invalid line": {
+      "hu": "Érvénytelen sor",
+      "scope": "core"
+    },
+    "Invalid line in the CA certificate block": {
+      "hu": "Érvénytelen sor a CA tanúsítvány blokkban",
+      "scope": "core"
+    },
+    "Invalid port: 1–65535": {
+      "hu": "Érvénytelen port: 1–65535",
+      "scope": "core"
+    },
+    "Invalid response": {
+      "hu": "Érvénytelen válasz",
+      "scope": "mvpn"
+    },
+    "Invalid response kind": {
+      "hu": "Érvénytelen választípus",
+      "scope": "mvpn"
+    },
+    "Invalid server: use a host name or an IPv4/IPv6 address, without a port": {
+      "hu": "Érvénytelen szerver: hosztnév vagy IPv4/IPv6 cím kell, port nélkül",
+      "scope": "core"
+    },
+    "Invalid update source: %@": {
+      "hu": "Érvénytelen frissítési forrás: %@",
+      "scope": "core"
+    },
+    "Invalid user": {
+      "hu": "Érvénytelen felhasználó",
+      "scope": "mvpn"
+    },
+    "Invalid user name: %@": {
+      "hu": "Érvénytelen felhasználónév: %@",
+      "scope": "core"
+    },
+    "Invalid user name: letters, digits and . _ @ + - only (use user@domain instead of DOMAIN\\user)": {
+      "hu": "Érvénytelen felhasználónév: csak betű, számjegy és . _ @ + - lehet (DOMAIN\\user helyett user@domain)",
+      "scope": "core"
+    },
+    "Invalid value for %@: allowed: %@": {
+      "hu": "Érvénytelen érték (%@), megengedett: %@",
+      "scope": "core"
+    },
+    "Invalid value: %@": {
+      "hu": "Érvénytelen érték: %@",
+      "scope": "core"
+    },
+    "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.": {
+      "hu": "Tartalmazza: %@. Aki ezeket a kulcsokat birtokolja, a te nevedben csatlakozhat. Csak akkor exportáld őket, ha a címzettnek szüksége van rájuk, és a fájlt megbízható helyen tartsd.",
+      "scope": "app"
+    },
+    "Key not allowed": {
+      "hu": "Nem engedélyezett kulcs",
+      "scope": "core"
+    },
+    "Key not allowed: %@": {
+      "hu": "Nem engedélyezett kulcs: %@",
+      "scope": "core"
+    },
+    "L2TP and Cisco IPsec work without these.": {
+      "hu": "L2TP és Cisco IPsec ezek nélkül is működik.",
+      "scope": "app"
+    },
+    "Later": {
+      "hu": "Később",
+      "scope": "app"
+    },
+    "Launch at Login": {
+      "hu": "Indítás bejelentkezéskor",
+      "scope": "app"
+    },
+    "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.": {
+      "hu": "Az indítás bejelentkezéskor csak akkor érhető el, ha a MacVPN az Alkalmazások mappából fut. Előbb húzd oda az appot.",
+      "scope": "core"
+    },
+    "Line %ld: %@": {
+      "hu": "%ld. sor: %@",
+      "scope": "core"
+    },
+    "Log": {
+      "hu": "Napló",
+      "scope": "app"
+    },
+    "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items.": {
+      "hu": "A MacVPN-t nem sikerült eltávolítani a bejelentkezési elemek közül. A Rendszerbeállítások → Általános → Bejelentkezési elemek alatt távolíthatod el.",
+      "scope": "app"
+    },
+    "MacVPN has been uninstalled": {
+      "hu": "A MacVPN eltávolítva",
+      "scope": "app"
+    },
+    "MacVPN is up to date": {
+      "hu": "A MacVPN naprakész",
+      "scope": "app"
+    },
+    "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.": {
+      "hu": "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, sstp-client, bash). A hiányzókat innen telepítheted.",
+      "scope": "app"
+    },
+    "Makes this Mac accept incoming VPN connections (listens on the network as root)": {
+      "hu": "Ez a Mac bejövő VPN-kapcsolatokat fogadna (rootként figyel a hálózaton)",
+      "scope": "core"
+    },
+    "Manage Connections…": {
+      "hu": "Kapcsolatok kezelése…",
+      "scope": "app"
+    },
+    "Missing PrivateKey": {
+      "hu": "Hiányzik a PrivateKey",
+      "scope": "core"
+    },
+    "Missing children block": {
+      "hu": "Hiányzik a children blokk",
+      "scope": "core"
+    },
+    "Missing connections block": {
+      "hu": "Hiányzik a connections blokk",
+      "scope": "core"
+    },
+    "Missing from the release: %@": {
+      "hu": "A kiadásból hiányzik: %@",
+      "scope": "core"
+    },
+    "Missing key: %@": {
+      "hu": "Hiányzó kulcs: %@",
+      "scope": "core"
+    },
+    "Missing remote directive": {
+      "hu": "Hiányzik a remote direktíva",
+      "scope": "core"
+    },
+    "Missing: %@": {
+      "hu": "Hiányzik: %@",
+      "scope": "app"
+    },
+    "More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.": {
+      "hu": "Több „%@” nevű VPN szolgáltatás van. A MacVPN nem adja át a jelszót, amíg nem egyértelmű, melyik az övé: nevezd át vagy töröld a másikat a Rendszerbeállítások → Hálózat alatt.",
+      "scope": "core"
+    },
+    "Mounting the disk image…": {
+      "hu": "Lemezkép csatolása…",
+      "scope": "app"
+    },
+    "Name": {
+      "hu": "Név",
+      "scope": "app"
+    },
+    "Native connections only have a log when connected in debug mode.": {
+      "hu": "Natív kapcsolatnál csak debug csatlakozáskor van napló.",
+      "scope": "app"
+    },
+    "New": {
+      "hu": "Új",
+      "scope": "app"
+    },
+    "New %@": {
+      "hu": "Új %@",
+      "scope": "app"
+    },
+    "New Connection / Import…": {
+      "hu": "Új kapcsolat / Import…",
+      "scope": "app"
+    },
+    "No CA certificate loaded": {
+      "hu": "Nincs betöltött CA tanúsítvány",
+      "scope": "app"
+    },
+    "No child name found": {
+      "hu": "Nem található child név",
+      "scope": "mvpn"
+    },
+    "No connection is waiting for authentication": {
+      "hu": "Nincs hitelesítésre váró kapcsolat",
+      "scope": "mvpn"
+    },
+    "No connection name found": {
+      "hu": "Nem található connection név",
+      "scope": "mvpn"
+    },
+    "No connections yet": {
+      "hu": "Még nincs kapcsolat",
+      "scope": "app"
+    },
+    "No release available (HTTP 404)": {
+      "hu": "Nincs elérhető kiadás (HTTP 404)",
+      "scope": "core"
+    },
+    "No update available": {
+      "hu": "Nincs elérhető frissítés",
+      "scope": "app"
+    },
+    "No verification": {
+      "hu": "Nincs ellenőrzés",
+      "scope": "app"
+    },
+    "None": {
+      "hu": "Nincs",
+      "scope": "app"
+    },
+    "Normally sent by the server or used internally by OpenVPN, not set in a client config": {
+      "hu": "Ezt általában a szerver küldi, vagy az OpenVPN belsőleg használja, kliens configba nem való",
+      "scope": "core"
+    },
+    "Not a directory: %@": {
+      "hu": "Nem könyvtár: %@",
+      "scope": "core"
+    },
+    "Not installed. The installer runs in Terminal and asks for an administrator password.": {
+      "hu": "Nincs telepítve. A telepítő Terminálban fut és rendszergazdai jelszót kér.",
+      "scope": "app"
+    },
+    "Not supported on macOS (Windows or Linux only)": {
+      "hu": "macOS-en nem támogatott (csak Windows vagy Linux)",
+      "scope": "core"
+    },
+    "OK": {
+      "hu": "OK",
+      "scope": "app"
+    },
+    "One-time code": {
+      "hu": "Egyszer használatos kód",
+      "scope": "app"
+    },
+    "One-time code (MFA)": {
+      "hu": "Egyszer használatos kód (MFA)",
+      "scope": "app"
+    },
+    "Only Offer Updates Published at Least 24 Hours Ago": {
+      "hu": "Csak a legalább 24 órája megjelent frissítések felajánlása",
+      "scope": "app"
+    },
+    "Only a file name is allowed, no path: %@": {
+      "hu": "Csak fájlnév adható meg, útvonal nem: %@",
+      "scope": "core"
+    },
+    "Only one <ca> block is allowed": {
+      "hu": "Csak egy <ca> blokk lehet",
+      "scope": "core"
+    },
+    "Open Login Items Settings…": {
+      "hu": "Bejelentkezési elemek beállításai…",
+      "scope": "app"
+    },
+    "Open MacVPN for details": {
+      "hu": "Részletek a MacVPN-ben",
+      "scope": "app"
+    },
+    "Open System Status": {
+      "hu": "Rendszerállapot megnyitása",
+      "scope": "app"
+    },
+    "Open in Browser": {
+      "hu": "Megnyitás a böngészőben",
+      "scope": "app"
+    },
+    "Open the Release on GitHub": {
+      "hu": "Kiadás megnyitása a GitHubon",
+      "scope": "app"
+    },
+    "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic": {
+      "hu": "Az OpenVPN nem állítja be az interfészt vagy az útvonalakat: a tunnel lehet, hogy nem visz forgalmat",
+      "scope": "core"
+    },
+    "Option-click a switch: debug mode": {
+      "hu": "Option+kattintás a kapcsolón: debug mód",
+      "scope": "app"
+    },
+    "Or drop an .ovpn / .conf / .sstp file here.": {
+      "hu": "Vagy húzz ide egy .ovpn / .conf / .sstp fájlt.",
+      "scope": "app"
+    },
+    "Password": {
+      "hu": "Jelszó",
+      "scope": "app"
+    },
+    "Password (optional, if not saved in macOS)": {
+      "hu": "Jelszó (nem kötelező, ha nincs elmentve a macOS-ben)",
+      "scope": "app"
+    },
+    "Passwords and the PSK are not included in the export.": {
+      "hu": "A jelszavak és a PSK nem kerülnek az exportba.",
+      "scope": "app"
+    },
+    "Permissions (root scripts + sudoers)": {
+      "hu": "Jogosultság (root scriptek + sudoers)",
+      "scope": "app"
+    },
+    "Pin to Top": {
+      "hu": "Kitűzés",
+      "scope": "app"
+    },
+    "Pinned": {
+      "hu": "Kitűzött",
+      "scope": "app"
+    },
+    "Port": {
+      "hu": "Port",
+      "scope": "app"
+    },
+    "Pre-shared key (PSK)": {
+      "hu": "Pre-shared key (PSK)",
+      "scope": "app"
+    },
+    "Preparing the installation…": {
+      "hu": "Telepítés előkészítése…",
+      "scope": "app"
+    },
+    "Private key password": {
+      "hu": "Privát kulcs jelszava",
+      "scope": "app"
+    },
+    "Profile opened, approve it in System Settings.": {
+      "hu": "Profil megnyitva, hagyd jóvá a Rendszerbeállításokban.",
+      "scope": "app"
+    },
+    "Quit MacVPN": {
+      "hu": "Kilépés",
+      "scope": "app"
+    },
+    "Quit, Keep Them Running": {
+      "hu": "Kilépés, fussanak tovább",
+      "scope": "app"
+    },
+    "Quitting and restarting…": {
+      "hu": "Kilépés és újraindítás…",
+      "scope": "app"
+    },
+    "Referenced file not found: %@": {
+      "hu": "A hivatkozott fájl nem található: %@",
+      "scope": "core"
+    },
+    "Refusing to write %@: it is a symbolic link or not a regular file.": {
+      "hu": "A(z) %@ nem írható: szimbolikus link vagy nem szabályos fájl.",
+      "scope": "core"
+    },
+    "Remove saved password": {
+      "hu": "Mentett jelszó törlése",
+      "scope": "app"
+    },
+    "Removed from OpenVPN: the connection will fail to start": {
+      "hu": "Az OpenVPN-ből eltávolították: a kapcsolat nem fog elindulni",
+      "scope": "core"
+    },
+    "Removes the root scripts, the sudoers rule and the logs; optionally your connections too.": {
+      "hu": "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is.",
+      "scope": "app"
+    },
+    "Risky directive, acknowledgement required: %@": {
+      "hu": "Kockázatos direktíva, tudomásulvétel szükséges: %@",
+      "scope": "core"
+    },
+    "Risky settings": {
+      "hu": "Kockázatos beállítások",
+      "scope": "app"
+    },
+    "Risky settings are not acknowledged: %@. Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.": {
+      "hu": "A kockázatos beállítások nincsenek tudomásul véve: %@. Nyisd meg a kapcsolatot a MacVPN → Kapcsolatok alatt, és jelöld be a négyzetet a Kockázatos beállítások résznél.",
+      "scope": "core"
+    },
+    "Root privileges required (or --dry-run)": {
+      "hu": "Root jog szükséges (vagy --dry-run)",
+      "scope": "mvpn"
+    },
+    "SSTP needs a password (set it in the connection settings)": {
+      "hu": "Az SSTP-hez jelszó kell (a kapcsolat beállításainál add meg)",
+      "scope": "mvpn"
+    },
+    "Save": {
+      "hu": "Mentés",
+      "scope": "app"
+    },
+    "Save and Install Profile": {
+      "hu": "Mentés és profil telepítése",
+      "scope": "app"
+    },
+    "Saved": {
+      "hu": "Mentve",
+      "scope": "app"
+    },
+    "Saved — type to replace": {
+      "hu": "Mentve – írj be újat a cseréhez",
+      "scope": "app"
+    },
+    "Saved: %@": {
+      "hu": "Mentve: %@",
+      "scope": "app"
+    },
+    "Save…": {
+      "hu": "Mentés…",
+      "scope": "app"
+    },
+    "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).": {
+      "hu": "Mentéskor egy konfigurációs profil készül és megnyílik. A Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt kell jóváhagyni. Módosítás után ismét jóvá kell hagyni. A jelszó nincs a profilban: a MacVPN csatlakozáskor adja át (a Rendszerbeállításokból indítva a macOS rákérdez).",
+      "scope": "app"
+    },
+    "Saving failed": {
+      "hu": "A mentés nem sikerült",
+      "scope": "app"
+    },
+    "Search": {
+      "hu": "Keresés",
+      "scope": "app"
+    },
+    "Section not allowed": {
+      "hu": "Nem engedélyezett szakasz",
+      "scope": "core"
+    },
+    "Section not allowed: %@": {
+      "hu": "Nem engedélyezett szakasz: %@",
+      "scope": "core"
+    },
+    "Select a Connection": {
+      "hu": "Válassz kapcsolatot",
+      "scope": "app"
+    },
+    "Send all traffic over VPN": {
+      "hu": "Minden forgalom a VPN-en keresztül",
+      "scope": "app"
+    },
+    "Separator": {
+      "hu": "Elválasztó",
+      "scope": "app"
+    },
+    "Server": {
+      "hu": "Szerver",
+      "scope": "app"
+    },
+    "Server and account name are required": {
+      "hu": "A szerver és a fióknév kötelező",
+      "scope": "app"
+    },
+    "Server certificate": {
+      "hu": "Szervertanúsítvány",
+      "scope": "app"
+    },
+    "Server certificate error (see the log; check the certificate mode or the CA file)": {
+      "hu": "Szervertanúsítvány-hiba (lásd a naplót; ellenőrizd a tanúsítvány-módot vagy a CA fájlt)",
+      "scope": "mvpn"
+    },
+    "Server-side option, not meant for a client connection": {
+      "hu": "Szerveroldali beállítás, nem kliens kapcsolatba való",
+      "scope": "core"
+    },
+    "Setting the routes failed": {
+      "hu": "Az útvonalak beállítása sikertelen",
+      "scope": "mvpn"
+    },
+    "Settings": {
+      "hu": "Beállítások",
+      "scope": "app"
+    },
+    "Shared secret (PSK)": {
+      "hu": "Közös kulcs (PSK)",
+      "scope": "app"
+    },
+    "Sign in in the browser": {
+      "hu": "Bejelentkezés a böngészőben",
+      "scope": "app"
+    },
+    "Standalone mode: OpenVPN prints information or exits instead of connecting": {
+      "hu": "Önálló mód: az OpenVPN kapcsolódás helyett információt ír ki vagy kilép",
+      "scope": "core"
+    },
+    "Starting openvpn failed": {
+      "hu": "Az openvpn indítása sikertelen",
+      "scope": "mvpn"
+    },
+    "Stored in the MacVPN keychain and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").": {
+      "hu": "A MacVPN kulcskarikájában tárolódik, és csatlakozáskor a macOS megkapja. Akkor kell, ha a macOS magától nem tudja kiolvasni a közös kulcsot („incorrect user shared secret”).",
+      "scope": "app"
+    },
+    "System CA": {
+      "hu": "Rendszer CA",
+      "scope": "app"
+    },
+    "System Status": {
+      "hu": "Rendszerállapot",
+      "scope": "app"
+    },
+    "Test mode only": {
+      "hu": "Csak tesztmódban",
+      "scope": "mvpn"
+    },
+    "The CA certificate block is missing or invalid": {
+      "hu": "A CA tanúsítvány blokk hiányzik vagy érvénytelen",
+      "scope": "mvpn"
+    },
+    "The SHA-256 checksum of the downloaded disk image is checked against the release's .sha256 file. The app restarts after the installation.": {
+      "hu": "A letöltött lemezkép SHA-256 ellenőrzőösszege a kiadás .sha256 fájljával egyezik meg. Telepítés után az app újraindul.",
+      "scope": "app"
+    },
+    "The SSTP password must not contain quotation marks, backslashes or control characters": {
+      "hu": "Az SSTP jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter",
+      "scope": "core"
+    },
+    "The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:": {
+      "hu": "A VPN szerver weboldalon kér bejelentkezést. Csak akkor nyisd meg, ha te indítottad ezt a kapcsolatot, és megbízol ebben a címben:",
+      "scope": "app"
+    },
+    "The VPN server says:": {
+      "hu": "A VPN-szerver üzenete:",
+      "scope": "app"
+    },
+    "The app on the disk image is not accepted: %@": {
+      "hu": "A lemezképen lévő alkalmazás nem fogadható el: %@",
+      "scope": "core"
+    },
+    "The app's location is not writable: %@. Drag the app to the Applications folder, or update manually from the DMG.": {
+      "hu": "Az alkalmazás helye nem írható: %@. Húzd az appot az Alkalmazások mappába, vagy frissíts kézzel a DMG-ből.",
+      "scope": "core"
+    },
+    "The checksum (SHA-256) of the downloaded file does not match. Update cancelled.": {
+      "hu": "A letöltött fájl ellenőrzőösszege (SHA-256) nem egyezik. A frissítés megszakítva.",
+      "scope": "core"
+    },
+    "The code is never stored. If no password is saved here, the code alone is sent as the password.": {
+      "hu": "A kód soha nem tárolódik. Ha itt nincs mentett jelszó, jelszóként csak a kód megy át.",
+      "scope": "app"
+    },
+    "The code must not be empty or contain line breaks or control characters (256 characters at most)": {
+      "hu": "A kód nem lehet üres, és nem lehet benne sortörés vagy vezérlőkarakter (legfeljebb 256 karakter)",
+      "scope": "core"
+    },
+    "The command was stopped after a timeout: %@": {
+      "hu": "A parancs időtúllépés miatt megszakadt: %@",
+      "scope": "core"
+    },
+    "The config and the saved passwords will be deleted.": {
+      "hu": "A config és a mentett jelszavak törlődnek.",
+      "scope": "app"
+    },
+    "The config contains private keys or credentials": {
+      "hu": "A config privát kulcsokat vagy hitelesítő adatokat tartalmaz",
+      "scope": "app"
+    },
+    "The config is not a regular file": {
+      "hu": "A config nem szabályos fájl",
+      "scope": "mvpn"
+    },
+    "The config is too large (1 MB at most)": {
+      "hu": "A config túl nagy (legfeljebb 1 MB)",
+      "scope": "mvpn"
+    },
+    "The config must not be a symlink": {
+      "hu": "A config nem lehet symlink",
+      "scope": "mvpn"
+    },
+    "The connection could not be established – for details, connect in debug mode": {
+      "hu": "A kapcsolat nem jött létre – részletek: debug csatlakozás",
+      "scope": "core"
+    },
+    "The connection did not come up.": {
+      "hu": "A kapcsolat nem jött létre.",
+      "scope": "core"
+    },
+    "The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → %@.": {
+      "hu": "A kapcsolat nem jött létre. Ha ez egy L2TP/IPsec VPN, add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → %@.",
+      "scope": "core"
+    },
+    "The connection directory must not be a symlink": {
+      "hu": "A kapcsolat könyvtára nem lehet symlink",
+      "scope": "mvpn"
+    },
+    "The connection dropped": {
+      "hu": "A kapcsolat megszakadt",
+      "scope": "core"
+    },
+    "The credentials in %@ were not used. Enter them in the editor if needed.": {
+      "hu": "A(z) %@ hitelesítő adatai nincsenek felhasználva. Ha kell, add meg őket a szerkesztőben.",
+      "scope": "app"
+    },
+    "The edited settings have not been saved yet.": {
+      "hu": "A szerkesztett beállítások még nincsenek mentve.",
+      "scope": "app"
+    },
+    "The editor is no longer available": {
+      "hu": "A szerkesztő már nem elérhető",
+      "scope": "app"
+    },
+    "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the Keychain are not included.": {
+      "hu": "Az export TARTALMAZZA a config privát kulcsait és hitelesítő adatait (%@). A Keychainben tárolt jelszavak és a PSK nem kerülnek bele.",
+      "scope": "app"
+    },
+    "The file contains no PEM certificate (-----BEGIN CERTIFICATE-----). Convert a binary (DER) .cer file to PEM first.": {
+      "hu": "A fájlban nincs PEM tanúsítvány (-----BEGIN CERTIFICATE-----). Bináris (DER) .cer fájlt előbb alakíts PEM-re.",
+      "scope": "app"
+    },
+    "The file for the %@ directive (%@) does not have the expected format": {
+      "hu": "A(z) %@ direktíva fájlja (%@) nem a várt formátumú",
+      "scope": "core"
+    },
+    "The installed mvpn is not a protected root file, so running connections were not disconnected:": {
+      "hu": "A telepített mvpn nem védett root fájl, ezért a futó kapcsolatok nem lettek bontva:",
+      "scope": "platform"
+    },
+    "The installed version (%@) is the latest.": {
+      "hu": "A telepített verzió (%@) a legfrissebb.",
+      "scope": "app"
+    },
+    "The management bridge stopped (details in the log)": {
+      "hu": "A management közvetítő leállt (részletek a naplóban)",
+      "scope": "mvpn"
+    },
+    "The owner or link count of the config is wrong": {
+      "hu": "A config tulajdonosa vagy linkszáma nem megfelelő",
+      "scope": "mvpn"
+    },
+    "The password and the code together are too long": {
+      "hu": "A jelszó és a kód együtt túl hosszú",
+      "scope": "core"
+    },
+    "The password is stored in the Keychain. Use user@domain instead of DOMAIN\\user.": {
+      "hu": "A jelszó a kulcskarikába kerül. DOMAIN\\user helyett user@domain formát használj.",
+      "scope": "app"
+    },
+    "The password with the code must not contain quotation marks, backslashes or control characters (SSTP)": {
+      "hu": "A kóddal együtt a jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter (SSTP)",
+      "scope": "core"
+    },
+    "The previous update did not complete": {
+      "hu": "Az előző frissítés nem fejeződött be",
+      "scope": "app"
+    },
+    "The private key is encrypted: enter its password in the Private key password field before connecting.": {
+      "hu": "A privát kulcs titkosított: csatlakozás előtt add meg a jelszavát a Privát kulcs jelszava mezőben.",
+      "scope": "app"
+    },
+    "The private key password from %@ is stored in the Keychain.": {
+      "hu": "A(z) %@ fájlban lévő privát kulcs jelszó a Keychainbe került.",
+      "scope": "app"
+    },
+    "The profile is not installed: %@": {
+      "hu": "A profil nincs telepítve: %@",
+      "scope": "core"
+    },
+    "The referenced file is larger than 1 MB: %@": {
+      "hu": "A hivatkozott fájl nagyobb 1 MB-nál: %@",
+      "scope": "core"
+    },
+    "The referenced file is outside the config's folder: %@": {
+      "hu": "A hivatkozott fájl a config mappáján kívül van: %@",
+      "scope": "core"
+    },
+    "The response is too long (256 bytes at most)": {
+      "hu": "A válasz túl hosszú (legfeljebb 256 bájt)",
+      "scope": "mvpn"
+    },
+    "The response must not contain control characters": {
+      "hu": "A válaszban nem lehet vezérlőkarakter",
+      "scope": "mvpn"
+    },
+    "The root scripts were not found in the app": {
+      "hu": "A root scriptek nem találhatók az alkalmazásban",
+      "scope": "app"
+    },
+    "The server address of the VPN service named “%@” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.": {
+      "hu": "A(z) „%@” nevű VPN szolgáltatás szervercíme nem egyezik a kapcsolat szerverével. A MacVPN nem adja át neki a jelszót és a PSK-t: telepítsd újra a profilt a MacVPN → Kapcsolatok alatt, vagy töröld a másik szolgáltatást a Rendszerbeállítások → Hálózat alatt.",
+      "scope": "core"
+    },
+    "The server asks for a code.": {
+      "hu": "A szerver kódot kér.",
+      "scope": "core"
+    },
+    "The server returned an error (HTTP %ld)": {
+      "hu": "A szerver hibát adott (HTTP %ld)",
+      "scope": "core"
+    },
+    "The server's certificate is not verified. Anyone between you and the server can impersonate it and capture your login. Use this only for testing.": {
+      "hu": "A szerver tanúsítványát semmi nem ellenőrzi. Bárki, aki közted és a szerver között van, kiadhatja magát a szervernek, és megszerezheti a bejelentkezési adataidat. Csak tesztelésre használd.",
+      "scope": "app"
+    },
+    "The update check failed": {
+      "hu": "A frissítés-ellenőrzés nem sikerült",
+      "scope": "app"
+    },
+    "The update is not signed by the MacVPN maintainer": {
+      "hu": "A frissítést nem a MacVPN fejlesztője írta alá",
+      "scope": "core"
+    },
+    "The update stopped with an error (%@). The installed version was kept. Details: %@": {
+      "hu": "A frissítés hibával leállt (%@). A telepített verzió megmaradt. Részletek: %@",
+      "scope": "app"
+    },
+    "The update was cancelled because MacVPN did not quit within 30 seconds. The installed version was not changed; you can try again from the menu.": {
+      "hu": "A frissítés megszakadt, mert a MacVPN 30 másodpercen belül nem lépett ki. A telepített verzió nem változott; a menüből újra megpróbálhatod.",
+      "scope": "app"
+    },
+    "The user name, password and PSK must not contain line breaks or control characters": {
+      "hu": "A felhasználónév, a jelszó és a PSK nem tartalmazhat sortörést vagy vezérlőkaraktert",
+      "scope": "core"
+    },
+    "The user's home directory was not found": {
+      "hu": "Nem található a felhasználó home könyvtára",
+      "scope": "mvpn"
+    },
+    "The username and password from %@ are stored in the Keychain; the file is not copied into the config.": {
+      "hu": "A(z) %@ fájlban lévő felhasználónév és jelszó a Keychainbe került; a fájl nem kerül a configba.",
+      "scope": "app"
+    },
+    "There are active VPN connections": {
+      "hu": "Aktív VPN kapcsolatok vannak",
+      "scope": "app"
+    },
+    "This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1).": {
+      "hu": "Ez a config static-challenge-et használ: a MacVPN csatlakozáskor bekéri a kódot, és a jelszóval együtt küldi (SCRV1).",
+      "scope": "app"
+    },
+    "This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.": {
+      "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Rendszerbeállításokban vagy a saját alkalmazásában vannak.",
+      "scope": "app"
+    },
+    "Timed out": {
+      "hu": "Időtúllépés",
+      "scope": "core"
+    },
+    "Timed out waiting for authentication": {
+      "hu": "Időtúllépés: a hitelesítés nem fejeződött be időben",
+      "scope": "mvpn"
+    },
+    "Timed out: the connection was not established within %@ s": {
+      "hu": "Időtúllépés: %@ mp alatt nem épült fel a kapcsolat",
+      "scope": "mvpn"
+    },
+    "Unbalanced quote (multi-line strings are not allowed)": {
+      "hu": "Páratlan idézőjel (többsoros string nem engedélyezett)",
+      "scope": "core"
+    },
+    "Unclosed inline block: %@": {
+      "hu": "Lezáratlan inline blokk: %@",
+      "scope": "core"
+    },
+    "Unclosed section": {
+      "hu": "Lezáratlan szakasz",
+      "scope": "core"
+    },
+    "Unexpected closing brace": {
+      "hu": "Váratlan záró kapcsos zárójel",
+      "scope": "core"
+    },
+    "Unexpected response from GitHub": {
+      "hu": "Értelmezhetetlen válasz a GitHubtól",
+      "scope": "core"
+    },
+    "Uninstall": {
+      "hu": "Eltávolítás",
+      "scope": "app"
+    },
+    "Uninstall MacVPN": {
+      "hu": "MacVPN eltávolítása",
+      "scope": "app"
+    },
+    "Uninstall MacVPN…": {
+      "hu": "MacVPN eltávolítása…",
+      "scope": "app"
+    },
+    "Uninstall cancelled": {
+      "hu": "Az eltávolítás megszakítva",
+      "scope": "core"
+    },
+    "Uninstall error": {
+      "hu": "Eltávolítási hiba",
+      "scope": "core"
+    },
+    "Uninstall failed": {
+      "hu": "Az eltávolítás nem sikerült",
+      "scope": "app"
+    },
+    "Unknown error": {
+      "hu": "Ismeretlen hiba",
+      "scope": "app"
+    },
+    "Unknown section": {
+      "hu": "Ismeretlen szakasz",
+      "scope": "core"
+    },
+    "Unknown to MacVPN: its effect cannot be checked": {
+      "hu": "A MacVPN nem ismeri: a hatása nem ellenőrizhető",
+      "scope": "core"
+    },
+    "Unknown type: %@": {
+      "hu": "Ismeretlen típus: %@",
+      "scope": "core"
+    },
+    "Unknown user": {
+      "hu": "Ismeretlen felhasználó",
+      "scope": "mvpn"
+    },
+    "Unpin": {
+      "hu": "Kitűzés megszüntetése",
+      "scope": "app"
+    },
+    "Unsafe directory, installation cancelled:": {
+      "hu": "Nem biztonságos könyvtár, a telepítés megszakítva:",
+      "scope": "core"
+    },
+    "Unsaved Changes": {
+      "hu": "Nem mentett változások",
+      "scope": "app"
+    },
+    "Unsaved changes": {
+      "hu": "Nem mentett változások",
+      "scope": "app"
+    },
+    "Update": {
+      "hu": "Frissítés",
+      "scope": "app"
+    },
+    "Update available: %@": {
+      "hu": "Frissítés elérhető: %@",
+      "scope": "app"
+    },
+    "Update required (%@ → %@). Asks for the admin password once.": {
+      "hu": "Frissítés szükséges (%1$@ → %2$@). Egyszer kéri az admin jelszót.",
+      "scope": "app"
+    },
+    "Update waiting for signature": {
+      "hu": "A frissítés aláírásra vár",
+      "scope": "app"
+    },
+    "Updating the system component will disconnect active VPN connections.": {
+      "hu": "A rendszerkomponens frissítése bontja az aktív VPN-kapcsolatokat.",
+      "scope": "platform"
+    },
+    "Usage: mvpn respond openvpn <id>": {
+      "hu": "Használat: mvpn respond openvpn <id>",
+      "scope": "mvpn"
+    },
+    "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version": {
+      "hu": "Használat: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version",
+      "scope": "mvpn"
+    },
+    "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>": {
+      "hu": "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
+      "scope": "core"
+    },
+    "Use": {
+      "hu": "Használat",
+      "scope": "app"
+    },
+    "Use the credentials from %@ for this connection?": {
+      "hu": "Használod a(z) %@ fájlban lévő hitelesítő adatokat ehhez a kapcsolathoz?",
+      "scope": "app"
+    },
+    "Use the server's DNS": {
+      "hu": "A szerver DNS-ének használata",
+      "scope": "app"
+    },
+    "Username": {
+      "hu": "Felhasználónév",
+      "scope": "app"
+    },
+    "Uses the CA certificates of Homebrew's OpenSSL, not the macOS Keychain. For a company CA, choose a custom CA file.": {
+      "hu": "A Homebrew OpenSSL CA-tanúsítványait használja, nem a macOS kulcskarikát. Céges CA-hoz válaszd a saját CA fájlt.",
+      "scope": "app"
+    },
+    "VPN tools": {
+      "hu": "VPN eszközök",
+      "scope": "app"
+    },
+    "Validator not found: %@": {
+      "hu": "A validátor nem található: %@",
+      "scope": "mvpn"
+    },
+    "Verifying the app…": {
+      "hu": "Az alkalmazás ellenőrzése…",
+      "scope": "app"
+    },
+    "Version %@ has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed.": {
+      "hu": "A(z) %@ verzió megjelent, de a MacVPN fejlesztője még nem írta alá. Az aláírás után kerül felajánlásra.",
+      "scope": "app"
+    },
+    "Version %@ was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.": {
+      "hu": "A(z) %@ verzió kevesebb mint 24 órája jelent meg. Később kerül felajánlásra, mert be van kapcsolva a „Csak a legalább 24 órája megjelent frissítések felajánlása” beállítás.",
+      "scope": "app"
+    },
+    "WARNING: server certificate verification is off (--cert-warn)": {
+      "hu": "FIGYELEM: a szervertanúsítvány ellenőrzése ki van kapcsolva (--cert-warn)",
+      "scope": "mvpn"
+    },
+    "Waiting for authentication": {
+      "hu": "Hitelesítésre vár",
+      "scope": "app"
+    },
+    "Weakens the security of the tunnel (deprecated or insecure mode)": {
+      "hu": "Gyengíti a tunnel biztonságát (elavult vagy nem biztonságos mód)",
+      "scope": "core"
+    },
+    "Wrong number of arguments: %@": {
+      "hu": "Hibás argumentumszám: %@",
+      "scope": "core"
+    },
+    "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).": {
+      "hu": "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan sstp-client).",
+      "scope": "app"
+    },
+    "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.": {
+      "hu": "Az L2TP / Cisco profilokat a Rendszerbeállítások → Általános → Eszközkezelés alatt távolíthatod el.",
+      "scope": "app"
+    },
+    "You have to remove the installed profile yourself in the Profiles pane that opens.": {
+      "hu": "A telepített profilt a megnyíló Profilok panelen neked kell eltávolítanod.",
+      "scope": "app"
+    },
+    "acknowledged risky directives:": {
+      "hu": "tudomásul vett kockázatos direktívák:",
+      "scope": "mvpn"
+    },
+    "after": {
+      "hu": "utána",
+      "scope": "mvpn"
+    },
+    "authentication response passed to the management bridge (kind: %@)": {
+      "hu": "hitelesítési válasz átadva a management közvetítőnek (típus: %@)",
+      "scope": "mvpn"
+    },
+    "bash 4+ not found": {
+      "hu": "A bash 4+ nem található",
+      "scope": "mvpn"
+    },
+    "bash 4+ not found (brew install bash)": {
+      "hu": "A bash 4+ nem található (brew install bash)",
+      "scope": "mvpn"
+    },
+    "before": {
+      "hu": "előtte",
+      "scope": "mvpn"
+    },
+    "brew error (%d)": {
+      "hu": "brew hiba (%d)",
+      "scope": "app"
+    },
+    "bundle identifier %@, expected: %@": {
+      "hu": "a bundle azonosító %@, várt: %@",
+      "scope": "core"
+    },
+    "cannot read Info.plist": {
+      "hu": "az Info.plist nem olvasható",
+      "scope": "core"
+    },
+    "cert=ca requires a <ca> block with a PEM certificate": {
+      "hu": "A cert=ca mellé PEM tanúsítványt tartalmazó <ca> blokk kell",
+      "scope": "core"
+    },
+    "charon not found (brew install strongswan)": {
+      "hu": "A charon nem található (brew install strongswan)",
+      "scope": "mvpn"
+    },
+    "cleaning up after the failed connection attempt": {
+      "hu": "takarítás a sikertelen kapcsolódás után",
+      "scope": "mvpn"
+    },
+    "closing the previous run": {
+      "hu": "korábbi futás lebontása",
+      "scope": "mvpn"
+    },
+    "config copied: %@/config": {
+      "hu": "config másolva: %@/config",
+      "scope": "mvpn"
+    },
+    "config is valid": {
+      "hu": "config érvényes",
+      "scope": "mvpn"
+    },
+    "connection closed": {
+      "hu": "kapcsolat bontva",
+      "scope": "mvpn"
+    },
+    "connection established": {
+      "hu": "kapcsolat felépült",
+      "scope": "mvpn"
+    },
+    "creating %@ (required by sstpc/pppd)": {
+      "hu": "%@ létrehozása (a sstpc/pppd igényli)",
+      "scope": "mvpn"
+    },
+    "diagnostics": {
+      "hu": "diagnosztika",
+      "scope": "mvpn"
+    },
+    "exit code: %d": {
+      "hu": "kilépési kód: %d",
+      "scope": "core"
+    },
+    "interrupted (SIGTERM)": {
+      "hu": "megszakítva (SIGTERM)",
+      "scope": "mvpn"
+    },
+    "kind mismatch: command line %@, running connection %@ – closing the running kind": {
+      "hu": "típuseltérés: a parancssor %@, a futó kapcsolat %@ – a futó típust bontjuk",
+      "scope": "mvpn"
+    },
+    "link pointing outside the bundle: %@": {
+      "hu": "a bundle-ön kívülre mutató link: %@",
+      "scope": "core"
+    },
+    "log collection stopped": {
+      "hu": "naplógyűjtés leállítva",
+      "scope": "app"
+    },
+    "log stream did not start: %@": {
+      "hu": "log stream nem indult: %@",
+      "scope": "app"
+    },
+    "log stream stopped": {
+      "hu": "log stream leállt",
+      "scope": "app"
+    },
+    "macOS is running MacVPN from a temporary location. Move the app to the Applications folder and open it from there.": {
+      "hu": "A macOS egy ideiglenes helyről futtatja a MacVPN-t. Helyezd az appot az Alkalmazások mappába, és onnan nyisd meg.",
+      "scope": "core"
+    },
+    "mvpn error (exit code: %d)": {
+      "hu": "mvpn hiba (kilépési kód: %d)",
+      "scope": "core"
+    },
+    "mvpn-mgmt not found: %@ (reinstall the root layer in System Status)": {
+      "hu": "A mvpn-mgmt nem található: %@ (telepítsd újra a root réteget a Rendszerállapotban)",
+      "scope": "mvpn"
+    },
+    "native debug": {
+      "hu": "natív debug",
+      "scope": "app"
+    },
+    "no mount point": {
+      "hu": "nincs csatolási pont",
+      "scope": "core"
+    },
+    "no running connection": {
+      "hu": "nincs futó kapcsolat",
+      "scope": "mvpn"
+    },
+    "no valid type in the run directory, cleanup only": {
+      "hu": "a futási könyvtárban nincs érvényes típus, csak takarítás",
+      "scope": "mvpn"
+    },
+    "openvpn exited:": {
+      "hu": "Az openvpn kilépett:",
+      "scope": "mvpn"
+    },
+    "openvpn not found (brew install openvpn)": {
+      "hu": "Az openvpn nem található (brew install openvpn)",
+      "scope": "mvpn"
+    },
+    "pppd not found: %@": {
+      "hu": "A pppd nem található: %@",
+      "scope": "mvpn"
+    },
+    "scutil error (exit code: %d)": {
+      "hu": "scutil hiba (kilépési kód: %d)",
+      "scope": "core"
+    },
+    "secrets block added (masked)": {
+      "hu": "secrets blokk hozzáadva (maszkolva)",
+      "scope": "mvpn"
+    },
+    "setenv not allowed": {
+      "hu": "Nem engedélyezett setenv",
+      "scope": "core"
+    },
+    "setenv not allowed: %@": {
+      "hu": "Nem engedélyezett setenv: %@",
+      "scope": "core"
+    },
+    "setenv opt: missing directive": {
+      "hu": "setenv opt: hiányzó direktíva",
+      "scope": "core"
+    },
+    "setenv: missing argument": {
+      "hu": "setenv: hiányzó argumentum",
+      "scope": "core"
+    },
+    "signature verification failed: %@": {
+      "hu": "az aláírás ellenőrzése sikertelen: %@",
+      "scope": "core"
+    },
+    "sstpc exited:": {
+      "hu": "Az sstpc kilépett:",
+      "scope": "mvpn"
+    },
+    "sstpc not found (brew install sstp-client)": {
+      "hu": "Az sstpc nem található (brew install sstp-client)",
+      "scope": "mvpn"
+    },
+    "stale lock removed": {
+      "hu": "elárvult zár eltávolítva",
+      "scope": "mvpn"
+    },
+    "swanctl --load-all failed": {
+      "hu": "A swanctl --load-all sikertelen",
+      "scope": "mvpn"
+    },
+    "swanctl not found": {
+      "hu": "A swanctl nem található",
+      "scope": "mvpn"
+    },
+    "swanctl not found (brew install strongswan)": {
+      "hu": "A swanctl nem található (brew install strongswan)",
+      "scope": "mvpn"
+    },
+    "the mounted disk image is not the downloaded and verified file": {
+      "hu": "a csatolt lemezkép nem a letöltött és ellenőrzött fájl",
+      "scope": "core"
+    },
+    "the server sent no DNS": {
+      "hu": "a szerver nem küldött DNS-t",
+      "scope": "mvpn"
+    },
+    "unexpected hdiutil output": {
+      "hu": "értelmezhetetlen hdiutil kimenet",
+      "scope": "core"
+    },
+    "unexpected interface name, not recorded": {
+      "hu": "váratlan interfésznév, nem rögzítjük",
+      "scope": "mvpn"
+    },
+    "version %@, expected: %@": {
+      "hu": "a verzió %@, várt: %@",
+      "scope": "core"
+    },
+    "wg-quick not found": {
+      "hu": "A wg-quick nem található",
+      "scope": "mvpn"
+    },
+    "wg-quick not found (brew install wireguard-tools)": {
+      "hu": "A wg-quick nem található (brew install wireguard-tools)",
+      "scope": "mvpn"
+    },
+    "wg-quick up failed (details in the log)": {
+      "hu": "A wg-quick up sikertelen (részletek a naplóban)",
+      "scope": "mvpn"
+    },
+    "wireguard-go not found (brew install wireguard-tools)": {
+      "hu": "A wireguard-go nem található (brew install wireguard-tools)",
+      "scope": "mvpn"
+    },
+    "~/Library/Application Support/MacVPN and the MacVPN Keychain items": {
+      "hu": "~/Library/Application Support/MacVPN és a MacVPN Keychain-bejegyzései",
+      "scope": "app"
+    }
+  },
+  "version": 1
+}

@@ -3,6 +3,14 @@ dist/
 .swiftpm/
 *.xcodeproj
 .DS_Store
-Resources/root/mvpn-validate
+legacy/swift/Resources/root/mvpn-validate
 .vscode/
-Resources/root/mvpn-mgmt
+legacy/swift/Resources/root/mvpn-mgmt
+
+# Rust
+target/
+app/ui/node_modules
+app/ui/dist
+
+# Tauri build output (regenerated on every build)
+app/src-tauri/gen/

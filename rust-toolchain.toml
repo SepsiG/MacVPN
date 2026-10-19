@@ -1,0 +1,6 @@
+[toolchain]
+# The exact stable release (CI and the release workflow read it from here); bump it deliberately.
+channel = "1.99.1"
+components = ["clippy", "rustfmt"]
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+profile = "minimal"

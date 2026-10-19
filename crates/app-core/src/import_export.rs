@@ -1,0 +1,324 @@
+//! Import and export orchestration (port of the Swift `AppModel.importFile` / `importFiles` / `export`): reading a
+//! chosen or dropped file, saving the connection even with validation problems (fixed in the editor), the
+//! credential-file confirmation, the report notes, and the export's key-material warning and save-panel text.
+
+use crate::deps::SecretField;
+use crate::editor::EditorDeps;
+use macvpn_core::exporter;
+use macvpn_core::importer;
+use macvpn_core::l10n::{self, Arg};
+use macvpn_core::models::{Connection, ValidationIssue};
+use serde::Serialize;
+use std::io::Read;
+use std::path::Path;
+use uuid::Uuid;
+
+/// The largest file read for an import (the editor's config limit).
+pub const MAX_IMPORT_BYTES: u64 = 1_048_576;
+
+/// The result of an import: errors (files not imported) and information (inlined files, validation problems).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ImportReport {
+    pub errors: Vec<String>,
+    pub notes: Vec<String>,
+}
+
+impl ImportReport {
+    pub fn is_empty(&self) -> bool {
+        self.errors.is_empty() && self.notes.is_empty()
+    }
+
+    pub fn message(&self) -> String {
+        self.errors.iter().chain(&self.notes).cloned().collect::<Vec<_>>().join("\n")
+    }
+
+    /// "Import" or, with errors, "Import Error" (the alert's title).
+    pub fn title(&self) -> String {
+        l10n::tr(if self.errors.is_empty() { "Import" } else { "Import Error" }, &[])
+    }
+
+    pub fn merge(&mut self, other: ImportReport) {
+        self.errors.extend(other.errors);
+        self.notes.extend(other.notes);
+    }
+}
+
+/// The file's text (UTF-8, at most [`MAX_IMPORT_BYTES`]): a regular file, opened once and checked on the open
+/// descriptor. `None`: cannot be read. Every file the user picks or drops (import, the SSTP CA) comes through here.
+///
+/// Opened with `O_NONBLOCK`, so a FIFO or a device never blocks the open; the descriptor is then checked
+/// (`fstat`: a regular file, at most 1 MB) and only then switched back to blocking reads. Symlinks are followed as
+/// before (a link to a regular file imports that file; a link to a FIFO is refused by the same check).
+pub fn read_import_file(path: &Path) -> Option<String> {
+    use std::os::unix::fs::OpenOptionsExt;
+    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path).ok()?;
+    let meta = file.metadata().ok()?;
+    if !meta.is_file() || meta.len() > MAX_IMPORT_BYTES {
+        return None;
+    }
+    let file = clear_nonblocking(file)?;
+    let mut data = Vec::new();
+    file.take(MAX_IMPORT_BYTES + 1).read_to_end(&mut data).ok()?;
+    if data.len() as u64 > MAX_IMPORT_BYTES {
+        return None;
+    }
+    String::from_utf8(data).ok()
+}
+
+/// Switches an open descriptor back to blocking reads. The crate has no `unsafe` (no `fcntl`): the descriptor is
+/// wrapped for a moment in a `UnixStream`, whose `set_nonblocking` (`ioctl(FIONBIO)`) clears `O_NONBLOCK` on any
+/// descriptor, a regular file included, and then unwrapped again.
+fn clear_nonblocking(file: std::fs::File) -> Option<std::fs::File> {
+    use std::os::fd::OwnedFd;
+    let stream = std::os::unix::net::UnixStream::from(OwnedFd::from(file));
+    stream.set_nonblocking(false).ok()?;
+    Some(std::fs::File::from(OwnedFd::from(stream)))
+}
+
+/// The credential-file question: "Use the credentials from … for this connection?" (true: Use).
+pub fn credential_question(files: &[String], config: &str) -> (String, String) {
+    let list = files.join(", ");
+    (
+        l10n::tr("Use the credentials from %@ for this connection?", &[Arg::Str(&list)]),
+        l10n::tr(
+            "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the Keychain for this connection. The files are never copied into the config.",
+            &[Arg::Str(config)],
+        ),
+    )
+}
+
+/// What one imported file produced.
+pub struct ImportedFile {
+    pub report: ImportReport,
+    /// The new connection and its validation problems (shown once by the editor).
+    pub imported: Option<(Uuid, Vec<ValidationIssue>)>,
+}
+
+/// Imports one file. The config is saved even with validation problems (fixable in the editor). `confirm` asks
+/// whether the credentials of the referenced secret files may be stored (`files`, `config file name`): their
+/// secrets only reach the Keychain after the user agreed, never the config.
+pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[String], &str) -> bool) -> ImportedFile {
+    let file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let fail = |message: String| ImportedFile {
+        report: ImportReport { errors: vec![format!("{file}: {message}")], notes: vec![] },
+        imported: None,
+    };
+    let Some(content) = read_import_file(path) else { return fail(l10n::tr("Cannot read the file", &[])) };
+    let base = path.parent().unwrap_or(Path::new("/"));
+    let prepared = match importer::prepare(&file, &content, base) {
+        Ok(prepared) => prepared,
+        Err(e) => return fail(e.message()),
+    };
+    let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+    let c = Connection::new(name, prepared.kind);
+    if let Err(e) = deps.store.save(&c, Some(&prepared.config)) {
+        return fail(e.to_string());
+    }
+    let creds = &prepared.credentials;
+    let candidates = creds.candidate_files();
+    let use_credentials = !candidates.is_empty() && confirm(&candidates, &file);
+    if use_credentials {
+        let w = &deps.secret_writer;
+        if let Some(user) = &creds.username {
+            w.set(user, &c.id, SecretField::Username);
+        }
+        if let Some(pass) = &creds.password {
+            w.set(pass, &c.id, SecretField::Password);
+        }
+        if let Some(key_pass) = &creds.key_password {
+            w.set(key_pass, &c.id, SecretField::KeyPassword);
+        }
+    }
+    let mut report = ImportReport::default();
+    let mut note = |text: String| report.notes.push(format!("{file}: {text}"));
+    if !prepared.inlined_files.is_empty() {
+        note(l10n::tr("Imported, inlined: %@", &[Arg::Str(&prepared.inlined_files.join(", "))]));
+    }
+    if !prepared.issues.is_empty() {
+        note(l10n::tr("Imported, but the config has problems. Fix them in the editor (red list).", &[]));
+    }
+    if use_credentials && let Some(source) = &creds.credentials_file {
+        note(l10n::tr(
+            "The username and password from %@ are stored in the Keychain; the file is not copied into the config.",
+            &[Arg::Str(source)],
+        ));
+    }
+    if use_credentials && let Some(source) = &creds.key_password_file {
+        note(l10n::tr("The private key password from %@ is stored in the Keychain.", &[Arg::Str(source)]));
+    }
+    if !use_credentials && !candidates.is_empty() {
+        note(l10n::tr(
+            "The credentials in %@ were not used. Enter them in the editor if needed.",
+            &[Arg::Str(&candidates.join(", "))],
+        ));
+    }
+    for unread in &creds.unread_files {
+        note(l10n::tr(
+            "%@ was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor.",
+            &[Arg::Str(unread)],
+        ));
+    }
+    if prepared.has_encrypted_key && !(use_credentials && creds.key_password.is_some()) {
+        note(l10n::tr(
+            "The private key is encrypted: enter its password in the Private key password field before connecting.",
+            &[],
+        ));
+    }
+    if !prepared.risky.is_empty() {
+        let names: std::collections::BTreeSet<&str> = prepared.risky.iter().map(|r| r.directive.as_str()).collect();
+        let list = names.into_iter().collect::<Vec<_>>().join(", ");
+        note(l10n::tr(
+            "Imported. It contains risky settings (%@): review them in the editor’s yellow panel and tick the checkbox before connecting.",
+            &[Arg::Str(&list)],
+        ));
+    }
+    ImportedFile { report, imported: Some((c.id, prepared.issues)) }
+}
+
+// MARK: - Export
+
+/// The warning before an export with key material: "Export Without Keys" / "Export With Keys" / "Cancel".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ExportWarning {
+    pub title: String,
+    pub message: String,
+}
+
+/// The export's bytes as text (the core exporter; a native profile is generated).
+fn exported_text(deps: &EditorDeps, c: &Connection) -> Result<String, String> {
+    let data = if c.kind.is_native() {
+        // As `exporter::export`: the account name left empty (the recipient fills in theirs), no PSK.
+        let mut copy = c.clone();
+        if let Some(native) = copy.native.as_mut() {
+            native.account = String::new();
+        }
+        macvpn_core::mobileconfig::generate(&copy, "").map_err(|e| e.message())?
+    } else {
+        deps.store.load_config(&c.id).map(String::into_bytes).map_err(|e| e.to_string())?
+    };
+    Ok(String::from_utf8_lossy(&data).into_owned())
+}
+
+/// `None`: no key material, export at once; otherwise the question to ask first.
+pub fn export_warning(deps: &EditorDeps, c: &Connection) -> Result<Option<ExportWarning>, String> {
+    let text = exported_text(deps, c)?;
+    let material = exporter::secret_material(&text, c.kind);
+    if material.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(ExportWarning {
+        title: l10n::tr("The config contains private keys or credentials", &[]),
+        message: l10n::tr(
+            "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.",
+            &[Arg::Str(&material.join(", "))],
+        ),
+    }))
+}
+
+/// What the save panel shows and what is written.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ExportPlan {
+    pub data: Vec<u8>,
+    pub file_name: String,
+    /// The panel's message: decided by the data actually written (if key material stayed in, it says so).
+    pub message: String,
+}
+
+/// The export (`with_keys` false: the key material stripped). The Keychain's passwords and PSK are never in it.
+pub fn export_plan(deps: &EditorDeps, c: &Connection, with_keys: bool) -> Result<ExportPlan, String> {
+    let mut text = exported_text(deps, c)?;
+    if !with_keys && !exporter::secret_material(&text, c.kind).is_empty() {
+        text = exporter::strip_secrets(&text, c.kind);
+    }
+    let included = exporter::secret_material(&text, c.kind);
+    let message = if included.is_empty() {
+        l10n::tr("Passwords and the PSK are not included in the export.", &[])
+    } else {
+        l10n::tr(
+            "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the Keychain are not included.",
+            &[Arg::Str(&included.join(", "))],
+        )
+    };
+    Ok(ExportPlan { data: text.into_bytes(), file_name: exporter::file_name(c), message })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    struct Dir(std::path::PathBuf);
+    impl Drop for Dir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    fn temp_dir() -> Dir {
+        let dir = std::env::temp_dir().join(format!("macvpn-import-read-{}", Uuid::new_v4()));
+        std::fs::create_dir(&dir).unwrap();
+        Dir(dir)
+    }
+    fn mkfifo(path: &Path) {
+        let status = std::process::Command::new("/usr/bin/mkfifo").arg("-m").arg("600").arg(path).status().unwrap();
+        assert!(status.success(), "mkfifo");
+    }
+    /// Runs the read on a thread and fails the test (instead of hanging it) when it does not return in 2 s.
+    fn read_quickly(path: &Path) -> Option<String> {
+        let path = path.to_path_buf();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(read_import_file(&path));
+        });
+        let start = Instant::now();
+        let result = rx.recv_timeout(Duration::from_secs(2)).expect("read_import_file blocked");
+        assert!(start.elapsed() < Duration::from_secs(2));
+        result
+    }
+
+    #[test]
+    fn a_fifo_is_refused_without_blocking() {
+        let dir = temp_dir();
+        let fifo = dir.0.join("pipe.ovpn");
+        mkfifo(&fifo);
+        assert_eq!(read_quickly(&fifo), None);
+    }
+
+    #[test]
+    fn a_symlink_to_a_fifo_is_refused_without_blocking() {
+        let dir = temp_dir();
+        let fifo = dir.0.join("pipe");
+        mkfifo(&fifo);
+        let link = dir.0.join("link.ovpn");
+        std::os::unix::fs::symlink(&fifo, &link).unwrap();
+        assert_eq!(read_quickly(&link), None);
+    }
+
+    #[test]
+    fn a_device_is_refused() {
+        assert_eq!(read_quickly(Path::new("/dev/zero")), None);
+        assert_eq!(read_quickly(Path::new("/dev/null")), None);
+    }
+
+    #[test]
+    fn a_regular_file_and_a_symlink_to_one_are_read() {
+        let dir = temp_dir();
+        let file = dir.0.join("office.ovpn");
+        std::fs::write(&file, "client\n").unwrap();
+        assert_eq!(read_quickly(&file).as_deref(), Some("client\n"));
+        let link = dir.0.join("link.ovpn");
+        std::os::unix::fs::symlink(&file, &link).unwrap();
+        assert_eq!(read_quickly(&link).as_deref(), Some("client\n"));
+    }
+
+    #[test]
+    fn the_size_cap_holds() {
+        let dir = temp_dir();
+        let file = dir.0.join("big.ovpn");
+        std::fs::write(&file, vec![b'a'; MAX_IMPORT_BYTES as usize]).unwrap();
+        assert_eq!(read_quickly(&file).map(|s| s.len()), Some(MAX_IMPORT_BYTES as usize));
+        std::fs::write(&file, vec![b'a'; MAX_IMPORT_BYTES as usize + 1]).unwrap();
+        assert_eq!(read_quickly(&file), None);
+    }
+}

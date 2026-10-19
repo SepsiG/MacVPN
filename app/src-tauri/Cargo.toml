@@ -1,0 +1,36 @@
+[package]
+name = "macvpn-app"
+description = "MacVPN menu bar app: the Tauri 2 shell over macvpn-app-core and macvpn-platform-mac"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+# Tauri 2.12 needs 1.90.
+rust-version = "1.90"
+
+[[bin]]
+name = "macvpn-app"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+macvpn-app-core = { path = "../../crates/app-core" }
+macvpn-core = { path = "../../crates/core" }
+macvpn-platform-mac = { path = "../../crates/platform-mac" }
+serde = { version = "1.0.229", features = ["derive"] }
+tauri = { version = "2.12.4", features = ["tray-icon", "image-png"] }
+uuid = { version = "1.26.1", features = ["v4"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"
+
+[features]
+# Embeds the built UI (app/ui/dist) and serves it over the tauri:// protocol. Without it (plain `cargo build`,
+# `cargo test`, CI's cargo jobs) the binary is a dev build that loads the Vite dev server (devUrl) and needs no
+# built UI and no Node. `npm run tauri build` turns it on; for a local run of the real UI see app/README.md.
+custom-protocol = ["tauri/custom-protocol"]

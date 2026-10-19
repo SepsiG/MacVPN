@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-editor-choose-ca"
+description = "Enables the editor_choose_ca command without any pre-configured scope."
+commands.allow = ["editor_choose_ca"]
+
+[[permission]]
+identifier = "deny-editor-choose-ca"
+description = "Denies the editor_choose_ca command without any pre-configured scope."
+commands.deny = ["editor_choose_ca"]

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>IPSec</key>
+			<dict>
+				<key>AuthenticationMethod</key>
+				<string>SharedSecret</string>
+				<key>SharedSecret</key>
+				<data>
+				</data>
+			</dict>
+			<key>IPv4</key>
+			<dict>
+				<key>OverridePrimary</key>
+				<integer>1</integer>
+			</dict>
+			<key>PPP</key>
+			<dict>
+				<key>AuthName</key>
+				<string>bob</string>
+				<key>CommRemoteAddress</key>
+				<string>vpn.example.com</string>
+			</dict>
+			<key>PayloadDisplayName</key>
+			<string>Office &lt;L2TP&gt; &amp; "q" 'a' é </string>
+			<key>PayloadIdentifier</key>
+			<string>macvpn.55555555-6666-7777-8888-999999999999.vpn</string>
+			<key>PayloadType</key>
+			<string>com.apple.vpn.managed</string>
+			<key>PayloadUUID</key>
+			<string>AA555555-6666-7777-8888-99999999993C</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>UserDefinedName</key>
+			<string>Office &lt;L2TP&gt; &amp; "q" 'a' é </string>
+			<key>VPNType</key>
+			<string>L2TP</string>
+		</dict>
+	</array>
+	<key>PayloadDisplayName</key>
+	<string>MacVPN – Office &lt;L2TP&gt; &amp; "q" 'a' é </string>
+	<key>PayloadIdentifier</key>
+	<string>macvpn.55555555-6666-7777-8888-999999999999</string>
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadUUID</key>
+	<string>55555555-6666-7777-8888-999999999999</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+</dict>
+</plist>

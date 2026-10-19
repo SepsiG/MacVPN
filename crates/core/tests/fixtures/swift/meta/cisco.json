@@ -1,0 +1,20 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "2026-10-16T17:55:00Z",
+  "id" : "66666666-7777-8888-9999-AAAAAAAAAAAA",
+  "kind" : "cisco",
+  "name" : "Cisco",
+  "native" : {
+    "account" : "alice",
+    "groupName" : "staff",
+    "sendAllTraffic" : false,
+    "server" : "10.0.0.1"
+  },
+  "nativeServiceName" : "MacVPN Cisco",
+  "otp" : {
+    "enabled" : false,
+    "separator" : "none"
+  }
+}

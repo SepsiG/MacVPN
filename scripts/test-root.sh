@@ -1,17 +1,66 @@
 #!/bin/bash
-# A Resources/root/mvpn tesztje nem-root, dry-run módban.
+# A root réteg tesztje nem-root, dry-run / tesztmódban. Ugyanez a fekete dobozos készlet mindkét megvalósítást teszteli:
+#   MVPN_IMPL=bash (a Swift-korszak referenciája, legacy/swift; csak helyben): legacy/swift/Resources/root/mvpn + ovpn-dns, a Swift mvpn-validate és mvpn-mgmt
+#   MVPN_IMPL=rust (alapértelmezett): a crates/mvpn bináris (mvpn, mvpn validate, mvpn hook ovpn-dns, mvpn-mgmt / mvpn mgmt-bridge);
+#     MVPN_BIN=<abszolút útvonal> egy kész binárist tesztel (pl. dist/MacVPN.app/Contents/Resources/root/mvpn)
+#
+# A Rust megvalósításhoz tartozó harness-eltérések (mind `[ "$MVPN_IMPL" = rust ]` ágban, "[rust]" megjegyzéssel):
+#   - "$SH" "$MVPN" …: SH=/usr/bin/env, így a bináris közvetlenül fut (az env exec-kel cseréli magát, a pid azonos).
+#   - A DNS hook: "$MVPN" hook ovpn-dns (OD_* tömbök); a hamis ovpn-dns elé a tesztkönyvtárakba ($FL, $FL2) egy `mvpn`
+#     átirányító kerül, mert a Rust réteg a hookot `$LIBEXEC/mvpn hook ovpn-dns`-ként hívja.
+#   - A validátor: "$MVPN" validate (VALIDATE tömb); a közvetítő: MVPN_MGMT=$MVPN (argv[0] = mvpn-mgmt).
+#   - Bash-forrásra irányuló statikus ellenőrzések helyett viselkedés-ellenőrzés:
+#       ovpn-dns `#!/bin/bash -p` → a hook ellenséges környezet (PATH, IFS, locale, BASH_ENV, …) mellett is ugyanazt adja;
+#       környezet-allowlist sora → a hook check-env kimenete pontosan az engedélyezett nevek (+ PATH, LC_ALL); a
+#         POSIX-mód sor bash-specifikus, kimarad;
+#       ovpn-dns down `set -f` → a hook_dns::tests::backup_lines_never_glob egységteszt fut;
+#       `export MVPN_MASK` hiánya, `export LC_ALL=C`, sstp indítás export nélkül → a gyermekfolyamatok környezete
+#         (hamis openvpn / sstpc env-mentéssel): nincs benne titok, PATH és LC_ALL=C rögzített;
+#       `pgrep -U 0 -x charon` a scriptben → ugyanez a Rust forrásban (crates/mvpn/src/strongswan.rs);
+#       OVPN_DONE_RE a scriptből → a sorok a "$MVPN" __ovpn-done (csak tesztmódú) parancson át;
+#       do_respond here-string nélkül → a respond nem ír ideiglenes fájlt (üres TMPDIR marad), a kód csak a
+#         futási könyvtár mgmt-resp fájljában van;
+#       root verzió 6 (legacy/swift/Resources/root/VERSION) → 7 (crates/mvpn/VERSION);
+#       "validátor hiányzik" (MVPN_VALIDATOR=/nonexistent → hiba) → a validátor beépített, a változó hatástalan.
 set -u
 cd "$(dirname "$0")/.."
-MVPN="$PWD/Resources/root/mvpn"
-SH=/bin/bash   # a rendszer bash 3.2-vel kell működnie (root alatt ez fut)
+MVPN_IMPL="${MVPN_IMPL:-rust}"
+case "$MVPN_IMPL" in bash|rust) ;; *) echo "MVPN_IMPL: bash vagy rust"; exit 2 ;; esac
 T=$(mktemp -d)
 # MFA tesztek: rövid útvonal, mert a unix socket útvonala legfeljebb 104 bájt (a $TMPDIR alatti túl hosszú lenne).
 MR=$(mktemp -d /tmp/mvmfa.XXXXXX)
 trap 'rm -rf "$T" "$MR"' EXIT
-swift build --product mvpn-validate >/dev/null || { echo "mvpn-validate build sikertelen"; exit 1; }
-swift build --product mvpn-mgmt >/dev/null || { echo "mvpn-mgmt build sikertelen"; exit 1; }
-export MVPN_VALIDATOR="$PWD/.build/debug/mvpn-validate"
-export MVPN_MGMT="$PWD/.build/debug/mvpn-mgmt"
+if [ "$MVPN_IMPL" = rust ]; then
+  # MVPN_BIN=<abszolút útvonal>: egy kész bináris (pl. a DMG-be került, hardened runtime-mal aláírt universal mvpn).
+  if [ -n "${MVPN_BIN:-}" ]; then
+    case "$MVPN_BIN" in /*) ;; *) echo "MVPN_BIN: abszolút útvonal kell"; exit 2 ;; esac
+    MVPN="$MVPN_BIN"
+  else
+    PATH="$HOME/.cargo/bin:$PATH" cargo build -q -p mvpn --locked || { echo "mvpn (rust) build sikertelen"; exit 1; }
+    MVPN="$PWD/target/debug/mvpn"
+  fi
+  SH=/usr/bin/env   # [rust] "$SH" "$MVPN" … = a bináris közvetlen futtatása
+  export MVPN_MGMT="$MVPN"
+  VALIDATE=("$MVPN" validate)
+  OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
+  VERSION_FILE="$PWD/crates/mvpn/VERSION"; EXPECT_VERSION=7
+else
+  MVPN="$PWD/legacy/swift/Resources/root/mvpn"
+  SH=/bin/bash   # a rendszer bash 3.2-vel kell működnie (root alatt ez fut)
+  swift build --package-path legacy/swift --product mvpn-validate >/dev/null || { echo "mvpn-validate build sikertelen"; exit 1; }
+  swift build --package-path legacy/swift --product mvpn-mgmt >/dev/null || { echo "mvpn-mgmt build sikertelen"; exit 1; }
+  export MVPN_VALIDATOR="$PWD/legacy/swift/.build/debug/mvpn-validate"
+  export MVPN_MGMT="$PWD/legacy/swift/.build/debug/mvpn-mgmt"
+  VALIDATE=("$MVPN_VALIDATOR")
+  OD_SH=("$SH" "$PWD/legacy/swift/Resources/root/ovpn-dns"); OD_SELF=(legacy/swift/Resources/root/ovpn-dns); OD_P=(/bin/bash -p legacy/swift/Resources/root/ovpn-dns)
+  VERSION_FILE="$PWD/legacy/swift/Resources/root/VERSION"; EXPECT_VERSION=6
+fi
+# [rust] A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
+hook_shim() {
+  [ "$MVPN_IMPL" = rust ] || return 0
+  printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
+  chmod 755 "$1/mvpn"
+}
 export MVPN_UI_BASE="$T/ui"
 export MVPN_SRC_BASE="$T/src" MVPN_RUN_BASE="$T/run" MVPN_LOG_BASE="$T/log"
 mkdir -p "$T/emptybrew"
@@ -71,22 +120,35 @@ for v in 'User' 'a,,b' ',a' 'a;b' 'a b' '../x' ''; do
 done
 DESC="--accept-risky érték nélkül (utolsó argumentum)"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run --accept-risky
 DESC="tiltott setenv név: LD_PRELOAD"; expect_fail "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN"$'\nsetenv LD_PRELOAD x')" --dry-run --accept-risky ld-preload
-head -1 Resources/root/ovpn-dns | grep -qx '#!/bin/bash -p' && ok "ovpn-dns: #!/bin/bash -p" || nok "ovpn-dns: #!/bin/bash -p"
-grep -q 'script_type|dev|ifconfig_local|foreign_option_\[0-9\]\*) ;;' Resources/root/ovpn-dns \
-  && grep -q '^set +o posix' Resources/root/ovpn-dns && ok "ovpn-dns: környezet-allowlist a script elején" || nok "ovpn-dns: környezet-allowlist a script elején"
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] A `-p` shebang helyett: ellenséges környezet (PATH, IFS, locale, BASH_ENV, GREP_OPTIONS) nem hat a hookra.
+  OUT=$(env PATH=/nonexistent IFS=x LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 BASH_ENV="$T/evil-env" GREP_OPTIONS=-v \
+    script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
+  [ "$OUT" = "DNS 10.0.0.53" ] && ok "hook: ellenséges környezet nem hat" || nok "hook: ellenséges környezet nem hat ($OUT)"
+  # [rust] Az allowlist-sor helyett: a hook pontosan az engedélyezett változókat olvassa (a többi nem is látszik).
+  OUT=$(env -i FOO=bar DYLD_FAKE=1 script_type=check-env dev=utun3 ifconfig_local=10.8.0.2 foreign_option_1=x foreign_option_3=y \
+    "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1 | tr '\n' ' ')
+  [ "$OUT" = "LC_ALL PATH dev foreign_option_1 ifconfig_local script_type " ] && ok "hook: környezet-allowlist" || nok "hook: környezet-allowlist ($OUT)"
+else
+head -1 legacy/swift/Resources/root/ovpn-dns | grep -qx '#!/bin/bash -p' && ok "ovpn-dns: #!/bin/bash -p" || nok "ovpn-dns: #!/bin/bash -p"
+grep -q 'script_type|dev|ifconfig_local|foreign_option_\[0-9\]\*) ;;' legacy/swift/Resources/root/ovpn-dns \
+  && grep -q '^set +o posix' legacy/swift/Resources/root/ovpn-dns && ok "ovpn-dns: környezet-allowlist a script elején" || nok "ovpn-dns: környezet-allowlist a script elején"
+fi
 OUT=$(env BASH_ENV="$T/evil-env" ENV="$T/evil-env" script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' \
-  Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
+  "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
 [ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete" || nok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete ($OUT)"
 # Környezet-allowlist: csak az OpenVPN által adott, a hook által olvasott változók (és a fix PATH/LC_ALL) maradnak.
 OUT=$(env -i TMOUT=1 POSIXLY_CORRECT=1 CDPATH=/tmp GLOBIGNORE='*' BASH_ENV="$T/evil-env" SHELLOPTS=xtrace FOO=bar \
   OPENSSL_CONF=/x GREP_OPTIONS=-v script_type=check-env dev=utun3 ifconfig_local=10.8.0.2 foreign_option_1='dhcp-option DNS 1.1.1.1' \
-  /bin/bash -p Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
+  "${OD_P[@]}" "$T" "$T/od-env.log" 2>&1)
 # A SHELLOPTS readonly: a bash a saját (a -p miatt a környezetből nem átvett) értékével exportálja; xtrace nincs.
 BADVARS=$(printf '%s\n' "$OUT" | grep -E '^(TMOUT|POSIXLY_CORRECT|CDPATH|GLOBIGNORE|BASH_ENV|FOO|OPENSSL_CONF|GREP_OPTIONS|[+].*)$')
-[ -z "$BADVARS" ] && printf '%s\n' "$OUT" | grep -qx 'POSIX off' && printf '%s\n' "$OUT" | grep -qx script_type \
+# [rust] A POSIX mód bash-specifikus: a Rust hooknál nincs mit ellenőrizni.
+POSIX_OFF=1; [ "$MVPN_IMPL" = rust ] || { printf '%s\n' "$OUT" | grep -qx 'POSIX off' || POSIX_OFF=0; }
+[ -z "$BADVARS" ] && [ "$POSIX_OFF" = 1 ] && printf '%s\n' "$OUT" | grep -qx script_type \
   && printf '%s\n' "$OUT" | grep -qx foreign_option_1 && printf '%s\n' "$OUT" | grep -qx LC_ALL \
   && ok "ovpn-dns: környezet-allowlist (TMOUT, POSIXLY_CORRECT, CDPATH, … törölve, posix mód ki)" || { nok "ovpn-dns: környezet-allowlist"; echo "$OUT"; }
-OUT=$(env TMOUT=1 POSIXLY_CORRECT=1 script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' Resources/root/ovpn-dns "$T" "$T/od-env.log" 2>&1)
+OUT=$(env TMOUT=1 POSIXLY_CORRECT=1 script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
 [ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: TMOUT/POSIXLY_CORRECT mellett is ugyanaz a kimenet" || nok "ovpn-dns: TMOUT/POSIXLY_CORRECT mellett is ugyanaz a kimenet ($OUT)"
 
 # MikroTik RouterOS által exportált / a wiki szerinti configok: tudomásulvétel nélkül, rootként is átmennek.
@@ -143,7 +205,12 @@ DESC="strongswan crl_uris"; expect_fail "$SH" "$MVPN" up strongswan "$(new_conn 
 DESC="strongswan: értékben álló 'file' szó nem tiltott"
 expect_ok "$SH" "$MVPN" up strongswan "$(new_conn "$(swan_local 'id = file')")" --dry-run
 
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] A validátor beépített (a core validátorai), az MVPN_VALIDATOR nem hook: hatástalan.
+  DESC="validátor beépített (MVPN_VALIDATOR hatástalan)"; expect_ok env MVPN_VALIDATOR=/nonexistent "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run
+else
 DESC="validátor hiányzik";   expect_fail env MVPN_VALIDATOR=/nonexistent "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" --dry-run
+fi
 DESC="nem UUID id";          expect_fail "$SH" "$MVPN" up openvpn "../../etc" --dry-run
 DESC="ismeretlen kind";      expect_fail "$SH" "$MVPN" up pptp "$(uuidgen)" --dry-run
 DESC="hiányzó config";       expect_fail "$SH" "$MVPN" up openvpn "$(uuidgen)" --dry-run
@@ -165,7 +232,22 @@ grep -q '^═══ ' "$LOG" && ok "napló fejléc" || nok "napló fejléc"
 grep -q '^\$ ' "$LOG" && ok "napló parancssor" || nok "napló parancssor"
 grep -q '^▶ \[mvpn\]' "$LOG" && ok "napló lépés" || nok "napló lépés"
 grep -q 'Sup3rTitok' "$LOG" && nok "jelszó nem kerülhet a naplóba" || ok "jelszó nem kerül a naplóba"
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] Az `export` keresése helyett a gyermekfolyamatok tényleges környezete: hamis openvpn / sstpc, ami a
+  # környezetét elmenti és hibával kilép. Nincs benne titok; PATH és LC_ALL=C rögzített.
+  EB="$T/envbrew"; mkdir -p "$EB/bin" "$EB/sbin" "$T/envlibexec"
+  printf '#!/bin/bash\n/usr/bin/env >"%s"\nexit 1\n' "$T/child-env.openvpn" >"$EB/bin/openvpn"
+  printf '#!/bin/bash\n/usr/bin/env >"%s"\nexit 1\n' "$T/child-env.sstpc" >"$EB/sbin/sstpc"
+  chmod 755 "$EB/bin/openvpn" "$EB/sbin/sstpc"
+  printf 'username=bob\npassword=EnvS3cretPw\nkeypass=EnvK3yPw77\n' | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$EB" MVPN_LIBEXEC="$T/envlibexec" \
+    "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")" >/dev/null 2>&1
+  printf 'password=EnvS3cretPw\notp=EnvOtp4242\n' | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$EB" MVPN_LIBEXEC="$T/envlibexec" \
+    MVPN_PPP_OPTIONS="$T/envppp/options" MVPN_UP_TIMEOUT=3 "$MVPN" up sstp "$(new_conn $'server=vpn.example.com\nuser=bob')" >/dev/null 2>&1
+  [ -s "$T/child-env.openvpn" ] && [ -s "$T/child-env.sstpc" ] && ! grep -q 'EnvS3cretPw\|EnvK3yPw77\|EnvOtp4242\|MVPN_MASK' "$T/child-env.openvpn" "$T/child-env.sstpc" \
+    && ok "titkok nincsenek a gyermekfolyamatok környezetében (openvpn, sstpc)" || { nok "titkok nincsenek a gyermekfolyamatok környezetében (openvpn, sstpc)"; cat "$T/child-env.openvpn" "$T/child-env.sstpc"; }
+else
 grep -q 'export MVPN_MASK' "$MVPN" && nok "titkok nincsenek exportálva" || ok "titkok nincsenek exportálva"
+fi
 SWID=$(new_conn "$GOOD_SWAN")
 printf 'username=alice\npassword=EapTitok42\npsk=PskTitok99\n' | "$SH" "$MVPN" up strongswan "$SWID" --dry-run --debug >"$T/sw.out" 2>&1
 grep -q 'EapTitok42\|PskTitok99' "$MVPN_LOG_BASE/$SWID.log" "$T/sw.out" && nok "strongswan titok nem kerül a naplóba" || ok "strongswan titok nem kerül a naplóba"
@@ -183,11 +265,25 @@ OUT=$(printf 'pw=%%s! end\n' | MVPN_MASK_1='%s!' "$SH" "$MVPN" __mask)
 [ "$OUT" = "pw=*** end" ] && ok "mask 3+ karakter bárhol" || nok "mask 3+ karakter bárhol ($OUT)"
 
 # Locale, verzió, charon: statikus ellenőrzések
-grep -q '^export LC_ALL=C' "$MVPN" && grep -q '^export LC_ALL=C' Resources/root/ovpn-dns && ok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben" || nok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben"
-[ "$("$SH" "$MVPN" version)" = 6 ] && [ "$(cat Resources/root/VERSION)" = 6 ] && ok "root verzió: 6" || nok "root verzió: 6"
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] `export LC_ALL=C` helyett: a gyermekfolyamatok LC_ALL=C-t és a rögzített PATH-t kapják.
+  grep -qx 'LC_ALL=C' "$T/child-env.openvpn" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.openvpn" \
+    && grep -qx 'LC_ALL=C' "$T/child-env.sstpc" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.sstpc" \
+    && ok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban" || nok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban"
+else
+grep -q '^export LC_ALL=C' "$MVPN" && grep -q '^export LC_ALL=C' legacy/swift/Resources/root/ovpn-dns && ok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben" || nok "LC_ALL=C a mvpn-ben és az ovpn-dns-ben"
+fi
+[ "$("$SH" "$MVPN" version)" = "$EXPECT_VERSION" ] && [ "$(cat "$VERSION_FILE")" = "$EXPECT_VERSION" ] && ok "root verzió: $EXPECT_VERSION" || nok "root verzió: $EXPECT_VERSION"
 OUT=$(printf 'Szép ÁRVÍZTŰRŐ\n' | env LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 MVPN_MASK_1=ŰR "$SH" "$MVPN" __mask)
 [ "$OUT" = "Szép ÁRVÍZT***Ő" ] && ok "mask felhasználói locale mellett is bájt-alapú" || nok "mask felhasználói locale mellett is bájt-alapú ($OUT)"
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] Ugyanez a Rust forrásban: a charon pid-ek csak a `pgrep -U 0 -x charon` (root) találatai lehetnek.
+  SW_SRC=crates/mvpn/src/strongswan.rs
+  grep -qF '"-U", "0", "-x", "charon"' "$SW_SRC" && [ "$(grep -c '"charon"' "$SW_SRC")" = 1 ] && ! grep -q 'pkill' crates/mvpn/src/*.rs \
+    && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
+else
 grep -q 'pgrep -U 0 -x charon' "$MVPN" && ! grep -qE 'p(grep|kill) -x charon' "$MVPN" && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
+fi
 
 # Kapcsolatonkénti zár. Tesztmódban a dry-run is a valódi zár-útvonalon megy (a futási könyvtár itt
 # a teszt temp könyvtára); az MVPN_LOCK_TRIES csak tesztmódban rövidíti a várakozást.
@@ -222,17 +318,17 @@ kill "$HOLDER" 2>/dev/null; wait "$HOLDER" 2>/dev/null
 rm -rf "$MVPN_RUN_BASE/.$LID.lock"
 
 # ovpn-dns: csak a networksetup-ot nem érintő ágak (DNS nélkül / érvénytelen DNS-sel).
-OD="$PWD/Resources/root/ovpn-dns"; ODR="$T/odrun"; mkdir -p "$ODR"
-env -i script_type=up dev=utun9 ifconfig_local=10.8.0.2 "$SH" "$OD" "$ODR" "$T/od.log"
+ODR="$T/odrun"; mkdir -p "$ODR"
+env -i script_type=up dev=utun9 ifconfig_local=10.8.0.2 "${OD_SH[@]}" "$ODR" "$T/od.log"
 [ "$(cat "$ODR/iface" 2>/dev/null)" = utun9 ] && [ "$(cat "$ODR/ip" 2>/dev/null)" = 10.8.0.2 ] && ok "ovpn-dns iface/ip" || nok "ovpn-dns iface/ip"
 grep -q 'the server sent no DNS' "$T/od.log" && ok "ovpn-dns DNS nélkül (lang fájl nélkül angol)" || nok "ovpn-dns DNS nélkül (lang fájl nélkül angol)"
 printf 'hu\n' >"$ODR/lang"
-env -i script_type=up dev=utun9 "$SH" "$OD" "$ODR" "$T/od-hu.log"
+env -i script_type=up dev=utun9 "${OD_SH[@]}" "$ODR" "$T/od-hu.log"
 grep -q 'a szerver nem küldött DNS-t' "$T/od-hu.log" && ok "ovpn-dns magyarul (lang=hu)" || nok "ovpn-dns magyarul (lang=hu)"
 rm -f "$ODR/lang"
-env -i script_type=up dev=utun9 'foreign_option_1=dhcp-option DNS 1.1.1.1;touch /tmp/x' "$SH" "$OD" "$ODR" "$T/od2.log"
+env -i script_type=up dev=utun9 'foreign_option_1=dhcp-option DNS 1.1.1.1;touch /tmp/x' "${OD_SH[@]}" "$ODR" "$T/od2.log"
 grep -q 'the server sent no DNS' "$T/od2.log" && [ ! -f "$ODR/dns-backup" ] && ok "ovpn-dns érvénytelen DNS elutasítva" || nok "ovpn-dns érvénytelen DNS elutasítva"
-DESC="ovpn-dns down mentés nélkül"; expect_ok env -i script_type=down "$SH" "$OD" "$ODR" "$T/od.log"
+DESC="ovpn-dns down mentés nélkül"; expect_ok env -i script_type=down "${OD_SH[@]}" "$ODR" "$T/od.log"
 
 OUT=$(env -i script_type=check \
   'foreign_option_1=dhcp-option DNS 10.0.0.1' 'foreign_option_2=dhcp-option DNS 1.2.3' \
@@ -240,12 +336,18 @@ OUT=$(env -i script_type=check \
   'foreign_option_5=dhcp-option DNS 1:2' 'foreign_option_6=dhcp-option DNS 1.1.1.1.1' \
   'foreign_option_7=dhcp-option DOMAIN corp.example' 'foreign_option_8=dhcp-option DOMAIN -evil' \
   'foreign_option_9=dhcp-option DOMAIN .x' 'foreign_option_10=dhcp-option DOMAIN a b' \
-  "$SH" "$OD" "$ODR" "$T/od3.log" | tr '\n' '|')
+  "${OD_SH[@]}" "$ODR" "$T/od3.log" | tr '\n' '|')
 [ "$OUT" = "DNS 10.0.0.1|DNS fd00::53|DOMAIN corp.example|" ] && ok "ovpn-dns szigorú DNS/DOMAIN" || nok "ovpn-dns szigorú DNS/DOMAIN ($OUT)"
 ODR2="$T/odrun2"; mkdir -p "$ODR2"
-env -i script_type=up 'dev=utun1;x' 'ifconfig_local=10.0.0.2/24' "$SH" "$OD" "$ODR2" "$T/od4.log"
+env -i script_type=up 'dev=utun1;x' 'ifconfig_local=10.0.0.2/24' "${OD_SH[@]}" "$ODR2" "$T/od4.log"
 [ ! -e "$ODR2/iface" ] && [ ! -e "$ODR2/ip" ] && ok "ovpn-dns érvénytelen dev/ip nem íródik" || nok "ovpn-dns érvénytelen dev/ip nem íródik"
-grep -q '^    set -f$' "$OD" && ok "ovpn-dns down set -f" || nok "ovpn-dns down set -f"
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] `set -f` helyett: a dns-backup sorainak bontása soha nem glob-kifejt (egységteszt).
+  PATH="$HOME/.cargo/bin:$PATH" cargo test -q -p mvpn --locked -- hook_dns::tests::backup_lines_never_glob >"$T/glob.out" 2>&1 \
+    && grep -q '1 passed' "$T/glob.out" && ok "hook down: nincs glob-kifejtés" || { nok "hook down: nincs glob-kifejtés"; cat "$T/glob.out"; }
+else
+grep -q '^    set -f$' legacy/swift/Resources/root/ovpn-dns && ok "ovpn-dns down set -f" || nok "ovpn-dns down set -f"
+fi
 
 # down: a típus a futási könyvtárból jön
 DID=$(uuidgen); mkdir -p "$MVPN_RUN_BASE/$DID"; echo wireguard >"$MVPN_RUN_BASE/$DID/kind"; echo mv12345678 >"$MVPN_RUN_BASE/$DID/iface"
@@ -305,18 +407,20 @@ SZ=$(stat -f %z "$RL"); "$SH" "$MVPN" down openvpn "$RID" --dry-run </dev/null >
 head -1 "$RL.1" | grep -q NEWMARKER && [ "$(stat -f %z "$RL")" -ge "$SZ" ] && ok "down nem forgat" || nok "down nem forgat"
 
 # A "kapcsolódva" minta minden valódi OpenVPN 2.7 naplóformátumra illeszkedik, és a hamisítványokra nem.
-DONE_RE=$(sed -n "s/^OVPN_DONE_RE='\(.*\)'$/\1/p" "$MVPN")
+# [rust] A minta a Rust forrásban van: a sorokat a tesztmódú `__ovpn-done` parancs ítéli meg.
+DONE_RE=$(sed -n "s/^OVPN_DONE_RE='\(.*\)'$/\1/p" legacy/swift/Resources/root/mvpn)
+done_match() { if [ "$MVPN_IMPL" = rust ]; then printf '%s\n' "$1" | "$MVPN" __ovpn-done; else printf '%s\n' "$1" | grep -q -E "$DONE_RE"; fi; }
 for line in "2026-10-18 15:22:48 Initialization Sequence Completed" \
             "2026-10-18 15:42:51 us=411817 Initialization Sequence Completed" \
             "Initialization Sequence Completed" \
             "1792330971.453131 32000004 Initialization Sequence Completed" \
             "2026-10-18 15:42:51 us=5 Initialization Sequence Completed With Errors ( see http://openvpn.net/faq.html#dhcpclientserv )"; do
-  printf '%s\n' "$line" | grep -q -E "$DONE_RE" && ok "completion minta illeszkedik: ${line:0:40}" || nok "completion minta illeszkedik: $line"
+  done_match "$line" && ok "completion minta illeszkedik: ${line:0:40}" || nok "completion minta illeszkedik: $line"
 done
 for line in "2026-10-18 15:22:48 ECHO:msg x Initialization Sequence Completed" \
             "2026-10-18 15:22:48 PUSH: Received control message: 'PUSH_REPLY,echo msg Initialization Sequence Completed'" \
             "2026-10-18 15:22:48 us=abc Initialization Sequence Completed"; do
-  printf '%s\n' "$line" | grep -q -E "$DONE_RE" && nok "completion minta nem illeszkedik: $line" || ok "completion minta nem illeszkedik: ${line:0:40}"
+  done_match "$line" && nok "completion minta nem illeszkedik: $line" || ok "completion minta nem illeszkedik: ${line:0:40}"
 done
 
 # status JSON hamis futási könyvtárakkal (élő openvpn pid → connected, wireguard interfész nélkül → failed)
@@ -402,15 +506,15 @@ OUT=$("$SH" "$MVPN" up openvpn "../../etc" --dry-run --lang hu 2>&1 </dev/null)
 [ "$OUT" = "Érvénytelen azonosító" ] && ok "nyelv: mvpn saját hibája magyarul" || nok "nyelv: mvpn saját hibája magyarul ($OUT)"
 OUT=$("$SH" "$MVPN" up openvpn "../../etc" --dry-run 2>&1 </dev/null)
 [ "$OUT" = "Invalid ID" ] && ok "nyelv: mvpn saját hibája angolul" || nok "nyelv: mvpn saját hibája angolul ($OUT)"
-[ "$("$SH" "$MVPN" version --lang hu)" = "$(cat Resources/root/VERSION)" ] && ok "version --lang mellett is" || nok "version --lang mellett is"
+[ "$("$SH" "$MVPN" version --lang hu)" = "$(cat "$VERSION_FILE")" ] && ok "version --lang mellett is" || nok "version --lang mellett is"
 LANG_ID2=$(new_conn "$GOOD_OVPN")
 "$SH" "$MVPN" up openvpn "$LANG_ID2" --dry-run --lang hu </dev/null >/dev/null 2>&1
 grep -q '^▶ \[mvpn\] config érvényes' "$MVPN_LOG_BASE/$LANG_ID2.log" && ok "nyelv: napló lépés magyarul" || nok "nyelv: napló lépés magyarul"
 "$SH" "$MVPN" up openvpn "$LANG_ID2" --dry-run </dev/null >/dev/null 2>&1
 grep -q '^▶ \[mvpn\] config is valid' "$MVPN_LOG_BASE/$LANG_ID2.log" && ok "nyelv: napló lépés angolul" || nok "nyelv: napló lépés angolul"
-OUT=$("$MVPN_VALIDATOR" --lang hu wireguard /nonexistent 2>&1)
+OUT=$("${VALIDATE[@]}" --lang hu wireguard /nonexistent 2>&1)
 [ "$OUT" = "A fájl nem olvasható: /nonexistent" ] && ok "mvpn-validate --lang hu" || nok "mvpn-validate --lang hu ($OUT)"
-OUT=$("$MVPN_VALIDATOR" wireguard /nonexistent 2>&1)
+OUT=$("${VALIDATE[@]}" wireguard /nonexistent 2>&1)
 [ "$OUT" = "Cannot read the file: /nonexistent" ] && ok "mvpn-validate alapból angol" || nok "mvpn-validate alapból angol ($OUT)"
 
 # Valódi (nem dry-run) up tesztmódban: csak hamis brew könyvtárral (MVPN_BREW), hamis ovpn-dns-sel (MVPN_LIBEXEC),
@@ -419,6 +523,7 @@ FB="$T/fakebrew"; mkdir -p "$FB/bin"
 FL="$T/fakelibexec"; mkdir -p "$FL"
 printf '#!/bin/bash\nprintf "%%s %%s\\n" "$script_type" "$1" >>"%s"\nrm -f "$1/dns-backup"\n' "$T/dns-restore.log" >"$FL/ovpn-dns"
 chmod 755 "$FL/ovpn-dns"
+hook_shim "$FL"
 upt() { env MVPN_TEST_ALLOW_UP=1 MVPN_LIBEXEC="$FL" "$@"; }
 
 DESC="valódi up hamis brew nélkül tesztmódban tiltott"; expect_fail env MVPN_TEST_ALLOW_UP=1 "$SH" "$MVPN" up openvpn "$(new_conn "$GOOD_OVPN")"
@@ -875,8 +980,18 @@ resp $'kind=crv1\nresponse=1\n' openvpn "$(uuidgen)" && nok "respond: nincs fut�
 kill "$FMP" 2>/dev/null; wait "$FMP" 2>/dev/null
 resp $'kind=crv1\nresponse=1\n' && nok "respond: a közvetítő nem fut" || ok "respond: a közvetítő nem fut"
 [ ! -e "$RB/$RID/mgmt-resp" ] && ok "respond: hibás esetekben nincs válaszfájl" || nok "respond: hibás esetekben nincs válaszfájl"
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] A here-string keresése helyett: a respond nem ír ideiglenes fájlt (az üres TMPDIR üres marad), és a kód
+  # csak a futási könyvtár mgmt-resp fájljában van (a naplóban és máshol a futási könyvtárban nincs).
+  "$T/mgmtsleep/mvpn-mgmt" 60 & FMP=$!; echo "$FMP" >"$RB/$RID/mgmt.pid"; sleep 0.2; mkdir -p "$T/rtmp"
+  printf 'kind=crv1\nresponse=DISKC0DE77\n' | env TMPDIR="$T/rtmp" MVPN_RUN_BASE="$RB" "$SH" "$MVPN" respond openvpn "$RID" >"$T/out" 2>&1
+  [ -z "$(ls -A "$T/rtmp")" ] && [ "$(grep -rl DISKC0DE77 "$RB/$RID" "$MVPN_LOG_BASE" 2>/dev/null)" = "$RB/$RID/mgmt-resp" ] \
+    && ok "respond: a kód nem kerül lemezre (csak a mgmt-resp-be)" || { nok "respond: a kód nem kerül lemezre (csak a mgmt-resp-be)"; cat "$T/out"; ls -la "$T/rtmp" "$RB/$RID"; }
+  rm -f "$RB/$RID/mgmt-resp"; kill "$FMP" 2>/dev/null; wait "$FMP" 2>/dev/null
+else
 # A bash 3.2 a here-stringet (<<<) átmeneti fájlba írja: a kód nem mehet így át.
 sed -n '/^do_respond()/,/^}/p' "$MVPN" | grep -q '<<<' && nok "respond: nincs here-string (a kód nem kerül lemezre)" || ok "respond: nincs here-string (a kód nem kerül lemezre)"
+fi
 
 # Összesített várakozási korlát: az ismétlődő WEB_AUTH nem nyújtja a határidőt MFA_MAX fölé.
 WL=$(new_conn "$GOOD_OVPN"); START=$(date +%s)
@@ -984,9 +1099,9 @@ OUT=$(printf 'password=%s\n' "$SPW" | "$SH" "$MVPN" up sstp "$(new_conn $'server
 case "$OUT" in *"Érvénytelen config:"*"1. sor: Érvénytelen szerver"*) ok "sstp: magyar validátor-üzenet, érték idézése nélkül" ;;
   *) nok "sstp: magyar validátor-üzenet, érték idézése nélkül"; echo "$OUT" ;; esac
 printf '%s\n' "$CA_SSTP" >"$T/ca.sstp"
-OUT=$("$MVPN_VALIDATOR" --sstp-params "$T/ca.sstp" | tr '\n' '|')
+OUT=$("${VALIDATE[@]}" --sstp-params "$T/ca.sstp" | tr '\n' '|')
 [ "$OUT" = "vpn.example.com|4443|bob|ca|yes|yes|" ] && ok "mvpn-validate --sstp-params" || nok "mvpn-validate --sstp-params ($OUT)"
-"$MVPN_VALIDATOR" --sstp-ca "$T/ca.sstp" | diff -q - <(printf '%s\n' "$PEM") >/dev/null && ok "mvpn-validate --sstp-ca" || nok "mvpn-validate --sstp-ca"
+"${VALIDATE[@]}" --sstp-ca "$T/ca.sstp" | diff -q - <(printf '%s\n' "$PEM") >/dev/null && ok "mvpn-validate --sstp-ca" || nok "mvpn-validate --sstp-ca"
 
 # Valódi up tesztmódban, hamis sstpc-vel ($BREW/sbin). A hamis sstpc rögzíti az argv-t, a jelszót a stderr-re is
 # kiírja (mint a sstpc PAP dumpja), pppd-szerű sorokat ír a logfile-ba, majd sstpc nevű sleep-pé válik.
@@ -1023,6 +1138,7 @@ case "\$script_type" in up) : >"\$1/dns-backup" ;; down) rm -f "\$1/dns-backup" 
 FAKE
 printf '#!/bin/bash\necho "$*" >>"%s"\ncase "$*" in *"add -net 128.0.0.0/1"*) [ "$FAKE_ROUTE_FAIL" = 1 ] && exit 1 ;; esac\nexit 0\n' "$T/sstp-route.log" >"$T/fakeroute"
 chmod 755 "$FL2/ovpn-dns" "$T/fakeroute"
+hook_shim "$FL2"
 sstp_up() { env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$SPB" MVPN_LIBEXEC="$FL2" MVPN_ROUTE="$T/fakeroute" MVPN_TEST_IFACE_OK=1 "$@"; }
 sstp_alive_t() { ps -p "$1" -o comm= 2>/dev/null | grep -q 'sstpc$'; }
 
@@ -1057,7 +1173,12 @@ grep -q 'ppp6\|ppp7' "$T/sstp-route.log" "$SR/iface" || grep -q '6\.6\.6' "$T/ss
 [ "$(wc -l <"$T/sstp-route.log" | tr -d ' ')" = 2 ] && [ "$(wc -l <"$T/sstp-dns.log" | tr -d ' ')" = 1 ] && ok "sstp: pontosan 2 útvonal, 1 DNS-hívás" || nok "sstp: pontosan 2 útvonal, 1 DNS-hívás"
 [ "$(stat -f %Lp "$SR/pppd.log" 2>/dev/null)" = 600 ] && grep -q '^\[pppd\] Fri Oct 16 22:58:59 2026 : Using interface ppp9$' "$SLOG" \
   && ok "sstp: pppd.log root-only (600), a naplóba [pppd] előtaggal átmásolva" || { nok "sstp: pppd.log root-only (600), a naplóba [pppd] előtaggal átmásolva"; ls -la "$SR"; }
+if [ "$MVPN_IMPL" = rust ]; then
+  # [rust] Az export keresése helyett: a sstpc környezetében nincs jelszó (lásd a gyermek-környezet ellenőrzést fent).
+  [ -s "$T/child-env.sstpc" ] && ! grep -q 'EnvS3cretPw' "$T/child-env.sstpc" && ok "sstp: nincs titok az indítás környezetében" || nok "sstp: nincs titok az indítás környezetében"
+else
 sed -n '/^start_sstpc()/,/^}/p;/^up_sstp()/,/^}/p' "$MVPN" | grep -q 'export' && nok "sstp: nincs export az indításban" || ok "sstp: nincs export az indításban"
+fi
 SJ=$(env MVPN_TEST_IFACE_OK=1 "$SH" "$MVPN" status)
 printf '%s' "$SJ" | python3 -c '
 import json, sys

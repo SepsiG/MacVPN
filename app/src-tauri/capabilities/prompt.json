@@ -1,0 +1,14 @@
+{
+  "identifier": "prompt",
+  "description": "The MFA prompt windows (prompt-<id>, local content only): the view model, their own prompt's ready signal and answer, and listening to events. Nothing else.",
+  "windows": [
+    "prompt-*"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view-model",
+    "allow-answer-prompt",
+    "allow-prompt-ready"
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "acknowledgedRiskyDirectives" : [
+    "future-option"
+  ],
+  "createdAt" : "2026-10-16T17:55:00Z",
+  "id" : "77777777-8888-9999-AAAA-BBBBBBBBBBBB",
+  "kind" : "openvpn",
+  "name" : "a\/b \"q\" \\ \t\n\r\u0001\b\f\u001f é 🇭🇺   <&> ' ~",
+  "otp" : {
+    "enabled" : false,
+    "separator" : "none"
+  }
+}

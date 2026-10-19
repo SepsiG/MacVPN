@@ -1,0 +1,21 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "2026-10-16T17:55:00Z",
+  "id" : "55555555-6666-7777-8888-999999999999",
+  "kind" : "l2tp",
+  "name" : "Office L2TP",
+  "native" : {
+    "account" : "bob",
+    "groupName" : "",
+    "sendAllTraffic" : true,
+    "server" : "vpn.example.com"
+  },
+  "nativeServiceID" : "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+  "nativeServiceName" : "MacVPN Office L2TP",
+  "otp" : {
+    "enabled" : false,
+    "separator" : "none"
+  }
+}
