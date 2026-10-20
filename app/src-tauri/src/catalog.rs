@@ -1438,9 +1438,15 @@ mod tests {
         // The file must have been chosen in the panel; a relative path is refused.
         assert!(parse_source(None, None, true, false).is_err());
         assert!(parse_source(None, Some(Path::new("relative/acme.macvpncatalog")), true, false).is_err());
-        // The sandbox refuses HTTPS (with the text the smoke run expects) but not a file.
-        let refused = parse_source(Some("https://vpn.example.com/acme"), None, false, true).unwrap_err();
-        assert_eq!(refused, "HTTPS sources are not available in the sandbox");
+        // The sandbox refuses HTTPS (with the text the smoke run expects) but not a file. Release builds have no
+        // sandbox, so there the flag changes nothing.
+        #[cfg(debug_assertions)]
+        {
+            let refused = parse_source(Some("https://vpn.example.com/acme"), None, false, true).unwrap_err();
+            assert_eq!(refused, "HTTPS sources are not available in the sandbox");
+        }
+        #[cfg(not(debug_assertions))]
+        assert!(parse_source(Some("https://vpn.example.com/acme"), None, false, true).is_ok());
         assert!(parse_source(None, Some(file), true, true).is_ok());
     }
 
