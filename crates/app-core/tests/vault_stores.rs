@@ -145,6 +145,7 @@ fn each_store_round_trips_while_unlocked() {
     let c = f.add("Office", VPNKind::Openvpn);
     assert_eq!(f.connections.list().unwrap(), std::slice::from_ref(&c));
     assert_eq!(f.connections.load_config(&c.id).unwrap(), CONFIG);
+    assert_eq!(f.connections.load_config_wiped(&c.id).unwrap().as_str(), CONFIG);
     f.secrets.set("s3cret", &c.id, SecretField::Password);
     assert_eq!(f.secrets.get(&c.id, SecretField::Password).as_deref(), Some("s3cret"));
     let mut ranking = ConnectionRanking::default();
@@ -174,6 +175,7 @@ fn each_store_fails_as_specified_while_locked() {
     f.vault.lock();
     assert!(locked_error(&f.connections.list().unwrap_err()));
     assert!(locked_error(&f.connections.load_config(&c.id).unwrap_err()));
+    assert!(locked_error(&f.connections.load_config_wiped(&c.id).unwrap_err()));
     assert!(locked_error(&f.connections.save(&c, None).unwrap_err()));
     assert!(locked_error(&f.connections.delete(&c.id).unwrap_err()));
     // Secrets: reads give nothing, writes are dropped (no error in the trait).

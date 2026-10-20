@@ -28,6 +28,7 @@
     "allow-select-connection",
     "allow-resolve-unsaved",
     "allow-take-tab-request",
+    "allow-open-files-take",
     "allow-editor-open",
     "allow-editor-update",
     "allow-editor-save",

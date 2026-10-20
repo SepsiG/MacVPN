@@ -418,6 +418,7 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         menu_shape(&app);
         shared(&app, &state, &dir);
         team_catalog(&app, &state, &dir);
+        opened_files(&app, &state, &dir);
         publishing(&app, &state, &dir);
         manage_shot(&app);
         popover_shots(&app, &dir);
@@ -512,7 +513,8 @@ fn manage_shot(app: &AppHandle) {
 }
 
 /// With screenshots on: the Connections window with the New menu open, then a connection's context menu at the
-/// window's right edge (`popover-shots.js`; manage.js checks they lie inside the window).
+/// window's right edge (`popover-shots.js`; manage.js checks they lie inside the window), then the search with
+/// results and with none.
 fn popover_shots(app: &AppHandle, dir: &Path) {
     if shots_dir().is_none() {
         return;
@@ -526,6 +528,8 @@ fn popover_shots(app: &AppHandle, dir: &Path) {
     }
     shoot(app, "manage", "new-menu", Duration::from_secs(1));
     shoot(app, "manage", "context-menu", Duration::from_secs(2));
+    shoot(app, "manage", "search-results", Duration::from_secs(2));
+    shoot(app, "manage", "search-empty", Duration::from_secs(2));
 }
 
 /// `MACVPN_SMOKE_SHOTS`: where the shell puts the screenshots (`scripts/smoke-manage.sh`, `SMOKE_SHOTS`).
@@ -1489,6 +1493,143 @@ fn team_catalog(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     let _ = vault.with(|v| v.delete_connection(&result_id));
     state.manager.reload();
     let _ = std::fs::remove_dir_all(file.parent().unwrap_or(&file));
+}
+
+// MARK: - Files opened from Finder
+
+/// The open step's result connection (created in the vault for the step, deleted after it).
+const OPEN_RESULT: &str = "E6111111-2222-4333-8444-555555555555";
+/// The OpenVPN fixtures inline this CA file (the import's report then has a line for each file).
+const OPEN_CA: &str = "-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUSmokeOpen\n-----END CERTIFICATE-----\n";
+
+/// Files opened from Finder (`open.js`), the open event simulated with sandbox fixtures through
+/// [`crate::open_files::receive`] (what `RunEvent::Opened` calls): one `.ovpn` with the Connections window closed
+/// (it opens, the report appears), two at once, the team catalog fixture (the add dialog with the file source, the
+/// key and the fingerprint still empty; cancelled, nothing subscribed), one while the vault is locked (the unlock
+/// window, nothing imported before the unlock, imported after it) and one whose unlock is cancelled (dropped). None of
+/// them connects, and no path reaches the view model. `MacVPN smoke: open: …` lines.
+fn opened_files(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_core::models::Connection;
+    let say = |line: String| eprintln!("MacVPN smoke: open: {line}");
+    let source = match std::fs::read_to_string(dir.join("open.js")) {
+        Ok(source) => source,
+        Err(e) => return say(format!("ERROR open.js: {e}")),
+    };
+    let Some(result_id) = parse_uuid(OPEN_RESULT) else { return };
+    let Some(base) = state.env.staging_parent() else { return say("ERROR no sandbox tmp".into()) };
+    let Ok(folder) = make_private_temp_directory("macvpn-smoke-open", &base) else {
+        return say("ERROR no fixture folder".into());
+    };
+    let ovpn = |name: &str| -> Option<PathBuf> {
+        let path = folder.join(format!("{name}.ovpn"));
+        std::fs::write(&path, "client\ndev tun\nremote open.example.com 1194\nca ca.crt\n").ok()?;
+        Some(path)
+    };
+    let fixtures = (
+        std::fs::write(folder.join("ca.crt"), OPEN_CA).ok(),
+        ovpn("Zz Open one"),
+        ovpn("Zz Open two"),
+        ovpn("Zz Open three"),
+        ovpn("Zz Open locked"),
+        ovpn("Zz Open cancelled"),
+    );
+    let (Some(()), Some(one), Some(two), Some(three), Some(locked), Some(cancelled)) = fixtures else {
+        return say("ERROR fixtures".into());
+    };
+    // The team catalog fixture of the catalog step, sealed again under its own name.
+    let catalog = folder.join("Smoke Open.macvpncatalog");
+    if let Err(e) = SmokeCatalog::new().and_then(|fixture| fixture.write(&catalog, 1)) {
+        return say(format!("ERROR {e}"));
+    }
+    let vault = match backup_service(state) {
+        Ok(service) => service.vault().clone(),
+        Err(e) => return say(format!("ERROR {e}")),
+    };
+    let result = Connection::with_id(result_id, "Zz Open result", VPNKind::Openvpn, Date::now());
+    if let Err(e) = vault.with(|v| v.save_connection(&result, Some("client\ndev tun\nremote vpn.example.com 1194\n"))) {
+        return say(format!("ERROR {e}"));
+    }
+    state.manager.reload();
+
+    let imported = |name: &str| -> Option<Uuid> {
+        state.connections.deps().store.list().ok()?.into_iter().find(|c| c.name == name).map(|c| c.id)
+    };
+    let connected = |names: &[&str]| {
+        names.iter().filter_map(|n| imported(n)).any(|id| state.manager.state(&uuid_string(&id)).is_connected())
+    };
+    let phase = |phase: &str, names: &[&str]| {
+        let names = format!("[{}]", names.iter().map(|n| format!("'{n}'")).collect::<Vec<_>>().join(", "));
+        let script = format!("window.__smokeOpen = '{phase}';\nwindow.__smokeOpenNames = {names};\n{source}");
+        let prefix = format!("OPEN {phase} ");
+        let outcome = wait_for(20, || app.get_webview_window("manage").map(|_| ()))
+            .ok_or_else(|| "no Connections window".to_string())
+            .and_then(|()| eval(app, "manage", script))
+            .and_then(|()| {
+                wait_for(60, || renamed(state, OPEN_RESULT, &prefix)).ok_or_else(|| "no result".to_string())
+            });
+        say(format!("{phase}: {}", outcome.unwrap_or_else(|e| format!("ERROR {e}"))));
+    };
+
+    // One file, the Connections window closed: it opens and shows the report.
+    if let Some(window) = app.get_webview_window("manage") {
+        let _ = window.destroy();
+    }
+    wait_for(10, || app.get_webview_window("manage").is_none().then_some(()));
+    crate::open_files::receive(app, state, vec![one.clone()]);
+    let window = wait_for(20, || app.get_webview_window("manage").map(|_| ())).is_some();
+    let done = wait_for(30, || imported("Zz Open one")).is_some();
+    say(format!("one window={window} imported={done} connected={}", connected(&["Zz Open one"])));
+    phase("one", &["Zz Open one.ovpn"]);
+
+    // Two files at once: one import, one report.
+    crate::open_files::receive(app, state, vec![two.clone(), three.clone()]);
+    let done = wait_for(30, || imported("Zz Open two").zip(imported("Zz Open three"))).is_some();
+    say(format!("two imported={done} connected={}", connected(&["Zz Open two", "Zz Open three"])));
+    phase("two", &["Zz Open two.ovpn", "Zz Open three.ovpn"]);
+
+    // The team catalog file: the add dialog with the file source.
+    crate::open_files::receive(app, state, vec![catalog.clone()]);
+    phase("catalog", &["Smoke Open.macvpncatalog"]);
+    say(format!("catalog subscribed={}", state.catalog.service.view().len()));
+
+    // Nothing of the paths in the view model (the menu and every window read it).
+    let folder_text = folder.to_string_lossy().into_owned();
+    let vm = format!("{:?}", state.view_model());
+    say(format!(
+        "view_model_paths={}",
+        if vm.contains(&folder_text) || vm.contains(".macvpncatalog") { "yes" } else { "no" }
+    ));
+
+    // Locked: the unlock window, the import after the unlock.
+    lock(state);
+    crate::open_files::receive(app, state, vec![locked.clone()]);
+    let window = wait_for(20, || app.get_webview_window(crate::vault::UNLOCK_WINDOW).map(|_| ())).is_some();
+    std::thread::sleep(Duration::from_secs(1));
+    let before = imported("Zz Open locked").is_some();
+    say(format!("locked unlock_window={window} imported_before_unlock={before}"));
+    let unlocked = unlock_with(app, state, dir, &[("__MODE__", "password"), ("__PASSWORD__", MASTER)]);
+    let done = wait_for(30, || imported("Zz Open locked")).is_some();
+    say(format!("locked unlocked={unlocked} imported={done} connected={}", connected(&["Zz Open locked"])));
+    phase("locked", &["Zz Open locked.ovpn"]);
+
+    // Locked, the unlock window closed: the file is dropped.
+    lock(state);
+    crate::open_files::receive(app, state, vec![cancelled.clone()]);
+    let window =
+        wait_for(20, || app.get_webview_window(crate::vault::UNLOCK_WINDOW)).is_some_and(|w| w.destroy().is_ok());
+    wait_for(10, || app.get_webview_window(crate::vault::UNLOCK_WINDOW).is_none().then_some(()));
+    let unlocked = unlock_with(app, state, dir, &[("__MODE__", "password"), ("__PASSWORD__", MASTER)]);
+    std::thread::sleep(Duration::from_secs(3));
+    say(format!("cancelled closed={window} unlocked={unlocked} imported={}", imported("Zz Open cancelled").is_some()));
+
+    for name in ["Zz Open one", "Zz Open two", "Zz Open three", "Zz Open locked", "Zz Open cancelled"] {
+        if let Some(id) = imported(name) {
+            let _ = vault.with(|v| v.delete_connection(&id));
+        }
+    }
+    let _ = vault.with(|v| v.delete_connection(&result_id));
+    state.manager.reload();
+    let _ = std::fs::remove_dir_all(&folder);
 }
 
 // MARK: - Publishing (the publisher's side)

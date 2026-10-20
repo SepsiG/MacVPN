@@ -1,5 +1,5 @@
 //! Thin, audited wrappers around the libc calls `std` does not offer (the user database, `mkdtemp`, `poll`,
-//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, and the close-on-exec sweep for children).
+//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, `getxattr`, and the close-on-exec sweep for children).
 //!
 //! Every function here is a direct call with plain integer arguments or with buffers whose length is passed
 //! alongside; none of them keeps a pointer past the call. Everything else in the crate is safe Rust.
@@ -16,6 +16,25 @@ pub struct User {
     pub name: String,
     pub uid: u32,
     pub home: PathBuf,
+}
+
+/// `getxattr(path, name, NULL, 0, 0, options)`: whether the extended attribute exists (its size is asked for,
+/// nothing is read). `follow`: `false` adds `XATTR_NOFOLLOW` (a symlink's own attributes). `Ok(false)`: no such
+/// attribute (`ENOATTR`), or the file system has none (`ENOTSUP`).
+pub fn has_xattr(path: &Path, name: &CStr, follow: bool) -> io::Result<bool> {
+    let c = CString::new(path.as_os_str().as_bytes()).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let options = if follow { 0 } else { libc::XATTR_NOFOLLOW };
+    // SAFETY: `c` and `name` are NUL-terminated strings alive for the call; a null value buffer with size 0 only
+    // asks for the attribute's size (nothing is written).
+    let rc = unsafe { libc::getxattr(c.as_ptr(), name.as_ptr(), std::ptr::null_mut(), 0, 0, options) };
+    if rc >= 0 {
+        return Ok(true);
+    }
+    let e = io::Error::last_os_error();
+    match e.raw_os_error() {
+        Some(libc::ENOATTR) | Some(libc::ENOTSUP) => Ok(false),
+        _ => Err(e),
+    }
 }
 
 /// `getuid()`.

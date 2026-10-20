@@ -6,7 +6,14 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.3.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.4.
+
+### What's new in 1.4
+- **Search in the Connections window.** The **Search connections** field at the top of the sidebar (**⌘F**) filters as you type, ignoring case and accents. It finds a connection by its name, its type, its server (from the settings or the config, such as OpenVPN's first `remote`; the host only), its team catalog and its folders. **↑** / **↓** and Return move through the results. See [search](docs/user-guide.en.md#128-searching-connections).
+- **Open VPN files from Finder.** Double-click a `.ovpn` or `.sstp` file: MacVPN is their default app and imports it with the same checks and questions as **Import from File…**; nothing connects. A WireGuard or strongSwan `.conf` opens through **Open With → MacVPN** (MacVPN does not take `.conf` over). A `.macvpncatalog` file opens the **Add team catalog…** dialog with that file as the source; the team key and the fingerprint check stay yours. While the vault is locked, the files wait for the unlock. See [opening VPN files from Finder](docs/user-guide.en.md#41-opening-vpn-files-from-finder).
+- **Downloaded files ask first.** A file you downloaded (a browser, Mail, Messages, AirDrop) is imported only after one question: **Import N downloaded files?** with their names and "Only import files you trust." `.ovpn` and `.sstp` are declared as data, not text, so Safari never opens them by itself.
+- **For developers:** the old 0.x Swift code is no longer in the repository (it stays in the git history up to `v0.4.0`); the frozen Swift-written fixtures stay for the compatibility tests.
+- The root layer stays 8: updating from 1.3 needs no admin password.
 
 ### What's new in 1.3
 - **Team catalogs.** An administrator publishes a set of connections, with their folders, colours and named sign-ins, as one signed and encrypted file on an HTTPS server, a file share or a synced folder (iCloud Drive, OneDrive, Dropbox). Every subscribed MacVPN picks up additions, changes and removals by itself; each member signs in with their own user name and password, which never leave their vault. See [team catalogs](docs/user-guide.en.md#16-team-catalogs).
@@ -35,7 +42,7 @@ MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (stron
 - **Shared credentials.** A named user name and password that several connections use; change it once for all of them.
 - **Full backup and restore.** **Back Up Everything…** writes one encrypted file with every connection, secret, folder and shared credential (and, from 1.3, the team catalog subscriptions and admin keys); **Restore from Backup…** merges it or replaces everything, here or on a new Mac.
 - **Team catalogs.** Share connections with a team through one signed (Ed25519) and encrypted (XChaCha20-Poly1305) file, fetched over HTTPS or from a file share or synced folder: refreshed at launch, every 15 minutes and on wake, with rollback protection, credential slots that each member fills in once, and a team key you rotate to revoke access.
-- **Import and export.** Choose or drag in one or more files. Referenced key files, PKCS#12 files and MikroTik RouterOS configs are handled. Credential files go into the vault if you confirm. Exports never contain passwords, and they only contain private keys if you choose that. Folders and the name of a shared credential travel with the export; a shared credential is never linked on import without asking.
+- **Import and export.** Choose or drag in one or more files, or double-click a `.ovpn` / `.sstp` file in Finder (a `.conf` through **Open With**). Referenced key files, PKCS#12 files and MikroTik RouterOS configs are handled. Credential files go into the vault if you confirm. Exports never contain passwords, and they only contain private keys if you choose that. Folders and the name of a shared credential travel with the export; a shared credential is never linked on import without asking.
 - **Editors.** A config editor with line-numbered errors and a panel for risky OpenVPN settings. Forms for SSTP, L2TP and Cisco IPsec. Passwords, PSKs and key passwords are stored in the vault.
 - **Multi-factor authentication.** OpenVPN static and dynamic challenges, sign-in in the browser (SAML, SSO, push), and a one-time code appended to the password for every type that has a password, including system VPNs.
 - **Credential prompt.** A user name, password, PSK or key password that is needed but not saved is asked for before connecting, and saved in the vault only after the connection is up (or not at all). A rejected sign-in is asked again once.
@@ -93,7 +100,7 @@ MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
 - `crates/app-core`: the app logic without a UI
 - `app/src-tauri`: the Tauri app; `app/ui`: its web UI
 - `scripts/`: build, test, signing and icon scripts; `Tests/Fixtures`: OpenVPN and MikroTik fixtures
-- `legacy/swift`: the 0.x Swift app, kept only as a reference for a few compatibility tests. It is not built and will be removed.
+- The 0.x Swift app is only in the git history (up to tag `v0.4.0`); `crates/core/tests/fixtures/swift` keeps data it wrote, frozen, for the compatibility and migration tests.
 
 **Localization.** English is the source language and Hungarian the translation. Every text (UI, app, root binary) is in `crates/core/l10n/strings.json`, keyed by the English text. The app follows the macOS preferred languages (the first Hungarian or English one, otherwise English; a per-app language in System Settings works too). The root binary gets the language through `--lang en|hu`.
 
@@ -106,7 +113,14 @@ MIT – see [LICENSE](LICENSE). Third-party components (among them SQLCipher, BS
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.3.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.4.
+
+### Újdonságok az 1.4-ben
+- **Keresés a Kapcsolatok ablakban.** Az oldalsáv tetején a **Kapcsolatok keresése** mező (**⌘F**) gépelés közben szűr, a kis- és nagybetűtől és az ékezetektől függetlenül. Megtalálja a kapcsolatot a neve, a típusa, a szervere (a beállításokból vagy a configból, például az OpenVPN első `remote` sora; csak a gépnév), a csapatkatalógusa és a mappái alapján. A **↑** / **↓** és a Return a találatok között lépked. Lásd [keresés](docs/user-guide.hu.md#128-kapcsolatok-keresése).
+- **VPN-fájlok megnyitása a Finderből.** Kattints duplán egy `.ovpn` vagy `.sstp` fájlra: a MacVPN az alapértelmezett appjuk, és ugyanazokkal az ellenőrzésekkel és kérdésekkel importálja, mint az **Import fájlból…**; semmi nem csatlakozik. WireGuard vagy strongSwan `.conf` fájl a **Megnyitás ezzel → MacVPN** úton nyílik (a `.conf` fájlokat a MacVPN nem veszi át). A `.macvpncatalog` fájl a **Csapatkatalógus hozzáadása…** ablakot nyitja meg ezzel a fájllal mint forrással; a csapatkulcs és az ujjlenyomat ellenőrzése a tiéd marad. Zárolt széfnél a fájlok a feloldásig várnak. Lásd [VPN-fájlok megnyitása a Finderből](docs/user-guide.hu.md#41-vpn-fájlok-megnyitása-a-finderből).
+- **A letöltött fájlokra előbb rákérdez.** A letöltött fájl (böngésző, Mail, Üzenetek, AirDrop) csak egy kérdés után importálódik: **Importálod a(z) N letöltött fájlt?**, a nevükkel és a figyelmeztetéssel: „Csak olyan fájlt importálj, amelyben megbízol.” A `.ovpn` és a `.sstp` adatként van bejelentve, nem szövegként, így a Safari soha nem nyitja meg magától.
+- **Fejlesztőknek:** a régi 0.x Swift kód már nincs a tárolóban (a git történetben a `v0.4.0`-ig megvan); a befagyasztott, Swift által írt tesztadatok a kompatibilitási tesztekhez megmaradnak.
+- A root réteg 8 marad: az 1.3-ról frissítve nem kell admin jelszó.
 
 ### Újdonságok az 1.3-ban
 - **Csapatkatalógusok.** A rendszergazda egy kapcsolatkészletet, a mappáival, színeivel és névvel ellátott bejelentkezési helyeivel együtt, egyetlen aláírt és titkosított fájlként tesz közzé egy HTTPS-szerveren, egy fájlmegosztáson vagy egy szinkronizált mappában (iCloud Drive, OneDrive, Dropbox). Minden feliratkozott MacVPN magától átveszi az új, a módosult és a törölt kapcsolatokat; mindenki a saját felhasználónevével és jelszavával jelentkezik be, ezek sosem hagyják el a széfjét. Lásd [csapatkatalógusok](docs/user-guide.hu.md#16-csapatkatalógusok).
@@ -135,7 +149,7 @@ A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, 
 - **Közös hitelesítő adatok.** Névvel ellátott felhasználónév és jelszó, amelyet több kapcsolat használ; egyszer módosítod mindegyiknek.
 - **Teljes biztonsági mentés és visszaállítás.** A **Teljes biztonsági mentés…** egyetlen titkosított fájlba írja az összes kapcsolatot, titkot, mappát és közös hitelesítő adatot (az 1.3-tól a csapatkatalógus-feliratkozásokat és az aláírókulcsokat is); a **Visszaállítás biztonsági mentésből…** összefésüli vagy mindent lecserél, itt vagy egy új Macen.
 - **Csapatkatalógusok.** Kapcsolatok megosztása egy csapattal egyetlen aláírt (Ed25519) és titkosított (XChaCha20-Poly1305) fájlon át, HTTPS-ről, fájlmegosztásról vagy szinkronizált mappából: frissítés induláskor, 15 percenként és ébredéskor, visszaléptetés elleni védelemmel, közös belépési adatok helyeivel, amelyeket minden tag egyszer tölt ki, és cserélhető csapatkulccsal a hozzáférés visszavonásához.
-- **Import és export.** Válassz ki vagy húzz be egy vagy több fájlt. A hivatkozott kulcsfájlokat, a PKCS#12 fájlokat és a MikroTik RouterOS configokat is kezeli. A hitelesítőadat-fájlok tartalma megerősítés után a széfbe kerül. Az export soha nem tartalmaz jelszót, privát kulcsot pedig csak akkor, ha ezt választod. A mappa és a közös hitelesítő adat neve az exporttal utazik; importáláskor a közös hitelesítő adat sosem kapcsolódik kérdés nélkül.
+- **Import és export.** Válassz ki vagy húzz be egy vagy több fájlt, vagy kattints duplán egy `.ovpn` / `.sstp` fájlra a Finderben (`.conf` fájlt a **Megnyitás ezzel** menüből). A hivatkozott kulcsfájlokat, a PKCS#12 fájlokat és a MikroTik RouterOS configokat is kezeli. A hitelesítőadat-fájlok tartalma megerősítés után a széfbe kerül. Az export soha nem tartalmaz jelszót, privát kulcsot pedig csak akkor, ha ezt választod. A mappa és a közös hitelesítő adat neve az exporttal utazik; importáláskor a közös hitelesítő adat sosem kapcsolódik kérdés nélkül.
 - **Szerkesztők.** Config szerkesztő sorszámozott hibalistával és egy panellel a kockázatos OpenVPN beállításokhoz. Űrlap az SSTP-hez, az L2TP-hez és a Cisco IPsec-hez. A jelszavak, a PSK-k és a kulcsjelszavak a széfbe kerülnek.
 - **Többfaktoros hitelesítés.** OpenVPN statikus és dinamikus challenge, böngészős bejelentkezés (SAML, SSO, push), és a jelszó végére fűzött egyszer használatos kód minden jelszavas típusnál, a rendszer VPN-eknél is.
 - **Hitelesítő adatok bekérése.** A szükséges, de el nem mentett felhasználónevet, jelszót, PSK-t vagy kulcsjelszót csatlakozás előtt bekéri, és csak a sikeres csatlakozás után menti a széfbe (vagy egyáltalán nem). Elutasított bejelentkezésnél egyszer újra kérdez.
@@ -193,7 +207,7 @@ A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).
 - `crates/app-core`: az app logikája felület nélkül
 - `app/src-tauri`: a Tauri app; `app/ui`: a webes felülete
 - `scripts/`: build-, teszt-, aláíró és ikon scriptek; `Tests/Fixtures`: OpenVPN és MikroTik tesztadatok
-- `legacy/swift`: a 0.x Swift app, csak néhány kompatibilitási teszt referenciájaként marad meg. Nem fordul, és törölni fogjuk.
+- A 0.x Swift app csak a git történetben van meg (a `v0.4.0` tagig); a `crates/core/tests/fixtures/swift` az általa írt adatokat őrzi, befagyasztva, a kompatibilitási és migrációs tesztekhez.
 
 **Lokalizáció.** Az angol a forrásnyelv, a magyar a fordítás. Minden szöveg (felület, app, root bináris) a `crates/core/l10n/strings.json`-ban van, a kulcs az angol szöveg. Az app a macOS preferált nyelveit követi (az első magyar vagy angol, különben angol; a Rendszerbeállításokban appra beállított nyelv is működik). A root bináris a `--lang en|hu` kapcsolóból kapja a nyelvet.
 

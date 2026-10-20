@@ -1,7 +1,9 @@
 <script lang="ts">
   // The connections as a folder tree (spec 3; lib/folders/FolderTree.svelte): per folder its subfolders, then the
   // pinned rows (reordered by dragging), then the others by use. The "New" menu creates a connection of a kind, a
-  // folder, or imports files.
+  // folder, or imports files. The search field above the tree filters it as you type (manage/search.ts): Cmd+F
+  // focuses it, Up / Down move through the results, Return opens the highlighted one, Escape clears the field and
+  // then leaves it. The footer's sections stay reachable while searching.
   import { api, type Choice, type FolderColor, type Kind, type Row, type TreeRow } from '../api';
   import { tr } from '../l10n.svelte';
   import Icon, { type IconName } from '../Icon.svelte';
@@ -9,6 +11,7 @@
   import { treeOf } from '../folders/tree';
   import { backupApi } from '../vault/backupApi';
   import { popover } from '../popover';
+  import { searchTree, step } from './search';
 
   let {
     rows,
@@ -34,6 +37,7 @@
     publishing = false,
     publicationCount = 0,
     onpublishing = () => {},
+    query = $bindable(''),
   }: {
     rows: Row[];
     /// The folder tree over `rows` (an older view model has none: the rows at the top level).
@@ -66,6 +70,8 @@
     publishing?: boolean;
     publicationCount?: number;
     onpublishing?: () => void;
+    /// The search field's text ('': the whole tree).
+    query?: string;
   } = $props();
 
   let menuOpen = $state(false);
@@ -74,6 +80,33 @@
   const newButtonRect = () => newButton?.getBoundingClientRect() ?? { left: 0, top: 0, right: 0, bottom: 0 };
   let folderTree: ReturnType<typeof FolderTree> | undefined = $state();
   const shownTree = $derived(treeOf({ tree, rows }));
+
+  let searchField: HTMLInputElement | undefined = $state();
+  const filtered = $derived(searchTree(shownTree, rows, query));
+  /// The result Up / Down moved to; the first result until then (or once it is gone).
+  let picked = $state<string | null>(null);
+  const active = $derived(filtered ? (picked !== null && filtered.items.includes(picked) ? picked : (filtered.items[0] ?? null)) : null);
+
+  function clearSearch() {
+    query = '';
+    picked = null;
+  }
+
+  function searchKey(event: KeyboardEvent) {
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (filtered) picked = step(filtered.items, active, event.key === 'ArrowDown' ? 1 : -1);
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      if (active) onselect(active);
+    } else if (event.key === 'Escape') {
+      // Not the window's Escape (it closes menus): first the text goes, then the focus.
+      event.preventDefault();
+      event.stopPropagation();
+      if (query !== '') clearSearch();
+      else searchField?.blur();
+    }
+  }
   /// The footer's section links, one row style each: `.link-<id>` (not the section's own class: a section's global
   /// stylesheet, like `.publishing`, must not reach its link).
   const footerLinks: { id: string; icon: IconName; label: string; selected: boolean; count: number; onclick: () => void }[] =
@@ -93,11 +126,39 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key === 'Escape') menuOpen = false;
+    // Cmd+F: the search field (this window's only find).
+    if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      searchField?.focus();
+      searchField?.select();
+    }
   }}
 />
 
 <nav class="sidebar">
   <div class="toolbar">
+    <div class="search" class:filled={query !== ''}>
+      <Icon name="search" />
+      <input
+        class="query"
+        type="text"
+        role="searchbox"
+        spellcheck="false"
+        autocomplete="off"
+        placeholder={tr('Search connections')}
+        aria-label={tr('Search connections')}
+        aria-controls="connection-tree"
+        bind:value={query}
+        bind:this={searchField}
+        oninput={() => (picked = null)}
+        onkeydown={searchKey}
+      />
+      {#if query !== ''}
+        <button class="clear" title={tr('Clear Search')} aria-label={tr('Clear Search')} onclick={() => { clearSearch(); searchField?.focus(); }}>
+          <Icon name="cross" />
+        </button>
+      {/if}
+    </div>
     <button class="new" bind:this={newButton} aria-haspopup="menu" aria-expanded={menuOpen} title={tr('New')} onclick={() => (menuOpen = !menuOpen)}>
       <Icon name="plus" />
       {tr('New')}
@@ -114,6 +175,7 @@
             data-action="new-folder"
             onclick={() => {
               menuOpen = false;
+              clearSearch();
               folderTree?.newFolder(null);
             }}>{tr('New Folder')}</button
           >
@@ -148,8 +210,28 @@
     {/if}
   </div>
   {#if foldersNote}<p class="folders-note" role="note">{foldersNote}</p>{/if}
-  <div class="list">
-    <FolderTree bind:this={folderTree} {rows} tree={shownTree} {selected} enabled={foldersEnabled} {palette} {teamFolders} {onselect} />
+  <div class="list" id="connection-tree">
+    {#if filtered && filtered.tree.length === 0}
+      <div class="no-match" role="status">
+        <p>{tr('No connections match “%@”', query.trim())}</p>
+        <button class="clear-search" onclick={() => { clearSearch(); searchField?.focus(); }}>{tr('Clear Search')}</button>
+      </div>
+    {:else}
+      <FolderTree
+        bind:this={folderTree}
+        {rows}
+        tree={shownTree}
+        {selected}
+        enabled={foldersEnabled}
+        {palette}
+        {teamFolders}
+        {onselect}
+        {query}
+        {filtered}
+        {active}
+        onclearfilter={clearSearch}
+      />
+    {/if}
   </div>
   <div class="footer">
     {#each footerLinks as link (link.id)}
@@ -176,10 +258,101 @@
   .toolbar {
     position: relative;
     display: flex;
-    justify-content: flex-end;
-    padding: 12px 12px 4px;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 12px 12px 6px;
+  }
+  /* The search field: a card-style pill like the New button, the magnifier inside it. */
+  .search {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+  }
+  .search > :global(.icon) {
+    position: absolute;
+    left: 9px;
+    width: 13px;
+    height: 13px;
+    color: var(--tertiary);
+    pointer-events: none;
+  }
+  .search input.query {
+    flex: 1;
+    min-width: 0;
+    box-sizing: border-box;
+    height: 26px;
+    min-height: 0;
+    margin: 0;
+    padding: 0 10px 0 27px;
+    border: none;
+    border-radius: var(--radius-pill);
+    background: var(--surface);
+    box-shadow: var(--shadow-card);
+    outline: 1px solid var(--border);
+    outline-offset: -1px;
+    color: var(--text);
+    font: inherit;
+    -webkit-user-select: text;
+    user-select: text;
+    transition: box-shadow var(--duration) var(--ease);
+  }
+  .search.filled input.query {
+    padding-right: 26px;
+  }
+  .search input.query::placeholder {
+    color: var(--tertiary);
+  }
+  .search input.query:focus {
+    outline-color: var(--focus-border);
+    box-shadow: var(--shadow-card), var(--focus-ring);
+  }
+  .clear {
+    position: absolute;
+    right: 4px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--fill-pressed);
+    box-shadow: none;
+    color: var(--secondary);
+  }
+  .clear :global(.icon) {
+    width: 9px;
+    height: 9px;
+    stroke-width: 2.4;
+  }
+  .clear:hover {
+    background: var(--border-strong);
+    color: var(--text);
+  }
+  .no-match {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-6);
+    padding: var(--space-6) var(--space-4);
+    text-align: center;
+    color: var(--secondary);
+  }
+  .no-match p {
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+  .clear-search {
+    padding: 4px 12px;
+    border-radius: var(--radius-pill);
   }
   .new {
+    flex: none;
     gap: 4px;
     padding: 4px 12px 4px 9px;
     border-radius: var(--radius-pill);

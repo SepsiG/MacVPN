@@ -87,6 +87,8 @@ The first download must match that fingerprint. Trust on first use without a fin
 
 A one-line **subscription string** can carry all three at once: `macvpn-sub:<base64url JSON>`. The admin sends it in a secure channel and the user pastes it.
 
+**Opening a catalog file from Finder** (added after 1.3.0 at the user's request; it reverses the 1.3.0 decision not to register document types). `.macvpncatalog` is a document type of MacVPN (exported UTI `local.macvpn.catalog`, `LSHandlerRank` Owner). Double-clicking such a file opens "Add team catalog…" with the file preselected as the file source, exactly as if it had been chosen with "Choose File…": the path stays in the backend, the dialog shows the file name. The user still enters or confirms the team key and the fingerprint, and nothing is subscribed without the verified preview and the "fingerprint matches" tick. While the vault is locked, the file waits (its path only, in memory) until the unlock; a cancelled unlock drops it. `.macvpnadminkey` and `.macvpnbackup` are not document types: they are opened from their panels only.
+
 ## 6. How catalog items behave on the subscriber
 
 - **Placement:** catalog connections live in a root folder named after the catalog, with a "Team" badge. The catalog's own folder tree sits inside it, with the publisher's colours.

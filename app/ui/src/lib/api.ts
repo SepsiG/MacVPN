@@ -18,6 +18,9 @@ export type Row = RowState & {
   id: string;
   name: string;
   typeLabel: string;
+  /// The server host (for the search): a native connection's, or the one in the config (host only, no other
+  /// config text); null for system VPNs and when there is none.
+  server?: string | null;
   managed: boolean;
   kind: Kind | null;
   storedSecrets: boolean;
@@ -324,6 +327,13 @@ export interface Report {
   message: string;
 }
 
+/// What files opened from Finder left for the Connections window (taken once): the import report, and the team
+/// catalog file (its name only; the path stays in the backend) for the add dialog.
+export interface OpenedFiles {
+  report: Report | null;
+  catalogFile: string | null;
+}
+
 export interface LogLineView {
   text: string;
   kind: 'header' | 'step' | 'command' | 'error' | 'output';
@@ -537,6 +547,8 @@ export const api = {
   editorChooseCa: (id: string) => invoke<EditorView>('editor_choose_ca', { id }),
   createConnection: (kind: Kind) => invoke<void>('create_connection', { kind }),
   importFiles: () => invoke<Report | null>('import_files'),
+  /// Files opened from Finder: their outcome, once.
+  takeOpenedFiles: () => invoke<OpenedFiles>('open_files_take'),
   answerQuestion: (id: number, answer: boolean) => invoke<void>('answer_question', { id, answer }),
   exportCheck: (id: string) => invoke<Report | null>('export_check', { id }),
   exportConnection: (id: string, withKeys: boolean) => invoke<Notice | null>('export_connection', { id, withKeys }),
@@ -633,6 +645,11 @@ export function onViewModel(handler: (vm: ViewModel) => void): Promise<UnlistenF
 /// A drop on the Connections window was imported (the report to show).
 export function onImportReport(handler: (report: Report) => void): Promise<UnlistenFn> {
   return listen<Report>('import-report', (event) => handler(event.payload));
+}
+
+/// Files opened from Finder were handled (no payload: `api.takeOpenedFiles` returns the outcome).
+export function onOpenedFiles(handler: () => void): Promise<UnlistenFn> {
+  return listen<null>('open-files', () => handler());
 }
 
 /// New lines of the Log tab being shown.

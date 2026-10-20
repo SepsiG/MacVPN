@@ -597,6 +597,9 @@ pub struct ConnectionManager {
     next_watch_id: AtomicU64,
     /// "Save" writer threads running, and their end.
     saves_in_flight: Arc<(Mutex<usize>, std::sync::Condvar)>,
+    /// The server hosts of the configs ([`Self::server_hosts`]) by row id: read by [`Self::reload`] (which follows
+    /// every save, import, delete, catalog apply, restore and unlock), never while the view model is built.
+    server_hosts: RwLock<Arc<HashMap<String, String>>>,
 }
 
 impl ConnectionManager {
@@ -612,7 +615,32 @@ impl ConnectionManager {
             auth_poll_millis: AtomicU64::new(500),
             next_watch_id: AtomicU64::new(1),
             saves_in_flight: Arc::default(),
+            server_hosts: RwLock::default(),
         })
+    }
+
+    /// The server host of each managed connection whose server is in its config (OpenVPN's first `remote`,
+    /// WireGuard's `Endpoint`, strongSwan's `remote_addrs`, SSTP's `server=`), keyed by the row id, for the
+    /// Connections window's search. Only the sanitized host ([`importer::remote_host`]: no port, user, path or
+    /// other config text). What the last [`Self::reload`] read: no config is read here, so building the view model
+    /// never touches the store. Native connections carry their server in the snapshot already
+    /// ([`crate::ViewModel::build`]).
+    pub fn server_hosts(&self) -> HashMap<String, String> {
+        HashMap::clone(&self.server_hosts.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// Reads the server hosts of `connections` from their configs (each read wiped after parsing; a config that
+    /// cannot be read or names no host is left out). Called by [`Self::reload`] without any lock held.
+    fn read_server_hosts(&self, connections: &[Connection]) -> HashMap<String, String> {
+        connections
+            .iter()
+            .filter(|c| !c.kind.is_native())
+            .filter_map(|c| {
+                let config = self.deps.store.load_config_wiped(&c.id).ok()?;
+                let host = macvpn_core::importer::remote_host(c.kind, &config)?;
+                Some((uuid_string(&c.id), host))
+            })
+            .collect()
     }
 
     // MARK: - Hooks
@@ -890,6 +918,11 @@ impl ConnectionManager {
         });
         // Read only once the connections are readable: a locked vault keeps the folders dropped.
         let folders = if list.is_ok() { self.load_folders() } else { None };
+        // The search's server hosts, before the change is published (the view model built then has them).
+        if let Ok(list) = &list {
+            let hosts = self.read_server_hosts(list);
+            *self.server_hosts.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(hosts);
+        }
         self.mutate(|i| {
             if let Ok(list) = list {
                 i.connections = list;
@@ -930,6 +963,7 @@ impl ConnectionManager {
         // next step (`connect_root` checks the lock).
         let connecting: Vec<String> = self
             .read(|i| i.ops.iter().filter(|(_, op)| matches!(op, Op::Connecting)).map(|(k, _)| k.clone()).collect());
+        *self.server_hosts.write().unwrap_or_else(PoisonError::into_inner) = Arc::default();
         self.mutate(|i| {
             i.locked = true;
             // No pruning of the (empty) ranking until the full list is back.

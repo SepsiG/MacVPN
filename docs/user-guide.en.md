@@ -2,11 +2,18 @@
 
 [Magyar változat](user-guide.hu.md)
 
-MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.3 (see [What's new in 1.3](#whats-new-in-13)). The menu's **Help** item opens it.
+MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.4 (see [What's new in 1.4](#whats-new-in-14)). The menu's **Help** item opens it.
 
 For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference. Developers who want another program on this Mac to bring MacVPN connections up and down (**Paired apps** in the Connections window) should read the [Control API guide](control-api.md).
 
 > **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
+
+## What's new in 1.4
+
+- **Search.** The **Search connections** field at the top of the Connections window's sidebar (**⌘F**) finds connections by name, type, server, team catalog or folder, ignoring case and accents. See [12.8](#128-searching-connections).
+- **Opening VPN files from Finder.** A double-click on a `.ovpn` or `.sstp` file imports it; a `.conf` opens through **Open With → MacVPN**; a `.macvpncatalog` file opens **Add team catalog…** with that file. See [4.1](#41-opening-vpn-files-from-finder).
+- **Downloaded files ask first.** A downloaded file is imported only after one confirmation (**Import** / **Cancel**). See [4.1](#41-opening-vpn-files-from-finder).
+- The root layer stays 8: updating from 1.3 needs no admin password.
 
 ## What's new in 1.3
 
@@ -39,7 +46,7 @@ For short step-by-step instructions, see the [How-to guide](how-to.en.md). This 
 1. [Installation](#1-installation)
 2. [First launch and the System Status window](#2-first-launch-and-the-system-status-window)
 3. [Adding connections by type](#3-adding-connections-by-type)
-4. [Import and export](#4-import-and-export)
+4. [Import and export](#4-import-and-export) ([Opening VPN files from Finder](#41-opening-vpn-files-from-finder))
 5. [Connecting](#5-connecting)
 6. [Debug mode and the log](#6-debug-mode-and-the-log)
 7. [Troubleshooting from the log](#7-troubleshooting-from-the-log)
@@ -330,6 +337,18 @@ A `pkcs12 client.p12` file is embedded the same way, as base64 in a `<pkcs12>` b
 - A full backup of everything, with the passwords, is a different feature: see [14](#14-backup-and-restore).
 - `.ovpn`, WireGuard `.conf`, `.swanctl.conf` and `.sstp` exports can be imported into MacVPN again.
 - A `.mobileconfig` export (L2TP, Cisco IPSec) **cannot** be imported into MacVPN. To use it on another Mac, double-click it in Finder: macOS installs it as a profile, then approve it in **System Settings → General → Device Management** (Profiles). If you drop a `.mobileconfig` file on MacVPN's import, it tells you the same.
+
+### 4.1 Opening VPN files from Finder
+
+Double-click a `.ovpn` or `.sstp` file in Finder, or drop it on MacVPN's icon: MacVPN opens the **Connections** window and imports it. This is the same import as **Import from File…**, with the same checks, the same questions (a credentials file next to the config, a shared credential named in the file, the folder of an exported file) and the same report. Nothing connects: the new connection is selected, and you connect when you are ready. Several files selected and opened together are imported together, with one report.
+
+- **Which files open in MacVPN.** Once MacVPN is in **Applications** and has been started once, `.ovpn` and `.sstp` files open in it by default. `.macvpncatalog` files open the team catalog dialog (see [16.1](#161-subscribing-to-a-catalog)).
+- **`.conf` files are not taken over**, because WireGuard, nginx and many other programs use that extension. For a WireGuard or strongSwan `.conf`, Control-click (right-click) it and choose **Open With → MacVPN**.
+- **Another VPN app opens `.ovpn` files** (for example Tunnelblick or OpenVPN Connect): Control-click one `.ovpn` file → **Open With → MacVPN**. To make MacVPN the default, select the file, choose **File → Get Info**, pick **MacVPN** under **Open with** and click **Change All…**.
+- **Not opened from Finder:** admin key files (`.macvpnadminkey`) and backups (`.macvpnbackup`). Use their buttons in MacVPN (see [16.7](#167-for-administrators-the-admin-key) and [14](#14-backup-and-restore)). If you open one with MacVPN anyway, the report says **This file is opened from its own panel in MacVPN, not from Finder.** A `.mobileconfig` profile still belongs to macOS (see above).
+- **Downloaded files ask first.** A file you downloaded (from a browser, Mail, Messages or AirDrop; macOS marks these) is not imported straight away: MacVPN asks once for all of them, **Import the downloaded file?** or **Import N downloaded files?**, names the files and adds **Only import files you trust.** **Import** imports them, **Cancel** skips them. Files that were not downloaded in the same open are imported either way. This way a file a website pushes to your Mac (for example through Safari's "Open safe files after downloading") never becomes a connection without you. MacVPN only reads the mark, it does not remove it. `.ovpn` and `.sstp` are declared as data files, not text, so Safari does not open them by itself.
+- **The vault is locked or not set up yet:** MacVPN shows the unlock (or setup) window first and imports the files once the vault is open. If you close that window instead, nothing is imported; open the files again later. Until then MacVPN keeps only where the files are, in memory (at most 32 files), never their contents.
+- An opened file is untrusted input, exactly like a file you drag into the window: it is imported only if it passes the checks.
 
 ---
 
@@ -810,6 +829,10 @@ Inside every folder (and at the top level): first the subfolders, in the order y
 - A system VPN keeps its folder and colour for 30 days after it disappears from macOS, so it comes back in its place if it is reinstalled (for example after a restore on a new Mac).
 - While the vault is locked, folders are hidden and cannot be edited.
 
+### 12.8 Searching connections
+
+The **Search connections** field at the top of the **Connections** window's sidebar (**⌘F**) filters the list as you type. Case and accents do not matter: "arvizturo" finds "Árvíztűrő". It looks at the connection's name, its type (OpenVPN, WireGuard, …), its server (the host from the settings or the config, such as OpenVPN's first `remote`), its team catalog's name and the names of its folders; a folder whose name matches shows all its contents, and the folders of the matches open without changing which ones you keep closed. **↑** and **↓** move through the results, Return opens the highlighted one, Esc clears the field (a second Esc leaves it). While a search is on, drag and drop is off; **Credentials**, **Paired apps**, **Team catalogs** and **Publishing** stay at the bottom. When nothing matches, **Clear Search** brings the whole list back.
+
 ---
 
 ## 13. Shared credentials
@@ -969,6 +992,8 @@ What a member needs from the administrator: the **source** (an `https://` URL or
 4. Click **Check**. MacVPN downloads the catalog, checks its signature against the fingerprint you entered and opens it with the team key. The preview shows the catalog's name, version and fingerprint, the number of connections and folders, the credential slots (see [16.3](#163-credential-slots)), and how many connections have risky settings.
 5. **Compare the fingerprint** with what your administrator told you through another channel, for example by phone. If it differs, do not subscribe.
 6. Tick **The fingerprint matches what my administrator sent me** and click **Subscribe**. The catalog's connections appear at once, and **Team catalogs** shows the new subscription. **Cancel** or **Back** drops the downloaded preview.
+
+**From Finder.** Double-click a `.macvpncatalog` file (for example on the file share your administrator named). MacVPN opens **Team catalogs** with the **Add team catalog…** dialog, **File** chosen as the source and that file filled in. You still enter the team key and the publisher fingerprint, click **Check**, compare the fingerprint and tick the box: opening the file subscribes to nothing. If you open two catalog files at once, only the first is used (**Only one team catalog file can be added at a time.**).
 
 A subscription string that a mail program broke across lines is refused: copy it again as one line. The preview expires after 10 minutes (**The catalog preview expired. Add the catalog again.**). A catalog you already have is refused with **You are already subscribed to this catalog.**
 

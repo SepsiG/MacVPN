@@ -20,16 +20,25 @@
     rows,
     message = null,
     oncredentials,
+    opened = null,
+    onopenedhandled = () => {},
   }: {
     catalogs: SubscriptionView[];
     rows: Row[];
     /// Why the section cannot be used now (the vault is locked).
     message?: string | null;
     oncredentials: () => void;
+    /// A team catalog file opened from Finder (its name; `seq` tells two opens apart): the add dialog opens with it.
+    opened?: { fileName: string; seq: number } | null;
+    /// The opened file was taken into the add dialog.
+    onopenedhandled?: () => void;
   } = $props();
 
   let selected = $state<string | null>(null);
   let adding = $state(false);
+  /// The add dialog's opened file (from Finder), and its remount key.
+  let addFile = $state<string | null>(null);
+  let addKey = $state(0);
   let refreshing = $state<Set<string>>(new Set());
   let refreshingAll = $state(false);
   let results = $state<Record<string, StatusLine>>({});
@@ -47,6 +56,24 @@
     if (current) seen = current.id;
     else if (selected !== null && seen === selected) selected = null;
   });
+
+  // A catalog file opened from Finder: the add dialog with that file as the source, in place of whatever was open.
+  $effect(() => {
+    const o = opened;
+    if (!o) return;
+    selected = null;
+    editing = null;
+    unsubscribing = null;
+    addFile = o.fileName;
+    addKey = o.seq;
+    adding = true;
+    onopenedhandled();
+  });
+
+  function closeAdd() {
+    adding = false;
+    addFile = null;
+  }
 
   function errorText(e: unknown): string {
     return typeof e === 'string' ? e : String(e);
@@ -82,7 +109,7 @@
   }
 
   function subscribed(id: string, applied: ApplyView) {
-    adding = false;
+    closeAdd();
     selected = id;
     const changes = changesText(applied);
     results = { ...results, [id]: { text: changes === '' ? tr('Subscribed.') : tr('Subscribed: %@', changes), severity: 'ok' } };
@@ -174,7 +201,11 @@
       language={i18n.language}
       {message}
       refreshing={refreshingAll}
-      onadd={() => (adding = true)}
+      onadd={() => {
+        addFile = null;
+        addKey += 1;
+        adding = true;
+      }}
       onrefreshall={() => refreshAll().catch(console.error)}
       onselect={(id) => (selected = id)}
     />
@@ -182,7 +213,9 @@
 </div>
 
 {#if adding}
-  <AddCatalog onclose={() => (adding = false)} onsubscribed={subscribed} />
+  {#key addKey}
+    <AddCatalog openedFile={addFile} onclose={closeAdd} onsubscribed={subscribed} />
+  {/key}
 {:else if editing}
   {@const e = editing}
   {@const sub = catalogs.find((c) => c.id === e.id)}

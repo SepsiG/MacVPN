@@ -16,6 +16,7 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Mutex;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// The root helper (`sudo -n mvpn …`), the Swift `MvpnClient`.
 pub trait RootClient: Send + Sync {
@@ -89,6 +90,11 @@ pub trait ConnectionRepository: Send + Sync {
     /// `config` `None`: only `meta.json` is written.
     fn save(&self, connection: &Connection, config: Option<&str>) -> io::Result<()>;
     fn load_config(&self, id: &Uuid) -> io::Result<String>;
+    /// [`Self::load_config`], wiped when dropped: for reads whose text is only parsed (the search's server host).
+    /// A store that holds the config wiped already (the vault) returns it without an unwiped copy.
+    fn load_config_wiped(&self, id: &Uuid) -> io::Result<Zeroizing<String>> {
+        self.load_config(id).map(Zeroizing::new)
+    }
     /// Deletes the connection's directory (`meta.json`, `config`).
     fn delete(&self, id: &Uuid) -> io::Result<()>;
 

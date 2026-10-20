@@ -20,6 +20,7 @@ const COMMANDS: &[&str] = &[
     "select_connection",
     "resolve_unsaved",
     "take_tab_request",
+    "open_files_take",
     "editor_open",
     "editor_update",
     "editor_save",

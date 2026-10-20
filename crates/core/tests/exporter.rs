@@ -390,7 +390,7 @@ fn inner_payload_uuid_is_deterministic() {
     assert_ne!(a.get("PayloadUUID").and_then(Value::as_string), Some(uuid_string(&c.id).as_str()));
 }
 
-/// Byte-for-byte what Swift's `PropertyListSerialization` wrote (fixtures/swift/mobileconfig, generate.sh).
+/// Byte-for-byte what Swift's `PropertyListSerialization` wrote (fixtures/swift/mobileconfig, frozen).
 #[test]
 fn profile_bytes_match_swift() {
     let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/swift/mobileconfig");

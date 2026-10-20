@@ -100,6 +100,11 @@ pub struct RowView {
     pub name: String,
     /// `WireGuard`, `OpenVPN`, … or the system VPN's type label.
     pub type_label: String,
+    /// The server the connection connects to, for the Connections window's search: a native (L2TP / Cisco IPsec)
+    /// connection's from its settings here, the others' from their config ([`ViewModel::set_server_hosts`]); `None`
+    /// for system VPNs and when there is none. Only the sanitized host: never a port, user name, path, the
+    /// account, a secret or any other config text.
+    pub server: Option<String>,
     /// False: a system VPN not managed by MacVPN.
     pub managed: bool,
     /// A managed connection's kind (`openvpn`, `wireguard`, …).
@@ -489,10 +494,17 @@ impl ViewModel {
                     ConnectionItem::Managed(c) => (Some(c.kind.raw_value()), false),
                     ConnectionItem::System(s) => (None, s.supports_stored_secrets()),
                 };
+                let server = match item {
+                    ConnectionItem::Managed(c) if c.kind.is_native() => {
+                        macvpn_core::importer::server_host(c.kind, c.native.as_ref(), "")
+                    }
+                    _ => None,
+                };
                 RowView {
                     id,
                     name: item.name().to_string(),
                     type_label,
+                    server,
                     managed,
                     kind,
                     stored_secrets,
@@ -548,6 +560,15 @@ impl ViewModel {
     pub fn set_catalog_badges(&mut self, badges: &HashMap<String, crate::catalog::CatalogBadge>) {
         for row in &mut self.rows {
             row.catalog = badges.get(&row.id).cloned();
+        }
+    }
+
+    /// The server hosts read from the configs (`ConnectionManager::server_hosts`), for the rows without one.
+    pub fn set_server_hosts(&mut self, hosts: &HashMap<String, String>) {
+        for row in &mut self.rows {
+            if row.server.is_none() {
+                row.server = hosts.get(&row.id).cloned();
+            }
         }
     }
 

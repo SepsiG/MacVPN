@@ -170,11 +170,11 @@ pub fn take_export_meta(content: &str) -> (Option<ExportMeta>, &str) {
 pub const MAX_REMOTE_HOST_BYTES: usize = 253;
 
 /// The server a config connects to, for the import question "Use the shared credential 'X' for this connection
-/// to <host>?": OpenVPN's first `remote`, WireGuard's first `Endpoint` (without the port), strongSwan's first
-/// `remote_addrs` entry, SSTP's `server=`. Only for display: `None` when there is none, or it is empty, longer than
-/// [`MAX_REMOTE_HOST_BYTES`] or has a control character, a space or a quote.
+/// to <host>?" and the Connections window's search: OpenVPN's first `remote`, WireGuard's first `Endpoint`,
+/// strongSwan's first `remote_addrs` entry, SSTP's `server=`. Only the host ([`sanitized_host`]): a user name and a
+/// port are stripped; `None` when there is none, or it is not a host name or an IP literal.
 pub fn remote_host(kind: VPNKind, config: &str) -> Option<String> {
-    let host = config.lines().find_map(|raw| {
+    let raw = config.lines().find_map(|raw| {
         let line = raw.trim_matches(|c: char| c.is_whitespace());
         if line.starts_with('#') || line.starts_with(';') {
             return None;
@@ -182,32 +182,68 @@ pub fn remote_host(kind: VPNKind, config: &str) -> Option<String> {
         match kind {
             VPNKind::Openvpn => {
                 let mut words = line.split_whitespace();
-                (words.next()? == "remote").then(|| words.next()).flatten().map(str::to_string)
+                (words.next()? == "remote").then(|| words.next()).flatten()
             }
             VPNKind::Wireguard => {
                 let (key, value) = line.split_once('=')?;
-                if !key.trim().eq_ignore_ascii_case("endpoint") {
-                    return None;
-                }
-                let value = value.trim();
-                Some(match value.strip_prefix('[') {
-                    Some(v6) => v6.split_once(']')?.0.to_string(),
-                    None => value.rsplit_once(':').map_or(value, |(host, _)| host).to_string(),
-                })
+                key.trim().eq_ignore_ascii_case("endpoint").then(|| value.trim())
             }
             VPNKind::Strongswan => {
                 let (key, value) = line.split_once('=')?;
-                (key.trim() == "remote_addrs").then(|| value.split(',').next().unwrap_or("").trim().to_string())
+                (key.trim() == "remote_addrs").then(|| value.split(',').next().unwrap_or("").trim())
             }
-            VPNKind::Sstp => line.strip_prefix("server=").map(|s| s.trim().to_string()),
+            VPNKind::Sstp => line.strip_prefix("server=").map(str::trim),
             VPNKind::L2tp | VPNKind::Cisco => None,
         }
     })?;
-    let ok = !host.is_empty()
-        && host.len() <= MAX_REMOTE_HOST_BYTES
-        && !crate::mfa::has_control(&host)
-        && !host.chars().any(|c| c.is_whitespace() || c == '"' || c == '\'');
-    ok.then_some(host)
+    sanitized_host(raw)
+}
+
+/// The host of a server address as a config writes it: `[user[:password]@]host[:port]` or `[v6]:port`. Only a
+/// host name (labels of letters, digits, `-` and `_`, not starting or ending with `-`, at most 63 bytes each, the
+/// last one not all digits, a trailing root dot dropped) or an IP literal (a v6 one without its brackets) of at most
+/// [`MAX_REMOTE_HOST_BYTES`]; anything else (a URL, a path, a CIDR, `%any`, a range, a bad port) is `None`.
+pub fn sanitized_host(raw: &str) -> Option<String> {
+    use std::net::{Ipv4Addr, Ipv6Addr};
+    let raw = raw.trim();
+    // User info: everything up to the last `@`.
+    let hostport = raw.rsplit_once('@').map_or(raw, |(_, h)| h);
+    let valid_port = |p: &str| {
+        !p.is_empty()
+            && p.len() <= 5
+            && p.bytes().all(|b| b.is_ascii_digit())
+            && p.parse::<u32>().is_ok_and(|n| (1..=65535).contains(&n))
+    };
+    if let Some(rest) = hostport.strip_prefix('[') {
+        let (v6, after) = rest.split_once(']')?;
+        if !(after.is_empty() || after.strip_prefix(':').is_some_and(valid_port)) {
+            return None;
+        }
+        return v6.parse::<Ipv6Addr>().ok().map(|_| v6.to_string());
+    }
+    if hostport.parse::<Ipv6Addr>().is_ok() {
+        return Some(hostport.to_string());
+    }
+    let host = match hostport.split_once(':') {
+        Some((host, port)) if valid_port(port) => host,
+        Some(_) => return None,
+        None => hostport,
+    };
+    if host.parse::<Ipv4Addr>().is_ok() {
+        return Some(host.to_string());
+    }
+    let host = host.strip_suffix('.').unwrap_or(host);
+    let label_ok = |l: &str| {
+        !l.is_empty()
+            && l.len() <= 63
+            && !l.starts_with('-')
+            && !l.ends_with('-')
+            && l.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    };
+    // A numeric last label is no host name (`10.0.0.1-10.0.0.9`, `999.1.1.1`): only an IPv4 literal ends in digits.
+    let numeric_tail = host.rsplit('.').next().is_some_and(|l| l.bytes().all(|b| b.is_ascii_digit()));
+    let ok = !host.is_empty() && host.len() <= MAX_REMOTE_HOST_BYTES && host.split('.').all(label_ok) && !numeric_tail;
+    ok.then(|| host.to_string())
 }
 
 /// The server a connection sends its credentials to, for display (the credential prompt of a team slot, the

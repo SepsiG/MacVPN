@@ -73,8 +73,12 @@ fn guard<T>(m: &Mutex<T>) -> MutexGuard<'_, T> {
 /// What an open panel chose, kept until it is used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 enum Pick {
-    /// A catalog file as a subscription's source (or the source of a subscription string to copy).
+    /// A catalog file chosen in an open panel: a subscription's source, a source edit's, or the source of a
+    /// subscription string to copy.
     Source,
+    /// A catalog file opened from Finder: only the add dialog reads it (never the source edit or "Copy subscription
+    /// string"); a file chosen in a panel afterwards replaces it.
+    Opened,
     /// An admin key file to import.
     AdminKey,
 }
@@ -221,8 +225,37 @@ impl CatalogApp {
         guard(&self.picked).remove(&what);
     }
 
-    /// The source of an add, an edit or a subscription string to copy: a typed `https://` URL, or the file chosen
-    /// in the open panel.
+    /// A team catalog file opened from Finder: the add dialog's file source (its own slot, [`Pick::Opened`]; the path
+    /// stays here; the file's name goes to the window). Only while the vault is open.
+    pub fn open_file_source(&self, path: PathBuf) -> Result<String, String> {
+        self.require_unlocked()?;
+        parse_file_source(&path.to_string_lossy())
+            .map_err(|_| l10n::tr("The file path contains an invalid character.", &[]))?;
+        let name = display_name(&path);
+        self.pick_opened(path);
+        Ok(name)
+    }
+
+    fn pick_opened(&self, path: PathBuf) {
+        self.pick(Pick::Opened, path);
+    }
+
+    /// A catalog file chosen in an open panel (any dialog): the chosen source, in place of a file opened from Finder.
+    fn chose_file(&self, path: PathBuf) {
+        let mut picked = guard(&self.picked);
+        picked.remove(&Pick::Opened);
+        picked.insert(Pick::Source, path);
+    }
+
+    /// The add dialog subscribed: its file (opened or chosen) is used up.
+    fn forget_add_picks(&self) {
+        let mut picked = guard(&self.picked);
+        picked.remove(&Pick::Opened);
+        picked.remove(&Pick::Source);
+    }
+
+    /// The source of an edit or a subscription string to copy: a typed `https://` URL, or the file chosen in the
+    /// open panel (never a file opened from Finder).
     fn source(&self, url: Option<&str>, chosen_file: bool) -> Result<CatalogSource, String> {
         parse_source(
             url,
@@ -230,6 +263,13 @@ impl CatalogApp {
             chosen_file,
             self.sandbox,
         )
+    }
+
+    /// The add dialog's source: a typed `https://` URL, or its file: the one opened from Finder, else the one chosen
+    /// in the open panel (choosing a file drops an opened one, so the latest of the two counts).
+    fn add_source(&self, url: Option<&str>, chosen_file: bool) -> Result<CatalogSource, String> {
+        let file = chosen_file.then(|| self.picked(Pick::Opened).or_else(|| self.picked(Pick::Source))).flatten();
+        parse_source(url, file.as_deref(), chosen_file, self.sandbox)
     }
 }
 
@@ -792,7 +832,7 @@ pub async fn catalog_choose_file_source(
     // The smoke run's catalog file in place of the open panel (debug builds only).
     #[cfg(debug_assertions)]
     if let Some(path) = crate::smoke::panel_file(&state, catalog_format::EXTENSION) {
-        state.catalog.pick(Pick::Source, path.clone());
+        state.catalog.chose_file(path.clone());
         return Ok(Some(display_name(&path)));
     }
     let Some(path) = crate::dialogs::choose_files(&app, &state, MANAGE_WINDOW, false).await?.into_iter().next() else {
@@ -800,7 +840,7 @@ pub async fn catalog_choose_file_source(
     };
     parse_file_source(&path.to_string_lossy())
         .map_err(|_| l10n::tr("The file path contains an invalid character.", &[]))?;
-    state.catalog.pick(Pick::Source, path.clone());
+    state.catalog.chose_file(path.clone());
     Ok(Some(display_name(&path)))
 }
 
@@ -826,7 +866,7 @@ fn subscribe_input(
         }
         return Ok(SubscribeInput::from_subscription(parsed, bearer));
     }
-    let source = catalog.source(url.as_deref(), chosen_file)?;
+    let source = catalog.add_source(url.as_deref(), chosen_file)?;
     let team_key = parse_team_key(team_key.as_deref().map_or("", String::as_str))?;
     // No trust on first use: the fingerprint is required.
     let fingerprint = parse_fingerprint(fingerprint.as_deref().unwrap_or(""))?;
@@ -874,7 +914,7 @@ pub async fn catalog_confirm(window: Window, state: Shared<'_>, pending_id: Stri
         .ok_or_else(|| macvpn_app_core::catalog::CatalogServiceError::Expired.to_string())?;
     let shared = state.inner().clone();
     let summary = blocking(move || shared.catalog.service.confirm(pending).map_err(|e| e.to_string())).await??;
-    state.catalog.forget_pick(Pick::Source);
+    state.catalog.forget_add_picks();
     changed(&state);
     Ok(ApplyView {
         added: summary.added,
@@ -1733,6 +1773,39 @@ mod tests {
         app.pick(Pick::AdminKey, PathBuf::from("/Volumes/Key/acme.macvpnadminkey"));
         app.vault_locked();
         assert!(app.picked(Pick::Source).is_none() && app.picked(Pick::AdminKey).is_none());
+    }
+
+    /// A catalog file opened from Finder waits in its own slot that only the add dialog reads: the source edit and
+    /// "Copy subscription string" never take it, and a file chosen in a panel afterwards replaces it.
+    #[test]
+    fn a_finder_opened_catalog_file_is_only_the_add_dialogs() {
+        let (app, _) = app();
+        let opened = PathBuf::from("/Volumes/Share/opened.macvpncatalog");
+        app.pick_opened(opened.clone());
+        let file = |s: CatalogSource| match s {
+            CatalogSource::File(f) => f,
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(file(app.add_source(None, true).unwrap()), opened, "the add dialog takes it");
+        assert!(app.source(None, true).is_err(), "the source edit does not");
+        assert!(app.picked(Pick::Source).is_none(), "nor does Copy subscription string");
+        // A file chosen in a panel (in any dialog) replaces it.
+        let chosen = PathBuf::from("/Volumes/Share/chosen.macvpncatalog");
+        app.chose_file(chosen.clone());
+        assert!(app.picked(Pick::Opened).is_none());
+        assert_eq!(file(app.add_source(None, true).unwrap()), chosen);
+        assert_eq!(file(app.source(None, true).unwrap()), chosen);
+        // A new open replaces an older chosen file for the add dialog only.
+        app.pick_opened(opened.clone());
+        assert_eq!(file(app.add_source(None, true).unwrap()), opened);
+        assert_eq!(file(app.source(None, true).unwrap()), chosen);
+        // Subscribed: both go.
+        app.forget_add_picks();
+        assert!(app.add_source(None, true).is_err());
+        // Locked: dropped.
+        app.pick_opened(opened);
+        app.vault_locked();
+        assert!(app.picked(Pick::Opened).is_none());
     }
 
     /// A stand-in preview: expires at `expires`.

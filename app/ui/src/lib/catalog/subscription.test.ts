@@ -10,6 +10,7 @@ import {
   formatFingerprint,
   formatTeamKey,
   isSubscriptionString,
+  openedFileForm,
   pastedKind,
   previewInput,
   teamKeyComplete,
@@ -120,4 +121,18 @@ test('the paste field: a string is handed off, anything else is refused, the fie
   assert.match(view, /const text = e\.currentTarget\.value;\s*e\.currentTarget\.value = '';\s*onpaste\(text\);/, 'cleared before the hand-off');
   const dialog = readFileSync(new URL('./AddCatalog.svelte', import.meta.url), 'utf8');
   assert.match(dialog, /tr\('This is not a subscription string\.'\)/);
+});
+
+test('a catalog file opened from Finder preselects the file source, never the key or the fingerprint', () => {
+  const form = openedFileForm('team.macvpncatalog');
+  assert.equal(form.sourceKind, 'file');
+  assert.equal(form.fileName, 'team.macvpncatalog');
+  assert.equal(form.teamKey, '');
+  assert.equal(form.fingerprint, '');
+  assert.equal(form.subscription, null);
+  // "Check" waits for the team key and the fingerprint (no trust on first use).
+  assert.equal(canCheck(form), false);
+  assert.equal(canCheck({ ...form, teamKey: KEY_SYMBOLS }), false);
+  assert.equal(canCheck({ ...form, teamKey: KEY_SYMBOLS, fingerprint: FINGERPRINT }), true);
+  assert.deepEqual(previewInput({ ...form, teamKey: KEY_SYMBOLS, fingerprint: FINGERPRINT }).chosenFile, true);
 });

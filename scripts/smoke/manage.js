@@ -3,6 +3,8 @@
 // store proves the round trip). Language independent: only classes and structure are used, except one check that
 // the window shows the view model's language (the Save button's English or Hungarian text). The New menu, a
 // connection's context menu at the window's corners and its colour picker must lie inside the window (8 pt margin).
+// The search field filters the tree as typed (accents and case ignored), Up / Down / Return open a result, the
+// empty result names the query (in the window's language), Escape clears it and every row is back.
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (fn, ms = 8000) => {
@@ -127,6 +129,62 @@
     await sleep(600);
     const again = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
     checks.secretKept = again.hasStoredSecret.password && again.fields.password === null && !again.dirty;
+
+    // The search: typed with accents the names do not have, by server and by type; Up / Down and Return open a
+    // result; the empty result and its Clear; Escape clears, then leaves the field; Cmd+F comes back to it.
+    const field = document.querySelector('.sidebar input.query');
+    const shownNames = () => [...document.querySelectorAll('nav .row.item .name .label')].map((l) => l.textContent);
+    const all = shownNames();
+    const showing = (expected) =>
+      waitFor(() => {
+        const names = shownNames();
+        return names.length === expected.length && expected.every((n) => names.includes(n));
+      });
+    checks.searchField = !!field && all.length >= 10;
+    field.focus();
+    setValue(field, 'SÉÉDED');
+    checks.searchAccents = !!(await showing(['Seeded B', 'Seeded S', 'Seeded L2'])) && !!document.querySelector('nav .tree.filtering mark');
+    setValue(field, 'l2tp.example');
+    checks.searchServer = !!(await showing(['Seeded L2']));
+    // An OpenVPN server comes from the config's `remote` (its host only: the port is not searched).
+    setValue(field, 'B-GATEWAY.example');
+    checks.searchOpenvpnServer = !!(await showing(['Seeded B']));
+    setValue(field, 'b-gateway.example.net 1194');
+    checks.searchNoPort = !!(await waitFor(() => document.querySelector('.sidebar .no-match')));
+    setValue(field, 'sstp');
+    checks.searchType = !!(await showing(['Seeded S']));
+    setValue(field, 'seeded');
+    await showing(['Seeded B', 'Seeded S', 'Seeded L2']);
+    const key = (k, extra = {}) => field.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
+    const activeName = () => document.querySelector('nav .row.item.active .name .label')?.textContent;
+    const first = activeName();
+    key('ArrowDown');
+    await sleep(150);
+    const second = activeName();
+    key('ArrowUp');
+    await sleep(150);
+    checks.searchArrows = !!first && !!second && first !== second && activeName() === first;
+    key('ArrowDown');
+    await sleep(150);
+    key('Enter');
+    checks.searchEnter = !!(await shown(second));
+    setValue(field, 'zz-nothing-árvíz');
+    const empty = await waitFor(() => document.querySelector('.sidebar .no-match'));
+    const quoted = { en: '“zz-nothing-árvíz”', hu: '„zz-nothing-árvíz”' }[vm.language];
+    const english = !!empty && empty.textContent.includes('No connections match');
+    checks.searchEmpty = !!empty && shownNames().length === 0 && empty.textContent.includes(quoted) && english === (vm.language === 'en');
+    empty?.querySelector('button.clear-search')?.click();
+    checks.searchCleared = !!(await showing(all)) && field.value === '';
+    setValue(field, 'seeded');
+    await showing(['Seeded B', 'Seeded S', 'Seeded L2']);
+    checks.searchNoDrag = !!document.querySelector('nav .tree.filtering');
+    key('Escape');
+    checks.searchEscape = !!(await showing(all)) && field.value === '' && document.activeElement === field;
+    key('Escape');
+    checks.searchBlur = document.activeElement !== field;
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    checks.searchCmdF = document.activeElement === field;
+    field.blur();
 
     // The New menu (its longest item in the run's language) inside the window, not cut at the left edge.
     document.querySelector('.sidebar .toolbar button').click();

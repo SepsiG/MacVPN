@@ -16,5 +16,5 @@ echo "==> UI texts (app/ui: node --test src/lib/l10n.test.ts)"
 echo "==> Rust texts (cargo test)"
 cargo test --locked -q -p macvpn-app-core --test l10n_coverage
 cargo test --locked -q -p macvpn-core --test l10n
-cargo test --locked -q -p mvpn -- call_site messages_are_in_the_table
+cargo test --locked -q -p mvpn -- call_site
 echo "OK: every text has an English key and a Hungarian translation"

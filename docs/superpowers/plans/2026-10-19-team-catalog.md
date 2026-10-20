@@ -840,7 +840,7 @@
 
 - [ ] Version 1.3.0 in `tauri.conf.json`, `Cargo.toml` `[workspace.package]`, `app/ui/package.json` and the lock files. Root `VERSION` stays 8.
 - [ ] `scripts/build-dmg.sh`: the release gate also fails if the `mvpn` binary contains `MVPNCAT1` or `macvpn-catalog-v1` (`grep -a` on both slices), next to the existing SQLCipher checks.
-- [ ] No document types are registered for `.macvpncatalog` or `.macvpnadminkey`; `Info.plist` does not change (see "Resolved points").
+- [ ] No document types are registered for `.macvpncatalog` or `.macvpnadminkey`; `Info.plist` does not change (see "Resolved points"). *(1.3.0 only; after 1.3.0 `.macvpncatalog` became a document type, see "Resolved points" → File types.)*
 - [ ] Run everything: fmt, clippy, `CI=1 cargo test`, `npm test` and `npm run build`, smoke EN/HU including the catalog mode, `scripts/build-dmg.sh` with the release gate, CI green.
 - [ ] The manual checklist (Task 20) on the DMG.
 - [ ] Release: the same flow as 1.2.0 (the user tests the DMG, the `public` sync commit, the `main` push, the CI, the `v1.3.0` tag, the draft check against a local build, the signing by the user). The release notes say that team catalogs need every member on 1.3.0, that the vault schema moves to v2 on first launch (a backup copy is made, and 1.2 can still read it), and that MacVPN never uploads a catalog.
@@ -907,3 +907,4 @@
 - **Selection rules for publishing.** A selected folder brings its subtree. A selected connection outside the selected folders goes to the catalog root. System VPNs and connections from other team catalogs cannot be published. Item ids are the publisher's own UUIDs, so they stay stable across publishes.
 - **HTTPS hosts.** Any host is allowed (not the update allowlist), but only over `https://` with the system trust store, with no user info and with a canonical URL handed to curl after `--`. The sandbox refuses HTTPS sources, so smoke tests use the file source and HTTPS is covered by the fake-curl tests and the manual checklist.
 - **File types.** 1.3.0 does not register `.macvpncatalog` or `.macvpnadminkey` as document types. A catalog is added through the subscription string or the add dialog, which keeps the fingerprint step mandatory.
+  - **Revised after 1.3.0 (at the user's request):** `.macvpncatalog` is now a document type (exported UTI `local.macvpn.catalog`, Owner). Double-clicking it opens the add dialog with the file preselected as the file source; the fingerprint step stays mandatory (the user enters the team key and the fingerprint, checks the preview and ticks "fingerprint matches"). `.macvpnadminkey` and `.macvpnbackup` stay panel-only (no document type). See spec 5 and `app/src-tauri/src/open_files.rs`.

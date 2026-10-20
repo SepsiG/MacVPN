@@ -7,11 +7,25 @@
   import AddCatalogView from './AddCatalogView.svelte';
   import { tr } from '../l10n.svelte';
   import { catalogApi, type ApplyView, type CatalogPreview } from './catalogApi';
-  import { afterCheck, emptyForm, pastedKind, previewInput, withoutSecrets, type AddForm } from './subscription';
+  import { afterCheck, emptyForm, openedFileForm, pastedKind, previewInput, withoutSecrets, type AddForm } from './subscription';
 
-  let { onclose, onsubscribed }: { onclose: () => void; onsubscribed: (catalogId: string, applied: ApplyView) => void } = $props();
+  let {
+    openedFile = null,
+    onclose,
+    onsubscribed,
+  }: {
+    /// A team catalog file opened from Finder (its name): the dialog starts with it as the file source.
+    openedFile?: string | null;
+    onclose: () => void;
+    onsubscribed: (catalogId: string, applied: ApplyView) => void;
+  } = $props();
 
-  let form = $state<AddForm>(emptyForm());
+  /// The form the dialog starts with (the parent remounts the dialog for another opened file).
+  function initialForm(): AddForm {
+    return openedFile ? openedFileForm(openedFile) : emptyForm();
+  }
+
+  let form = $state<AddForm>(initialForm());
   let step = $state<'enter' | 'preview'>('enter');
   let preview = $state<CatalogPreview | null>(null);
   let compared = $state(false);

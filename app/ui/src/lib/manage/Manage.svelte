@@ -4,7 +4,7 @@
   // credential question, other notices. A file dropped anywhere on the window is imported by the backend.
   import { onMount } from 'svelte';
   import { getCurrentWebview } from '@tauri-apps/api/webview';
-  import { api, onImportReport, onViewModel, type Notice, type Report, type UnsavedChoice, type ViewModel } from '../api';
+  import { api, onImportReport, onOpenedFiles, onViewModel, type Notice, type Report, type UnsavedChoice, type ViewModel } from '../api';
   import Icon from '../Icon.svelte';
   import { setLanguage, tr } from '../l10n.svelte';
   import './manage.css';
@@ -35,6 +35,9 @@
   const showCredentials = $derived(section === 'credentials');
   const showCatalogs = $derived(section === 'catalogs');
   const showPublishing = $derived(section === 'publishing');
+  /// A team catalog file opened from Finder, until the Team catalogs section took it into its add dialog.
+  let openedCatalog = $state<{ fileName: string; seq: number } | null>(null);
+  let openedSeq = 0;
   /// A choice question's pick (the import's shared credential): the option's index.
   let choice = $state(0);
 
@@ -70,11 +73,14 @@
     const unlisten = [
       onViewModel(apply),
       onImportReport((r) => (report = r)),
+      onOpenedFiles(() => takeOpened().catch(console.error)),
       getCurrentWebview().onDragDropEvent((event) => {
         dropping = event.payload.type === 'enter' || event.payload.type === 'over';
       }),
     ];
     api.viewModel().then(apply, console.error);
+    // Files opened from Finder before this window was loaded.
+    takeOpened().catch(console.error);
     return () => {
       for (const u of unlisten) u.then((f) => f());
     };
@@ -96,6 +102,18 @@
     section = name;
     // Through the unsaved-changes check, like any selection change.
     await api.selectConnection(null);
+  }
+
+  /// Files opened from Finder: their import report, and a team catalog file for the add dialog (the Team catalogs
+  /// section opens it).
+  async function takeOpened() {
+    const opened = await api.takeOpenedFiles();
+    if (opened.report) report = opened.report;
+    if (opened.catalogFile !== null) {
+      openedSeq += 1;
+      openedCatalog = { fileName: opened.catalogFile, seq: openedSeq };
+      await openSection('catalogs');
+    }
   }
 
   async function importFiles() {
@@ -165,6 +183,8 @@
           rows={vm.rows}
           message={vm.credentials.available ? null : vm.credentials.message}
           oncredentials={() => openSection('credentials').catch(console.error)}
+          opened={openedCatalog}
+          onopenedhandled={() => (openedCatalog = null)}
         />
       </CatalogGate>
     {:else if showPublishing && !selected && vm}

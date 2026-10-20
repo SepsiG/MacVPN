@@ -16,5 +16,128 @@
 	<string>SepsiG/MacVPN</string>
 	<key>MacVPNUpdateRepoID</key>
 	<string>1422472799</string>
+	<!-- Finder: VPN configs and team catalogs open in MacVPN (the import, or the "Add team catalog" dialog; see
+	     app/src-tauri/src/open_files.rs). .ovpn and .sstp: MacVPN is the default handler (Default, not Owner: the
+	     types are imported, not MacVPN's own); .conf (also WireGuard, nginx, …): only listed under "Open With"
+	     (Alternate, by the extension, without declaring a type for it);
+	     .macvpncatalog: MacVPN's own format. Admin key files, backups and .mobileconfig profiles are not claimed. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>OpenVPN Configuration</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>local.macvpn.ovpn</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>SSTP Configuration</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Default</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>local.macvpn.sstp</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>MacVPN Team Catalog</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>local.macvpn.catalog</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>VPN Configuration (.conf)</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>conf</string>
+			</array>
+		</dict>
+	</array>
+	<!-- macOS has no type for .ovpn and .sstp: imported (another app's exported declaration takes precedence). Data,
+	     not plain text: macOS treats text as a "safe" download that Safari may open by itself, which would hand a
+	     drive-by file to MacVPN. A downloaded file (quarantined) is imported only after a confirmation. -->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>local.macvpn.ovpn</string>
+			<key>UTTypeDescription</key>
+			<string>OpenVPN Configuration</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.item</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>ovpn</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/x-openvpn-profile</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>local.macvpn.sstp</string>
+			<key>UTTypeDescription</key>
+			<string>SSTP Configuration</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.item</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>sstp</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
+	<!-- The team catalog file (signed and encrypted, binary): MacVPN's own type. -->
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>local.macvpn.catalog</string>
+			<key>UTTypeDescription</key>
+			<string>MacVPN Team Catalog</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>macvpncatalog</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>

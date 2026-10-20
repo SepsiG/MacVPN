@@ -10,9 +10,7 @@
 # Az expect_ok / expect_fail az `up <kind> <id>` hívásnak automatikusan a feed-et adja (ha van ilyen config),
 # a titkos up-ok: { feed "$ID"; printf 'username=…'; } | … up …
 #
-# A Swift-korszak bash referenciája (legacy/swift, MVPN_IMPL=bash) az új protokollt nem beszéli, ezért kikerült
-# innen; a legacy/swift fájlok a bash_messages_are_in_the_table teszthez maradnak. A korábbi bash-specifikus
-# statikus ellenőrzések helyett viselkedés-ellenőrzés fut:
+# A 0.x bash root réteg statikus ellenőrzései helyett viselkedés-ellenőrzés fut:
 #   - "$SH" "$MVPN" …: SH=/usr/bin/env, így a bináris közvetlenül fut (az env exec-kel cseréli magát, a pid azonos).
 #   - A DNS hook: "$MVPN" hook ovpn-dns (OD_* tömbök); a hamis ovpn-dns elé a tesztkönyvtárakba ($FL, $FL2) egy `mvpn`
 #     átirányító kerül, mert a réteg a hookot `$LIBEXEC/mvpn hook ovpn-dns`-ként hívja.

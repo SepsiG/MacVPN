@@ -6,7 +6,9 @@
 #               one group retyped; the seeded data moves into the vault and the old files are deleted;
 #   manage.js – the Connections window (risky panel, acknowledgement, unsaved-changes question, Log tab, SSTP and
 #               native forms, stored secrets never shown, the New menu, a context menu at the window's corners and
-#               its colour picker inside the window, New and Delete, a navigation away cancelled);
+#               its colour picker inside the window, the search – typed without the accents' care, by an OpenVPN
+#               and a native server and by type, Up / Down and Return, the empty result and its Clear, Escape bringing every row back, Cmd+F –,
+#               New and Delete, a navigation away cancelled);
 #   setup.js  – System Status over a mock report (rows, the reinstall notice, the simulated brew output, the root
 #               installer and the uninstaller answering "cancelled" in the sandbox);
 #   update.js – the Update window over a mock release (notes stay text), Download and Install up to the quit
@@ -43,6 +45,10 @@
 #               functions into the sandbox (its own keys: publish.js runs after it); "Add team catalog…" with the file source (no open
 #               panel in the smoke run), the team key and the fingerprint typed, the preview, Subscribe; the Team badges,
 #               the read-only editor, the context menu and a refused drag; version 2 through "Refresh now"; Unsubscribe;
+#   open.js   – files opened from Finder: the driver simulates the open event (`open_files::receive`, what
+#               `RunEvent::Opened` calls) with sandbox fixtures – one .ovpn (the Connections window opens with the
+#               import's report), two at once, the catalog fixture (the add dialog with the file source; cancelled),
+#               one while locked (the unlock window, imported after it) and one whose unlock is cancelled (dropped);
 #   publish.js – publishing a team catalog (in the vault): the Publishing section generates the admin key and the
 #               backup key, the wizard publishes a seeded folder to the sandbox tmp (no save panel in the smoke run:
 #               the file is 0644, opens with the stored team key and the admin key's fingerprint, holds no seeded
@@ -105,7 +111,8 @@ SHARED_ONE=E3111111-2222-4333-8444-555555555555
 SHARED_TWO=E4111111-2222-4333-8444-555555555555
 OVPN='client\ndev tun\nremote vpn.example.com 1194\n'
 seed "$A" openvpn "Seeded A" "$OVPN"
-seed 66666666-7777-4888-9999-AAAAAAAAAAAA openvpn "Seeded B" "$OVPN"
+# Its own server: manage.js finds it by its OpenVPN `remote` host (the port and the rest of the line are not searched).
+seed 66666666-7777-4888-9999-AAAAAAAAAAAA openvpn "Seeded B" 'client\ndev tun\nremote b-gateway.example.net 1194 udp\n'
 seed "$S" sstp "Seeded S" 'server=vpn.example.com\nport=443\nuser=alice\ncert=system\nroute_all=yes\npeer_dns=yes\n'
 seed "$L" l2tp "Seeded L" '' ',"native":{"server":"l2tp.example.com","account":"bob","groupName":"","sendAllTraffic":true}'
 seed "$SETUP" openvpn "Zz Setup result" "$OVPN"
@@ -133,7 +140,8 @@ case "${SMOKE_LANG:-}" in
 esac
 # SMOKE_SHOTS=<dir>: screenshots (with the shadow) of the real windows, <dir>/<name>-<lang>[-dark|-light].png: the menu
 # popover, the MFA code and web sign-in prompts, the pairing window, the smallest and the largest credential window,
-# the Connections window with the New menu open and with a context menu at its right edge (popover-shots.js).
+# the Connections window with the New menu open, with a context menu at its right edge, and its search with results
+# and with none (popover-shots.js).
 # SMOKE_DARK=1: the app in dark mode, SMOKE_LIGHT=1: in light mode (NSApp.appearance in the debug build; the system's
 # own setting is not touched).
 SHOTS_ENV=()
@@ -148,7 +156,13 @@ CLIENT_PID=
 # placement checks are not trustworthy. Only those checks, and only when the lock was seen, are reported as not
 # verified instead of failed (with a ⚠ line and in the final line); every other failure still fails.
 SCREEN_LOCKED="$HOME_DIR/screen-locked"
-screen_locked() { ioreg -n Root -d1 2>/dev/null | grep -q '"CGSSessionScreenIsLocked"=Yes'; }
+# The output is read whole first: piped into `grep -q`, ioreg (about 87 KB, more than a pipe holds) was killed by
+# SIGPIPE once grep had its match, and with `pipefail` that made every sample "not locked".
+screen_locked() {
+  local registry
+  registry=$(ioreg -n Root -d1 2>/dev/null) || return 1
+  [[ $registry == *'"CGSSessionScreenIsLocked"=Yes'* ]]
+}
 for _ in $(seq 1 480); do
   sleep 1
   ! screen_locked || touch "$SCREEN_LOCKED"
@@ -186,6 +200,7 @@ grep '^MacVPN smoke: folders' "$LOG" || true
 grep '^MacVPN smoke: shared' "$LOG" || true
 grep '^MacVPN smoke: backup' "$LOG" || true
 grep '^MacVPN smoke: catalog' "$LOG" || true
+grep '^MacVPN smoke: open' "$LOG" || true
 grep '^MacVPN smoke: publish' "$LOG" || true
 fail() { echo "✗ $1"; sed 's/^/  app: /' "$LOG"; exit 1; }
 grep -q '^MacVPN smoke: done' "$LOG" || fail "the smoke run did not finish"
@@ -330,6 +345,23 @@ grep -q '^MacVPN smoke: catalog: unsubscribed catalogs=0 items=0$' "$LOG" || fai
 ! grep -q '^MacVPN smoke: catalog: ERROR' "$LOG" || fail "the team catalog smoke"
 [ ! -e "$HOME_DIR/tmp/smoke-share" ] || fail "the team catalog files were left behind (the subscriber's fixture or the published files)"
 
+# Files opened from Finder (the open event simulated with sandbox fixtures): the Connections window opens with the
+# import's report (one file, two at once), the team catalog file opens the add dialog with the file source (nothing
+# subscribed), a file opened while locked waits for the unlock window and is imported after it, a cancelled unlock
+# drops it; nothing connects and no path reaches the view model.
+grep -q '^MacVPN smoke: open: one window=true imported=true connected=false$' "$LOG" || fail "open: one file"
+grep -q '^MacVPN smoke: open: two imported=true connected=false$' "$LOG" || fail "open: two files at once"
+for p in one two catalog locked; do
+  grep -q "^MacVPN smoke: open: $p: OPEN $p OK$" "$LOG" || fail "open: the $p phase"
+done
+grep -q '^MacVPN smoke: open: catalog subscribed=0$' "$LOG" || fail "open: the catalog file subscribed something"
+grep -q '^MacVPN smoke: open: view_model_paths=no$' "$LOG" || fail "open: a path reached the view model"
+grep -q '^MacVPN smoke: open: locked unlock_window=true imported_before_unlock=false$' "$LOG" || fail "open: locked"
+grep -q '^MacVPN smoke: open: locked unlocked=true imported=true connected=false$' "$LOG" || fail "open: after the unlock"
+grep -q '^MacVPN smoke: open: cancelled closed=true unlocked=true imported=false$' "$LOG" || fail "open: the cancelled unlock"
+! grep -q '^MacVPN smoke: open: ERROR' "$LOG" || fail "the open smoke"
+! grep -q 'macvpn-smoke-open' "$LOG" || fail "open: the log shows a path of an opened file"
+
 # The control API: the switch, the pairing window, the test client's session, the lease's end, the switch off.
 CONTROL_SOCKET="$HOME_DIR/Library/Application Support/MacVPN/control/macvpn.sock"
 grep -q '^MacVPN smoke: control: on running=true socket=true$' "$LOG" || fail "the control API did not start"
@@ -387,4 +419,4 @@ for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 ! kill -0 "$PID" 2>/dev/null || fail "the app did not quit after the quit question"
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
-echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, publishing, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"
+echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"

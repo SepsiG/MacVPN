@@ -1,9 +1,55 @@
-# MacVPN – kézi tesztlista (1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
+# MacVPN – kézi tesztlista (1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
 
-Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.3.0.dmg`), zöld: `cargo test --workspace`,
+Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.4.0.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
 az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
+
+## 1.4.0: keresés, VPN-fájlok megnyitása a Finderből, letöltött fájlok
+
+A root réteg 8 marad (`Contents/Resources/root/VERSION`), az 1.3.0-ról frissítve nem kell admin jelszó. Kell egy saját HTTPS-oldal (vagy `python3 -m http.server` egy másik gépen), ahonnan egy `.ovpn` és egy `.sstp` letölthető.
+
+### Keresés a Kapcsolatok ablakban
+- [ ] **⌘F** a Kapcsolatok ablakban a keresőmezőbe ugrik; az „arvizturo” megtalálja az „Árvíztűrő” nevű kapcsolatot; a típus („wireguard”), egy mappa neve és egy csapatkatalógus neve is talál
+- [ ] Egy OpenVPN kapcsolat a configja első `remote` gépnevére is megtalálható, a port, a felhasználónév és a config többi része nem (például `1194` vagy `auth-user-pass` nem talál rá); egy L2TP kapcsolat a szervercímére
+- [ ] **↑** / **↓** lépked, a Return megnyitja a kijelöltet, az Esc törli a mezőt, a második Esc elhagyja; nincs találat: a **Keresés törlése** visszahozza a listát; keresés közben nincs húzás
+- [ ] Egy config szerkesztése és mentése után a keresés az új szervert találja; a széf zárolása után a lista üres, feloldás után a keresés újra működik
+
+### Letöltött fájlok (Safari)
+- [ ] `plutil -p /Applications/MacVPN.app/Contents/Info.plist`: a `local.macvpn.ovpn` és a `local.macvpn.sstp` `UTTypeConformsTo` értéke `public.data`, `public.item`; sehol nincs `public.plain-text` vagy `public.text`
+- [ ] Safari → Beállítások → Általános: **Biztonságos fájlok megnyitása letöltés után** bekapcsolva. A tesztoldalról letöltött `.ovpn` és `.sstp` a Letöltések mappában marad, a MacVPN **nem** nyílik meg, és semmi nem importálódik. (A beállítást utána állítsd vissza.)
+- [ ] `xattr -p com.apple.quarantine ~/Downloads/<fájl>.ovpn` kiír egy értéket (a fájl jelölt)
+- [ ] Dupla kattintás a letöltött `.ovpn`-re: a Kapcsolatok ablakban egy kérdés: **Importálod a letöltött fájlt?**, alatta a fájl neve és „Csak olyan fájlt importálj, amelyben megbízol.”, **Importálás** / **Mégse**. **Mégse** → semmi nem importálódik, nincs új kapcsolat
+- [ ] Ugyanez **Importálás**-sal: az import a szokásos kérdésekkel és összesítővel lefut; utána az `xattr -p com.apple.quarantine` továbbra is kiírja a jelölést (a MacVPN nem törli)
+- [ ] Két letöltött fájl és egy helyben létrehozott `.ovpn` együtt kijelölve, ⌘↓: **egy** kérdés („Importálod a(z) 2 letöltött fájlt?”) csak a két letöltött fájl nevével; **Mégse** → csak a helyi fájl importálódik
+- [ ] Egy helyben létrehozott (nem letöltött) `.ovpn` dupla kattintásra kérdés nélkül importálódik
+- [ ] Zárolt széfnél egy letöltött fájl: előbb a feloldó ablak, a feloldás után a kérdés, és csak utána az import
+- [ ] Sok fájl egyszerre (például 300 `.ovpn` egy mappában kijelölve, ⌘↓): legfeljebb 64 importálódik, egy összesítő; zárolt széfnél a feloldó ablak egyszer jön elő, és legfeljebb 32 fájl vár
+- [ ] Egy `.macvpncatalog` megnyitása után a feliratkozás **Szerkesztés → Forrás** ablakában a fájl **nincs** előre kiválasztva (a megnyitott fájlt csak a hozzáadás ablak kapja meg)
+- [ ] Mindez angolul is (**Import the downloaded file?**, **Import 2 downloaded files?**, „Only import files you trust.”)
+
+### VPN-fájlok megnyitása a Finderből
+
+Előfeltétel: a `scripts/build-dmg.sh`-val épített DMG-ből az app az **Alkalmazások** mappában, és egyszer elindult (a LaunchServices ekkor regisztrálja a fájltípusokat). Kell egy `.ovpn` (mellette egy `ca.crt`-vel és egy kétsoros `auth.cfg`-vel), egy `.sstp`, egy WireGuard `.conf`, egy `.macvpncatalog` (a B gépen), egy `.macvpnadminkey` és egy `.macvpnbackup`. Ha a Tunnelblick vagy az OpenVPN Connect telepítve van, jegyezd fel, melyik nyitja meg alapból a `.ovpn`-t.
+
+- [ ] `plutil -p /Applications/MacVPN.app/Contents/Info.plist`: négy `CFBundleDocumentTypes` (`local.macvpn.ovpn` Default, `local.macvpn.sstp` Default, `local.macvpn.catalog` Owner, `conf` kiterjesztés Alternate), két importált (`local.macvpn.ovpn`, `local.macvpn.sstp`) és egy exportált (`local.macvpn.catalog`) típus; nincs `macvpnadminkey`, `macvpnbackup`, `mobileconfig`
+- [ ] A Finderben a `.ovpn` és a `.sstp` fájl **Információ** ablakában a **Megnyitás ezzel** alatt a MacVPN az alapértelmezett (vagy, ha egy másik VPN-app az, az **Összes módosítása…** után az lesz)
+- [ ] Dupla kattintás a `.ovpn`-re, a MacVPN fut, a széf nyitva: a Kapcsolatok ablak előjön, a hitelesítőadat-fájl kérdése megjelenik (**Használat** / **Mellőzés**), utána az összesítő („Importálva, beemelt fájlok: ca.crt”, a hitelesítő adatok sora); az új kapcsolat ki van jelölve, **nem** csatlakozik
+- [ ] Egy `# macvpn-meta` sort (mappa + `credentialName`) tartalmazó exportált `.ovpn` dupla kattintásra: a mappa létrejön, a közös hitelesítő adatra a MacVPN rákérdez, csak **Használat** után kapcsol hozzá
+- [ ] Egy kockázatos direktívát (`user nobody`) tartalmazó `.ovpn`: az összesítő jelzi, a szerkesztőben a sárga panel, a csatlakozás csak a jóváhagyás után
+- [ ] Két fájl (`.ovpn` + `.sstp`) kijelölve, ⌘↓: egy import, egy összesítő, mindkét kapcsolat megjelenik
+- [ ] Egy 1 MB-nál nagyobb, `.ovpn` kiterjesztésű fájl és egy `.ovpn` nevű mappa: „A fájl nem olvasható”, más nem változik
+- [ ] A WireGuard `.conf` dupla kattintásra **nem** a MacVPN-ben nyílik; Control-kattintás → **Megnyitás ezzel** listában ott a MacVPN, azzal megnyitva importálódik
+- [ ] A MacVPN nem fut: dupla kattintás a `.ovpn`-re elindítja, és (automatikus feloldással) importál; automatikus feloldás nélkül előbb a feloldó ablak jön, a feloldás után importál
+- [ ] **Széf zárolása most**, majd dupla kattintás egy `.ovpn`-re: a feloldó ablak jön, a feloldásig semmi nem importálódik; feloldás után az import és az összesítő
+- [ ] **Széf zárolása most**, dupla kattintás, a feloldó ablak bezárása **Mégse**-vel: semmi nem importálódik, egy későbbi feloldás után sem
+- [ ] Széf nélkül (új felhasználói fiók, vagy `~/Library/Application Support/MacVPN` nélkül): dupla kattintás → a széf beállító ablaka; a helyreállítási kulcs ellenőrzése és az ablak bezárása után importál
+- [ ] B gépen dupla kattintás a `.macvpncatalog`-ra: **Csapatkatalógusok** → **Csapatkatalógus hozzáadása…**, a forrás **Fájl**, a fájl neve kitöltve, a csapatkulcs és az ujjlenyomat üres, az **Ellenőrzés** tiltva; kitöltés után az előnézet, a négyzet bejelölése nélkül nem lehet feliratkozni; **Mégse** → semmi nem iratkozott fel
+- [ ] Dupla kattintás a `.macvpnadminkey`-re és a `.macvpnbackup`-ra: nem a MacVPN nyitja meg; **Megnyitás ezzel → Másik…** úton a MacVPN-nel megnyitva: „Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Finderből.”, semmi nem változik
+- [ ] `.mobileconfig` dupla kattintásra továbbra is a Rendszerbeállítások profiltelepítője nyílik
+- [ ] A naplóban (Console, `MacVPN`) nincs a megnyitott fájlok útvonala vagy tartalma
+- [ ] Frissítés az appon belül 1.3.0-ról 1.4.0-ra: a frissítő elfogadja a csomagot (a csomagazonosító, a verzió, a linkek és az aláírás ellenőrzése sikeres), utána a fájltípusok működnek
+- [ ] Mindez magyarul és angolul (az összesítő szövegei, a katalógus ablak)
 
 ## 1.3.0: csapatkatalógusok
 

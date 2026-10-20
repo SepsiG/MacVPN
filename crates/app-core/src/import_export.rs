@@ -47,12 +47,19 @@ impl ImportReport {
 /// The file's text (UTF-8, at most [`MAX_IMPORT_BYTES`]): a regular file, opened once and checked on the open
 /// descriptor. `None`: cannot be read. Every file the user picks or drops (import, the SSTP CA) comes through here.
 ///
-/// Opened with `O_NONBLOCK`, so a FIFO or a device never blocks the open; the descriptor is then checked
-/// (`fstat`: a regular file, at most 1 MB) and only then switched back to blocking reads. Symlinks are followed as
-/// before (a link to a regular file imports that file; a link to a FIFO is refused by the same check).
+/// The path must name a regular file before it is opened (`stat`: a FIFO, a device or a directory is never opened,
+/// as an open alone can have effects). It is then opened with `O_NONBLOCK` (a file swapped for a FIFO meanwhile
+/// never blocks the open) and `O_NOCTTY` (a swapped-in terminal never becomes the controlling one), the descriptor
+/// is checked again (`fstat`: a regular file, at most 1 MB) and only then switched back to blocking reads. Symlinks
+/// are followed as before (a link to a regular file imports that file; a link to a FIFO is refused by the same
+/// checks).
 pub fn read_import_file(path: &Path) -> Option<String> {
     use std::os::unix::fs::OpenOptionsExt;
-    let file = std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(path).ok()?;
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let file =
+        std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY).open(path).ok()?;
     let meta = file.metadata().ok()?;
     if !meta.is_file() || meta.len() > MAX_IMPORT_BYTES {
         return None;
@@ -294,6 +301,7 @@ pub fn export_plan(deps: &EditorDeps, c: &Connection, with_keys: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::os::unix::fs::OpenOptionsExt;
     use std::time::{Duration, Instant};
 
     struct Dir(std::path::PathBuf);
@@ -330,6 +338,34 @@ mod tests {
         let fifo = dir.0.join("pipe.ovpn");
         mkfifo(&fifo);
         assert_eq!(read_quickly(&fifo), None);
+    }
+
+    /// A FIFO is not even opened: a writer waiting in its blocking `open` would be released by any reader (and a
+    /// device's open can have side effects), so the path's type is checked first.
+    #[test]
+    fn a_fifo_is_never_opened() {
+        let dir = temp_dir();
+        let fifo = dir.0.join("pipe.ovpn");
+        mkfifo(&fifo);
+        let (tx, rx) = std::sync::mpsc::channel();
+        let writer_path = fifo.clone();
+        std::thread::spawn(move || {
+            // Blocks until a reader opens the FIFO.
+            let opened = std::fs::OpenOptions::new().write(true).open(&writer_path).is_ok();
+            let _ = tx.send(opened);
+        });
+        std::thread::sleep(Duration::from_millis(100));
+        assert_eq!(read_quickly(&fifo), None);
+        assert!(rx.recv_timeout(Duration::from_millis(300)).is_err(), "read_import_file opened the FIFO");
+        // Release the writer.
+        drop(std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK).open(&fifo).unwrap());
+        assert_eq!(rx.recv_timeout(Duration::from_secs(2)), Ok(true));
+    }
+
+    #[test]
+    fn a_directory_is_refused() {
+        let dir = temp_dir();
+        assert_eq!(read_quickly(&dir.0), None);
     }
 
     #[test]

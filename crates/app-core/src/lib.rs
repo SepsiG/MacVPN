@@ -26,6 +26,7 @@ pub mod logs;
 pub mod manager;
 pub mod migration;
 pub mod notify;
+pub mod open_files;
 pub mod pairing;
 pub mod prompt;
 pub mod questions;

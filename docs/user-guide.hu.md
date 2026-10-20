@@ -2,11 +2,18 @@
 
 [English version](user-guide.en.md)
 
-A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.3-as verziót írja le (lásd: [Újdonságok az 1.3-ban](#újdonságok-az-13-ban)). A menü **Súgó** pontja ezt nyitja meg.
+A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.4-es verziót írja le (lásd: [Újdonságok az 1.4-ben](#újdonságok-az-14-ben)). A menü **Súgó** pontja ezt nyitja meg.
 
 Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útmutató a teljes referencia. Ha fejlesztőként azt szeretnéd, hogy egy másik program ezen a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait (**Párosított appok** a Kapcsolatok ablakban), olvasd el a [vezérlő API leírását](control-api.hu.md).
 
 > **Nyelv:** a MacVPN a macOS nyelvi beállítását követi (Rendszerbeállítások → Általános → Nyelv és régió, illetve az appra beállított nyelv). Magyarul és angolul érhető el; ha a preferált nyelvek között egyik sincs, angolul jelenik meg. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](user-guide.en.md) az angolokat.
+
+## Újdonságok az 1.4-ben
+
+- **Keresés.** A Kapcsolatok ablak oldalsávjának tetején a **Kapcsolatok keresése** mező (**⌘F**) név, típus, szerver, csapatkatalógus vagy mappa alapján talál, a kis- és nagybetűtől és az ékezetektől függetlenül. Lásd [12.8](#128-kapcsolatok-keresése).
+- **VPN-fájlok megnyitása a Finderből.** Dupla kattintás egy `.ovpn` vagy `.sstp` fájlra importálja; a `.conf` a **Megnyitás ezzel → MacVPN** úton nyílik; a `.macvpncatalog` fájl a **Csapatkatalógus hozzáadása…** ablakot nyitja meg ezzel a fájllal. Lásd [4.1](#41-vpn-fájlok-megnyitása-a-finderből).
+- **A letöltött fájlokra előbb rákérdez.** A letöltött fájl csak egy megerősítés után importálódik (**Importálás** / **Mégse**). Lásd [4.1](#41-vpn-fájlok-megnyitása-a-finderből).
+- A root réteg 8 marad: az 1.3-ról frissítve nem kell admin jelszó.
 
 ## Újdonságok az 1.3-ban
 
@@ -39,7 +46,7 @@ Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útm
 1. [Telepítés](#1-telepítés)
 2. [Első indítás és a Rendszerállapot ablak](#2-első-indítás-és-a-rendszerállapot-ablak)
 3. [Kapcsolatok felvétele típusonként](#3-kapcsolatok-felvétele-típusonként)
-4. [Import és export](#4-import-és-export)
+4. [Import és export](#4-import-és-export) ([VPN-fájlok megnyitása a Finderből](#41-vpn-fájlok-megnyitása-a-finderből))
 5. [Csatlakozás](#5-csatlakozás)
 6. [Debug mód és a napló](#6-debug-mód-és-a-napló)
 7. [Hibaelhárítás a napló alapján](#7-hibaelhárítás-a-napló-alapján)
@@ -330,6 +337,18 @@ A `pkcs12 client.p12` fájlt ugyanígy beemeli, base64-ként egy `<pkcs12>` blok
 - Mindennek a jelszavakkal együtt történő mentése egy másik funkció: lásd [14.](#14-biztonsági-mentés-és-visszaállítás)
 - A `.ovpn`, a WireGuard `.conf`, a `.swanctl.conf` és a `.sstp` export visszaimportálható a MacVPN-be.
 - A `.mobileconfig` export (L2TP, Cisco IPSec) a MacVPN-be **nem** importálható. Másik Macen dupla kattintással nyisd meg a Finderben: a macOS profilként telepíti, utána a **Rendszerbeállítások → Általános → Eszközkezelés** (Profilok) alatt hagyd jóvá. Ha `.mobileconfig` fájlt próbálsz importálni a MacVPN-be, az app is ezt írja ki.
+
+### 4.1 VPN-fájlok megnyitása a Finderből
+
+Kattints duplán egy `.ovpn` vagy `.sstp` fájlra a Finderben, vagy húzd rá a MacVPN ikonjára: a MacVPN megnyitja a **Kapcsolatok** ablakot, és importálja a fájlt. Ez ugyanaz az import, mint az **Import fájlból…**: ugyanazok az ellenőrzések, ugyanazok a kérdések (a config mellett lévő hitelesítőadat-fájl, a fájlban megnevezett közös hitelesítő adat, az exportált fájl mappája) és ugyanaz az összesítő. Semmi nem csatlakozik: az új kapcsolat lesz kijelölve, és akkor csatlakozol, amikor készen állsz. Ha több fájlt jelölsz ki és nyitsz meg egyszerre, együtt importálódnak, egy összesítővel.
+
+- **Mely fájlok nyílnak a MacVPN-ben.** Ha a MacVPN az **Alkalmazások** mappában van, és egyszer már elindult, a `.ovpn` és a `.sstp` fájlok alapértelmezés szerint benne nyílnak meg. A `.macvpncatalog` fájlok a csapatkatalógus párbeszédablakát nyitják meg (lásd [16.1](#161-feliratkozás-egy-katalógusra)).
+- **A `.conf` fájlokat nem veszi át**, mert ezt a kiterjesztést a WireGuard, az nginx és sok más program is használja. WireGuard vagy strongSwan `.conf` fájlnál Control-kattints (jobb kattintás) a fájlra, és válaszd a **Megnyitás ezzel → MacVPN** lehetőséget.
+- **Egy másik VPN-app nyitja meg a `.ovpn` fájlokat** (például a Tunnelblick vagy az OpenVPN Connect): Control-kattints egy `.ovpn` fájlra → **Megnyitás ezzel → MacVPN**. Ha a MacVPN legyen az alapértelmezett, jelöld ki a fájlt, válaszd a **Fájl → Információ** menüpontot, a **Megnyitás ezzel** alatt válaszd a **MacVPN**-t, és kattints az **Összes módosítása…** gombra.
+- **Nem a Finderből nyílik:** az adminisztrátori kulcsfájl (`.macvpnadminkey`) és a biztonsági mentés (`.macvpnbackup`). Ezekhez a MacVPN saját gombjait használd (lásd [16.7](#167-rendszergazdáknak-az-adminisztrátori-aláírókulcs) és [14.](#14-biztonsági-mentés-és-visszaállítás)). Ha mégis a MacVPN-nel nyitod meg, az összesítő ezt írja: **Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Finderből.** A `.mobileconfig` profil továbbra is a macOS-é (lásd fent).
+- **A letöltött fájlokra előbb rákérdez.** A letöltött fájlt (böngészőből, a Mailből, az Üzenetekből vagy AirDroppal; ezeket a macOS megjelöli) a MacVPN nem importálja azonnal: egyszer, az összesre együtt rákérdez – **Importálod a letöltött fájlt?** vagy **Importálod a(z) N letöltött fájlt?** –, felsorolja a fájlokat, és hozzáteszi: **Csak olyan fájlt importálj, amelyben megbízol.** Az **Importálás** importálja őket, a **Mégse** kihagyja őket. Az ugyanakkor megnyitott, nem letöltött fájlok mindkét esetben importálódnak. Így egy weboldal által a gépedre küldött fájl (például a Safari „Biztonságos fájlok megnyitása letöltés után” beállításával) nélküled soha nem lesz kapcsolat. A MacVPN a jelölést csak olvassa, nem törli. A `.ovpn` és a `.sstp` adatfájlként van bejelentve, nem szövegként, így a Safari magától nem nyitja meg őket.
+- **A széf zárolva van, vagy még nincs beállítva:** a MacVPN előbb a feloldó (vagy beállító) ablakot mutatja, és a széf megnyitása után importálja a fájlokat. Ha ehelyett bezárod az ablakot, semmi nem importálódik; később nyisd meg újra a fájlokat. Addig a MacVPN csak azt tartja a memóriában, hol vannak a fájlok (legfeljebb 32 fájlt), a tartalmukat soha.
+- A megnyitott fájl nem megbízható bemenet, pont úgy, mint egy ablakba húzott fájl: csak akkor importálódik, ha átmegy az ellenőrzéseken.
 
 ---
 
@@ -810,6 +829,10 @@ A **Törlés…** megkérdezi: **Mi legyen a tartalmával?**
 - Egy rendszer VPN a macOS-ből való eltűnése után 30 napig megtartja a mappáját és a színét, így ha újra telepítik (például visszaállítás után egy új Macen), a helyére kerül.
 - Amíg a széf zárolva van, a mappák rejtve vannak, és nem szerkeszthetők.
 
+### 12.8 Kapcsolatok keresése
+
+A **Kapcsolatok** ablak oldalsávjának tetején lévő **Kapcsolatok keresése** mező (**⌘F**) gépelés közben szűri a listát. A kis- és nagybetű meg az ékezet nem számít: az „arvizturo” megtalálja az „Árvíztűrő”-t. Keres a kapcsolat nevében, típusában (OpenVPN, WireGuard, …), a szerverében (a beállításokból vagy a konfigurációból vett gépnév, például az OpenVPN első `remote` sora), a csapatkatalógusa nevében és a mappái nevében; ha egy mappa neve illeszkedik, a teljes tartalma látszik, a találatok mappái pedig kinyílnak anélkül, hogy a csukva tartott mappáid állapota változna. A **↑** és **↓** a találatok között lép, az Enter megnyitja a kiemeltet, az Esc kiüríti a mezőt (a második Esc kilép belőle). Keresés közben a húzás nem működik; a **Hitelesítő adatok**, **Párosított appok**, **Csapatkatalógusok** és **Közzététel** alul elérhető marad. Ha nincs találat, a **Keresés törlése** visszahozza a teljes listát.
+
 ---
 
 ## 13. Közös hitelesítő adatok
@@ -969,6 +992,8 @@ Amit a tag a rendszergazdától kap: a **forrás** (egy `https://` cím vagy egy
 4. Kattints az **Ellenőrzés** gombra. A MacVPN letölti a katalógust, a megadott ujjlenyomattal ellenőrzi az aláírását, és a csapatkulccsal megnyitja. Az előnézet mutatja a katalógus nevét, verzióját és ujjlenyomatát, a kapcsolatok és mappák számát, a közös belépési adatok helyeit (lásd [16.3](#163-közös-belépési-adatok-helyei)), és hogy hány kapcsolatban van kockázatos beállítás.
 5. **Hasonlítsd össze az ujjlenyomatot** azzal, amit a rendszergazda egy másik csatornán, például telefonon mondott. Ha eltér, ne iratkozz fel.
 6. Jelöld be **Az ujjlenyomat egyezik azzal, amit a rendszergazda küldött** négyzetet, és kattints a **Feliratkozás** gombra. A katalógus kapcsolatai azonnal megjelennek, és a **Csapatkatalógusok** rész mutatja az új feliratkozást. A **Mégse** vagy a **Vissza** eldobja a letöltött előnézetet.
+
+**A Finderből.** Kattints duplán egy `.macvpncatalog` fájlra (például a rendszergazda által megadott fájlmegosztáson). A MacVPN megnyitja a **Csapatkatalógusok** részt a **Csapatkatalógus hozzáadása…** ablakkal: a forrás **Fájl**, és ez a fájl van kiválasztva. A csapatkulcsot és a közzétevő ujjlenyomatát ugyanúgy neked kell megadnod, az **Ellenőrzés** után összevetni az ujjlenyomatot és bejelölni a négyzetet: a fájl megnyitása önmagában semmire nem iratkoztat fel. Ha egyszerre két katalógusfájlt nyitsz meg, csak az első számít (**Egyszerre csak egy csapatkatalógus-fájl adható hozzá.**).
 
 Ha egy levelezőprogram több sorba törte a feliratkozási kódot, a MacVPN elutasítja: másold ki újra egy sorban. Az előnézet 10 perc után lejár (**A katalógus előnézete lejárt. Add hozzá újra a katalógust.**). Egy már meglévő katalógusnál: **Erre a katalógusra már feliratkoztál.**
 

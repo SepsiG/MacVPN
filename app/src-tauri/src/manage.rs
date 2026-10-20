@@ -161,7 +161,7 @@ pub async fn create_connection(state: Shared<'_>, kind: String) -> Result<(), St
 }
 
 /// An import's alert: "Import" / "Import Error" and the lines.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct ImportReportView {
     pub title: String,

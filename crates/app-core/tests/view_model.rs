@@ -115,6 +115,124 @@ fn held_by_labels_follow_the_lease_holders() {
 
 /// The paired apps reach the UI without their token hash (and the token never exists here).
 #[test]
+fn rows_carry_the_server_host_only_for_the_search() {
+    let f = Fixture::new(AppLanguage::En);
+    let mut native = Connection::new("Branch", VPNKind::L2tp);
+    native.native = Some(macvpn_core::models::NativeSettings {
+        server: " l2tp.example.com ".into(),
+        account: "bob-account".into(),
+        ..Default::default()
+    });
+    let ovpn = Connection::new("Office", VPNKind::Openvpn);
+    let wg = Connection::new("Home", VPNKind::Wireguard);
+    let ikev2 = Connection::new("Lab", VPNKind::Strongswan);
+    let sstp = Connection::new("Shop", VPNKind::Sstp);
+    let bare = Connection::new("Bare", VPNKind::Openvpn);
+    f.store.save(&native, None).unwrap();
+    let ovpn_config = "client\n# remote commented.example.com\nremote ovpn-a.example.com 1194 udp\nremote ovpn-b.example.com 443 tcp\n\
+                       auth-user-pass\n<ca>\n-----BEGIN CERTIFICATE-----\nSECRETCERTDATA\n</ca>\n";
+    f.store.save(&ovpn, Some(ovpn_config)).unwrap();
+    f.store
+        .save(&wg, Some("[Interface]\nPrivateKey = WGPRIVATEKEYSECRET=\n[Peer]\nEndpoint = wg.example.com:51820\n"))
+        .unwrap();
+    f.store
+        .save(&ikev2, Some("connections {\n  lab {\n    remote_addrs = ike.example.com, ike2.example.com\n"))
+        .unwrap();
+    f.store.save(&sstp, Some("server=sstp.example.com\nport=443\nuser=alice-user\n")).unwrap();
+    f.store.save(&bare, Some("client\ndev tun\n")).unwrap();
+    let m = f.manager();
+    m.reload();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    vm.set_server_hosts(&m.server_hosts());
+    let server = |id| vm.rows.iter().find(|r| r.id == uuid_string(id)).unwrap().server.clone();
+    assert_eq!(server(&native.id).as_deref(), Some("l2tp.example.com"));
+    assert_eq!(
+        server(&ovpn.id).as_deref(),
+        Some("ovpn-a.example.com"),
+        "the first live remote, without port or protocol"
+    );
+    assert_eq!(server(&wg.id).as_deref(), Some("wg.example.com"));
+    assert_eq!(server(&ikev2.id).as_deref(), Some("ike.example.com"));
+    assert_eq!(server(&sstp.id).as_deref(), Some("sstp.example.com"));
+    assert_eq!(server(&bare.id), None);
+    let json = serde_json::to_string(&vm).unwrap();
+    assert!(json.contains(r#""server":"ovpn-a.example.com""#));
+    for leaked in [
+        "bob-account",
+        "1194",
+        "51820",
+        "remote ",
+        "ovpn-b",
+        "commented",
+        "auth-user-pass",
+        "SECRETCERTDATA",
+        "WGPRIVATEKEYSECRET",
+        "alice-user",
+        "ike2",
+        "Endpoint",
+        "server=",
+    ] {
+        assert!(!json.contains(leaked), "{leaked} leaked into the view model");
+    }
+
+    // A changed config is read again with the reload that follows every save; a deleted connection leaves.
+    f.store.save(&ovpn, Some("client\nremote moved.example.com 1194\n")).unwrap();
+    f.store.delete(&wg.id).unwrap();
+    m.reload();
+    let hosts = m.server_hosts();
+    assert_eq!(hosts.get(&uuid_string(&ovpn.id)).map(String::as_str), Some("moved.example.com"));
+    assert!(!hosts.contains_key(&uuid_string(&wg.id)), "deleted");
+    assert!(!hosts.contains_key(&uuid_string(&native.id)), "a native server comes from the snapshot");
+    // Locked: the hosts go with the rows.
+    m.enter_locked();
+    assert!(m.server_hosts().is_empty());
+}
+
+/// A store that counts the config reads.
+struct CountingStore {
+    inner: Arc<macvpn_core::store::ConnectionStore>,
+    reads: std::sync::atomic::AtomicUsize,
+}
+
+impl macvpn_app_core::deps::ConnectionRepository for CountingStore {
+    fn list(&self) -> std::io::Result<Vec<Connection>> {
+        self.inner.list()
+    }
+    fn save(&self, c: &Connection, config: Option<&str>) -> std::io::Result<()> {
+        self.inner.save(c, config)
+    }
+    fn load_config(&self, id: &uuid::Uuid) -> std::io::Result<String> {
+        self.reads.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.inner.load_config(id)
+    }
+    fn delete(&self, id: &uuid::Uuid) -> std::io::Result<()> {
+        self.inner.delete(id)
+    }
+}
+
+/// The view model is built from what the reload (after a save, an import, a catalog apply, the unlock) left: no
+/// config is read while building it, however often it is built.
+#[test]
+fn building_the_view_model_reads_no_config() {
+    let f = Fixture::new(AppLanguage::En);
+    for i in 0..5 {
+        let c = Connection::new(format!("C{i}"), VPNKind::Openvpn);
+        f.store.save(&c, Some(&format!("client\nremote host{i}.example.com 1194\n"))).unwrap();
+    }
+    let store = Arc::new(CountingStore { inner: f.store.clone(), reads: Default::default() });
+    let mut deps = f.deps();
+    deps.store = store.clone();
+    let m = f.manager_with(deps);
+    let after_reload = store.reads.load(std::sync::atomic::Ordering::SeqCst);
+    for _ in 0..10 {
+        let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+        vm.set_server_hosts(&m.server_hosts());
+        assert_eq!(vm.rows.iter().filter(|r| r.server.is_some()).count(), 5);
+    }
+    assert_eq!(store.reads.load(std::sync::atomic::Ordering::SeqCst), after_reload, "the view model read a config");
+}
+
+#[test]
 fn control_view_never_carries_the_token_or_its_hash() {
     use macvpn_app_core::view_model::ControlView;
     use macvpn_core::control::registry::{PairedClient, new_token};

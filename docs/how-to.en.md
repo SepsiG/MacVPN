@@ -60,6 +60,8 @@ Open the menu → **New Connection / Import…** (or **Manage Connections…**).
 
 **To import files:** click **New** (+) → **Import from File…** and select one or more files, or drag the files into the window. Then select the new connection, fill in the password fields and click **Save** (⌘S).
 
+**From Finder:** double-click a `.ovpn` or `.sstp` file (or select several and press ⌘↓). MacVPN opens the Connections window and imports them, asking the same questions; nothing connects. A downloaded file asks once more first (**Import** or **Cancel**). If the vault is locked, unlock it first in the window that appears. For a WireGuard or strongSwan `.conf`, Control-click it → **Open With → MacVPN** (MacVPN does not take `.conf` files over, other programs use them too). If another VPN app opens your `.ovpn` files, use **File → Get Info → Open with → MacVPN → Change All…**. Details: [user guide, 4.1](user-guide.en.md#41-opening-vpn-files-from-finder).
+
 **To create one by hand:** click **New** (+) and pick the type. Fill in the template or form and click **Save**.
 
 | Type | Import | Create | What to fill in |
@@ -258,6 +260,8 @@ Details: [user guide, 11](user-guide.en.md#11-vault).
 
 In the menu, click a folder to open or close it; its badge shows how many connections inside are active. Details: [user guide, 12](user-guide.en.md#12-folders-and-colours).
 
+To find a connection, press **⌘F** in the **Connections** window (or click **Search connections**) and type part of its name, type, server, folder or team catalog; accents and case do not matter. Use **↑** / **↓** and Return to open a result, Esc to clear the search. Details: [user guide, 12.8](user-guide.en.md#128-searching-connections).
+
 ## 16. Share one sign-in between connections
 
 **From scratch:**
@@ -297,7 +301,7 @@ Details: [user guide, 14](user-guide.en.md#14-backup-and-restore).
 
 You need from your administrator: a subscription string (`macvpn-sub:…`), or the source, the team key and the publisher fingerprint; and, for some web servers, an access token.
 
-1. **Connections** window → **Team catalogs** in the sidebar → **Add team catalog…**.
+1. **Connections** window → **Team catalogs** in the sidebar → **Add team catalog…**. Or double-click the `.macvpncatalog` file in Finder: the dialog opens with that file as the source (go on with the team key and the fingerprint).
 2. Paste the subscription string (as one line). Or enter the **Source** (an `https://` URL, or **Choose File…** on a share or in iCloud Drive, OneDrive or Dropbox), the **Team key** and the **Publisher fingerprint**.
 3. If the web server needs it, enter the **Access token**.
 4. Click **Check**. Compare the fingerprint in the preview with the one your administrator gave you by phone or in person. If it differs, stop.

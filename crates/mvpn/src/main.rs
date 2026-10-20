@@ -231,29 +231,6 @@ mod tests {
         assert_eq!(VERSION.trim(), "8");
     }
 
-    /// Every message text of the bash root layer is in the shared table with the same Hungarian translation, so the
-    /// app shows the same errors. (The bash layer is in `legacy/swift` until 1.0.0 ships; this test goes with it.)
-    #[test]
-    fn bash_messages_are_in_the_table() {
-        let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let pair = regex::Regex::new(r#"msg "((?:[^"\\]|\\.)*)" "((?:[^"\\]|\\.)*)""#).unwrap();
-        let var = regex::Regex::new(r"\$\{?[A-Za-z_0-9]+\}?").unwrap();
-        let mut n = 0;
-        for f in ["legacy/swift/Resources/root/mvpn", "legacy/swift/Resources/root/ovpn-dns"] {
-            let src = std::fs::read_to_string(root.join(f)).unwrap();
-            for c in pair.captures_iter(&src) {
-                if &c[1] == "$1" {
-                    continue;
-                }
-                let en = var.replace_all(&c[1], "%@").into_owned();
-                let hu = var.replace_all(&c[2], "%@").into_owned();
-                assert_eq!(macvpn_core::l10n::hungarian(&en), Some(hu.as_str()), "{en}");
-                n += 1;
-            }
-        }
-        assert!(n > 80, "{n}");
-    }
-
     /// Every literal message key passed to `tr` here has a Hungarian translation.
     #[test]
     fn every_call_site_has_a_translation() {

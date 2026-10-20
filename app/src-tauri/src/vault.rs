@@ -253,6 +253,8 @@ pub fn after_unlock(state: &Arc<AppState>) {
     use_the_vault(state);
     // The team catalogs refresh once (the scheduler skipped its rounds while locked).
     state.catalog.service.unlocked();
+    // Files opened from Finder while it was locked (unless a create window is still in progress).
+    crate::open_files::flush(state);
 }
 
 /// The app reads the vault (after an unlock, or a migration that keeps the old data until the window's Continue).
@@ -351,6 +353,7 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
         }
         WindowEvent::Destroyed => {
             guard(&state.vault.locks).remove(window.label());
+            let opening = matches!(window.label(), UNLOCK_WINDOW | CREATE_WINDOW);
             match window.label() {
                 PASSWORD_WINDOW => *guard(&state.vault.password_mode) = None,
                 RECOVERY_WINDOW => drop(guard(&state.vault.new_key).take()),
@@ -365,6 +368,10 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
                     std::thread::spawn(move || finish_pending_migration(&shared));
                 }
                 state.publisher.mark();
+            }
+            // Files opened from Finder: imported now that the vault is open, dropped if it was not opened.
+            if opening {
+                crate::open_files::vault_window_closed(state.inner());
             }
         }
         _ => {}

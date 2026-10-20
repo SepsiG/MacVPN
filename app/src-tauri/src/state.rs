@@ -84,6 +84,9 @@ pub struct AppState {
     pub backup: crate::backup::BackupApp,
     /// The team catalogs: the subscriptions, the publishing side, the refresh scheduler.
     pub catalog: crate::catalog::CatalogApp,
+    /// Files opened from Finder waiting for the vault, and their outcome for the Connections window (paths stay
+    /// here; never in the view model).
+    pub open_files: crate::open_files::OpenFilesApp,
 }
 
 impl AppState {
@@ -114,13 +117,16 @@ impl AppState {
         // A snapshot: no guard of `setup` is held across the other locks taken below (the control server's among
         // them, whose `up` reads the setup too; with a queued writer that was a deadlock).
         let setup = self.setup.read().unwrap_or_else(PoisonError::into_inner).clone();
+        let snapshot = self.manager.snapshot();
         let mut vm = ViewModel::build(
-            &self.manager.snapshot(),
+            &snapshot,
             AppLanguage::current().raw_value(),
             |kind| setup.is_available(kind),
             self.broker.pending(),
             setup.is_complete(),
         );
+        // The configs' server hosts for the search, as the last reload read them (no config is read here).
+        vm.set_server_hosts(&self.manager.server_hosts());
         vm.update = self.updates.view();
         vm.login_item = self.login_item.read().unwrap_or_else(PoisonError::into_inner).clone();
         vm.manage = self.connections.view();

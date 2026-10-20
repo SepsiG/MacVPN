@@ -132,6 +132,48 @@ fn remote_host_names_the_server_a_config_connects_to() {
     assert_eq!(host(VPNKind::Sstp, "server=a\"b\n"), None);
 }
 
+/// The host only: a user name and a port are stripped, and anything that is not a host name or an IP literal (a
+/// URL path, a CIDR, `%any`, stray punctuation) gives `None`.
+#[test]
+fn remote_host_is_a_host_name_or_an_ip_literal_only() {
+    use macvpn_core::models::VPNKind;
+    let host = |kind, config: &str| importer::remote_host(kind, config);
+    // User info and port are stripped.
+    assert_eq!(host(VPNKind::Sstp, "server=alice@sstp.example.com:443\n").as_deref(), Some("sstp.example.com"));
+    assert_eq!(host(VPNKind::Sstp, "server=alice:pw@sstp.example.com\n").as_deref(), Some("sstp.example.com"));
+    assert_eq!(host(VPNKind::Openvpn, "remote bob@vpn.example.com 1194\n").as_deref(), Some("vpn.example.com"));
+    assert_eq!(host(VPNKind::Openvpn, "remote vpn.example.com:1194\n").as_deref(), Some("vpn.example.com"));
+    assert_eq!(host(VPNKind::Wireguard, "Endpoint = me@wg.example.org:51820\n").as_deref(), Some("wg.example.org"));
+    assert_eq!(host(VPNKind::Strongswan, "remote_addrs = 192.0.2.10:500\n").as_deref(), Some("192.0.2.10"));
+    // IP literals.
+    assert_eq!(host(VPNKind::Openvpn, "remote 192.0.2.1 1194\n").as_deref(), Some("192.0.2.1"));
+    assert_eq!(host(VPNKind::Openvpn, "remote 2001:db8::7 1194\n").as_deref(), Some("2001:db8::7"));
+    assert_eq!(host(VPNKind::Sstp, "server=[2001:db8::2]:443\n").as_deref(), Some("2001:db8::2"));
+    // A trailing root dot goes; case is kept as written.
+    assert_eq!(host(VPNKind::Openvpn, "remote VPN.Example.com. 1194\n").as_deref(), Some("VPN.Example.com"));
+    // Not a host: refused.
+    for (kind, config) in [
+        (VPNKind::Sstp, "server=https://sstp.example.com/path\n"),
+        (VPNKind::Sstp, "server=sstp.example.com/path\n"),
+        (VPNKind::Sstp, "server=sstp.example.com:notaport\n"),
+        (VPNKind::Sstp, "server=sstp.example.com:99999\n"),
+        (VPNKind::Sstp, "server=@\n"),
+        (VPNKind::Sstp, "server=a..b\n"),
+        (VPNKind::Sstp, "server=-a.example\n"),
+        (VPNKind::Sstp, "server=a-.example\n"),
+        (VPNKind::Sstp, "server=a;b\n"),
+        (VPNKind::Sstp, "server=a<b>.example\n"),
+        (VPNKind::Sstp, "server=[2001:db8::2\n"),
+        (VPNKind::Sstp, "server=[not-ip]:443\n"),
+        (VPNKind::Strongswan, "remote_addrs = %any\n"),
+        (VPNKind::Strongswan, "remote_addrs = 10.0.0.0/24\n"),
+        (VPNKind::Strongswan, "remote_addrs = 10.0.0.1-10.0.0.9\n"),
+        (VPNKind::Openvpn, &format!("remote {}.example 1194\n", "a".repeat(64))),
+    ] {
+        assert_eq!(host(kind, config), None, "{config:?}");
+    }
+}
+
 /// Every text config format takes the line as a comment (a file opened elsewhere stays valid), and the import
 /// strips it for each of them (Task 16).
 #[test]

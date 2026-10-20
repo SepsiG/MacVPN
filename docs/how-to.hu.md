@@ -60,6 +60,8 @@ Menü → **Új kapcsolat / Import…** (vagy **Kapcsolatok kezelése…**). Ez 
 
 **Fájlok importálása:** kattints az **Új** (+) → **Import fájlból…** pontra, és jelölj ki egy vagy több fájlt, vagy húzd a fájlokat az ablakba. Utána jelöld ki az új kapcsolatot, töltsd ki a jelszómezőket, és kattints a **Mentés** gombra (⌘S).
 
+**A Finderből:** kattints duplán egy `.ovpn` vagy `.sstp` fájlra (vagy jelölj ki többet, és nyomd meg a ⌘↓ billentyűt). A MacVPN megnyitja a Kapcsolatok ablakot, és importálja őket, ugyanazokkal a kérdésekkel; semmi nem csatlakozik. A letöltött fájlokra előbb még egyszer rákérdez (**Importálás** vagy **Mégse**). Ha a széf zárolva van, előbb oldd fel a megjelenő ablakban. WireGuard vagy strongSwan `.conf` fájlnál Control-kattints a fájlra → **Megnyitás ezzel → MacVPN** (a `.conf` fájlokat a MacVPN nem veszi át, más programok is használják). Ha egy másik VPN-app nyitja meg a `.ovpn` fájljaidat: **Fájl → Információ → Megnyitás ezzel → MacVPN → Összes módosítása…**. Részletek: [útmutató, 4.1](user-guide.hu.md#41-vpn-fájlok-megnyitása-a-finderből).
+
 **Kézi létrehozás:** kattints az **Új** (+) gombra, és válaszd ki a típust. Töltsd ki a sablont vagy az űrlapot, majd kattints a **Mentés** gombra.
 
 | Típus | Import | Létrehozás | Mit kell kitölteni |
@@ -258,6 +260,8 @@ Részletek: [útmutató, 11.](user-guide.hu.md#11-széf)
 
 A menüben egy mappára kattintva nyitod és csukod; a jelvénye mutatja, hány kapcsolat aktív benne. Részletek: [útmutató, 12.](user-guide.hu.md#12-mappák-és-színek)
 
+Egy kapcsolat megkereséséhez nyomd meg a **⌘F**-et a **Kapcsolatok** ablakban (vagy kattints a **Kapcsolatok keresése** mezőbe), és írd be a neve, típusa, szervere, mappája vagy csapatkatalógusa egy részét; az ékezet és a kisbetű-nagybetű nem számít. A **↑** / **↓** és az Enter megnyit egy találatot, az Esc törli a keresést. Részletek: [útmutató, 12.8](user-guide.hu.md#128-kapcsolatok-keresése)
+
 ## 16. Egy bejelentkezés több kapcsolatnak
 
 **Nulláról:**
@@ -297,7 +301,7 @@ Részletek: [útmutató, 14.](user-guide.hu.md#14-biztonsági-mentés-és-vissza
 
 Amit a rendszergazdától kapsz: egy feliratkozási kódot (`macvpn-sub:…`), vagy a forrást, a csapatkulcsot és a közzétevő ujjlenyomatát; egyes webszervereknél hozzáférési tokent is.
 
-1. **Kapcsolatok** ablak → az oldalsávban **Csapatkatalógusok** → **Csapatkatalógus hozzáadása…**.
+1. **Kapcsolatok** ablak → az oldalsávban **Csapatkatalógusok** → **Csapatkatalógus hozzáadása…**. Vagy kattints duplán a `.macvpncatalog` fájlra a Finderben: az ablak ezzel a fájllal mint forrással nyílik meg (folytasd a csapatkulccsal és az ujjlenyomattal).
 2. Illeszd be a feliratkozási kódot (egy sorban). Vagy add meg a **Forrás** (egy `https://` cím, vagy **Fájl kiválasztása…** egy megosztáson, illetve iCloud Drive-, OneDrive- vagy Dropbox-mappában), a **Csapatkulcs** és **A közzétevő ujjlenyomata** mezőt.
 3. Ha a webszerver kéri, add meg a **Hozzáférési token** mezőt.
 4. Kattints az **Ellenőrzés** gombra. Vesd össze az előnézetben látható ujjlenyomatot azzal, amit a rendszergazda telefonon vagy személyesen mondott. Ha eltér, állj meg.

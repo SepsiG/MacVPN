@@ -19,6 +19,7 @@ mod folders;
 mod manage;
 mod navigation;
 mod notifications;
+mod open_files;
 mod pairing;
 mod platform;
 mod prompts;
@@ -262,6 +263,7 @@ fn build_state(env: Environment, storage: Storage) -> Arc<AppState> {
         vault: vault::VaultApp::new(storage.vault, storage.legacy, storage.entropy),
         pairing_windows: pairing::PairingWindows::default(),
         backup,
+        open_files: open_files::OpenFilesApp::default(),
     })
 }
 
@@ -619,6 +621,7 @@ fn main() {
             catalog::publication_copy_subscription,
             catalog::publication_forget,
             catalog::catalog_copy_team_key,
+            open_files::open_files_take,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {
@@ -699,6 +702,8 @@ fn main() {
             tray::create_menu_window(&handle)?;
             tray::create(&handle)?;
             connect_hooks(&handle, &state);
+            // Files opened from Finder (`RunEvent::Opened`) wait for the launch's vault decision.
+            state.open_files.attach(handle.clone());
             Publisher::spawn(handle.clone(), state.clone());
             #[cfg(debug_assertions)]
             smoke::start(&handle, &state);
@@ -706,6 +711,9 @@ fn main() {
                 for step in &LAUNCH_SEQUENCE[3..] {
                     run_late_launch_step(&handle, &state, *step);
                 }
+                // Files opened from Finder before or during the launch: imported now if the vault is open (else
+                // after the unlock or the vault's creation).
+                open_files::launched(&state);
                 // The control API, once the connections and the system status are known.
                 control::launch(&state);
             })?;
@@ -723,6 +731,10 @@ fn main() {
         // A click on the Dock icon (shown while a window is open): that window comes forward; nothing opens.
         #[cfg(target_os = "macos")]
         RunEvent::Reopen { .. } => dock::reopen(app),
+        // Files opened from Finder (double click, "Open With", a drop on the app icon), at launch too: the import or
+        // the team catalog's add dialog, after the unlock if the vault is locked. Paths only; nothing connects.
+        #[cfg(target_os = "macos")]
+        RunEvent::Opened { urls } => open_files::opened(app, &urls),
         _ => {}
     });
 }

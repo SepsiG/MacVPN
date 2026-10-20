@@ -9,6 +9,9 @@
   // dragged and nothing is dropped into them (the ghost says why); their context menu offers only what the user
   // may change – Pin / Unpin, the own colour ("Use team colour"), "Duplicate as personal connection…", and
   // "Install profile" when the catalog changed a native connection.
+  // While the sidebar's search filters it (`filtered`, manage/search.ts), the tree shows only the matches and their
+  // folders, every folder open (the stored collapsed state is left alone), the matched part of the names marked and
+  // the keyboard's result (`active`) highlighted; nothing is dragged then (reordering a filtered tree would confuse).
   import { api, type FolderColor, type FolderTreeRow, type Row, type TreeRow } from '../api';
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
@@ -26,6 +29,7 @@
   import { dropTarget, zoneOf, type DropAction, type Dragged, type Hover, type Drop } from './dnd';
   import { colorToken, descendantFolders, folderBadge, indentLevel, visibleRows } from './tree';
   import type { DeleteMode } from './tree';
+  import { highlight, type SearchResult } from '../manage/search';
 
   let {
     rows,
@@ -35,6 +39,10 @@
     palette,
     teamFolders = {},
     onselect,
+    query = '',
+    filtered = null,
+    active = null,
+    onclearfilter = () => {},
   }: {
     rows: Row[];
     tree: TreeRow[];
@@ -45,6 +53,14 @@
     /// The folders team catalogs own: folder id → catalog id (read-only, the root carries the "Team" badge).
     teamFolders?: Record<string, string>;
     onselect: (id: string) => void;
+    /// The search's text (its matches are marked in the names).
+    query?: string;
+    /// The search's result (null: no search, the whole tree).
+    filtered?: SearchResult | null;
+    /// The search result Up / Down moved to (Return opens it).
+    active?: string | null;
+    /// Ends the search (a new folder must be seen to be named).
+    onclearfilter?: () => void;
   } = $props();
 
   const byId = $derived(new Map(rows.map((r) => [r.id, r])));
@@ -60,7 +76,14 @@
       collapsedNow = next;
     }
   });
-  const visible = $derived(visibleRows(tree, isCollapsed));
+  const visible = $derived(filtered ? filtered.tree : visibleRows(tree, isCollapsed));
+  /// A folder is shown open: while searching every folder is (without changing the stored state).
+  const isOpen = (f: FolderTreeRow) => filtered !== null || !isCollapsed(f);
+  // The keyboard's result stays in view.
+  $effect(() => {
+    if (!active || !list) return;
+    list.querySelector(`[data-id="${CSS.escape(active)}"]`)?.scrollIntoView?.({ block: 'nearest' });
+  });
 
   let context = $state<{ x: number; y: number; row: TreeRow | null } | null>(null);
   let picker = $state<{ x: number; y: number; row: TreeRow } | null>(null);
@@ -112,7 +135,7 @@
   // MARK: - Drag and drop
 
   function pointerdown(event: PointerEvent, dragged: Dragged, label: string) {
-    if (event.button !== 0 || renaming || (!enabled && dragged.type === 'folder')) return;
+    if (event.button !== 0 || renaming || filtered || (!enabled && dragged.type === 'folder')) return;
     drag = { dragged, label, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, moved: false, drop: null, refused: null, reason: null };
   }
 
@@ -198,7 +221,7 @@
   }
 
   function clickFolder(folder: FolderTreeRow) {
-    if (suppressClick) return;
+    if (suppressClick || filtered) return;
     setCollapsed(folder, !isCollapsed(folder));
   }
 
@@ -210,6 +233,7 @@
   /// "New Folder" in `parent` (null: the top level), then its name is edited in place.
   export function newFolder(parent: string | null = null) {
     context = null;
+    onclearfilter();
     run(async () => {
       const id = await api.folderCreate(parent, tr('New Folder'));
       expand(parent);
@@ -297,6 +321,8 @@
   }
 </script>
 
+{#snippet marked(name: string)}{#each highlight(name, query) as part, i (i)}{#if part.match}<mark>{part.text}</mark>{:else}{part.text}{/if}{/each}{/snippet}
+
 <svelte:window
   onpointermove={pointermove}
   onpointerup={pointerup}
@@ -311,6 +337,7 @@
 <div
   class="tree"
   class:dragging={drag?.moved}
+  class:filtering={filtered !== null}
   class:drop-root={drag?.moved && drag.drop?.indicator.rowId === null}
   bind:this={list}
   role="tree"
@@ -335,7 +362,7 @@
         style:--level={indentLevel(entry.depth)}
         role="treeitem"
         aria-selected="false"
-        aria-expanded={!isCollapsed(entry)}
+        aria-expanded={isOpen(entry)}
         aria-level={entry.depth + 1}
       >
         {#if renaming === entry.id}
@@ -352,15 +379,15 @@
             oncontextmenu={(e) => openContext(e, entry)}
             onpointerdown={(e) => pointerdown(e, { type: 'folder', id: entry.id }, entry.name)}
           >
-            <span class="chev" class:open={!isCollapsed(entry)} class:empty={entry.itemCount + entry.folderCount === 0}><Icon name="chevron" /></span>
-            <FolderIcon color={entry.color} open={!isCollapsed(entry)} />
-            <span class="label">{entry.name}</span>
+            <span class="chev" class:open={isOpen(entry)} class:empty={entry.itemCount + entry.folderCount === 0}><Icon name="chevron" /></span>
+            <FolderIcon color={entry.color} open={isOpen(entry)} />
+            <span class="label">{@render marked(entry.name)}</span>
             {#if isTeamRoot(teamFolders, entry)}<TeamBadge name={entry.name} />{/if}
             {#if badge.count !== null || badge.dot}
               <span class="badge {badge.dot ?? ''}" role="img" aria-label={tr('%lld active', badge.count ?? 0)}>
                 {#if badge.dot}<span class="dot"></span>{/if}{#if badge.count !== null}{badge.count}{/if}
               </span>
-            {:else if entry.itemCount > 0 && isCollapsed(entry)}
+            {:else if entry.itemCount > 0 && !isOpen(entry)}
               <span class="count">{entry.itemCount}</span>
             {/if}
           </button>
@@ -384,6 +411,7 @@
           <button
             class="row item"
             class:selected={row.id === selected}
+            class:active={row.id === active}
             class:tinted={entry.color !== null}
             style:--tint={colorToken(entry.color)}
             onclick={() => clickItem(row.id)}
@@ -393,7 +421,7 @@
             <TypeIcon kind={row.kind} state={row.state} size="sm" />
             <span class="text">
               <span class="name">
-                <span class="label">{row.name}</span>
+                <span class="label">{@render marked(row.name)}</span>
                 {#if row.pinned}
                   <svg class="pin" viewBox="0 0 16 16" role="img" aria-label={tr('Pinned')}>
                     <path d="M9.8 1.5l4.7 4.7-1.4 1.4-.9-.4-2.6 2.6.3 2.7-1.4 1.4-2.8-2.8-3 3-.9-.9 3-3-2.8-2.8 1.4-1.4 2.7.3 2.6-2.6-.4-.9z" fill="currentColor" />
@@ -624,6 +652,27 @@
   }
   .row:focus-visible {
     box-shadow: var(--focus-ring);
+  }
+  /* The search result Up / Down moved to (Return opens it). */
+  .row.active:not(.selected) {
+    background: var(--accent-soft);
+    outline: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+    outline-offset: -1px;
+  }
+  .row.active.selected {
+    outline-color: var(--focus-border);
+  }
+  /* The part of a name the search matched. */
+  mark {
+    padding: 0 1px;
+    margin: 0 -1px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--state-busy) 32%, transparent);
+    color: inherit;
+  }
+  /* While searching the folders are not toggled. */
+  .filtering .chev :global(.icon) {
+    opacity: 0.45;
   }
   /* The effective colour: a slim bar on the row's left edge. */
   .row.tinted::before {

@@ -83,6 +83,12 @@ export function emptyForm(): AddForm {
   return { subscription: null, parsed: null, sourceKind: 'https', url: '', fileName: null, teamKey: '', fingerprint: '', token: '' };
 }
 
+/// The dialog for a team catalog file opened from Finder: the file source with that file (its name; the path stays
+/// in the backend). The team key and the fingerprint are still the user's to enter.
+export function openedFileForm(fileName: string): AddForm {
+  return { ...emptyForm(), sourceKind: 'file', fileName };
+}
+
 /// "Check" can run: a parsed subscription string, or a source with a complete team key and fingerprint.
 export function canCheck(form: AddForm): boolean {
   if (form.subscription !== null && form.parsed !== null) return true;

@@ -126,6 +126,10 @@
       "hu": "%lld elem nem olvasható, ezek a helyükön maradtak.",
       "scope": "app"
     },
+    "%lld more files were not opened.": {
+      "hu": "További %lld fájl nem lett megnyitva.",
+      "scope": "app"
+    },
     "%lld removed": {
       "hu": "%lld eltávolítva",
       "scope": "app"
@@ -741,6 +745,10 @@
     "Cisco IPsec requires a group name": {
       "hu": "Cisco IPsec-hez csoportnév szükséges",
       "scope": "core"
+    },
+    "Clear Search": {
+      "hu": "Keresés törlése",
+      "scope": "app"
     },
     "Clears the vault first. Not in the backup, deleted: %lld items. Paired apps stay.": {
       "hu": "Előbb kiüríti a széfet. A mentésben nem szereplő, törlődő elemek: %lld. A párosított appok maradnak.",
@@ -1422,6 +1430,10 @@
       "hu": "Importálás",
       "scope": "app"
     },
+    "Import %lld downloaded files?": {
+      "hu": "Importálod a(z) %lld letöltött fájlt?",
+      "scope": "app"
+    },
     "Import Admin Key": {
       "hu": "Aláírókulcs importálása",
       "scope": "app"
@@ -1436,6 +1448,10 @@
     },
     "Import from File…": {
       "hu": "Import fájlból…",
+      "scope": "app"
+    },
+    "Import the downloaded file?": {
+      "hu": "Importálod a letöltött fájlt?",
       "scope": "app"
     },
     "Imported to the top level: the folder could not be created (%@)": {
@@ -1954,6 +1970,10 @@
       "hu": "Nem található connection név",
       "scope": "mvpn"
     },
+    "No connections match “%@”": {
+      "hu": "Egy kapcsolat sem felel meg ennek: „%@”",
+      "scope": "app"
+    },
     "No connections yet": {
       "hu": "Még nincs kapcsolat",
       "scope": "app"
@@ -2098,9 +2118,17 @@
       "hu": "Csak fájlnév adható meg, útvonal nem: %@",
       "scope": "core"
     },
+    "Only import files you trust.": {
+      "hu": "Csak olyan fájlt importálj, amelyben megbízol.",
+      "scope": "app"
+    },
     "Only one <ca> block is allowed": {
       "hu": "Csak egy <ca> blokk lehet",
       "scope": "core"
+    },
+    "Only one team catalog file can be added at a time.": {
+      "hu": "Egyszerre csak egy csapatkatalógus-fájl adható hozzá.",
+      "scope": "app"
     },
     "Open Backup": {
       "hu": "Mentés megnyitása",
@@ -2604,6 +2632,10 @@
     },
     "Search": {
       "hu": "Keresés",
+      "scope": "app"
+    },
+    "Search connections": {
+      "hu": "Kapcsolatok keresése",
       "scope": "app"
     },
     "Secret": {
@@ -3622,6 +3654,10 @@
       "hu": "Ezeket az adatokat egy újabb MacVPN mentette. A módosításhoz frissítsd az alkalmazást.",
       "scope": "app"
     },
+    "This file is opened from its own panel in MacVPN, not from Finder.": {
+      "hu": "Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Finderből.",
+      "scope": "app"
+    },
     "This folder no longer exists": {
       "hu": "Ez a mappa már nem létezik",
       "scope": "app"
@@ -4161,6 +4197,10 @@
     "after": {
       "hu": "utána",
       "scope": "mvpn"
+    },
+    "and %lld more": {
+      "hu": "és még %lld",
+      "scope": "app"
     },
     "authentication response passed to the management bridge (kind: %@)": {
       "hu": "hitelesítési válasz átadva a management közvetítőnek (típus: %@)",

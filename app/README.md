@@ -8,8 +8,8 @@
   `crates/app-core`, tested without a UI.
 
 The rest of the repository: `crates/core` (platform-independent logic and the EN/HU text table), `crates/mvpn` (the
-root binary), `crates/platform-mac` (macOS services), `scripts/` (build, test and signing scripts). `legacy/swift` is
-the 0.x Swift app, kept only as the reference of a few compatibility tests; it is not built and will be removed.
+root binary), `crates/platform-mac` (macOS services), `scripts/` (build, test and signing scripts). The 0.x Swift app
+is only in the git history (up to tag `v0.4.0`).
 
 ## Build
 

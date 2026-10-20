@@ -3,9 +3,7 @@ dist/
 .swiftpm/
 *.xcodeproj
 .DS_Store
-legacy/swift/Resources/root/mvpn-validate
 .vscode/
-legacy/swift/Resources/root/mvpn-mgmt
 
 # Rust
 target/

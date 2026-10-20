@@ -40,6 +40,7 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// "The vault is locked. Unlock it and try again.": every refusal while locked (stores, editors, import, export).
 pub fn locked_message() -> String {
@@ -184,6 +185,14 @@ impl ConnectionRepository for VaultConnections {
             return legacy.load_config(id);
         }
         self.vault.with_read(|v| v.config(id)).map(|config| config.as_str().to_owned()).map_err(vault_io_error)
+    }
+
+    /// The vault's wiped config as it is (no unwiped copy).
+    fn load_config_wiped(&self, id: &Uuid) -> io::Result<Zeroizing<String>> {
+        if let Some(legacy) = self.legacy() {
+            return legacy.load_config_wiped(id);
+        }
+        self.vault.with_read(|v| v.config(id)).map_err(vault_io_error)
     }
 
     fn delete(&self, id: &Uuid) -> io::Result<()> {

@@ -182,6 +182,54 @@ expect MacVPNUpdateRepo "$EXPECTED_REPO"
 expect MacVPNUpdateRepoID "$EXPECTED_REPO_ID"
 [ "$(/usr/bin/plutil -type MacVPNUpdateRepoID "$PLIST")" = string ] || die "Info.plist: MacVPNUpdateRepoID must be a string"
 expect CFBundleIconFile AppIcon
+# Finder's document types (open-to-import): .ovpn and .sstp (Default) through their imported types,
+# .macvpncatalog (Owner) through its exported type, .conf only under "Open With" (Alternate, by the extension).
+# Admin key files, backups and .mobileconfig profiles are never claimed.
+pbexpect() { # PlistBuddy key path (':'-separated; keys may contain dots), expected value
+  local got
+  got=$(/usr/libexec/PlistBuddy -c "Print :$1" "$PLIST" 2>/dev/null) || die "Info.plist: missing $1"
+  [ "$got" = "$2" ] || die "Info.plist: $1 is '$got', expected '$2'"
+}
+pbcount() { # array key path, expected count
+  local got
+  got=$(/usr/bin/plutil -extract "$1" raw -o - "$PLIST" 2>/dev/null) || die "Info.plist: missing $1"
+  [ "$got" = "$2" ] || die "Info.plist: $1 has $got entries, expected $2"
+}
+pbcount CFBundleDocumentTypes 4
+DOC_TYPES=("local.macvpn.ovpn Default" "local.macvpn.sstp Default" "local.macvpn.catalog Owner")
+for i in "${!DOC_TYPES[@]}"; do
+  read -r uti rank <<< "${DOC_TYPES[$i]}"
+  pbexpect "CFBundleDocumentTypes:$i:LSItemContentTypes:0" "$uti"
+  pbcount "CFBundleDocumentTypes.$i.LSItemContentTypes" 1
+  pbexpect "CFBundleDocumentTypes:$i:LSHandlerRank" "$rank"
+  pbexpect "CFBundleDocumentTypes:$i:CFBundleTypeRole" Viewer
+done
+pbexpect "CFBundleDocumentTypes:3:CFBundleTypeExtensions:0" conf
+pbcount CFBundleDocumentTypes.3.CFBundleTypeExtensions 1
+pbexpect "CFBundleDocumentTypes:3:LSHandlerRank" Alternate
+pbexpect "CFBundleDocumentTypes:3:CFBundleTypeRole" Viewer
+/usr/libexec/PlistBuddy -c "Print :CFBundleDocumentTypes:3:LSItemContentTypes" "$PLIST" >/dev/null 2>&1 \
+  && die "Info.plist: the .conf document type must not name a content type (it would claim other apps' .conf type)"
+pbcount UTImportedTypeDeclarations 2
+pbexpect "UTImportedTypeDeclarations:0:UTTypeIdentifier" local.macvpn.ovpn
+pbexpect "UTImportedTypeDeclarations:0:UTTypeTagSpecification:public.filename-extension:0" ovpn
+pbexpect "UTImportedTypeDeclarations:1:UTTypeIdentifier" local.macvpn.sstp
+pbexpect "UTImportedTypeDeclarations:1:UTTypeTagSpecification:public.filename-extension:0" sstp
+# Data, not text: plain text is a "safe" download type that Safari may open by itself (a drive-by import).
+for i in 0 1; do
+  pbcount "UTImportedTypeDeclarations.$i.UTTypeConformsTo" 2
+  pbexpect "UTImportedTypeDeclarations:$i:UTTypeConformsTo:0" public.data
+  pbexpect "UTImportedTypeDeclarations:$i:UTTypeConformsTo:1" public.item
+done
+if /usr/bin/plutil -convert xml1 -o - "$PLIST" | grep -Eq 'public\.(plain-text|text|utf8-plain-text|source-code)<'; then
+  die "Info.plist: a declared type conforms to a text type (a safe download type)"
+fi
+pbcount UTExportedTypeDeclarations 1
+pbexpect "UTExportedTypeDeclarations:0:UTTypeIdentifier" local.macvpn.catalog
+pbexpect "UTExportedTypeDeclarations:0:UTTypeTagSpecification:public.filename-extension:0" macvpncatalog
+if /usr/bin/plutil -convert xml1 -o - "$PLIST" | grep -Eiq 'macvpnadminkey|macvpnbackup|mobileconfig'; then
+  die "Info.plist claims an admin key file, a backup or a .mobileconfig profile (they open from their panels only)"
+fi
 [ -x "$APP/Contents/MacOS/MacVPN" ] || die "the executable is missing"
 [ -s "$RES/AppIcon.icns" ] || die "the icon is missing"
 # Contents/Resources/root holds exactly mvpn and VERSION (what the root installer installs).

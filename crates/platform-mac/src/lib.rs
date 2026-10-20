@@ -25,6 +25,7 @@ pub mod notifications;
 pub mod pasteboard;
 pub mod preferences;
 pub mod profile_staging;
+pub mod quarantine;
 pub mod root_installer;
 mod sc_ffi;
 pub mod sc_watch;
