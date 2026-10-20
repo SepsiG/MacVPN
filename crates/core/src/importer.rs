@@ -290,6 +290,10 @@ static EXPECTED_FORMAT: LazyLock<HashMap<&'static str, &'static str>> = LazyLock
     ])
 });
 
+/// The directives whose file may hold PEM blocks of other types too (a combined certificate + key file, an
+/// `openssl pkcs12` export with `Bag Attributes`): only the blocks of the directive's type are inlined.
+const PEM_BLOCK_DIRECTIVES: [&str; 4] = ["ca", "cert", "extra-certs", "key"];
+
 /// The PEM type pattern a directive's file must have (`ca`: `CERTIFICATE`, …).
 pub fn expected_format(directive: &str) -> Option<&'static str> {
     EXPECTED_FORMAT.get(directive).copied()
@@ -496,7 +500,7 @@ pub fn inline_openvpn_files(content: &str, base_directory: &Path) -> Result<Inli
             out.push("<pkcs12>".into());
             out.extend(base64_lines(&data));
             out.push("</pkcs12>".into());
-            inlined.push(path);
+            push_unique(&mut inlined, path);
             continue;
         }
         let Some(format) =
@@ -507,18 +511,33 @@ pub fn inline_openvpn_files(content: &str, base_directory: &Path) -> Result<Inli
         };
         let path = trim_quotes(tokens[1]).to_string();
         let data = read_inline_file(&path, &base, &first)?;
-        if !has_format(&data, format) {
+        let body = if PEM_BLOCK_DIRECTIVES.contains(&first.as_str()) {
+            // Windows line ends are fine for OpenSSL's PEM reader; the inlined blocks get `\n`.
+            pem_blocks(&data.replace("\r\n", "\n"), format, first == "key")
+        } else if has_format(&data, format) {
+            Some(if swift_str::has_suffix(&data, "\n") { data[..data.len() - 1].to_string() } else { data })
+        } else {
+            None
+        };
+        let Some(body) = body else {
             return Err(ConfigImportError::WrongFormat { directive: first, file: path });
-        }
+        };
         out.push(format!("<{first}>"));
-        out.push(if swift_str::has_suffix(&data, "\n") { data[..data.len() - 1].to_string() } else { data });
+        out.push(body);
         out.push(format!("</{first}>"));
-        inlined.push(path);
+        push_unique(&mut inlined, path);
         if (first == "tls-auth" || first == "secret") && tokens.len() >= 3 {
             out.push(format!("key-direction {}", tokens[2]));
         }
     }
     Ok(InlineResult { config: out.join("\n"), inlined_files: inlined, credentials })
+}
+
+/// One entry per file, even if several directives inline it (`cert user.pem` + `key user.pem`).
+fn push_unique(list: &mut Vec<String>, path: String) {
+    if !list.contains(&path) {
+        list.push(path);
+    }
 }
 
 fn read_inline_file(path: &str, base: &str, directive: &str) -> Result<String, ConfigImportError> {
@@ -621,6 +640,46 @@ pub fn has_format(text: &str, pem_type: &str) -> bool {
     has_complete_block(text, pem_type) && all_begin_types_match(text, pem_type) && !has_tag_line(text)
 }
 
+/// The complete PEM blocks of `pem_type` in `text` (`-----BEGIN` at a line start, like OpenSSL's PEM reader),
+/// byte-exact (RFC 1421 headers such as `Proc-Type` / `DEK-Info` included), in order, joined by `\n`. Everything
+/// else (other block types, text around the blocks) is left out. `single`: exactly one block of the type, and no
+/// incomplete one (a key file). `None`: no such block, or a line starting with `<` (an inline tag that could close
+/// the block) anywhere in the file.
+fn pem_blocks(text: &str, pem_type: &str, single: bool) -> Option<String> {
+    if has_tag_line(text) {
+        return None;
+    }
+    let whole = whole_type_regex(pem_type);
+    let mut blocks: Vec<&str> = Vec::new();
+    let mut incomplete = false;
+    let mut from = 0;
+    while let Some(i) = text[from..].find("-----BEGIN ").map(|i| i + from) {
+        from = i + 1;
+        if i != 0 && !text[..i].ends_with('\n') {
+            continue;
+        }
+        let after = &text[i + 11..];
+        let Some(j) = after.find("-----") else { continue };
+        let candidate = &after[..j];
+        if !swift_str::matches(candidate, &whole) {
+            continue;
+        }
+        match block_end(&after[j + 5..], candidate) {
+            Some(length) => {
+                let end = i + 11 + j + 5 + length;
+                blocks.push(&text[i..end]);
+                from = end;
+            }
+            None => incomplete = true,
+        }
+    }
+    if blocks.is_empty() || (single && (blocks.len() != 1 || incomplete)) {
+        return None;
+    }
+    let joined = blocks.join("\n");
+    (!has_tag_line(&joined)).then_some(joined)
+}
+
 fn whole_type_regex(pem_type: &str) -> Regex {
     Regex::new(&format!("^(?:{pem_type})$")).expect("valid pattern")
 }
@@ -638,7 +697,7 @@ fn has_complete_block(text: &str, pem_type: &str) -> bool {
         let after = &text[i + 11..];
         let Some(j) = after.find("-----") else { continue };
         let candidate = &after[..j];
-        if swift_str::matches(candidate, &whole) && block_ends(&after[j + 5..], candidate) {
+        if swift_str::matches(candidate, &whole) && block_end(&after[j + 5..], candidate).is_some() {
             return true;
         }
     }
@@ -647,23 +706,23 @@ fn has_complete_block(text: &str, pem_type: &str) -> bool {
 
 /// After `-----BEGIN T-----`: `\n`, then lines (empty, or not starting with `-`, no line terminator inside),
 /// until a line that starts with `-----END T-----`. (Swift's `\r?\n` never matches a CRLF line end: `\r\n` is one
-/// Character there.)
-fn block_ends(body: &str, pem_type: &str) -> bool {
+/// Character there.) The length of `body` up to the end of the `-----END T-----` marker.
+fn block_end(body: &str, pem_type: &str) -> Option<usize> {
     let end_marker = format!("-----END {pem_type}-----");
     // `\r?\n` cannot match the single Character `\r\n`: a CRLF block does not match in Swift either.
-    let Some(mut rest) = body.strip_prefix('\n') else { return false };
+    let mut rest = body.strip_prefix('\n')?;
     loop {
         if swift_str::has_prefix(rest, &end_marker) {
-            return true;
+            return Some(body.len() - rest.len() + end_marker.len());
         }
-        let Some(nl) = rest.find('\n') else { return false };
+        let nl = rest.find('\n')?;
         let line = &rest[..nl];
         // `[^-\r\n]` takes the first Character (a U+2028 too), `.*` the rest, which has no line terminator.
         let characters = swift_str::characters(line);
         if let Some((first, others)) = characters.split_first()
             && (*first == "-" || *first == "\r" || others.iter().any(|c| c.chars().any(is_line_terminator)))
         {
-            return false;
+            return None;
         }
         rest = &rest[nl + 1..];
     }

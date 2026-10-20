@@ -14,6 +14,7 @@ Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útm
 - **VPN-fájlok megnyitása a Finderből.** Dupla kattintás egy `.ovpn` vagy `.sstp` fájlra importálja; a `.conf` a **Megnyitás ezzel → MacVPN** úton nyílik; a `.macvpncatalog` fájl a **Csapatkatalógus hozzáadása…** ablakot nyitja meg ezzel a fájllal. Lásd [4.1](#41-vpn-fájlok-megnyitása-a-finderből).
 - **A letöltött fájlokra előbb rákérdez.** A letöltött fájl csak egy megerősítés után importálódik (**Importálás** / **Mégse**). Lásd [4.1](#41-vpn-fájlok-megnyitása-a-finderből).
 - A root réteg 8 marad: az 1.3-ról frissítve nem kell admin jelszó.
+- **1.4.1:** a `cert` és a `key` mutathat ugyanarra a PEM fájlra (tanúsítvány és privát kulcs, titkosítva is). Lásd [7.8](#78-egyéb).
 
 ## Újdonságok az 1.3-ban
 
@@ -551,6 +552,7 @@ A MacVPN rootként indítja a VPN-eszközöket, ezért csak ismert, biztonságos
   (az üzenetben megnevezett mappával). Intel Macen a `/usr/local/libexec` a Homebrew-é lehet; a változtatás után a Homebrew `sudo` nélkül nem tud oda írni, ami egyes csomagokat érinthet.
 - **„Az állapot nem kérdezhető le…”** figyelmeztetés a menüben: a root réteg vagy a sudoers szabály hiányzik vagy elavult. Nyisd meg a **Rendszerállapot** ablakot, és nyomd meg az **Engedélyezés** gombot.
 - **„Az openvpn nem található (brew install openvpn)”** és hasonló üzenetek: telepítsd a hiányzó eszközt a **Rendszerállapot** ablakból.
+- **A `cert` és a `key` ugyanarra a fájlra mutat** (kombinált PEM fájl: tanúsítvány és – akár titkosított – privát kulcs egy fájlban, Windowsos sorvégekkel is): az 1.4.1 óta támogatott. A MacVPN csak a tanúsítványblokkokat teszi a `<cert>`, csak a kulcsot a `<key>` blokkba, és csatlakozáskor kéri a **Privát kulcs jelszava** értékét. Az 1.4.1 előtt ez az import „nem a várt formátumú” hibával leállt.
 
 ### 7.9 SSTP: tanúsítványhiba
 

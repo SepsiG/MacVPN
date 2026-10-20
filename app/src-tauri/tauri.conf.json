@@ -1,7 +1,7 @@
 {
   "productName": "MacVPN",
   "mainBinaryName": "MacVPN",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "identifier": "local.macvpn",
   "build": {
     "devUrl": "http://127.0.0.1:1420",

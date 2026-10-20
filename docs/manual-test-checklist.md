@@ -1,9 +1,17 @@
-# MacVPN – kézi tesztlista (1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
+# MacVPN – kézi tesztlista (1.4.1, 1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
 
-Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.4.0.dmg`), zöld: `cargo test --workspace`,
+Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.4.1.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
 az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
+
+## 1.4.1: kombinált PEM fájl (cert + key egy fájlban)
+
+- [ ] Egy `.ovpn` `cert user.pem` és `key user.pem` sorral, a `user.pem`-ben tanúsítvány és titkosított privát kulcs: az import hiba nélkül lefut, az „Importálva, beágyazva” lista a `user.pem`-et egyszer mutatja
+- [ ] A szerkesztőben a `<cert>` blokkban csak `CERTIFICATE`, a `<key>` blokkban csak a kulcs van
+- [ ] Csatlakozáskor a MacVPN kéri a **Privát kulcs jelszava** értékét; jó jelszóval felépül a kapcsolat, rossz jelszóval érthető hiba
+- [ ] Ugyanez Windowson készült (CRLF) fájllal
+- [ ] Frissítés az appon belül 1.4.0-ról 1.4.1-re: a frissítő elfogadja a csomagot, nem kér admin jelszót (root réteg 8)
 
 ## 1.4.0: keresés, VPN-fájlok megnyitása a Finderből, letöltött fájlok
 

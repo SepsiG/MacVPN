@@ -149,10 +149,7 @@ fn inlines_every_directive_with_its_format() {
     env.put("sub/extra.crt", CERT);
     let input = "remote a 1\nca ca.crt\ncert c.crt\nkey c.key\ntls-crypt tc.key\ntls-crypt-v2 v2.key\ndh dh.pem\nextra-certs sub/extra.crt\nsecret tc.key\n";
     let out = env.inline(input).unwrap();
-    assert_eq!(
-        out.inlined_files,
-        ["ca.crt", "c.crt", "c.key", "tc.key", "v2.key", "dh.pem", "sub/extra.crt", "tc.key"]
-    );
+    assert_eq!(out.inlined_files, ["ca.crt", "c.crt", "c.key", "tc.key", "v2.key", "dh.pem", "sub/extra.crt"]);
     assert!(out.config.contains("<tls-crypt-v2>\n-----BEGIN OpenVPN tls-crypt-v2 client key-----"));
     assert_eq!(env.inline("key rsa.key\n").unwrap().inlined_files, ["rsa.key"]);
     assert_eq!(env.inline("dh none\n").unwrap().config, "dh none\n");
@@ -217,14 +214,18 @@ fn wrong_format_is_rejected() {
     env.rejected("ca evil.crt", wrong("ca", "evil.crt"));
 }
 
-/// Foundation behaviours kept on purpose (differential tests against Swift): a CRLF PEM file does not match the
-/// format check (`\r\n` is one Character for Swift's `\r?\n`), a leading BOM is dropped when reading, and a NUL ends
-/// the path given to realpath.
+/// Reading rules: a CRLF PEM file is read with `\n` line ends for ca/cert/extra-certs/key (a file made on Windows),
+/// the other directives keep the strict check (`\r\n` does not match it), a leading BOM is dropped when reading, and
+/// a NUL ends the path given to realpath.
 #[test]
 fn foundation_reading_rules() {
     let env = Env::new();
     env.put("crlf.crt", &CERT.replace('\n', "\r\n"));
-    env.rejected("ca crlf.crt", wrong("ca", "crlf.crt"));
+    let out = env.inline("ca crlf.crt\n").unwrap();
+    assert!(!out.config.contains('\r'));
+    assert!(out.config.contains(CERT.trim_end()));
+    env.put("crlf.key", &STATIC_KEY.replace('\n', "\r\n"));
+    env.rejected("tls-auth crlf.key", wrong("tls-auth", "crlf.key"));
     env.put("bom.crt", &format!("\u{FEFF}{CERT}"));
     let out = env.inline("ca bom.crt\n").unwrap();
     assert!(out.config.starts_with("<ca>\n-----BEGIN CERTIFICATE-----"));
@@ -573,4 +574,219 @@ fn sstp_import_detection() {
     assert_eq!(importer::detect_kind("x.txt", good), Some(VPNKind::Sstp));
     assert_eq!(importer::detect_kind("x.txt", "server=a\nuser=b\n"), Some(VPNKind::Sstp));
     assert_eq!(importer::detect_kind("x.txt", "server = a\n"), None);
+}
+
+// MARK: Combined PEM (`cert user.pem` + `key user.pem` pointing at one file)
+
+/// A throwaway test PKI (generated with openssl, never used anywhere): `tests/fixtures/combined-pem`.
+fn pem_fixture(name: &str) -> String {
+    fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/combined-pem").join(name)).unwrap()
+}
+
+/// The complete `-----BEGIN …-----` … `-----END …-----` blocks of `text`, byte-exact, in order.
+fn pem_blocks(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut current: Option<Vec<&str>> = None;
+    for line in text.split('\n') {
+        if line.starts_with("-----BEGIN ") {
+            current = Some(vec![line]);
+        } else if let Some(lines) = current.as_mut() {
+            lines.push(line);
+            if line.starts_with("-----END ") {
+                out.push(current.take().unwrap().join("\n"));
+            }
+        }
+    }
+    out
+}
+
+/// The content of the inline `<tag>` block of an imported config.
+fn inline_block<'a>(config: &'a str, tag: &str) -> &'a str {
+    let open = format!("<{tag}>\n");
+    let start = config.find(&open).unwrap_or_else(|| panic!("no <{tag}> in {config}")) + open.len();
+    let end = start + config[start..].find(&format!("\n</{tag}>")).unwrap();
+    &config[start..end]
+}
+
+const COMBINED_CONFIG: &str = "client\ndev tun\nremote vpn.example.com 1194\nca ca.crt\ncert user.pem\nkey user.pem\n";
+
+/// Imports `COMBINED_CONFIG` with `user.pem` = the fixture `name`.
+fn import_combined(name: &str) -> importer::PreparedImport {
+    let env = Env::new();
+    env.put("ca.crt", &pem_fixture("ca.crt"));
+    env.put("user.pem", &pem_fixture(name));
+    importer::prepare("user.ovpn", COMBINED_CONFIG, &env.dir).unwrap()
+}
+
+/// The security rule: no private key in a certificate block, no certificate in the key block.
+#[track_caller]
+fn assert_no_cross_material(config: &str) {
+    for tag in ["ca", "cert", "extra-certs"] {
+        if config.contains(&format!("<{tag}>")) {
+            let body = inline_block(config, tag);
+            assert!(!body.contains("PRIVATE KEY"), "<{tag}>: {body}");
+            assert!(!body.contains("ENCRYPTED"), "<{tag}>: {body}");
+        }
+    }
+    if config.contains("<key>") {
+        assert!(!inline_block(config, "key").contains("CERTIFICATE"));
+    }
+}
+
+/// The import → connect path: an encrypted `<key>` asks for the private key password, and it is secret material
+/// for the exporter.
+#[track_caller]
+fn assert_key_password_required(prepared: &importer::PreparedImport) {
+    use macvpn_core::credentials::{CredentialField, required_fields};
+    assert!(prepared.has_encrypted_key);
+    assert!(importer::contains_encrypted_key(inline_block(&prepared.config, "key")));
+    let required = required_fields(VPNKind::Openvpn, Some(&prepared.config));
+    assert!(required.fields.contains(&CredentialField::KeyPassword), "{:?}", required.fields);
+    let secrets = macvpn_core::exporter::secret_material(&prepared.config, VPNKind::Openvpn);
+    assert!(secrets.contains(&"<key>".to_string()), "{secrets:?}");
+    let stripped = macvpn_core::exporter::strip_secrets(&prepared.config, VPNKind::Openvpn);
+    assert!(!stripped.contains("PRIVATE KEY"));
+    assert!(stripped.contains("<cert>\n-----BEGIN CERTIFICATE-----"));
+}
+
+#[test]
+fn combined_cert_and_pkcs8_encrypted_key() {
+    let prepared = import_combined("cert-pkcs8key.pem");
+    let source = pem_fixture("cert-pkcs8key.pem");
+    let blocks = pem_blocks(&source);
+    assert_eq!(blocks.len(), 2);
+    assert_eq!(inline_block(&prepared.config, "cert"), blocks[0]);
+    assert_eq!(inline_block(&prepared.config, "key"), blocks[1]);
+    assert!(blocks[1].starts_with("-----BEGIN ENCRYPTED PRIVATE KEY-----\n"));
+    assert_eq!(prepared.inlined_files, ["ca.crt", "user.pem"]);
+    assert_eq!(prepared.issues, []);
+    assert_eq!(prepared.risky, []);
+    assert_no_cross_material(&prepared.config);
+    assert_key_password_required(&prepared);
+}
+
+/// A combined file made on Windows (CRLF line ends): the blocks are inlined with `\n`.
+#[test]
+fn combined_with_crlf_line_ends() {
+    let env = Env::new();
+    env.put("ca.crt", &pem_fixture("ca.crt"));
+    env.put("user.pem", &pem_fixture("cert-pkcs8key.pem").replace('\n', "\r\n"));
+    let prepared = importer::prepare("user.ovpn", COMBINED_CONFIG, &env.dir).unwrap();
+    let blocks = pem_blocks(&pem_fixture("cert-pkcs8key.pem"));
+    assert_eq!(inline_block(&prepared.config, "cert"), blocks[0]);
+    assert_eq!(inline_block(&prepared.config, "key"), blocks[1]);
+    assert!(!prepared.config.contains('\r'));
+    assert_no_cross_material(&prepared.config);
+    assert_key_password_required(&prepared);
+}
+
+#[test]
+fn combined_legacy_encrypted_rsa_key_keeps_its_headers() {
+    let prepared = import_combined("legacykey-cert.pem");
+    let blocks = pem_blocks(&pem_fixture("legacykey-cert.pem"));
+    // Key first in this file: each directive still gets its own block, the headers byte-exact.
+    assert!(blocks[0].starts_with("-----BEGIN RSA PRIVATE KEY-----\nProc-Type: 4,ENCRYPTED\nDEK-Info: AES-256-CBC,"));
+    assert_eq!(inline_block(&prepared.config, "key"), blocks[0]);
+    assert_eq!(inline_block(&prepared.config, "cert"), blocks[1]);
+    assert_eq!(prepared.issues, []);
+    assert_no_cross_material(&prepared.config);
+    assert_key_password_required(&prepared);
+}
+
+#[test]
+fn combined_with_bag_attributes_drops_the_text_around_the_blocks() {
+    let source = pem_fixture("bag-attributes.pem");
+    assert!(source.contains("Bag Attributes"));
+    let prepared = import_combined("bag-attributes.pem");
+    let blocks = pem_blocks(&source);
+    assert_eq!(blocks.len(), 3);
+    // `cert`: the client certificate and its chain (OpenVPN reads it as a chain file); `key`: the key alone.
+    assert_eq!(inline_block(&prepared.config, "cert"), format!("{}\n{}", blocks[0], blocks[1]));
+    assert_eq!(inline_block(&prepared.config, "key"), blocks[2]);
+    for text in ["Bag Attributes", "localKeyID", "subject=", "issuer="] {
+        assert!(!prepared.config.contains(text), "{text}");
+    }
+    assert_eq!(prepared.issues, []);
+    assert_no_cross_material(&prepared.config);
+    assert_key_password_required(&prepared);
+}
+
+#[test]
+fn combined_chain_plus_key() {
+    let env = Env::new();
+    let source = pem_fixture("chain-key.pem");
+    env.put("user.pem", &source);
+    let blocks = pem_blocks(&source);
+    assert_eq!(blocks.len(), 3);
+    let chain = format!("{}\n{}", blocks[0], blocks[1]);
+    let out = env.inline("ca user.pem\ncert user.pem\nextra-certs user.pem\nkey user.pem\n").unwrap();
+    assert_eq!(inline_block(&out.config, "ca"), chain);
+    assert_eq!(inline_block(&out.config, "cert"), chain);
+    assert_eq!(inline_block(&out.config, "extra-certs"), chain);
+    assert_eq!(inline_block(&out.config, "key"), blocks[2]);
+    assert_eq!(out.inlined_files, ["user.pem"]);
+    assert_no_cross_material(&out.config);
+}
+
+#[test]
+fn key_file_with_two_keys_is_refused() {
+    let env = Env::new();
+    env.put("two.pem", &pem_fixture("two-keys.pem"));
+    env.rejected("key two.pem", wrong("key", "two.pem"));
+    // No certificate in it either.
+    env.rejected("cert two.pem", wrong("cert", "two.pem"));
+    // A second, incomplete key block counts too.
+    env.put("half.pem", &format!("{}-----BEGIN PRIVATE KEY-----\nMIIE\n", pem_fixture("key-only.pem")));
+    env.rejected("key half.pem", wrong("key", "half.pem"));
+}
+
+#[test]
+fn key_only_file_is_refused_for_certificate_directives() {
+    let env = Env::new();
+    env.put("key.pem", &pem_fixture("key-only.pem"));
+    env.put("client.crt", &pem_fixture("client.crt"));
+    for directive in ["cert", "ca", "extra-certs"] {
+        env.rejected(&format!("{directive} key.pem"), wrong(directive, "key.pem"));
+    }
+    env.rejected("key client.crt", wrong("key", "client.crt"));
+    // The strict directives stay strict: a certificate next to a static key is refused.
+    env.put("ta.pem", &format!("{STATIC_KEY}{CERT}"));
+    env.rejected("tls-auth ta.pem", wrong("tls-auth", "ta.pem"));
+}
+
+#[test]
+fn tag_injection_in_a_combined_file_is_refused() {
+    let env = Env::new();
+    let cert = pem_fixture("client.crt");
+    let key = pem_fixture("key-only.pem");
+    // Between the blocks (outside any block).
+    env.put("between.pem", &format!("{cert}</cert>\nup /tmp/x\n<cert>\n{key}"));
+    // Inside the certificate block, and inside the key block.
+    let mut cert_lines: Vec<&str> = cert.split('\n').collect();
+    cert_lines.splice(2..2, ["</cert>", "up /tmp/x", "<cert>"]);
+    let in_cert = cert_lines.join("\n");
+    env.put("in-cert.pem", &format!("{in_cert}{key}"));
+    let in_key = key.replacen("\n", "\n  </key>\n", 1);
+    env.put("in-key.pem", &format!("{cert}{in_key}"));
+    for file in ["between.pem", "in-cert.pem", "in-key.pem"] {
+        for directive in ["cert", "key"] {
+            env.rejected(&format!("{directive} {file}"), wrong(directive, file));
+        }
+    }
+}
+
+#[test]
+fn single_type_files_inline_byte_for_byte() {
+    let env = Env::new();
+    for (name, directive) in [("ca.crt", "ca"), ("client.crt", "cert"), ("key-only.pem", "key")] {
+        let source = pem_fixture(name);
+        env.put(name, &source);
+        let out = env.inline(&format!("{directive} {name}\n")).unwrap();
+        assert_eq!(out.config, format!("<{directive}>\n{}\n</{directive}>\n", &source[..source.len() - 1]), "{name}");
+    }
+    // The built-in samples too.
+    env.put("c.crt", CERT);
+    env.put("c.key", KEY);
+    let out = env.inline("cert c.crt\nkey c.key\n").unwrap();
+    assert_eq!(out.config, format!("<cert>\n{}\n</cert>\n<key>\n{}\n</key>\n", CERT.trim_end(), KEY.trim_end()));
 }

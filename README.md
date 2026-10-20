@@ -14,6 +14,7 @@ MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (stron
 - **Downloaded files ask first.** A file you downloaded (a browser, Mail, Messages, AirDrop) is imported only after one question: **Import N downloaded files?** with their names and "Only import files you trust." `.ovpn` and `.sstp` are declared as data, not text, so Safari never opens them by itself.
 - **For developers:** the old 0.x Swift code is no longer in the repository (it stays in the git history up to `v0.4.0`); the frozen Swift-written fixtures stay for the compatibility tests.
 - The root layer stays 8: updating from 1.3 needs no admin password.
+- **1.4.1:** an OpenVPN config whose `cert` and `key` point to the same PEM file (certificate plus private key, also an encrypted key or Windows line ends) imports; MacVPN asks for the private key password when you connect. See [Other](docs/user-guide.en.md#78-other).
 
 ### What's new in 1.3
 - **Team catalogs.** An administrator publishes a set of connections, with their folders, colours and named sign-ins, as one signed and encrypted file on an HTTPS server, a file share or a synced folder (iCloud Drive, OneDrive, Dropbox). Every subscribed MacVPN picks up additions, changes and removals by itself; each member signs in with their own user name and password, which never leave their vault. See [team catalogs](docs/user-guide.en.md#16-team-catalogs).
@@ -121,6 +122,7 @@ A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, 
 - **A letöltött fájlokra előbb rákérdez.** A letöltött fájl (böngésző, Mail, Üzenetek, AirDrop) csak egy kérdés után importálódik: **Importálod a(z) N letöltött fájlt?**, a nevükkel és a figyelmeztetéssel: „Csak olyan fájlt importálj, amelyben megbízol.” A `.ovpn` és a `.sstp` adatként van bejelentve, nem szövegként, így a Safari soha nem nyitja meg magától.
 - **Fejlesztőknek:** a régi 0.x Swift kód már nincs a tárolóban (a git történetben a `v0.4.0`-ig megvan); a befagyasztott, Swift által írt tesztadatok a kompatibilitási tesztekhez megmaradnak.
 - A root réteg 8 marad: az 1.3-ról frissítve nem kell admin jelszó.
+- **1.4.1:** importálható az az OpenVPN config, amelynek `cert` és `key` sora ugyanarra a PEM fájlra mutat (tanúsítvány és privát kulcs, titkosított kulccsal vagy Windowsos sorvégekkel is); a privát kulcs jelszavát a MacVPN csatlakozáskor kéri. Lásd [Egyéb](docs/user-guide.hu.md#78-egyéb).
 
 ### Újdonságok az 1.3-ban
 - **Csapatkatalógusok.** A rendszergazda egy kapcsolatkészletet, a mappáival, színeivel és névvel ellátott bejelentkezési helyeivel együtt, egyetlen aláírt és titkosított fájlként tesz közzé egy HTTPS-szerveren, egy fájlmegosztáson vagy egy szinkronizált mappában (iCloud Drive, OneDrive, Dropbox). Minden feliratkozott MacVPN magától átveszi az új, a módosult és a törölt kapcsolatokat; mindenki a saját felhasználónevével és jelszavával jelentkezik be, ezek sosem hagyják el a széfjét. Lásd [csapatkatalógusok](docs/user-guide.hu.md#16-csapatkatalógusok).

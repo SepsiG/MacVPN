@@ -3,7 +3,7 @@ resolver = "3"
 members = ["crates/core", "crates/platform-mac", "crates/mvpn", "crates/app-core", "app/src-tauri", "examples/macvpn-control-client"]
 
 [workspace.package]
-version = "1.4.0"
+version = "1.4.1"
 edition = "2024"
 license = "MIT"
 publish = false

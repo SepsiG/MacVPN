@@ -14,6 +14,7 @@ For short step-by-step instructions, see the [How-to guide](how-to.en.md). This 
 - **Opening VPN files from Finder.** A double-click on a `.ovpn` or `.sstp` file imports it; a `.conf` opens through **Open With → MacVPN**; a `.macvpncatalog` file opens **Add team catalog…** with that file. See [4.1](#41-opening-vpn-files-from-finder).
 - **Downloaded files ask first.** A downloaded file is imported only after one confirmation (**Import** / **Cancel**). See [4.1](#41-opening-vpn-files-from-finder).
 - The root layer stays 8: updating from 1.3 needs no admin password.
+- **1.4.1:** `cert` and `key` may point to the same PEM file (certificate plus private key, also encrypted). See [7.8](#78-other).
 
 ## What's new in 1.3
 
@@ -551,6 +552,7 @@ MacVPN starts the VPN tools as root, so it only allows known, safe settings. To 
   (use the folder named in the message). On Intel Macs Homebrew may own `/usr/local/libexec`; after this change Homebrew can no longer write there without `sudo`, which may affect some formulae.
 - **"Cannot query the status: …"** warning in the menu: the root layer or the sudoers rule is missing or outdated. Open the **System Status** window and press **Authorize**.
 - **"openvpn not found (brew install openvpn)"** and similar: install the missing tool from the **System Status** window.
+- **`cert` and `key` pointing to the same file** (a combined PEM file: certificate plus private key, possibly encrypted, also with Windows line ends): supported since 1.4.1. MacVPN puts only the certificate blocks into `<cert>` and only the key into `<key>`, and asks for the **Private key password** when you connect. Before 1.4.1 this import failed with "does not have the expected format".
 
 ### 7.9 SSTP: certificate error
 
