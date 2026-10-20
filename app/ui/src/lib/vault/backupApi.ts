@@ -19,6 +19,14 @@ export interface RestoreSummary {
   added: number;
   conflicts: number;
   lostOnReplace: number;
+  /// The team catalog subscriptions a replace removes (not in the backup).
+  lostSubscriptions: string[];
+  /// The admin key roles the backup replaces with its own key (a role it has no key for stays).
+  lostAdminKeys: ('primary' | 'backup')[];
+  /// The publications the backup replaces with its own record (one it does not have stays).
+  lostPublications: string[];
+  /// Everything a replace loses: the number its confirmation sends back.
+  lostTotal: number;
   /// The connections whose acknowledged risky OpenVPN directives a replace keeps (a merge drops them).
   acknowledgedRisky: string[];
   nativeProfiles: number;
@@ -42,6 +50,8 @@ export interface NativeProfileView {
 export interface RestoreOutcome {
   preferences: PreferenceChoice[];
   nativeProfiles: NativeProfileView[];
+  /// The backup's folders and connections a team catalog owns here: not restored (the catalog's stay).
+  skippedCatalogItems: string[];
 }
 
 export interface PreferenceFailure {

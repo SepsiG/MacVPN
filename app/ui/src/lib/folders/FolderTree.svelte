@@ -5,6 +5,10 @@
   // reorders the pins of a folder and moves items into folders (dnd.ts decides; a drop into itself or a subfolder is
   // refused before the backend is asked). The context menu: New Folder, Rename (inline), Colour, Move to Top Level,
   // Delete (with the two-step dialog); Pin / Unpin on an item.
+  // A team catalog's folders and connections (spec 6) carry the "Team" badge and are read-only: they are never
+  // dragged and nothing is dropped into them (the ghost says why); their context menu offers only what the user
+  // may change – Pin / Unpin, the own colour ("Use team colour"), "Duplicate as personal connection…", and
+  // "Install profile" when the catalog changed a native connection.
   import { api, type FolderColor, type FolderTreeRow, type Row, type TreeRow } from '../api';
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
@@ -13,7 +17,12 @@
   import ColorPicker, { type ColorChoice } from './ColorPicker.svelte';
   import { pointAnchor, popover } from '../popover';
   import DeleteFolderDialog from './DeleteFolderDialog.svelte';
+  import DuplicateDialog from '../catalog/DuplicateDialog.svelte';
+  import TeamBadge from '../catalog/TeamBadge.svelte';
+  import { catalogApi } from '../catalog/catalogApi';
+  import { isTeamRoot, isTeamRow, teamOf } from '../catalog/status';
   import FolderIcon from './FolderIcon.svelte';
+  import PublishedBadges from '../catalog/PublishedBadges.svelte';
   import { dropTarget, zoneOf, type DropAction, type Dragged, type Hover, type Drop } from './dnd';
   import { colorToken, descendantFolders, folderBadge, indentLevel, visibleRows } from './tree';
   import type { DeleteMode } from './tree';
@@ -24,6 +33,7 @@
     selected,
     enabled,
     palette,
+    teamFolders = {},
     onselect,
   }: {
     rows: Row[];
@@ -32,6 +42,8 @@
     /// Folders can be edited (otherwise: the ranked list with Pin / Unpin only).
     enabled: boolean;
     palette: FolderColor[];
+    /// The folders team catalogs own: folder id → catalog id (read-only, the root carries the "Team" badge).
+    teamFolders?: Record<string, string>;
     onselect: (id: string) => void;
   } = $props();
 
@@ -57,6 +69,7 @@
   let pendingRename = $state<string | null>(null);
   let deleting = $state<FolderTreeRow | null>(null);
   let failure = $state<string | null>(null);
+  let duplicating = $state<Row | null>(null);
 
   let list: HTMLElement | undefined = $state();
   let drag = $state<{
@@ -69,6 +82,8 @@
     moved: boolean;
     drop: Drop | null;
     refused: string | null;
+    /// Why this drag cannot drop anywhere here (a team catalog's row, or a drop into one), shown on the ghost.
+    reason: string | null;
   } | null>(null);
   let suppressClick = false;
 
@@ -98,7 +113,7 @@
 
   function pointerdown(event: PointerEvent, dragged: Dragged, label: string) {
     if (event.button !== 0 || renaming || (!enabled && dragged.type === 'folder')) return;
-    drag = { dragged, label, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, moved: false, drop: null, refused: null };
+    drag = { dragged, label, startX: event.clientX, startY: event.clientY, x: event.clientX, y: event.clientY, moved: false, drop: null, refused: null, reason: null };
   }
 
   function hoverAt(x: number, y: number): Hover {
@@ -120,6 +135,15 @@
     const hover = hoverAt(event.clientX, event.clientY);
     let drop = dropTarget(tree, rows, drag.dragged, hover);
     if (drop && !enabled && drop.action.type !== 'pinMove') drop = null;
+    drag.reason = null;
+    const draggedRow = tree.find((r) => r.id === drag?.dragged.id);
+    if (draggedRow && isTeamRow(draggedRow, rows, teamFolders)) {
+      drop = null;
+      drag.reason = tr('Team catalog items cannot be moved.');
+    } else if (drop && drop.action.type !== 'pinMove' && teamOf(teamFolders, drop.action.type === 'itemMove' ? drop.action.folder : drop.action.parent)) {
+      drop = null;
+      drag.reason = tr('Nothing can be moved into a team catalog.');
+    }
     drag.drop = drop;
     // A folder over itself or one of its subfolders: shown as refused.
     const over = hover && 'rowId' in hover ? hover.rowId : null;
@@ -168,7 +192,7 @@
   function openContext(event: MouseEvent, row: TreeRow | null) {
     event.preventDefault();
     event.stopPropagation();
-    if (!enabled && (row === null || row.type === 'folder')) return;
+    if (!enabled && (row === null || (row.type === 'folder' && !teamOf(teamFolders, row.id)))) return;
     // At the pointer; `popover` keeps it inside the window (to the left of / above the pointer at an edge).
     context = { x: event.clientX, y: event.clientY, row };
   }
@@ -257,6 +281,11 @@
     run(() => (row.pinned ? api.unpin(row.id) : api.pin(row.id)));
   }
 
+  function installProfile(row: Row) {
+    context = null;
+    run(() => catalogApi.installProfile(row.id));
+  }
+
   function remove(folder: FolderTreeRow, mode: DeleteMode) {
     deleting = null;
     run(() => api.folderDelete(folder.id, mode));
@@ -319,13 +348,14 @@
           <button
             class="row folder"
             onclick={() => clickFolder(entry)}
-            ondblclick={() => enabled && startRename(entry)}
+            ondblclick={() => enabled && !teamOf(teamFolders, entry.id) && startRename(entry)}
             oncontextmenu={(e) => openContext(e, entry)}
             onpointerdown={(e) => pointerdown(e, { type: 'folder', id: entry.id }, entry.name)}
           >
             <span class="chev" class:open={!isCollapsed(entry)} class:empty={entry.itemCount + entry.folderCount === 0}><Icon name="chevron" /></span>
             <FolderIcon color={entry.color} open={!isCollapsed(entry)} />
             <span class="label">{entry.name}</span>
+            {#if isTeamRoot(teamFolders, entry)}<TeamBadge name={entry.name} />{/if}
             {#if badge.count !== null || badge.dot}
               <span class="badge {badge.dot ?? ''}" role="img" aria-label={tr('%lld active', badge.count ?? 0)}>
                 {#if badge.dot}<span class="dot"></span>{/if}{#if badge.count !== null}{badge.count}{/if}
@@ -372,9 +402,12 @@
                 {#if entry.ownColor}
                   <span class="own" style:--own={colorToken(entry.ownColor)} role="img" aria-label={tr('Own colour')} title={tr('Own colour')}></span>
                 {/if}
+                {#if row.catalog}<span class="team"><TeamBadge name={row.catalog.name} /></span>{/if}
               </span>
               <span class="type">{subtitle(row)}</span>
+              {#if row.catalog?.pendingRemoval}<span class="removal">{tr('Removed from the team catalog — disappears after you disconnect')}</span>{/if}
               {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
+              <PublishedBadges published={row.published} />
             </span>
           </button>
         </div>
@@ -395,6 +428,7 @@
     class="ghost"
     use:popover={{ anchor: { left: drag.x + 14, right: drag.x - 14, top: drag.y - 10, bottom: drag.y + 10 } }}
     class:none={!drag.drop}
+    class:with-reason={drag.reason !== null}
   >
     {#if draggedRow}
       <TypeIcon kind={draggedRow.kind} size="sm" />
@@ -402,6 +436,7 @@
       <Icon name="folder" />
     {/if}
     <span>{drag.label}</span>
+    {#if drag.reason}<span class="reason">{drag.reason}</span>{/if}
   </div>
 {/if}
 
@@ -411,6 +446,8 @@
   <div class="menu" role="menu" use:popover={{ anchor: pointAnchor(context.x, context.y), maxWidth: 320 }}>
     {#if target === null}
       <button role="menuitem" data-action="new-folder" onclick={() => newFolder(null)}><Icon name="folder-plus" />{tr('New Folder')}</button>
+    {:else if target.type === 'folder' && teamOf(teamFolders, target.id)}
+      <p class="menu-note" data-team-note>{tr('A team catalog manages this folder: it cannot be changed here.')}</p>
     {:else if target.type === 'folder'}
       <button role="menuitem" data-action="new-folder" onclick={() => newFolder(target.id)}><Icon name="folder-plus" />{tr('New Folder')}</button>
       <button role="menuitem" data-action="rename" onclick={() => startRename(target)}><Icon name="pencil" />{tr('Rename')}</button>
@@ -438,7 +475,21 @@
           {row.pinned ? tr('Unpin') : tr('Pin to Top')}
         </button>
       {/if}
-      {#if enabled}
+      {#if row?.catalog}
+        {@const team = row}
+        <button role="menuitem" data-action="colour" onclick={() => openPicker(target)}><Icon name="palette" />{tr('Colour…')}</button>
+        <button
+          role="menuitem"
+          data-action="duplicate"
+          onclick={() => {
+            context = null;
+            duplicating = team;
+          }}><Icon name="copy" />{tr('Duplicate as personal connection…')}</button
+        >
+        {#if team.catalog?.profileOutdated}
+          <button role="menuitem" data-action="install-profile" onclick={() => installProfile(team)}><Icon name="download" />{tr('Install profile')}</button>
+        {/if}
+      {:else if enabled}
         <button role="menuitem" data-action="colour" onclick={() => openPicker(target)}><Icon name="palette" />{tr('Colour…')}</button>
         {#if target.parent !== null}
           <button role="menuitem" data-action="top-level" onclick={() => toTopLevel(target)}><Icon name="arrow-up" />{tr('Move to Top Level')}</button>
@@ -457,6 +508,7 @@
     value={row.ownColor}
     target={row.type}
     inherited={parentColor(row)}
+    team={row.type === 'item' && !!byId.get(row.id)?.catalog}
     x={picker.x}
     y={picker.y}
     onpick={(choice) => pickColor(row, choice)}
@@ -467,6 +519,19 @@
 {#if deleting}
   {@const folder = deleting}
   <DeleteFolderDialog {folder} ondelete={(mode) => remove(folder, mode)} oncancel={() => (deleting = null)} />
+{/if}
+
+{#if duplicating}
+  {@const original = duplicating}
+  <DuplicateDialog
+    itemId={original.id}
+    name={original.name}
+    oncancel={() => (duplicating = null)}
+    ondone={(copy) => {
+      duplicating = null;
+      onselect(copy);
+    }}
+  />
 {/if}
 
 {#if failure}
@@ -764,6 +829,34 @@
   }
   .ghost.none {
     opacity: 0.75;
+  }
+  .ghost.with-reason {
+    max-width: 300px;
+    flex-wrap: wrap;
+    white-space: normal;
+    border-radius: var(--radius-card);
+  }
+  .ghost .reason {
+    color: var(--state-fail-text);
+    font-weight: 400;
+  }
+  .team {
+    display: inline-flex;
+    margin-left: 2px;
+  }
+  .removal {
+    font-size: var(--text-xs);
+    color: var(--state-busy-text);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .menu-note {
+    margin: 0;
+    max-width: 260px;
+    padding: 4px 8px;
+    font-size: var(--text-sm);
+    color: var(--secondary);
   }
   .ghost.none :global(.icon) {
     color: var(--tertiary);

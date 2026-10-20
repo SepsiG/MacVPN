@@ -12,6 +12,7 @@
 
 use super::color::FolderColor;
 use super::db::{Tx, Vault, VaultError};
+use super::repo_catalog::{guard_owned, guard_provided};
 use crate::collation;
 use crate::models::{Connection, SecretField, parse_uuid, uuid_string};
 use crate::swift_json;
@@ -35,7 +36,7 @@ pub struct StoredConnection {
 pub type ConnectionRecord = (String, Zeroizing<Vec<u8>>);
 
 /// The bytes of a BLOB (or TEXT) column, copied straight into a buffer that is wiped on drop.
-fn wiped_bytes(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Zeroizing<Vec<u8>>> {
+pub(super) fn wiped_bytes(row: &rusqlite::Row<'_>, index: usize) -> rusqlite::Result<Zeroizing<Vec<u8>>> {
     match row.get_ref(index)? {
         ValueRef::Blob(b) | ValueRef::Text(b) => Ok(Zeroizing::new(b.to_vec())),
         other => Err(rusqlite::Error::FromSqlConversionFailure(
@@ -112,6 +113,7 @@ impl Vault {
     pub fn delete_connection(&mut self, id: &Uuid) -> Result<(), VaultError> {
         let key = uuid_string(id);
         self.transaction(|tx| {
+            guard_owned(tx, &key)?;
             tx.execute("DELETE FROM secrets WHERE connection_id = ?1", [&key])?;
             tx.execute("DELETE FROM credential_links WHERE item_id = ?1", [&key])?;
             tx.execute("DELETE FROM ranking WHERE id = ?1", [&key])?;
@@ -134,14 +136,21 @@ impl Vault {
         bytes.map(|b| wiped_text(&b, "a secret")).transpose()
     }
 
-    /// Stores a secret as a BLOB; an empty value deletes it.
+    /// Stores a secret as a BLOB; an empty value deletes it. A field a team catalog provides for the item is
+    /// [`VaultError::CatalogManaged`].
     pub fn set_secret(&mut self, item: &str, field: SecretField, value: &str) -> Result<(), VaultError> {
-        self.transaction(|tx| tx.set_secret(item, field, value))
+        self.transaction(|tx| {
+            guard_provided(tx, item, field)?;
+            tx.set_secret(item, field, value)
+        })
     }
 
-    /// Every secret of one item.
+    /// Every secret of one item. An item with secrets a team catalog provides is [`VaultError::CatalogManaged`].
     pub fn delete_secrets(&mut self, item: &str) -> Result<(), VaultError> {
         self.transaction(|tx| {
+            for field in SecretField::ALL {
+                guard_provided(tx, item, field)?;
+            }
             tx.execute("DELETE FROM secrets WHERE connection_id = ?1", [item])?;
             Ok(())
         })
@@ -189,7 +198,7 @@ impl Vault {
 }
 
 /// Every table that holds user data (not `meta`).
-const USER_TABLES: [&str; 10] = [
+const USER_TABLES: [&str; 15] = [
     "connections",
     "secrets",
     "folders",
@@ -200,6 +209,11 @@ const USER_TABLES: [&str; 10] = [
     "ranking",
     "pins",
     "control_clients",
+    "catalog_subscriptions",
+    "catalog_items",
+    "catalog_slots",
+    "catalog_admin_keys",
+    "catalog_publications",
 ];
 
 fn count_rows(vault: &Vault, table: &str) -> Result<usize, VaultError> {
@@ -211,10 +225,12 @@ fn count_rows(vault: &Vault, table: &str) -> Result<usize, VaultError> {
 /// The same writes inside a caller's transaction, so several of them commit together (the migration imports
 /// everything in one transaction).
 impl Tx<'_> {
-    /// [`Vault::save_connection`] inside this transaction.
+    /// [`Vault::save_connection`] inside this transaction. A catalog-owned connection is
+    /// [`VaultError::CatalogManaged`] (only the catalog executor writes it).
     pub fn save_connection(&self, c: &Connection, config: Option<&str>) -> Result<(), VaultError> {
         let meta = swift_json::to_pretty_sorted(&c.to_json()).map_err(VaultError::Corrupt)?;
         let key = uuid_string(&c.id);
+        guard_owned(self, &key)?;
         self.execute(
             "INSERT INTO connections(id, kind, meta_json, config, folder_id, position)
              VALUES (?1, ?2, ?3, coalesce(?4, x''), NULL,

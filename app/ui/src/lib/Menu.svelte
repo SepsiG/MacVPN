@@ -19,6 +19,7 @@
   import { versionLabel } from './format';
   import LockedMenu from './vault/LockedMenu.svelte';
   import { backupApi } from './vault/backupApi';
+  import { isTeamRoot } from './catalog/status';
 
   let vm = $state<ViewModel | null>(null);
   let now = $state(Date.now());
@@ -217,7 +218,7 @@
       {#each entries as entry (entry.id)}
         {#if entry.type === 'folder'}
           <div class="indent" style:--level={indentLevel(entry.depth)}>
-            <FolderRow folder={entry} collapsed={isCollapsed(entry)} ontoggle={() => toggleFolder(entry)} />
+            <FolderRow folder={entry} collapsed={isCollapsed(entry)} team={isTeamRoot(vm?.teamFolders, entry)} ontoggle={() => toggleFolder(entry)} />
           </div>
         {:else if rowById.get(entry.id)}
           <div class="indent" style:--level={indentLevel(entry.depth)}>

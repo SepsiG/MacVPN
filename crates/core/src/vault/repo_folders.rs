@@ -11,6 +11,7 @@
 
 use super::color::FolderColor;
 use super::db::{Vault, VaultError};
+use super::repo_catalog::{guard_folder, guard_owned};
 use super::tree::{FolderNode, FolderTree, TreeError, validate_folder_name};
 use crate::models::uuid_string;
 use rusqlite::{Connection, OptionalExtension};
@@ -73,6 +74,9 @@ impl Vault {
             {
                 return Err(TreeError::UnknownFolder(parent).into());
             }
+            if let Some(parent) = parent {
+                guard_folder(tx, parent)?;
+            }
             let id = Uuid::new_v4();
             let position = tree.children(parent).last().and_then(|last| tree.get(*last)).map_or(0, |n| n.position + 1);
             tx.execute(
@@ -83,19 +87,21 @@ impl Vault {
         })
     }
 
+    /// A catalog folder is [`VaultError::CatalogManaged`].
     pub fn rename_folder(&mut self, id: Uuid, name: &str) -> Result<(), VaultError> {
         let name = validate_folder_name(name)?;
-        self.update_folder(id, "UPDATE folders SET name = ?2 WHERE id = ?1", name)
+        self.update_folder(id, true, "UPDATE folders SET name = ?2 WHERE id = ?1", name)
     }
 
-    /// `None` clears the folder's own colour (it inherits from its parent again).
+    /// `None` clears the folder's own colour (it inherits from its parent again). A catalog folder (its colour is
+    /// the publisher's) is [`VaultError::CatalogManaged`].
     pub fn set_folder_color(&mut self, id: Uuid, color: Option<FolderColor>) -> Result<(), VaultError> {
-        self.update_folder(id, "UPDATE folders SET color = ?2 WHERE id = ?1", color.map(FolderColor::as_str))
+        self.update_folder(id, true, "UPDATE folders SET color = ?2 WHERE id = ?1", color.map(FolderColor::as_str))
     }
 
-    /// The menu's persisted collapsed state.
+    /// The menu's persisted collapsed state (also of catalog folders: it is the user's own).
     pub fn set_collapsed(&mut self, id: Uuid, collapsed: bool) -> Result<(), VaultError> {
-        self.update_folder(id, "UPDATE folders SET collapsed = ?2 WHERE id = ?1", collapsed)
+        self.update_folder(id, false, "UPDATE folders SET collapsed = ?2 WHERE id = ?1", collapsed)
     }
 
     /// Moves `id` under `new_parent` (`None`: the root) at `position` among its new siblings (past the end
@@ -105,6 +111,10 @@ impl Vault {
         self.transaction(|tx| {
             let tree = load_tree(tx)?;
             tree.check_move(id, new_parent)?;
+            guard_folder(tx, id)?;
+            if let Some(parent) = new_parent {
+                guard_folder(tx, parent)?;
+            }
             let old_parent = tree.get(id).and_then(|n| n.parent);
             let mut siblings: Vec<Uuid> = tree.children(new_parent).iter().copied().filter(|c| *c != id).collect();
             siblings.insert(position.min(siblings.len()), id);
@@ -123,6 +133,7 @@ impl Vault {
         self.transaction(|tx| {
             let tree = load_tree(tx)?;
             let node = tree.get(id).ok_or(TreeError::UnknownFolder(id))?;
+            guard_folder(tx, id)?;
             let parent = node.parent;
             let mut connections = Vec::new();
             match mode {
@@ -161,6 +172,11 @@ impl Vault {
             {
                 return Err(TreeError::UnknownFolder(folder).into());
             }
+            // Neither a catalog connection out of its place nor anything into a catalog folder.
+            guard_owned(tx, key)?;
+            if let Some(folder) = folder {
+                guard_folder(tx, folder)?;
+            }
             let folder_id = folder.map(|f| uuid_string(&f));
             if is_managed(tx, key)? {
                 let position = next_position(tx, Items::Connections, folder_id.as_deref())?;
@@ -195,11 +211,23 @@ impl Vault {
         })
     }
 
-    /// One `UPDATE folders … WHERE id = ?1` with `?2 = value`; no row is [`TreeError::UnknownFolder`].
-    fn update_folder(&mut self, id: Uuid, sql: &str, value: impl rusqlite::ToSql) -> Result<(), VaultError> {
-        self.transaction(|tx| match tx.execute(sql, (uuid_string(&id), value))? {
-            0 => Err(TreeError::UnknownFolder(id).into()),
-            _ => Ok(()),
+    /// One `UPDATE folders … WHERE id = ?1` with `?2 = value`; no row is [`TreeError::UnknownFolder`]. `guarded`:
+    /// a catalog folder is [`VaultError::CatalogManaged`].
+    fn update_folder(
+        &mut self,
+        id: Uuid,
+        guarded: bool,
+        sql: &str,
+        value: impl rusqlite::ToSql,
+    ) -> Result<(), VaultError> {
+        self.transaction(|tx| {
+            if guarded {
+                guard_folder(tx, id)?;
+            }
+            match tx.execute(sql, (uuid_string(&id), value))? {
+                0 => Err(TreeError::UnknownFolder(id).into()),
+                _ => Ok(()),
+            }
         })
     }
 }

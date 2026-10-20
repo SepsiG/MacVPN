@@ -149,7 +149,7 @@ fn a_credential_without_a_password_is_asked_for_and_saved_into_the_credential() 
     let secrets = f.secrets.secrets(&one.id);
     assert_eq!(secrets.username.as_deref(), Some("alice"));
     assert_eq!(secrets.password, None);
-    let named = CredentialRef { name: "Office AD".into(), used_by: 2 };
+    let named = CredentialRef { name: "Office AD".into(), used_by: 2, ..Default::default() };
     assert_eq!(f.secrets.credential_for(&one.id), Some(named.clone()));
     assert_eq!(prompt_credential(f.secrets.as_ref(), &one.id, &[SecretField::Password]), Some(named.clone()));
     assert_eq!(prompt_credential(f.secrets.as_ref(), &one.id, &[SecretField::KeyPassword]), None);
@@ -208,7 +208,10 @@ fn the_prompt_names_the_credential_and_its_save_updates_it() {
         let prompts = prompts.lock().unwrap();
         assert_eq!(prompts.len(), 1);
         assert_eq!(prompts[0].fields, [CredentialField::Password]);
-        assert_eq!(prompts[0].credential, Some(CredentialRef { name: "Office AD".into(), used_by: 2 }));
+        assert_eq!(
+            prompts[0].credential,
+            Some(CredentialRef { name: "Office AD".into(), used_by: 2, ..Default::default() })
+        );
     }
     assert!(f.creds.list().unwrap()[0].credential.has_password, "saved into the credential");
     assert_eq!(f.secrets.secrets(&two.id).password.as_deref(), Some("typed"));

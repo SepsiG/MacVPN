@@ -352,3 +352,42 @@
 .manage ::-webkit-scrollbar-corner {
   background: transparent;
 }
+
+/* A team catalog's connection (spec 6): the editor's fields sit in a `lock` group that is only a disabled wrapper
+   (no card of its own), under the "Managed by the team catalog" note. */
+.manage fieldset.lock {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-5);
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  outline: none;
+}
+
+.manage fieldset.lock:disabled {
+  opacity: 0.72;
+}
+
+.manage .readonly-note {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  font-size: var(--text-md);
+  font-weight: 500;
+}
+
+.manage .readonly-note .icon {
+  flex: none;
+  width: 14px;
+  height: 14px;
+}

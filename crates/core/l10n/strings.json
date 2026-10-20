@@ -6,6 +6,22 @@
       "hu": " – töröld vagy tedd megjegyzésbe (#) a sort",
       "scope": "core"
     },
+    "%@ (personal)": {
+      "hu": "%@ (saját)",
+      "scope": "app"
+    },
+    "%@ (team catalog “%@”) — enter your password": {
+      "hu": "%@ („%@” csapatkatalógus) — add meg a jelszavad",
+      "scope": "app"
+    },
+    "%@ (team catalog “%@”) — enter your user name and password": {
+      "hu": "%@ („%@” csapatkatalógus) — add meg a felhasználóneved és a jelszavad",
+      "scope": "app"
+    },
+    "%@ and %@ were moved and checked. The old copies are deleted when you continue.": {
+      "hu": "%@ és %@ átkerült és ellenőrizve lett. A régi másolatok a folytatáskor törlődnek.",
+      "scope": "app"
+    },
     "%@ not found": {
       "hu": "%@ nem található",
       "scope": "core"
@@ -54,28 +70,108 @@
       "hu": "%@: a kapcsolat megszakadt",
       "scope": "app"
     },
+    "%d added": {
+      "hu": "%d hozzáadva",
+      "scope": "core-rust"
+    },
+    "%d changed": {
+      "hu": "%d módosítva",
+      "scope": "core-rust"
+    },
+    "%d connections cannot be published.": {
+      "hu": "%d kapcsolat nem tehető közzé.",
+      "scope": "core-rust"
+    },
+    "%d removed": {
+      "hu": "%d eltávolítva",
+      "scope": "core-rust"
+    },
     "%lld active": {
       "hu": "%lld aktív",
+      "scope": "app"
+    },
+    "%lld added": {
+      "hu": "%lld hozzáadva",
+      "scope": "app"
+    },
+    "%lld changed": {
+      "hu": "%lld módosítva",
+      "scope": "app"
+    },
+    "%lld changed since the last publish": {
+      "hu": "%lld módosult a legutóbbi közzététel óta",
+      "scope": "app"
+    },
+    "%lld connections": {
+      "hu": "%lld kapcsolat",
       "scope": "app"
     },
     "%lld connections active": {
       "hu": "%lld kapcsolat aktív",
       "scope": "app"
     },
-    "%lld connections and %lld saved secrets were moved and checked. The old copies are deleted when you continue.": {
-      "hu": "%lld kapcsolat és %lld mentett titok átkerült és ellenőrizve lett. A régi másolatok a folytatáskor törlődnek.",
+    "%lld connections selected": {
+      "hu": "%lld kapcsolat kiválasztva",
+      "scope": "app"
+    },
+    "%lld credential slots": {
+      "hu": "%lld közös belépési adat helye",
+      "scope": "app"
+    },
+    "%lld folders": {
+      "hu": "%lld mappa",
       "scope": "app"
     },
     "%lld items could not be read and were left where they were.": {
       "hu": "%lld elem nem olvasható, ezek a helyükön maradtak.",
       "scope": "app"
     },
+    "%lld removed": {
+      "hu": "%lld eltávolítva",
+      "scope": "app"
+    },
+    "%lld saved secrets": {
+      "hu": "%lld mentett titok",
+      "scope": "app"
+    },
+    "%lld team secrets": {
+      "hu": "%lld csapattitok",
+      "scope": "app"
+    },
+    "1 changed since the last publish": {
+      "hu": "1 módosult a legutóbbi közzététel óta",
+      "scope": "app"
+    },
+    "1 connection": {
+      "hu": "1 kapcsolat",
+      "scope": "app"
+    },
     "1 connection active": {
       "hu": "1 kapcsolat aktív",
       "scope": "app"
     },
+    "1 connection selected": {
+      "hu": "1 kapcsolat kiválasztva",
+      "scope": "app"
+    },
+    "1 credential slot": {
+      "hu": "1 közös belépési adat helye",
+      "scope": "app"
+    },
+    "1 folder": {
+      "hu": "1 mappa",
+      "scope": "app"
+    },
     "1 item could not be read and was left where it was.": {
       "hu": "1 elem nem olvasható, ez a helyén maradt.",
+      "scope": "app"
+    },
+    "1 saved secret": {
+      "hu": "1 mentett titok",
+      "scope": "app"
+    },
+    "1 team secret": {
+      "hu": "1 csapattitok",
       "scope": "app"
     },
     "<angol>": {
@@ -97,6 +193,10 @@
     "A VPN connection needs authentication": {
       "hu": "Egy VPN-kapcsolat hitelesítést kér",
       "scope": "app"
+    },
+    "A catalog name must have 1 to 64 characters and no control characters.": {
+      "hu": "A katalógus neve 1–64 karakter lehet, vezérlőkarakter nélkül.",
+      "scope": "core-rust"
     },
     "A connection could not be disconnected, installation cancelled.\n\n%@": {
       "hu": "Egy kapcsolat nem bontható, a telepítés megszakítva.\n\n%@",
@@ -130,6 +230,10 @@
       "hu": "A hiányzó eszköz vagy root segéd a szokásos módon a Rendszerállapotban látszik.",
       "scope": "app"
     },
+    "A personal setting": {
+      "hu": "Személyes beállítás",
+      "scope": "app"
+    },
     "A profile can only be generated for L2TP and Cisco IPsec connections": {
       "hu": "Csak L2TP és Cisco IPsec kapcsolathoz generálható profil",
       "scope": "core"
@@ -138,12 +242,32 @@
       "hu": "Az első indításkori visszaállításhoz új, üres széf kell.",
       "scope": "app"
     },
+    "A team catalog manages this folder: it cannot be changed here.": {
+      "hu": "Ezt a mappát egy csapatkatalógus kezeli: itt nem módosítható.",
+      "scope": "app"
+    },
+    "A team catalog manages this item: it cannot be changed here.": {
+      "hu": "Ezt az elemet egy csapatkatalógus kezeli: itt nem módosítható.",
+      "scope": "core-rust"
+    },
+    "A team catalog provides these, so the backup’s copies were not restored: %@": {
+      "hu": "Ezeket egy csapatkatalógus adja, ezért a mentésben lévő példányuk nem lett visszaállítva: %@",
+      "scope": "app"
+    },
     "A user name and password that several connections share. Change it here once, and every connection that uses it signs in with the new one. Passwords are stored in the vault and never shown.": {
       "hu": "Több kapcsolat által közösen használt felhasználónév és jelszó. Elég itt egyszer módosítani, és minden kapcsolat, amely használja, az újjal jelentkezik be. A jelszavak a széfben vannak, és sosem jelennek meg.",
       "scope": "app"
     },
+    "Access token": {
+      "hu": "Hozzáférési token",
+      "scope": "app"
+    },
     "Account name": {
       "hu": "Fióknév",
+      "scope": "app"
+    },
+    "Account name: never published; each member enters their own": {
+      "hu": "Fióknév: sosem kerül közzétételre; minden tag a sajátját adja meg",
       "scope": "app"
     },
     "Acknowledge the risky settings (tick the checkbox) before saving: %@": {
@@ -158,8 +282,36 @@
       "hu": "Hitelesítő adat hozzáadása…",
       "scope": "app"
     },
+    "Add Team Catalog": {
+      "hu": "Csapatkatalógus hozzáadása",
+      "scope": "app"
+    },
+    "Add team catalog…": {
+      "hu": "Csapatkatalógus hozzáadása…",
+      "scope": "app"
+    },
+    "Address": {
+      "hu": "Cím",
+      "scope": "app"
+    },
     "Adds what is missing here: %lld new items. Already here: %lld.": {
       "hu": "Hozzáadja, ami itt hiányzik: %lld új elem. Már itt van: %lld.",
+      "scope": "app"
+    },
+    "Adds what is missing here: 1 new item. Already here: %lld.": {
+      "hu": "Hozzáadja, ami itt hiányzik: 1 új elem. Már itt van: %lld.",
+      "scope": "app"
+    },
+    "Admin Key": {
+      "hu": "Adminisztrátori aláírókulcs",
+      "scope": "app"
+    },
+    "Admin keys and publications the backup does not have stay on this Mac.": {
+      "hu": "Azok az aláírókulcsok és közzétételek, amelyek nincsenek a mentésben, ezen a Macen maradnak.",
+      "scope": "app"
+    },
+    "Admin keys replaced by the backup’s: %lld": {
+      "hu": "A mentésben lévőre cserélt aláírókulcsok: %lld",
       "scope": "app"
     },
     "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.": {
@@ -206,6 +358,14 @@
       "hu": "Borostyán",
       "scope": "app"
     },
+    "An Ed25519 signing key in your vault. Its fingerprint is what your team compares when subscribing.": {
+      "hu": "Egy Ed25519 aláírókulcs a széfedben. Az ujjlenyomatát veti össze a csapat feliratkozáskor.",
+      "scope": "app"
+    },
+    "An admin key with this role already exists.": {
+      "hu": "Már létezik ilyen szerepű adminkulcs.",
+      "scope": "core-rust"
+    },
     "An app on this Mac asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.": {
       "hu": "Egy app ezen a Macen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne.",
       "scope": "app"
@@ -226,6 +386,10 @@
       "hu": "Aki birtokolja ezt a fájlt és a jelszavát, az összes VPN-hitelesítő adatodat elolvashatja.",
       "scope": "app"
     },
+    "Anyone with this file and its password can sign your team catalogs.": {
+      "hu": "Aki birtokolja ezt a fájlt és a jelszavát, aláírhatja a csapatkatalógusaidat.",
+      "scope": "app"
+    },
     "Apply Selected Preferences": {
       "hu": "A kijelölt beállítások alkalmazása",
       "scope": "app"
@@ -242,8 +406,16 @@
       "hu": "Egyszer kéri az admin jelszót: telepíti a /usr/local/libexec/macvpn scripteket és a /etc/sudoers.d/macvpn szabályt.",
       "scope": "app"
     },
+    "At least %d characters.": {
+      "hu": "Legalább %d karakter.",
+      "scope": "app"
+    },
     "At least %d characters. MacVPN does not store it: without it the backup cannot be opened.": {
       "hu": "Legalább %d karakter. A MacVPN nem tárolja: nélküle a mentés nem nyitható meg.",
+      "scope": "app"
+    },
+    "At least %d characters. Without it the file cannot be opened.": {
+      "hu": "Legalább %d karakter. Nélküle a fájl nem nyitható meg.",
       "scope": "app"
     },
     "At least %lld characters. A long phrase is easier to remember and harder to guess.": {
@@ -316,6 +488,10 @@
     },
     "Back Up…": {
       "hu": "Mentés…",
+      "scope": "app"
+    },
+    "Backup Admin Key": {
+      "hu": "Tartalék aláírókulcs",
       "scope": "app"
     },
     "Backup is available once the vault is set up.": {
@@ -438,8 +614,24 @@
       "hu": "Nem írható: %@",
       "scope": "core"
     },
+    "Catalog file": {
+      "hu": "Katalógusfájl",
+      "scope": "app"
+    },
+    "Catalog name": {
+      "hu": "Katalógus neve",
+      "scope": "app"
+    },
+    "Catalog source: %@": {
+      "hu": "Katalógus forrása: %@",
+      "scope": "app"
+    },
     "Certificates loaded: %lld": {
       "hu": "Betöltött tanúsítványok: %lld",
+      "scope": "app"
+    },
+    "Change Access Token of %@": {
+      "hu": "A(z) %@ hozzáférési tokenjének cseréje",
       "scope": "app"
     },
     "Change Master Password…": {
@@ -448,6 +640,18 @@
     },
     "Change Password": {
       "hu": "Jelszó módosítása",
+      "scope": "app"
+    },
+    "Change Team Key of %@": {
+      "hu": "A(z) %@ csapatkulcsának cseréje",
+      "scope": "app"
+    },
+    "Change access token…": {
+      "hu": "Hozzáférési token cseréje…",
+      "scope": "app"
+    },
+    "Change team key…": {
+      "hu": "Csapatkulcs cseréje…",
       "scope": "app"
     },
     "Change the master password": {
@@ -461,6 +665,10 @@
     "Character not allowed: \\": {
       "hu": "Nem engedélyezett karakter: \\",
       "scope": "core"
+    },
+    "Check": {
+      "hu": "Ellenőrzés",
+      "scope": "app"
     },
     "Check Again": {
       "hu": "Újraellenőrzés",
@@ -486,12 +694,24 @@
       "hu": "Célhely ellenőrzése…",
       "scope": "app"
     },
+    "Checking the selection…": {
+      "hu": "A kiválasztás ellenőrzése…",
+      "scope": "app"
+    },
+    "Checking…": {
+      "hu": "Ellenőrzés…",
+      "scope": "app"
+    },
     "Choose File…": {
       "hu": "Fájl kiválasztása…",
       "scope": "app"
     },
     "Choose PEM File…": {
       "hu": "PEM fájl kiválasztása…",
+      "scope": "app"
+    },
+    "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new Mac.": {
+      "hu": "Válassz egy .macvpnadminkey fájlt, és add meg a jelszavát. A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, nem a kulcsfájlban: új Macen előbb állíts vissza egy teljes biztonsági mentést.",
       "scope": "app"
     },
     "Choose a backup made with Back Up Everything. Nothing changes before you confirm what to restore.": {
@@ -506,12 +726,28 @@
       "hu": "Válassz mesterjelszót",
       "scope": "app"
     },
+    "Choose the admin key file first.": {
+      "hu": "Előbb válaszd ki az adminkulcs-fájlt.",
+      "scope": "app"
+    },
+    "Choose the catalog file first.": {
+      "hu": "Előbb válaszd ki a katalógusfájlt.",
+      "scope": "core-rust"
+    },
+    "Choose the file at the path the members’ Macs use, for example on the mounted share.": {
+      "hu": "A fájlt azon az útvonalon válaszd ki, amelyet a tagok Macjei használnak, például a csatolt megosztáson.",
+      "scope": "app"
+    },
     "Cisco IPsec requires a group name": {
       "hu": "Cisco IPsec-hez csoportnév szükséges",
       "scope": "core"
     },
     "Clears the vault first. Not in the backup, deleted: %lld items. Paired apps stay.": {
       "hu": "Előbb kiüríti a széfet. A mentésben nem szereplő, törlődő elemek: %lld. A párosított appok maradnak.",
+      "scope": "app"
+    },
+    "Clears the vault first. Not in the backup, deleted: 1 item. Paired apps stay.": {
+      "hu": "Előbb kiüríti a széfet. A mentésben nem szereplő, törlődő elemek: 1. A párosított appok maradnak.",
       "scope": "app"
     },
     "Click to enter the code or to sign in.": {
@@ -550,6 +786,10 @@
       "hu": "Parancsok",
       "scope": "core"
     },
+    "Compare it with what your administrator sent you. If it differs, do not subscribe.": {
+      "hu": "Hasonlítsd össze azzal, amit a rendszergazda küldött. Ha eltér, ne iratkozz fel.",
+      "scope": "app"
+    },
     "Config not found": {
       "hu": "A config nem található",
       "scope": "mvpn"
@@ -560,6 +800,14 @@
     },
     "Confirm": {
       "hu": "Megerősítés",
+      "scope": "app"
+    },
+    "Confirm every key that is published inside a configuration.": {
+      "hu": "Erősíts meg minden kulcsot, amely egy konfiguráción belül kerül közzétételre.",
+      "scope": "core-rust"
+    },
+    "Confirm only after you clicked “Install profile” and approved the new profile in System Settings → General → Device Management. MacVPN cannot always see the change. If the old profile is still installed, the connection uses settings the team catalog has replaced.": {
+      "hu": "Csak akkor erősítsd meg, ha a „Profil telepítése” után jóváhagytad az új profilt a Rendszerbeállítások → Általános → Eszközkezelés alatt. A MacVPN nem mindig látja a változást. Ha még a régi profil van telepítve, a kapcsolat olyan beállításokat használ, amelyeket a csapatkatalógus már lecserélt.",
       "scope": "app"
     },
     "Connect": {
@@ -586,8 +834,20 @@
       "hu": "Használható kapcsolatok",
       "scope": "app"
     },
+    "Connections that are up stay until you disconnect them.": {
+      "hu": "A fennálló kapcsolatok a bontásukig megmaradnak.",
+      "scope": "app"
+    },
+    "Connections with risky settings: %lld. You acknowledge them yourself in each editor.": {
+      "hu": "Kockázatos beállítású kapcsolatok: %lld. Ezeket te hagyod jóvá az egyes szerkesztőkben.",
+      "scope": "app"
+    },
     "Connections, folders and shared credentials here that are not in the backup are deleted: %lld items. This cannot be undone.": {
       "hu": "Az itteni kapcsolatok, mappák és közös hitelesítő adatok közül a mentésben nem szereplők törlődnek: %lld elem. Ez nem vonható vissza.",
+      "scope": "app"
+    },
+    "Connections, folders and shared credentials here that are not in the backup are deleted: 1 item. This cannot be undone.": {
+      "hu": "Az itteni kapcsolatok, mappák és közös hitelesítő adatok közül a mentésben nem szereplők törlődnek: 1 elem. Ez nem vonható vissza.",
       "scope": "app"
     },
     "Continue": {
@@ -606,8 +866,20 @@
       "hu": "Másolás",
       "scope": "app"
     },
+    "Copy Subscription String of “%@”": {
+      "hu": "A(z) „%@” feliratkozási kódjának másolása",
+      "scope": "app"
+    },
+    "Copy Subscription String…": {
+      "hu": "Feliratkozási kód másolása…",
+      "scope": "app"
+    },
     "Copy into Each Connection": {
       "hu": "Másolás minden kapcsolatba",
+      "scope": "app"
+    },
+    "Copy to Clipboard": {
+      "hu": "Másolás a vágólapra",
       "scope": "app"
     },
     "Copying the config failed": {
@@ -678,8 +950,24 @@
       "hu": "Létrehozás kapcsolatból…",
       "scope": "app"
     },
+    "Created %@": {
+      "hu": "Létrehozva: %@",
+      "scope": "app"
+    },
     "Creating…": {
       "hu": "Létrehozás…",
+      "scope": "app"
+    },
+    "Credential slots": {
+      "hu": "Közös belépési adatok helyei",
+      "scope": "app"
+    },
+    "Credential slots you filled in are kept as shared credentials in Credentials. To keep a connection, duplicate it as a personal connection first.": {
+      "hu": "A kitöltött közös belépési adatok helyei közös hitelesítő adatként megmaradnak a Hitelesítő adatok részben. Ha egy kapcsolatot meg akarsz tartani, előbb készíts róla saját másolatot.",
+      "scope": "app"
+    },
+    "Credential slots: %@": {
+      "hu": "Közös belépési adatok helyei: %@",
       "scope": "app"
     },
     "Credentials": {
@@ -716,6 +1004,10 @@
     },
     "Delete %lld connections?": {
       "hu": "Törlöd a(z) %lld kapcsolatot?",
+      "scope": "app"
+    },
+    "Delete 1 connection?": {
+      "hu": "Törlöd az 1 kapcsolatot?",
       "scope": "app"
     },
     "Delete Connections": {
@@ -762,6 +1054,10 @@
       "hu": "Előbb bontsd a mappában lévő kapcsolatokat, aztán töröld őket",
       "scope": "app"
     },
+    "Disconnect the team catalog's connections first.": {
+      "hu": "Előbb bontsd a csapatkatalógus kapcsolatait.",
+      "scope": "core-rust"
+    },
     "Disconnect them before quitting?": {
       "hu": "Leállítsam őket kilépés előtt?",
       "scope": "app"
@@ -802,6 +1098,18 @@
       "hu": "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat, és a DNS-t csak a MacVPN bontása állítja vissza",
       "scope": "core"
     },
+    "Duplicate": {
+      "hu": "Másolat készítése",
+      "scope": "app"
+    },
+    "Duplicate as Personal Connection": {
+      "hu": "Másolat saját kapcsolatként",
+      "scope": "app"
+    },
+    "Duplicate as personal connection…": {
+      "hu": "Másolat saját kapcsolatként…",
+      "scope": "app"
+    },
     "Duplicate key: %@": {
       "hu": "Ismétlődő kulcs: %@",
       "scope": "core"
@@ -812,6 +1120,18 @@
     },
     "Edit %@": {
       "hu": "%@ szerkesztése",
+      "scope": "app"
+    },
+    "Edit Source of %@": {
+      "hu": "A(z) %@ forrásának szerkesztése",
+      "scope": "app"
+    },
+    "Edit in Credentials": {
+      "hu": "Szerkesztés a Hitelesítő adatok részben",
+      "scope": "app"
+    },
+    "Edit source…": {
+      "hu": "Forrás szerkesztése…",
       "scope": "app"
     },
     "Edit…": {
@@ -826,8 +1146,16 @@
       "hu": "A mentés titkosítása és mentése…",
       "scope": "app"
     },
+    "Enter an https:// address or choose a catalog file.": {
+      "hu": "Adj meg egy https:// címet, vagy válassz egy katalógusfájlt.",
+      "scope": "core-rust"
+    },
     "Enter the current master password, then the new one twice.": {
       "hu": "Add meg a jelenlegi mesterjelszót, aztán kétszer az újat.",
+      "scope": "app"
+    },
+    "Enter the fields instead": {
+      "hu": "Inkább kitöltöm a mezőket",
       "scope": "app"
     },
     "Enter the master password to open the vault.": {
@@ -836,6 +1164,10 @@
     },
     "Enter the master password. Its key is then kept in the macOS Keychain, and MacVPN opens without asking.": {
       "hu": "Add meg a mesterjelszót. A széf kulcsa ezután a macOS Keychainjében marad, és a MacVPN kérdés nélkül megnyílik.",
+      "scope": "app"
+    },
+    "Enter the new team key your administrator sent you through a secure channel.": {
+      "hu": "Add meg az új csapatkulcsot, amelyet a rendszergazda biztonságos csatornán küldött.",
       "scope": "app"
     },
     "Enter the one-time code. MacVPN appends it to the password for this connection.": {
@@ -858,6 +1190,22 @@
       "hu": "A kapcsolat felépítése sikertelen",
       "scope": "mvpn"
     },
+    "Every catalog you publish announces it as the successor of the admin key, so you can switch to it without every member subscribing again.": {
+      "hu": "Minden közzétett katalógus bejelenti az aláírókulcs utódjaként, így átválthatsz rá anélkül, hogy minden tagnak újra fel kellene iratkoznia.",
+      "scope": "app"
+    },
+    "Every member gets these keys as they are. Tick each one to publish it.": {
+      "hu": "Minden tag változatlanul megkapja ezeket a kulcsokat. Mindegyiket jelöld be egyenként, hogy közzétedd.",
+      "scope": "app"
+    },
+    "Everyone with the team key can read this secret": {
+      "hu": "Mindenki, akinél megvan a csapatkulcs, elolvashatja ezt a titkot",
+      "scope": "app"
+    },
+    "Everyone with this catalog uses the same WireGuard key": {
+      "hu": "A katalógus minden felhasználója ugyanazt a WireGuard kulcsot használja",
+      "scope": "app"
+    },
     "Exactly one [Interface] section is required": {
       "hu": "Pontosan egy [Interface] szakasz kell",
       "scope": "core"
@@ -870,12 +1218,28 @@
       "hu": "Lejár: %@",
       "scope": "app"
     },
+    "Export Backup Key": {
+      "hu": "Tartalék kulcs exportálása",
+      "scope": "app"
+    },
+    "Export Backup Key…": {
+      "hu": "Tartalék kulcs exportálása…",
+      "scope": "app"
+    },
     "Export With Keys": {
       "hu": "Exportálás kulcsokkal",
       "scope": "app"
     },
     "Export Without Keys": {
       "hu": "Exportálás kulcsok nélkül",
+      "scope": "app"
+    },
+    "Export it to a password-protected file and remove it from this Mac: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.": {
+      "hu": "Exportáld jelszóval védett fájlba, és töröld erről a Macről: a fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol.",
+      "scope": "app"
+    },
+    "Export…": {
+      "hu": "Exportálás…",
       "scope": "app"
     },
     "Export… (passwords are never included)": {
@@ -888,6 +1252,18 @@
     },
     "Fair": {
       "hu": "Közepes",
+      "scope": "app"
+    },
+    "File": {
+      "hu": "Fájl",
+      "scope": "app"
+    },
+    "File: %@": {
+      "hu": "Fájl: %@",
+      "scope": "app"
+    },
+    "Filled in": {
+      "hu": "Kitöltve",
       "scope": "app"
     },
     "Finish setting up the vault…": {
@@ -934,8 +1310,40 @@
       "hu": "Tiltott: include",
       "scope": "core"
     },
+    "Forget": {
+      "hu": "Elfelejtés",
+      "scope": "app"
+    },
     "Forget saved secrets": {
       "hu": "Mentett titkok törlése",
+      "scope": "app"
+    },
+    "Forget “%@”?": {
+      "hu": "Elfelejted ezt: „%@”?",
+      "scope": "app"
+    },
+    "Forget…": {
+      "hu": "Elfelejtés…",
+      "scope": "app"
+    },
+    "Full backups made before the export still contain the backup key: keep them as safe as the key file.": {
+      "hu": "Az export előtt készült teljes biztonsági mentések még tartalmazzák a tartalék kulcsot: ezeket is úgy védd, mint a kulcsfájlt.",
+      "scope": "app"
+    },
+    "Generate Admin Key": {
+      "hu": "Adminisztrátori aláírókulcs létrehozása",
+      "scope": "app"
+    },
+    "Generate Backup Admin Key": {
+      "hu": "Tartalék aláírókulcs létrehozása",
+      "scope": "app"
+    },
+    "Generate an admin key before publishing.": {
+      "hu": "Közzététel előtt hozz létre egy adminkulcsot.",
+      "scope": "core-rust"
+    },
+    "Generate an admin key first.": {
+      "hu": "Előbb hozz létre egy adminisztrátori aláírókulcsot.",
       "scope": "app"
     },
     "GitHub is temporarily limiting requests (HTTP 403). Try again later.": {
@@ -953,6 +1361,14 @@
     "Group name": {
       "hu": "Csoportnév (group name)",
       "scope": "app"
+    },
+    "HTTPS address": {
+      "hu": "HTTPS-cím",
+      "scope": "app"
+    },
+    "HTTPS sources are not available in the sandbox": {
+      "hu": "A homokozóban HTTPS-forrás nem használható",
+      "scope": "core-rust"
     },
     "Held by %@": {
       "hu": "Használja: %@",
@@ -974,12 +1390,24 @@
       "hu": "Tudomásul veszem a beállításokat és a biztonsági kockázatokat",
       "scope": "app"
     },
+    "I installed it": {
+      "hu": "Telepítettem",
+      "scope": "app"
+    },
     "IKE negotiation failed (details in the log)": {
       "hu": "Az IKE egyeztetés sikertelen (részletek a naplóban)",
       "scope": "mvpn"
     },
     "If macOS asks for access to the Keychain, choose Always Allow.": {
       "hu": "Ha a macOS hozzáférést kér a Keychainhez, válaszd a Mindig engedélyez gombot.",
+      "scope": "app"
+    },
+    "If the admin key may have leaked: generate a new admin key on a Mac you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.": {
+      "hu": "Ha az aláírókulcs kiszivároghatott: hozz létre új adminisztrátori aláírókulcsot egy megbízható Macen, tedd közzé a kapcsolatokat új katalógusként, töröld a régi katalógusfájlt a szerverről vagy a megosztásról, és küldd el minden tagnak az új feliratkozási kódot és ujjlenyomatot megbízható csatornán. A régi katalógus csapattitkait is változtasd meg.",
+      "scope": "app"
+    },
+    "If the new source is on another host or port, or is a file, the stored access token is dropped: it is never sent to a new address.": {
+      "hu": "Ha az új forrás másik hoston vagy porton van, vagy fájl, a tárolt hozzáférési token törlődik: a token sosem megy új címre.",
       "scope": "app"
     },
     "If you forget the master password, this key is the only way back into the vault. Write it down or keep it in a password manager. It is shown only now.": {
@@ -992,6 +1420,14 @@
     },
     "Import": {
       "hu": "Importálás",
+      "scope": "app"
+    },
+    "Import Admin Key": {
+      "hu": "Aláírókulcs importálása",
+      "scope": "app"
+    },
+    "Import Admin Key…": {
+      "hu": "Aláírókulcs importálása…",
       "scope": "app"
     },
     "Import Error": {
@@ -1033,6 +1469,14 @@
     "Install": {
       "hu": "Telepítés",
       "scope": "app"
+    },
+    "Install profile": {
+      "hu": "Profil telepítése",
+      "scope": "app"
+    },
+    "Install the profile first.": {
+      "hu": "Előbb telepítsd a profilt.",
+      "scope": "core-rust"
     },
     "Installation cancelled": {
       "hu": "A telepítés megszakítva",
@@ -1154,8 +1598,24 @@
       "hu": "Érvénytelen érték: %@",
       "scope": "core"
     },
+    "Is the New Profile Installed?": {
+      "hu": "Telepítetted az új profilt?",
+      "scope": "app"
+    },
+    "It contains the team key: send it only through a secure channel (a shared vault of your password manager, an end-to-end encrypted messenger), never by plain e-mail. Tell members the fingerprint separately, ideally by voice.": {
+      "hu": "Tartalmazza a csapatkulcsot: csak biztonságos csatornán küldd el (jelszókezelő megosztott tárolója, végponttól végpontig titkosított üzenetküldő), sima e-mailben soha. Az ujjlenyomatot külön mondd meg a tagoknak, lehetőleg szóban.",
+      "scope": "app"
+    },
     "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.": {
       "hu": "Tartalmazza: %@. Aki ezeket a kulcsokat birtokolja, a te nevedben csatlakozhat. Csak akkor exportáld őket, ha a címzettnek szüksége van rájuk, és a fájlt megbízható helyen tartsd.",
+      "scope": "app"
+    },
+    "Its %lld connections and folders are removed from this Mac, and paired apps lose access to them.": {
+      "hu": "A(z) %lld kapcsolata és a mappái törlődnek erről a Macről, és a párosított appok elveszítik hozzájuk a hozzáférést.",
+      "scope": "app"
+    },
+    "Its connection and folders are removed from this Mac, and paired apps lose access to it.": {
+      "hu": "A kapcsolata és a mappái törlődnek erről a Macről, és a párosított appok elveszítik hozzá a hozzáférést.",
       "scope": "app"
     },
     "Keep both (the backup’s copy is named “(backup)”)": {
@@ -1186,12 +1646,32 @@
       "hu": "Nem engedélyezett kulcs: %@",
       "scope": "core"
     },
+    "Keys inside the configs": {
+      "hu": "A configokba írt kulcsok",
+      "scope": "app"
+    },
     "L2TP and Cisco IPsec connections need their profile on this Mac. macOS asks you to approve each one.": {
       "hu": "Az L2TP és Cisco IPsec kapcsolatoknak profil kell ezen a Macen. A macOS mindegyik jóváhagyását kéri.",
       "scope": "app"
     },
     "L2TP and Cisco IPsec work without these.": {
       "hu": "L2TP és Cisco IPsec ezek nélkül is működik.",
+      "scope": "app"
+    },
+    "Last published %@": {
+      "hu": "Legutóbb közzétéve: %@",
+      "scope": "app"
+    },
+    "Last refresh": {
+      "hu": "Legutóbbi frissítés",
+      "scope": "app"
+    },
+    "Last refresh: %@": {
+      "hu": "Legutóbbi frissítés: %@",
+      "scope": "app"
+    },
+    "Last successful refresh": {
+      "hu": "Legutóbbi sikeres frissítés",
       "scope": "app"
     },
     "Last used: %@": {
@@ -1230,6 +1710,14 @@
       "hu": "Napló",
       "scope": "app"
     },
+    "MacVPN asks for your master password, then puts the string on the clipboard without showing it. The access token is not in it.": {
+      "hu": "A MacVPN kéri a mesterjelszavadat, majd a kódot megjelenítés nélkül a vágólapra teszi. A hozzáférési token nincs benne.",
+      "scope": "app"
+    },
+    "MacVPN backup admin key": {
+      "hu": "MacVPN tartalék adminkulcs",
+      "scope": "core-rust"
+    },
     "MacVPN checks your master password before every backup.": {
       "hu": "A MacVPN minden mentés előtt ellenőrzi a mesterjelszót.",
       "scope": "app"
@@ -1240,6 +1728,14 @@
     },
     "MacVPN did not accept these values. Check them and try again.": {
       "hu": "A MacVPN nem fogadta el ezeket az adatokat. Ellenőrizd őket, és próbáld újra.",
+      "scope": "app"
+    },
+    "MacVPN does not upload anything: put the file on your web server or share.": {
+      "hu": "A MacVPN semmit nem tölt fel: a fájlt te tedd a webszerveredre vagy a megosztásra.",
+      "scope": "app"
+    },
+    "MacVPN forgets this publication and its team key. The published file stays where it is, and members keep their subscription, but you cannot publish new versions of this catalog any more.": {
+      "hu": "A MacVPN elfelejti ezt a közzétételt és a csapatkulcsát. A közzétett fájl a helyén marad, a tagok feliratkozása megmarad, de ennek a katalógusnak többé nem tudsz új verziót közzétenni.",
       "scope": "app"
     },
     "MacVPN has been uninstalled": {
@@ -1294,12 +1790,24 @@
       "hu": "Kapcsolatok kezelése…",
       "scope": "app"
     },
+    "Managed by the team catalog “%@”": {
+      "hu": "A(z) „%@” csapatkatalógus kezeli",
+      "scope": "app"
+    },
     "Master Password": {
       "hu": "Mesterjelszó",
       "scope": "app"
     },
     "Master password": {
       "hu": "Mesterjelszó",
+      "scope": "app"
+    },
+    "Members need it to subscribe: send it, or the subscription string, only through a secure channel, never by plain e-mail.": {
+      "hu": "A tagoknak a feliratkozáshoz kell: csak biztonságos csatornán küldd el (vagy a feliratkozási kódot), sima e-mailben soha.",
+      "scope": "app"
+    },
+    "Members see it as the name of the catalog’s folder. The file is saved as <name>.macvpncatalog.": {
+      "hu": "A tagok ezt látják a katalógus mappájának neveként. A fájl neve <név>.macvpncatalog lesz.",
       "scope": "app"
     },
     "Merge": {
@@ -1366,12 +1874,20 @@
       "hu": "Név (a program saját megnevezése)",
       "scope": "app"
     },
+    "Name and File": {
+      "hu": "Név és fájl",
+      "scope": "app"
+    },
     "Native connections only have a log when connected in debug mode.": {
       "hu": "Natív kapcsolatnál csak debug csatlakozáskor van napló.",
       "scope": "app"
     },
     "Native profiles": {
       "hu": "Natív profilok",
+      "scope": "app"
+    },
+    "Never": {
+      "hu": "Még soha",
       "scope": "app"
     },
     "Never used": {
@@ -1422,6 +1938,10 @@
       "hu": "Még nincs tevékenység.",
       "scope": "app"
     },
+    "No backup admin key yet.": {
+      "hu": "Még nincs tartalék aláírókulcs.",
+      "scope": "app"
+    },
     "No child name found": {
       "hu": "Nem található child név",
       "scope": "mvpn"
@@ -1440,6 +1960,10 @@
     },
     "No file chosen": {
       "hu": "Nincs kiválasztott fájl",
+      "scope": "app"
+    },
+    "No new version.": {
+      "hu": "Nincs új verzió.",
       "scope": "app"
     },
     "No other connection has the same user name and password.": {
@@ -1462,6 +1986,10 @@
       "hu": "Még nincs közös hitelesítő adat. Adj hozzá egyet, vagy hozz létre egyet egy olyan kapcsolatból, amelynek már van felhasználóneve és jelszava.",
       "scope": "app"
     },
+    "No team catalogs yet. Add one with the subscription string or the details your administrator sent you.": {
+      "hu": "Még nincs csapatkatalógus. Add hozzá a rendszergazdától kapott feliratkozási kóddal vagy adatokkal.",
+      "scope": "app"
+    },
     "No update available": {
       "hu": "Nincs elérhető frissítés",
       "scope": "app"
@@ -1478,13 +2006,25 @@
       "hu": "Nincs",
       "scope": "app"
     },
+    "None is published unless you tick it. Tick only the secrets everyone in the team may know, such as a shared PSK.": {
+      "hu": "Egyik sem kerül közzétételre, amíg be nem jelölöd. Csak azokat a titkokat jelöld be, amelyeket a csapatban mindenki ismerhet, például egy közös PSK-t.",
+      "scope": "app"
+    },
     "Normally sent by the server or used internally by OpenVPN, not set in a client config": {
       "hu": "Ezt általában a szerver küldi, vagy az OpenVPN belsőleg használja, kliens configba nem való",
       "scope": "core"
     },
+    "Not Now": {
+      "hu": "Most nem",
+      "scope": "app"
+    },
     "Not a directory: %@": {
       "hu": "Nem könyvtár: %@",
       "scope": "core"
+    },
+    "Not checked yet": {
+      "hu": "Még nincs ellenőrizve",
+      "scope": "app"
     },
     "Not installed. The installer runs in Terminal and asks for an administrator password.": {
       "hu": "Nincs telepítve. A telepítő Terminálban fut és rendszergazdai jelszót kér.",
@@ -1502,6 +2042,14 @@
       "hu": "macOS-en nem támogatott (csak Windows vagy Linux)",
       "scope": "core"
     },
+    "Nothing can be moved into a team catalog.": {
+      "hu": "Csapatkatalógusba semmi nem helyezhető át.",
+      "scope": "app"
+    },
+    "Nothing published yet. Publish Catalog… writes the first version of a catalog.": {
+      "hu": "Még nincs közzététel. A Katalógus közzététele… elkészíti egy katalógus első verzióját.",
+      "scope": "app"
+    },
     "Nothing was deleted. MacVPN keeps using your old data, read-only, until the migration succeeds. The new vault was removed: try again with a new master password.": {
       "hu": "Semmi sem törlődött. A MacVPN írásvédetten tovább használja a régi adataidat, amíg az átköltöztetés nem sikerül. Az új széf törlődött: próbáld újra egy új mesterjelszóval.",
       "scope": "app"
@@ -1514,8 +2062,20 @@
       "hu": "Ki",
       "scope": "app"
     },
+    "Offline: only in the exported file": {
+      "hu": "Offline: csak az exportált fájlban",
+      "scope": "app"
+    },
+    "Older version refused": {
+      "hu": "Régebbi verzió elutasítva",
+      "scope": "app"
+    },
     "On": {
       "hu": "Be",
+      "scope": "app"
+    },
+    "On this Mac": {
+      "hu": "Ezen a Macen",
       "scope": "app"
     },
     "One encrypted file with every connection and its secrets, the folders, the shared credentials, the order and the app preferences. Paired apps are not included: they pair again after a restore.": {
@@ -1566,6 +2126,10 @@
       "hu": "Kiadás megnyitása a GitHubon",
       "scope": "app"
     },
+    "OpenVPN inline <key> or <pkcs12>: everyone uses the same client key": {
+      "hu": "OpenVPN inline <key> vagy <pkcs12>: mindenki ugyanazt a kliens kulcsot használja",
+      "scope": "app"
+    },
     "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic": {
       "hu": "Az OpenVPN nem állítja be az interfészt vagy az útvonalakat: a tunnel lehet, hogy nem visz forgalmat",
       "scope": "core"
@@ -1580,6 +2144,10 @@
     },
     "Option-click a switch: debug mode": {
       "hu": "Option+kattintás a kapcsolón: debug mód",
+      "scope": "app"
+    },
+    "Optional, HTTPS only": {
+      "hu": "Nem kötelező, csak HTTPS-nél",
       "scope": "app"
     },
     "Or drop an .ovpn / .conf / .sstp file here.": {
@@ -1654,12 +2222,20 @@
       "hu": "A jelszavak és a PSK nem kerülnek az exportba.",
       "scope": "app"
     },
+    "Paste the subscription string your administrator sent you, or enter the source, the team key and the publisher fingerprint.": {
+      "hu": "Illeszd be a rendszergazdától kapott feliratkozási kódot, vagy add meg a forrást, a csapatkulcsot és a közzétevő ujjlenyomatát.",
+      "scope": "app"
+    },
     "Path changed": {
       "hu": "Megváltozott az útvonal",
       "scope": "app"
     },
     "Permissions (root scripts + sudoers)": {
       "hu": "Jogosultság (root scriptek + sudoers)",
+      "scope": "app"
+    },
+    "Personal fields": {
+      "hu": "Személyes mezők",
       "scope": "app"
     },
     "Pin to Top": {
@@ -1702,6 +2278,78 @@
       "hu": "Az ezen a Macen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak.",
       "scope": "app"
     },
+    "Publications replaced by the backup’s: %@": {
+      "hu": "A mentésben lévőre cserélt közzétételek: %@",
+      "scope": "app"
+    },
+    "Publish Catalog": {
+      "hu": "Katalógus közzététele",
+      "scope": "app"
+    },
+    "Publish Catalog…": {
+      "hu": "Katalógus közzététele…",
+      "scope": "app"
+    },
+    "Publish New Version…": {
+      "hu": "Új verzió közzététele…",
+      "scope": "app"
+    },
+    "Publish a New Version of “%@”": {
+      "hu": "A(z) „%@” új verziójának közzététele",
+      "scope": "app"
+    },
+    "Publish the <tls-auth> key": {
+      "hu": "A <tls-auth> kulcs közzététele",
+      "scope": "app"
+    },
+    "Publish the <tls-crypt-v2> key": {
+      "hu": "A <tls-crypt-v2> kulcs közzététele",
+      "scope": "app"
+    },
+    "Publish the <tls-crypt> key": {
+      "hu": "A <tls-crypt> kulcs közzététele",
+      "scope": "app"
+    },
+    "Publish the WireGuard PresharedKey": {
+      "hu": "A WireGuard PresharedKey közzététele",
+      "scope": "app"
+    },
+    "Publish the inline <key> / <pkcs12>: everyone uses the same client key": {
+      "hu": "Az inline <key> / <pkcs12> közzététele: mindenki ugyanazt a kliens kulcsot használja",
+      "scope": "app"
+    },
+    "Publish the static <secret> key": {
+      "hu": "A statikus <secret> kulcs közzététele",
+      "scope": "app"
+    },
+    "Publish this SSTP user name: no credential slot is ticked, so everyone signs in with it": {
+      "hu": "Az SSTP felhasználónév közzététele: nincs bejelölt közös belépési adat helye, így mindenki ezzel jelentkezik be",
+      "scope": "app"
+    },
+    "Publish this key": {
+      "hu": "A kulcs közzététele",
+      "scope": "app"
+    },
+    "Published in “%@” (v%d)": {
+      "hu": "Közzétéve: „%@” (v%d)",
+      "scope": "app"
+    },
+    "Publisher fingerprint": {
+      "hu": "A közzétevő ujjlenyomata",
+      "scope": "app"
+    },
+    "Publishing": {
+      "hu": "Közzététel",
+      "scope": "app"
+    },
+    "Publishing needs an admin key. Generate one, or import the key file of the Mac you published from.": {
+      "hu": "A közzétételhez adminisztrátori aláírókulcs kell. Hozz létre egyet, vagy importáld annak a Macnek a kulcsfájlját, amelyről eddig közzétettél.",
+      "scope": "app"
+    },
+    "Publish…": {
+      "hu": "Közzététel…",
+      "scope": "app"
+    },
     "Purple": {
       "hu": "Lila",
       "scope": "app"
@@ -1730,6 +2378,22 @@
       "hu": "A hivatkozott fájl nem található: %@",
       "scope": "core"
     },
+    "Refresh all": {
+      "hu": "Összes frissítése",
+      "scope": "app"
+    },
+    "Refresh failed": {
+      "hu": "A frissítés nem sikerült",
+      "scope": "app"
+    },
+    "Refresh now": {
+      "hu": "Frissítés most",
+      "scope": "app"
+    },
+    "Refreshing…": {
+      "hu": "Frissítés…",
+      "scope": "app"
+    },
     "Refusing to write %@: it is a symbolic link or not a regular file.": {
       "hu": "A(z) %@ nem írható: szimbolikus link vagy nem szabályos fájl.",
       "scope": "core"
@@ -1738,13 +2402,29 @@
       "hu": "%lld natív profil újratelepítése",
       "scope": "app"
     },
+    "Reinstall 1 Native Profile": {
+      "hu": "1 natív profil újratelepítése",
+      "scope": "app"
+    },
     "Remove saved password": {
       "hu": "Mentett jelszó törlése",
+      "scope": "app"
+    },
+    "Remove the backup key from this Mac after export": {
+      "hu": "A tartalék kulcs törlése erről a Macről az export után",
+      "scope": "app"
+    },
+    "Remove the stored access token": {
+      "hu": "A tárolt hozzáférési token törlése",
       "scope": "app"
     },
     "Removed from OpenVPN: the connection will fail to start": {
       "hu": "Az OpenVPN-ből eltávolították: a kapcsolat nem fog elindulni",
       "scope": "core"
+    },
+    "Removed from the team catalog — disappears after you disconnect": {
+      "hu": "Törölve a csapatkatalógusból — a bontás után eltűnik",
+      "scope": "app"
     },
     "Removes the root scripts, the sudoers rule and the logs; optionally your connections too.": {
       "hu": "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is.",
@@ -1772,6 +2452,10 @@
     },
     "Repeat the new master password": {
       "hu": "Az új mesterjelszó még egyszer",
+      "scope": "app"
+    },
+    "Repeat the password": {
+      "hu": "A jelszó még egyszer",
       "scope": "app"
     },
     "Replace Everything": {
@@ -1818,6 +2502,14 @@
       "hu": "Visszaállítás…",
       "scope": "app"
     },
+    "Review": {
+      "hu": "Áttekintés",
+      "scope": "app"
+    },
+    "Review…": {
+      "hu": "Áttekintés…",
+      "scope": "app"
+    },
     "Revoke": {
       "hu": "Visszavonás",
       "scope": "app"
@@ -1842,9 +2534,37 @@
       "hu": "Root jog szükséges (vagy --dry-run)",
       "scope": "mvpn"
     },
+    "Rotate Team Key…": {
+      "hu": "Csapatkulcs cseréje…",
+      "scope": "app"
+    },
+    "Rotate and Save…": {
+      "hu": "Csere és mentés…",
+      "scope": "app"
+    },
+    "Rotate the Team Key of “%@”": {
+      "hu": "A(z) „%@” csapatkulcsának cseréje",
+      "scope": "app"
+    },
+    "Rotate the Team Key of “%@”?": {
+      "hu": "Lecseréled a(z) „%@” csapatkulcsát?",
+      "scope": "app"
+    },
+    "Rotating the team key is the only way to revoke access to a catalog someone already has. A new team key is made and published at once as the next version; members who stay need the new key or a new subscription string. Whoever left keeps what they already downloaded, including its team secrets: change those secrets and their server account too.": {
+      "hu": "A csapatkulcs cseréje az egyetlen módja annak, hogy valakitől visszavond a hozzáférést egy olyan katalógushoz, amely már nála van. Új csapatkulcs készül, és azonnal közzétételre kerül a következő verzióként; a maradó tagoknak kell az új kulcs vagy egy új feliratkozási kód. Aki távozott, megtartja, amit már letöltött, a benne lévő csapattitkokkal együtt: ezeket a titkokat és a szerveroldali fiókját is változtasd meg.",
+      "scope": "app"
+    },
+    "Rotating the team key is the only way to revoke access to a catalog someone already has. Check what this version publishes; the new key is shown once after the file is saved.": {
+      "hu": "A csapatkulcs cseréje az egyetlen módja annak, hogy valakitől visszavond a hozzáférést egy olyan katalógushoz, amely már nála van. Ellenőrizd, mit tesz közzé ez a verzió; az új kulcs a fájl mentése után egyszer jelenik meg.",
+      "scope": "app"
+    },
     "SSTP needs a password (set it in the connection settings)": {
       "hu": "Az SSTP-hez jelszó kell (a kapcsolat beállításainál add meg)",
       "scope": "mvpn"
+    },
+    "SSTP user name (user=): with a ticked credential slot the config is published with user=slot-user and each member’s own user name goes in at connect; without a slot the user name is published only with its tick below.": {
+      "hu": "SSTP felhasználónév (user=): bejelölt közös belépési adat hellyel a config user=slot-user sorral kerül közzétételre, és csatlakozáskor minden tag saját felhasználóneve kerül a helyére; hely nélkül a felhasználónév csak a lenti külön jelöléssel kerül közzétételre.",
+      "scope": "app"
     },
     "Save": {
       "hu": "Mentés",
@@ -1886,6 +2606,10 @@
       "hu": "Keresés",
       "scope": "app"
     },
+    "Secret": {
+      "hu": "Titok",
+      "scope": "app"
+    },
     "Section not allowed": {
       "hu": "Nem engedélyezett szakasz",
       "scope": "core"
@@ -1897,6 +2621,10 @@
     "Select a Connection": {
       "hu": "Válassz kapcsolatot",
       "scope": "app"
+    },
+    "Select at least one folder or connection to publish.": {
+      "hu": "Válassz ki legalább egy mappát vagy kapcsolatot a közzétételhez.",
+      "scope": "core-rust"
     },
     "Send all traffic over VPN": {
       "hu": "Minden forgalom a VPN-en keresztül",
@@ -1922,9 +2650,17 @@
       "hu": "Szervertanúsítvány-hiba (lásd a naplót; ellenőrizd a tanúsítvány-módot vagy a CA fájlt)",
       "scope": "mvpn"
     },
+    "Server changed: %@": {
+      "hu": "Megváltozott a szerver: %@",
+      "scope": "core-rust"
+    },
     "Server-side option, not meant for a client connection": {
       "hu": "Szerveroldali beállítás, nem kliens kapcsolatba való",
       "scope": "core"
+    },
+    "Server: %@": {
+      "hu": "Szerver: %@",
+      "scope": "app"
     },
     "Set Up the Vault": {
       "hu": "Széf beállítása",
@@ -1944,6 +2680,10 @@
     },
     "Settings": {
       "hu": "Beállítások",
+      "scope": "app"
+    },
+    "Share connections with your team as a signed and encrypted team catalog file. Each member keeps their own user names and passwords.": {
+      "hu": "Oszd meg a kapcsolatokat a csapatoddal egy aláírt és titkosított csapatkatalógus-fájlban. Minden tag megtartja a saját felhasználónevét és jelszavát.",
       "scope": "app"
     },
     "Shared credentials": {
@@ -1966,6 +2706,22 @@
       "hu": "Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót",
       "scope": "core-rust"
     },
+    "Signed by the admin key with this fingerprint:": {
+      "hu": "Ezzel az ujjlenyomatú adminisztrátori aláírókulccsal aláírva:",
+      "scope": "app"
+    },
+    "Source": {
+      "hu": "Forrás",
+      "scope": "app"
+    },
+    "Source for the team": {
+      "hu": "A csapat forrása",
+      "scope": "app"
+    },
+    "Source unavailable": {
+      "hu": "A forrás nem érhető el",
+      "scope": "app"
+    },
     "Standalone mode: OpenVPN prints information or exits instead of connecting": {
       "hu": "Önálló mód: az OpenVPN kapcsolódás helyett információt ír ki vagy kilép",
       "scope": "core"
@@ -1974,12 +2730,56 @@
       "hu": "Az openvpn indítása sikertelen",
       "scope": "mvpn"
     },
+    "Step %lld of %lld: %@": {
+      "hu": "%lld. lépés / %lld: %@",
+      "scope": "app"
+    },
     "Stored in the MacVPN vault and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").": {
       "hu": "A MacVPN széfjében tárolódik, és csatlakozáskor a macOS megkapja. Akkor kell, ha a macOS magától nem tudja kiolvasni a közös kulcsot („incorrect user shared secret”).",
       "scope": "app"
     },
+    "Stored in the vault": {
+      "hu": "A széfben tárolva",
+      "scope": "app"
+    },
     "Strong": {
       "hu": "Erős",
+      "scope": "app"
+    },
+    "Subscribe": {
+      "hu": "Feliratkozás",
+      "scope": "app"
+    },
+    "Subscribed.": {
+      "hu": "Feliratkoztál.",
+      "scope": "app"
+    },
+    "Subscribed: %@": {
+      "hu": "Feliratkoztál: %@",
+      "scope": "app"
+    },
+    "Subscription string": {
+      "hu": "Feliratkozási kód",
+      "scope": "app"
+    },
+    "Subscription string read": {
+      "hu": "Feliratkozási kód beolvasva",
+      "scope": "app"
+    },
+    "Switch": {
+      "hu": "Váltás",
+      "scope": "app"
+    },
+    "Switch to the Backup Key?": {
+      "hu": "Átváltasz a tartalék kulcsra?",
+      "scope": "app"
+    },
+    "Switch to the Backup Key…": {
+      "hu": "Váltás a tartalék kulcsra…",
+      "scope": "app"
+    },
+    "Switching to the backup key is a planned key change, not recovery from a compromise: whoever holds a leaked admin key can announce their own successor and sign versions your members accept.": {
+      "hu": "A váltás a tartalék kulcsra tervezett kulcscsere, nem helyreállítás kompromittálódás után: akinek kiszivárgott aláírókulcs van a kezében, a saját utódkulcsát is bejelentheti, és olyan verziókat írhat alá, amelyeket a tagjaid elfogadnak.",
       "scope": "app"
     },
     "System CA": {
@@ -1990,12 +2790,72 @@
       "hu": "Rendszerállapot",
       "scope": "app"
     },
+    "System VPNs and connections of team catalogs cannot be published.": {
+      "hu": "Rendszer-VPN-ek és csapatkatalógusok kapcsolatai nem tehetők közzé.",
+      "scope": "core-rust"
+    },
     "System VPNs are moved to the top level.": {
       "hu": "A rendszer-VPN-ek a legfelső szintre kerülnek.",
       "scope": "app"
     },
     "Teal": {
       "hu": "Kékeszöld",
+      "scope": "app"
+    },
+    "Team": {
+      "hu": "Csapat",
+      "scope": "app"
+    },
+    "Team Catalogs You Publish": {
+      "hu": "Általad közzétett csapatkatalógusok",
+      "scope": "app"
+    },
+    "Team Key": {
+      "hu": "Csapatkulcs",
+      "scope": "app"
+    },
+    "Team catalog": {
+      "hu": "Csapatkatalógus",
+      "scope": "core-rust"
+    },
+    "Team catalog items cannot be moved.": {
+      "hu": "A csapatkatalógus elemei nem helyezhetők át.",
+      "scope": "app"
+    },
+    "Team catalog subscriptions removed: %@": {
+      "hu": "Törölt csapatkatalógus-feliratkozások: %@",
+      "scope": "app"
+    },
+    "Team catalog “%@” could not be updated: %@": {
+      "hu": "A(z) „%@” csapatkatalógus nem frissíthető: %@",
+      "scope": "core-rust"
+    },
+    "Team catalog “%@” offered an older version (v%d after v%d) and was not applied.": {
+      "hu": "A(z) „%@” csapatkatalógus régebbi verziót kínált (v%d a v%d után), ezért nem lett alkalmazva.",
+      "scope": "core-rust"
+    },
+    "Team catalog “%@” updated: %@": {
+      "hu": "A(z) „%@” csapatkatalógus frissült: %@",
+      "scope": "core-rust"
+    },
+    "Team catalogs": {
+      "hu": "Csapatkatalógusok",
+      "scope": "app"
+    },
+    "Team key": {
+      "hu": "Csapatkulcs",
+      "scope": "app"
+    },
+    "Team key changed": {
+      "hu": "A csapatkulcs megváltozott",
+      "scope": "app"
+    },
+    "Team secrets": {
+      "hu": "Csapattitkok",
+      "scope": "app"
+    },
+    "Team secrets included: %lld": {
+      "hu": "Benne lévő csapattitkok: %lld",
       "scope": "app"
     },
     "Test mode only": {
@@ -2022,9 +2882,49 @@
       "hu": "A VPN-szerver üzenete:",
       "scope": "app"
     },
+    "The access token is not sent to a new address. Enter the token for it, if it needs one.": {
+      "hu": "A hozzáférési token nem megy új címre. Ha az új cím tokent kér, add meg.",
+      "scope": "app"
+    },
+    "The access token is not valid.": {
+      "hu": "A hozzáférési token érvénytelen.",
+      "scope": "core-rust"
+    },
+    "The access token was removed.": {
+      "hu": "A hozzáférési token törölve.",
+      "scope": "app"
+    },
+    "The access token was saved.": {
+      "hu": "A hozzáférési token elmentve.",
+      "scope": "app"
+    },
     "The account name is only written into the profile. MacVPN signs in with the shared credential.": {
       "hu": "A fióknév csak a profilba kerül. A MacVPN a közös hitelesítő adattal jelentkezik be.",
       "scope": "app"
+    },
+    "The address is not valid. Use an https:// address without a user name or a # part.": {
+      "hu": "A cím érvénytelen. Felhasználónév és # rész nélküli https:// címet adj meg.",
+      "scope": "core-rust"
+    },
+    "The admin key %@ was imported.": {
+      "hu": "Az aláírókulcs importálva: %@.",
+      "scope": "app"
+    },
+    "The admin key file cannot be opened: the password is wrong or the file is damaged.": {
+      "hu": "Az adminkulcs-fájl nem nyitható meg: a jelszó hibás, vagy a fájl sérült.",
+      "scope": "core-rust"
+    },
+    "The admin key file could not be read back. The key was kept on this Mac.": {
+      "hu": "Az adminkulcs-fájlt nem sikerült visszaolvasni. A kulcs ezen a Macen maradt.",
+      "scope": "core-rust"
+    },
+    "The admin key file password must be at least %d characters long": {
+      "hu": "Az adminkulcs-fájl jelszavának legalább %d karakter hosszúnak kell lennie",
+      "scope": "core-rust"
+    },
+    "The admin key file was made by a newer MacVPN.": {
+      "hu": "Az adminkulcs-fájlt egy újabb MacVPN készítette.",
+      "scope": "core-rust"
     },
     "The app can no longer control VPNs, and its open sessions end now. Connections that only it brought up are disconnected.": {
       "hu": "Az app többé nem vezérelheti a VPN-eket, és a nyitott munkamenetei most véget érnek. Azok a kapcsolatok, amelyeket csak ő épített fel, bontásra kerülnek.",
@@ -2050,6 +2950,26 @@
       "hu": "A mentést a mesterjelszavad védi. A MacVPN ellenőrzi, és nem tart meg belőle másolatot.",
       "scope": "app"
     },
+    "The backup key becomes the admin key, and the old admin key is deleted from this Mac. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.": {
+      "hu": "A tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a Macről. Utána tedd közzé minden katalógus új verzióját: azok a tagok, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást, a többieknek az új ujjlenyomattal újra fel kell iratkozniuk.",
+      "scope": "app"
+    },
+    "The backup key is now the admin key. Publish a new version of each catalog, then generate and export a new backup key.": {
+      "hu": "A tartalék kulcs lett az aláírókulcs. Tedd közzé minden katalógus új verzióját, majd hozz létre és exportálj egy új tartalék kulcsot.",
+      "scope": "app"
+    },
+    "The backup key is then only in that file. Its public half stays, so every catalog still announces it.": {
+      "hu": "A tartalék kulcs így csak abban a fájlban lesz meg. A nyilvános fele itt marad, így minden katalógus továbbra is bejelenti.",
+      "scope": "app"
+    },
+    "The backup key was saved as %@ and removed from this Mac. Keep the file offline and its password somewhere else.": {
+      "hu": "A tartalék kulcs mentve: %@, és törlődött erről a Macről. A fájlt offline tartsd, a jelszavát máshol.",
+      "scope": "app"
+    },
+    "The backup key was saved as %@. Keep the file offline and its password somewhere else.": {
+      "hu": "A tartalék kulcs mentve: %@. A fájlt offline tartsd, a jelszavát máshol.",
+      "scope": "app"
+    },
     "The backup password must be at least %d characters long": {
       "hu": "A mentés jelszavának legalább %d karakter hosszúnak kell lennie",
       "scope": "app"
@@ -2069,6 +2989,18 @@
     "The backup’s preferences are not applied by themselves. Tick the ones to use on this Mac.": {
       "hu": "A mentés beállításai maguktól nem lépnek életbe. Jelöld be azokat, amelyeket ezen a Macen használnál.",
       "scope": "app"
+    },
+    "The bearer token the web server asks for. It is stored in the vault and sent only to the source’s own address.": {
+      "hu": "A webszerver által kért bearer token. A széfben tárolódik, és csak a forrás saját címére megy.",
+      "scope": "app"
+    },
+    "The catalog is signed by a different key than the fingerprint you entered.": {
+      "hu": "A katalógust más kulcs írta alá, mint amelynek az ujjlenyomatát megadtad.",
+      "scope": "core-rust"
+    },
+    "The catalog preview expired. Add the catalog again.": {
+      "hu": "A katalógus előnézete lejárt. Add hozzá újra a katalógust.",
+      "scope": "core-rust"
     },
     "The checksum (SHA-256) of the downloaded file does not match. Update cancelled.": {
       "hu": "A letöltött fájl ellenőrzőösszege (SHA-256) nem egyezik. A frissítés megszakítva.",
@@ -2094,6 +3026,14 @@
       "hu": "A config privát kulcsokat vagy hitelesítő adatokat tartalmaz",
       "scope": "app"
     },
+    "The config has errors. Open the connection and fix them.": {
+      "hu": "A config hibás. Nyisd meg a kapcsolatot, és javítsd ki.",
+      "scope": "app"
+    },
+    "The config holds a user name or password (an inline <auth-user-pass> / <http-proxy-user-pass> block or a strongSwan secrets section). Remove it and use a credential slot.": {
+      "hu": "A config felhasználónevet vagy jelszót tartalmaz (inline <auth-user-pass> / <http-proxy-user-pass> blokk vagy strongSwan secrets rész). Töröld, és használj helyette közös belépési adat helyet.",
+      "scope": "app"
+    },
     "The config is incomplete": {
       "hu": "A config hiányos",
       "scope": "mvpn"
@@ -2105,6 +3045,10 @@
     "The config is too large (1 MB at most)": {
       "hu": "A config túl nagy (legfeljebb 1 MB)",
       "scope": "mvpn"
+    },
+    "The config is too large to publish.": {
+      "hu": "A config túl nagy a közzétételhez.",
+      "scope": "app"
     },
     "The config must not be a symlink": {
       "hu": "A config nem lehet symlink",
@@ -2146,6 +3090,22 @@
       "hu": "A(z) %@ mappa és almappái kapcsolatai a mentett jelszavaikkal együtt törlődnek. Ez nem vonható vissza.",
       "scope": "app"
     },
+    "The connections of a team catalog are read-only. After a compromise of the admin key, your administrator publishes a new catalog and everyone subscribes again with its new fingerprint.": {
+      "hu": "A csapatkatalógus kapcsolatai csak olvashatók. Ha az aláírókulcs kompromittálódik, a rendszergazda új katalógust tesz közzé, és mindenki újra feliratkozik az új ujjlenyomattal.",
+      "scope": "app"
+    },
+    "The connection’s name cannot be published. Rename it.": {
+      "hu": "A kapcsolat neve nem tehető közzé. Nevezd át.",
+      "scope": "app"
+    },
+    "The connection’s settings are not valid.": {
+      "hu": "A kapcsolat beállításai érvénytelenek.",
+      "scope": "app"
+    },
+    "The copy is yours: you can edit it, and later catalog versions do not change it. It keeps the config, the secrets and the shared credential; acknowledge its risky settings again.": {
+      "hu": "A másolat a tiéd: szerkesztheted, és a későbbi katalógusverziók nem módosítják. Megtartja a configot, a titkokat és a közös hitelesítő adatot; a kockázatos beállításait újra jóvá kell hagynod.",
+      "scope": "app"
+    },
     "The credentials in %@ were not used. Enter them in the editor if needed.": {
       "hu": "A(z) %@ hitelesítő adatai nincsenek felhasználva. Ha kell, add meg őket a szerkesztőben.",
       "scope": "app"
@@ -2170,8 +3130,28 @@
       "hu": "A(z) %@ direktíva fájlja (%@) nem a várt formátumú",
       "scope": "core"
     },
+    "The file is not a MacVPN team catalog.": {
+      "hu": "A fájl nem MacVPN csapatkatalógus.",
+      "scope": "core-rust"
+    },
     "The file is too large for a MacVPN backup.": {
       "hu": "A fájl túl nagy egy MacVPN-mentéshez.",
+      "scope": "app"
+    },
+    "The file is too large to be an admin key file.": {
+      "hu": "A fájl túl nagy ahhoz, hogy adminkulcs-fájl legyen.",
+      "scope": "core-rust"
+    },
+    "The file path contains an invalid character.": {
+      "hu": "A fájl útvonala érvénytelen karaktert tartalmaz.",
+      "scope": "core-rust"
+    },
+    "The fingerprint is required: MacVPN never trusts a first download without it.": {
+      "hu": "Az ujjlenyomat kötelező: a MacVPN nélküle sosem bízik meg az első letöltésben.",
+      "scope": "app"
+    },
+    "The fingerprint matches what my administrator sent me": {
+      "hu": "Az ujjlenyomat egyezik azzal, amit a rendszergazda küldött",
       "scope": "app"
     },
     "The folder change failed: %@": {
@@ -2198,6 +3178,14 @@
       "hu": "A telepített verzió (%@) a legfrissebb.",
       "scope": "app"
     },
+    "The last version announced a backup admin key as the successor; the next version would not, so members could not follow a switch to it.": {
+      "hu": "A legutóbbi verzió utódként bejelentett egy tartalék aláírókulcsot, a következő verzió nem jelentené be, így a tagok nem tudnák követni az arra való váltást.",
+      "scope": "app"
+    },
+    "The last version of %@ announced a backup admin key as the successor; the next version would not. Members then cannot follow a switch to that key. Import or generate the backup key first if you still plan to switch to it.": {
+      "hu": "A(z) %@ legutóbbi verziója utódként bejelentett egy tartalék aláírókulcsot, a következő verzió nem jelentené be. A tagok így nem tudják követni az arra a kulcsra való váltást. Ha még át akarsz váltani rá, előbb importáld vagy hozd létre a tartalék kulcsot.",
+      "scope": "app"
+    },
     "The management bridge stopped (details in the log)": {
       "hu": "A management közvetítő leállt (részletek a naplóban)",
       "scope": "mvpn"
@@ -2205,6 +3193,10 @@
     "The master password is not correct.": {
       "hu": "A mesterjelszó nem helyes.",
       "scope": "app"
+    },
+    "The master password is wrong.": {
+      "hu": "A mesterjelszó hibás.",
+      "scope": "core-rust"
     },
     "The master password must be at least %d characters long": {
       "hu": "A mesterjelszónak legalább %d karakter hosszúnak kell lennie",
@@ -2278,6 +3270,14 @@
       "hu": "A profil nincs telepítve: %@",
       "scope": "core"
     },
+    "The published connections changed since the last publish. Publish the catalog and review the changes first, then rotate the team key.": {
+      "hu": "A közzétett kapcsolatok megváltoztak a legutóbbi közzététel óta. Előbb tedd közzé a katalógust és nézd át a változásokat, utána cseréld le a csapatkulcsot.",
+      "scope": "app"
+    },
+    "The publisher fingerprint is not valid: it has 8 groups of 4 characters.": {
+      "hu": "A közzétevő ujjlenyomata érvénytelen: 8 darab 4 karakteres csoportból áll.",
+      "scope": "core-rust"
+    },
     "The referenced file is larger than 1 MB: %@": {
       "hu": "A hivatkozott fájl nagyobb 1 MB-nál: %@",
       "scope": "core"
@@ -2332,6 +3332,114 @@
     },
     "The shared credential could not be changed: %@": {
       "hu": "A közös hitelesítő adat nem módosítható: %@",
+      "scope": "app"
+    },
+    "The shared credentials the selected connections use, without user names or passwords: only the name and an id go into the catalog. Without a slot, each member is asked for that connection’s sign-in separately.": {
+      "hu": "A kiválasztott kapcsolatok által használt közös hitelesítő adatok, felhasználónév és jelszó nélkül: csak a név és egy azonosító kerül a katalógusba. Hely nélkül minden tagtól az adott kapcsolat bejelentkezését külön kérdezi.",
+      "scope": "app"
+    },
+    "The source holds another team catalog.": {
+      "hu": "A forrás egy másik csapatkatalógust tartalmaz.",
+      "scope": "core-rust"
+    },
+    "The source was changed.": {
+      "hu": "A forrás megváltozott.",
+      "scope": "app"
+    },
+    "The subscription string is on the clipboard. It is removed from the clipboard in a minute.": {
+      "hu": "A feliratkozási kód a vágólapon van. Egy perc múlva lekerül a vágólapról.",
+      "scope": "app"
+    },
+    "The subscription string was made by a newer MacVPN.": {
+      "hu": "A feliratkozási kód egy újabb MacVPN-nel készült.",
+      "scope": "core-rust"
+    },
+    "The team catalog changed this connection: reinstall its profile": {
+      "hu": "A csapatkatalógus megváltoztatta ezt a kapcsolatot: telepítsd újra a profilját",
+      "scope": "app"
+    },
+    "The team catalog changed this connection; review it again": {
+      "hu": "A csapatkatalógus megváltoztatta ezt a kapcsolatot; nézd át újra",
+      "scope": "core-rust"
+    },
+    "The team catalog contains a connection MacVPN cannot use.": {
+      "hu": "A csapatkatalógus olyan kapcsolatot tartalmaz, amelyet a MacVPN nem tud használni.",
+      "scope": "core-rust"
+    },
+    "The team catalog could not be read.": {
+      "hu": "A csapatkatalógus nem olvasható.",
+      "scope": "core-rust"
+    },
+    "The team catalog could not be read: %@": {
+      "hu": "A csapatkatalógus nem olvasható: %@",
+      "scope": "core-rust"
+    },
+    "The team catalog could not be written.": {
+      "hu": "A csapatkatalógus nem írható ki.",
+      "scope": "core-rust"
+    },
+    "The team catalog file is damaged.": {
+      "hu": "A csapatkatalógus fájl sérült.",
+      "scope": "core-rust"
+    },
+    "The team catalog file is incomplete.": {
+      "hu": "A csapatkatalógus fájl hiányos.",
+      "scope": "core-rust"
+    },
+    "The team catalog file is too large.": {
+      "hu": "A csapatkatalógus fájl túl nagy.",
+      "scope": "core-rust"
+    },
+    "The team catalog has not changed.": {
+      "hu": "A csapatkatalógus nem változott.",
+      "scope": "core-rust"
+    },
+    "The team catalog offers version %d, older than the applied version %d: refused.": {
+      "hu": "A csapatkatalógus a(z) %d. verziót kínálja, amely régebbi az alkalmazott %d. verziónál: elutasítva.",
+      "scope": "core-rust"
+    },
+    "The team catalog source is unavailable (%@).": {
+      "hu": "A csapatkatalógus forrása nem érhető el (%@).",
+      "scope": "core-rust"
+    },
+    "The team catalog source is unavailable.": {
+      "hu": "A csapatkatalógus forrása nem érhető el.",
+      "scope": "core-rust"
+    },
+    "The team catalog was made by a newer MacVPN.": {
+      "hu": "A csapatkatalógust újabb MacVPN készítette.",
+      "scope": "core-rust"
+    },
+    "The team catalog was signed by another publisher than the one you trust.": {
+      "hu": "A csapatkatalógust más közzétevő írta alá, mint akiben megbízol.",
+      "scope": "core-rust"
+    },
+    "The team catalog's signature is not valid: it was changed.": {
+      "hu": "A csapatkatalógus aláírása érvénytelen: módosították.",
+      "scope": "core-rust"
+    },
+    "The team key does not open this catalog (it is wrong or was rotated).": {
+      "hu": "A csapatkulcs nem nyitja meg ezt a katalógust (hibás, vagy lecserélték).",
+      "scope": "core-rust"
+    },
+    "The team key is not valid. Check it for typos.": {
+      "hu": "A csapatkulcs érvénytelen. Ellenőrizd, nincs-e benne elírás.",
+      "scope": "core-rust"
+    },
+    "The team key is shown only now. MacVPN keeps it in your vault to publish later versions, but never shows it again. Copy it and keep it safe.": {
+      "hu": "A csapatkulcs csak most jelenik meg. A MacVPN a széfedben tartja a későbbi verziók közzétételéhez, de többé nem mutatja. Másold ki, és tartsd biztonságban.",
+      "scope": "app"
+    },
+    "The team key of “%@” has changed. Ask your administrator for the new key.": {
+      "hu": "A(z) „%@” csapatkulcsa megváltozott. Kérd el a rendszergazdától az új kulcsot.",
+      "scope": "core-rust"
+    },
+    "The team key was changed. Refresh now to apply the catalog.": {
+      "hu": "A csapatkulcs megváltozott. A katalógus alkalmazásához kattints a Frissítés most gombra.",
+      "scope": "app"
+    },
+    "The team key was checked and stays hidden.": {
+      "hu": "A csapatkulcs ellenőrizve, és rejtve marad.",
       "scope": "app"
     },
     "The two passwords are not the same": {
@@ -2390,6 +3498,10 @@
       "hu": "A széf nem hozható létre: %@",
       "scope": "app"
     },
+    "The vault could not save the change.": {
+      "hu": "A széf nem tudta menteni a módosítást.",
+      "scope": "core-rust"
+    },
     "The vault is damaged and cannot be opened": {
       "hu": "A széf sérült, nem nyitható meg",
       "scope": "app"
@@ -2422,12 +3534,28 @@
       "hu": "Nincs engedélyezhető kapcsolat.",
       "scope": "app"
     },
+    "There are no connections to publish.": {
+      "hu": "Nincs közzétehető kapcsolat.",
+      "scope": "app"
+    },
+    "There is no backup admin key on this Mac.": {
+      "hu": "Ezen a Macen nincs tartalék adminkulcs.",
+      "scope": "core-rust"
+    },
     "There is no shared credential named '%@'": {
       "hu": "Nincs „%@” nevű közös hitelesítő adat",
       "scope": "app"
     },
     "There is no shared credential named '%@'. The connection uses its own user name and password.": {
       "hu": "Nincs „%@” nevű közös hitelesítő adat. A kapcsolat a saját felhasználónevét és jelszavát használja.",
+      "scope": "app"
+    },
+    "These connections are up and are disconnected first:": {
+      "hu": "Ezek a kapcsolatok fennállnak, és előbb bontásra kerülnek:",
+      "scope": "app"
+    },
+    "These connections cannot be published. Fix them first, or untick them.": {
+      "hu": "Ezeket a kapcsolatokat nem lehet közzétenni. Előbb javítsd ki őket, vagy vedd ki a jelölésüket.",
       "scope": "app"
     },
     "These connections have acknowledged risky OpenVPN settings, such as scripts that run as root:": {
@@ -2458,6 +3586,10 @@
       "hu": "Ezt a mentést egy újabb MacVPN készítette. A visszaállításhoz frissítsd a MacVPN-t.",
       "scope": "app"
     },
+    "This catalog uses no credential slots.": {
+      "hu": "Ez a katalógus nem használ közös belépési adatokat.",
+      "scope": "app"
+    },
     "This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1).": {
       "hu": "Ez a config static-challenge-et használ: a MacVPN csatlakozáskor bekéri a kódot, és a jelszóval együtt küldi (SCRV1).",
       "scope": "app"
@@ -2468,6 +3600,10 @@
     },
     "This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.": {
       "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Rendszerbeállításokban vagy a saját alkalmazásában vannak.",
+      "scope": "app"
+    },
+    "This connection cannot be published.": {
+      "hu": "Ez a kapcsolat nem tehető közzé.",
       "scope": "app"
     },
     "This connection has no stored user name to share.": {
@@ -2490,16 +3626,44 @@
       "hu": "Ez a mappa már nem létezik",
       "scope": "app"
     },
+    "This is not a subscription string.": {
+      "hu": "Ez nem feliratkozási kód.",
+      "scope": "app"
+    },
+    "This is not a valid MacVPN subscription string.": {
+      "hu": "Ez nem érvényes MacVPN feliratkozási kód.",
+      "scope": "core-rust"
+    },
     "This is not a valid recovery key": {
       "hu": "Ez nem érvényes helyreállítási kulcs",
+      "scope": "app"
+    },
+    "This is not group %d of the team key.": {
+      "hu": "Ez nem a csapatkulcs %d. csoportja.",
       "scope": "app"
     },
     "This is not group %lld of your recovery key": {
       "hu": "Ez nem a helyreállítási kulcs %lld. csoportja",
       "scope": "app"
     },
+    "This publication no longer exists.": {
+      "hu": "Ez a közzététel már nem létezik.",
+      "scope": "core-rust"
+    },
+    "This team catalog no longer exists.": {
+      "hu": "Ez a csapatkatalógus már nem létezik.",
+      "scope": "core-rust"
+    },
     "This vault was saved by a newer MacVPN. Update MacVPN to open it.": {
       "hu": "Ezt a széfet egy újabb MacVPN mentette. Frissítsd a MacVPN-t a megnyitásához.",
+      "scope": "app"
+    },
+    "Tick every key inside the configs to go on, or leave those connections out.": {
+      "hu": "A továbblépéshez jelölj be minden configba írt kulcsot, vagy hagyd ki azokat a kapcsolatokat.",
+      "scope": "app"
+    },
+    "Tick folders and connections. A ticked folder brings everything inside it; a connection whose folder is not ticked goes to the catalog’s top level. System VPNs and connections from team catalogs cannot be published.": {
+      "hu": "Jelöld be a mappákat és a kapcsolatokat. A bejelölt mappa a teljes tartalmát viszi; az a kapcsolat, amelynek a mappája nincs bejelölve, a katalógus legfelső szintjére kerül. Rendszer VPN-t és csapatkatalógusból származó kapcsolatot nem lehet közzétenni.",
       "scope": "app"
     },
     "Tick it only if you use paired apps on this Mac. They pair again after a restore.": {
@@ -2517,6 +3681,10 @@
     "Timed out: the connection was not established within %@ s": {
       "hu": "Időtúllépés: %@ mp alatt nem épült fel a kapcsolat",
       "scope": "mvpn"
+    },
+    "To switch to it, import the backup key file first (Import Admin Key…).": {
+      "hu": "Az átváltáshoz előbb importáld a tartalék kulcs fájlját (Aláírókulcs importálása…).",
+      "scope": "app"
     },
     "Too short": {
       "hu": "Túl rövid",
@@ -2548,6 +3716,10 @@
     },
     "Turn on automatic unlock": {
       "hu": "Az automatikus feloldás bekapcsolása",
+      "scope": "app"
+    },
+    "Type group %d of the team key": {
+      "hu": "Írd be a csapatkulcs %d. csoportját",
       "scope": "app"
     },
     "Type group %lld of your recovery key, counting from the left.": {
@@ -2662,6 +3834,30 @@
       "hu": "Nem mentett változások",
       "scope": "app"
     },
+    "Unsubscribe": {
+      "hu": "Leiratkozás",
+      "scope": "app"
+    },
+    "Unsubscribe from %@?": {
+      "hu": "Leiratkozol a(z) %@ katalógusról?",
+      "scope": "app"
+    },
+    "Unsubscribed.": {
+      "hu": "Leiratkoztál.",
+      "scope": "app"
+    },
+    "Unsubscribed. These filled-in credentials are kept in Credentials: %@": {
+      "hu": "Leiratkoztál. Ezek a kitöltött hitelesítő adatok megmaradnak a Hitelesítő adatok részben: %@",
+      "scope": "app"
+    },
+    "Unsubscribe…": {
+      "hu": "Leiratkozás…",
+      "scope": "app"
+    },
+    "Up to date": {
+      "hu": "Naprakész",
+      "scope": "app"
+    },
     "Update": {
       "hu": "Frissítés",
       "scope": "app"
@@ -2676,6 +3872,14 @@
     },
     "Update waiting for signature": {
       "hu": "A frissítés aláírásra vár",
+      "scope": "app"
+    },
+    "Updated to the new version.": {
+      "hu": "Frissítve az új verzióra.",
+      "scope": "app"
+    },
+    "Updated: %@": {
+      "hu": "Frissítve: %@",
       "scope": "app"
     },
     "Updating the system component will disconnect active VPN connections.": {
@@ -2738,6 +3942,10 @@
       "hu": "Helyreállítási kulcs használata",
       "scope": "app"
     },
+    "Use team colour": {
+      "hu": "A csapat színének használata",
+      "scope": "app"
+    },
     "Use the credentials from %@ for this connection?": {
       "hu": "Használod a(z) %@ fájlban lévő hitelesítő adatokat ehhez a kapcsolathoz?",
       "scope": "app"
@@ -2794,6 +4002,10 @@
       "hu": "A Homebrew OpenSSL CA-tanúsítványait használja, nem a macOS kulcskarikát. Céges CA-hoz válaszd a saját CA fájlt.",
       "scope": "app"
     },
+    "VPN connections your administrator shares with the team. They update by themselves and are read-only here; you sign in with your own user name and password.": {
+      "hu": "A rendszergazda által a csapattal megosztott VPN-kapcsolatok. Maguktól frissülnek, és itt csak olvashatók; a saját felhasználóneveddel és jelszavaddal jelentkezel be.",
+      "scope": "app"
+    },
     "VPN tools": {
       "hu": "VPN eszközök",
       "scope": "app"
@@ -2806,12 +4018,24 @@
       "hu": "Az alkalmazás ellenőrzése…",
       "scope": "app"
     },
+    "Version": {
+      "hu": "Verzió",
+      "scope": "app"
+    },
     "Version %@ has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed.": {
       "hu": "A(z) %@ verzió megjelent, de a MacVPN fejlesztője még nem írta alá. Az aláírás után kerül felajánlásra.",
       "scope": "app"
     },
     "Version %@ was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.": {
       "hu": "A(z) %@ verzió kevesebb mint 24 órája jelent meg. Később kerül felajánlásra, mert be van kapcsolva a „Csak a legalább 24 órája megjelent frissítések felajánlása” beállítás.",
+      "scope": "app"
+    },
+    "Version %lld": {
+      "hu": "%lld. verzió",
+      "scope": "app"
+    },
+    "Version %lld was written to %@.": {
+      "hu": "A(z) %lld. verzió elkészült: %@.",
       "scope": "app"
     },
     "WARNING: server certificate verification is off (--cert-warn)": {
@@ -2842,12 +4066,24 @@
       "hu": "Gyengíti a tunnel biztonságát (elavult vagy nem biztonságos mód)",
       "scope": "core"
     },
+    "Web Address": {
+      "hu": "Webcím",
+      "scope": "app"
+    },
     "What should happen to its contents?": {
       "hu": "Mi legyen a tartalmával?",
       "scope": "app"
     },
+    "What the catalog contains": {
+      "hu": "A katalógus tartalma",
+      "scope": "app"
+    },
     "When an item already exists:": {
       "hu": "Ha egy elem már létezik:",
+      "scope": "app"
+    },
+    "WireGuard private key: everyone appears to the server as the same peer": {
+      "hu": "WireGuard privát kulcs: a szerver mindenkit ugyanannak a peernek lát",
       "scope": "app"
     },
     "Without a password, MacVPN asks for it when connecting and can save it here.": {
@@ -2866,6 +4102,10 @@
       "hu": "Sárga",
       "scope": "app"
     },
+    "You are already subscribed to this catalog.": {
+      "hu": "Erre a katalógusra már feliratkoztál.",
+      "scope": "core-rust"
+    },
     "You can back up the whole vault into one encrypted file at any time from the menu’s settings.": {
       "hu": "A teljes széfről bármikor készíthetsz egy titkosított biztonsági mentést a menü beállításaiban.",
       "scope": "app"
@@ -2878,8 +4118,16 @@
       "hu": "Az L2TP / Cisco profilokat a Rendszerbeállítások → Általános → Eszközkezelés alatt távolíthatod el.",
       "scope": "app"
     },
+    "You enter your own user name and password for them when you first connect.": {
+      "hu": "Az első csatlakozáskor a saját felhasználónevedet és jelszavadat adod meg hozzájuk.",
+      "scope": "app"
+    },
     "You have to remove the installed profile yourself in the Profiles pane that opens.": {
       "hu": "A telepített profilt a megnyíló Profilok panelen neked kell eltávolítanod.",
+      "scope": "app"
+    },
+    "You will be asked when you connect": {
+      "hu": "Csatlakozáskor rákérdez",
       "scope": "app"
     },
     "Your MacVPN 1.1 data will not be imported. It will be deleted after the backup is restored.": {
@@ -2901,6 +4149,10 @@
     "Your vault and its data were kept. MacVPN tries to finish the move of the old data again at the next launch, or now with Try Again.": {
       "hu": "A széf és a benne lévő adatok megmaradtak. A MacVPN a következő indításkor újra megpróbálja befejezni a régi adatok áthelyezését, vagy most az Újra gombbal.",
       "scope": "app"
+    },
+    "access denied (check the access token)": {
+      "hu": "hozzáférés megtagadva (ellenőrizd a hozzáférési tokent)",
+      "scope": "platform"
     },
     "acknowledged risky directives:": {
       "hu": "tudomásul vett kockázatos direktívák:",
@@ -2941,6 +4193,14 @@
     "cert=ca requires a <ca> block with a PEM certificate": {
       "hu": "A cert=ca mellé PEM tanúsítványt tartalmazó <ca> blokk kell",
       "scope": "core"
+    },
+    "certificate not trusted": {
+      "hu": "a tanúsítvány nem megbízható",
+      "scope": "platform"
+    },
+    "changed since the last publish": {
+      "hu": "módosult a legutóbbi közzététel óta",
+      "scope": "app"
     },
     "charon not found (brew install strongswan)": {
       "hu": "A charon nem található (brew install strongswan)",
@@ -3054,9 +4314,17 @@
       "hu": "Az openvpn nem található (brew install openvpn)",
       "scope": "mvpn"
     },
+    "or": {
+      "hu": "vagy",
+      "scope": "app"
+    },
     "pppd not found: %@": {
       "hu": "A pppd nem található: %@",
       "scope": "mvpn"
+    },
+    "redirect to a non-HTTPS address": {
+      "hu": "átirányítás nem HTTPS-címre",
+      "scope": "platform"
     },
     "scutil error (exit code: %d)": {
       "hu": "scutil hiba (kilépési kód: %d)",

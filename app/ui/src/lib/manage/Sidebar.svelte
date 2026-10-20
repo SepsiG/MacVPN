@@ -4,7 +4,7 @@
   // folder, or imports files.
   import { api, type Choice, type FolderColor, type Kind, type Row, type TreeRow } from '../api';
   import { tr } from '../l10n.svelte';
-  import Icon from '../Icon.svelte';
+  import Icon, { type IconName } from '../Icon.svelte';
   import FolderTree from '../folders/FolderTree.svelte';
   import { treeOf } from '../folders/tree';
   import { backupApi } from '../vault/backupApi';
@@ -27,6 +27,13 @@
     credentialCount = 0,
     oncredentials = () => {},
     backupAvailable = false,
+    teamCatalogs = false,
+    teamCatalogCount = 0,
+    onteamcatalogs = () => {},
+    teamFolders = {},
+    publishing = false,
+    publicationCount = 0,
+    onpublishing = () => {},
   }: {
     rows: Row[];
     /// The folder tree over `rows` (an older view model has none: the rows at the top level).
@@ -49,6 +56,16 @@
     oncredentials?: () => void;
     /// "Back up everything…" and "Restore from backup…" are offered (the vault is open).
     backupAvailable?: boolean;
+    /// The Team catalogs section is shown.
+    teamCatalogs?: boolean;
+    teamCatalogCount?: number;
+    onteamcatalogs?: () => void;
+    /// The folders team catalogs own (read-only, with the "Team" badge).
+    teamFolders?: Record<string, string>;
+    /// The Publishing section is shown.
+    publishing?: boolean;
+    publicationCount?: number;
+    onpublishing?: () => void;
   } = $props();
 
   let menuOpen = $state(false);
@@ -57,6 +74,15 @@
   const newButtonRect = () => newButton?.getBoundingClientRect() ?? { left: 0, top: 0, right: 0, bottom: 0 };
   let folderTree: ReturnType<typeof FolderTree> | undefined = $state();
   const shownTree = $derived(treeOf({ tree, rows }));
+  /// The footer's section links, one row style each: `.link-<id>` (not the section's own class: a section's global
+  /// stylesheet, like `.publishing`, must not reach its link).
+  const footerLinks: { id: string; icon: IconName; label: string; selected: boolean; count: number; onclick: () => void }[] =
+    $derived([
+      { id: 'credentials', icon: 'key', label: tr('Credentials'), selected: credentials, count: credentialCount, onclick: oncredentials },
+      { id: 'paired', icon: 'link', label: tr('Paired apps'), selected: paired, count: pairedCount, onclick: onpaired },
+      { id: 'team-catalogs', icon: 'globe', label: tr('Team catalogs'), selected: teamCatalogs, count: teamCatalogCount, onclick: onteamcatalogs },
+      { id: 'publishing', icon: 'export', label: tr('Publishing'), selected: publishing, count: publicationCount, onclick: onpublishing },
+    ]);
 
   function create(kind: Kind) {
     menuOpen = false;
@@ -123,23 +149,18 @@
   </div>
   {#if foldersNote}<p class="folders-note" role="note">{foldersNote}</p>{/if}
   <div class="list">
-    <FolderTree bind:this={folderTree} {rows} tree={shownTree} {selected} enabled={foldersEnabled} {palette} {onselect} />
+    <FolderTree bind:this={folderTree} {rows} tree={shownTree} {selected} enabled={foldersEnabled} {palette} {teamFolders} {onselect} />
   </div>
   <div class="footer">
-    <button class="row section-link shared-credentials" class:selected={credentials} onclick={oncredentials}>
-      <span class="paired-icon" aria-hidden="true"><Icon name="key" /></span>
-      <span class="text">
-        <span class="name"><span class="label">{tr('Credentials')}</span></span>
-      </span>
-      {#if credentialCount > 0}<span class="count">{credentialCount}</span>{/if}
-    </button>
-    <button class="row paired" class:selected={paired} onclick={onpaired}>
-      <span class="paired-icon" aria-hidden="true"><Icon name="link" /></span>
-      <span class="text">
-        <span class="name"><span class="label">{tr('Paired apps')}</span></span>
-      </span>
-      {#if pairedCount > 0}<span class="count">{pairedCount}</span>{/if}
-    </button>
+    {#each footerLinks as link (link.id)}
+      <button class="row section-link link-{link.id}" class:selected={link.selected} onclick={link.onclick}>
+        <span class="section-icon" aria-hidden="true"><Icon name={link.icon} /></span>
+        <span class="text">
+          <span class="name"><span class="label">{link.label}</span></span>
+        </span>
+        {#if link.count > 0}<span class="count">{link.count}</span>{/if}
+      </button>
+    {/each}
   </div>
 </nav>
 
@@ -243,7 +264,7 @@
   .footer .row {
     margin: 0;
   }
-  .paired-icon {
+  .section-icon {
     flex: none;
     display: inline-flex;
     align-items: center;
@@ -254,12 +275,11 @@
     color: #fff;
     background: linear-gradient(180deg, var(--accent), var(--accent-pressed));
   }
-  .paired-icon :global(.icon) {
+  .section-icon :global(.icon) {
     width: 14px;
     height: 14px;
     stroke-width: 1.8;
   }
-  .paired .text,
   .section-link .text {
     flex: 1;
   }

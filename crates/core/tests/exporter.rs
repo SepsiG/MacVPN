@@ -239,6 +239,45 @@ fn write_replaces_existing_world_readable_file() {
 }
 
 #[test]
+fn write_with_mode_sets_the_mode_whatever_the_umask_and_the_old_file() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let path = tmp.path().join("acme.macvpncatalog");
+    fs::write(&path, "old").unwrap();
+    fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
+    exporter::write_with_mode(b"catalog", &path, 0o644).unwrap();
+    assert_eq!(fs::read(&path).unwrap(), b"catalog");
+    assert_eq!(mode(&path), 0o644);
+    let leftovers: Vec<_> = fs::read_dir(tmp.path()).unwrap().flatten().map(|e| e.file_name()).collect();
+    assert_eq!(leftovers, ["acme.macvpncatalog"]);
+    assert!(exporter::write_with_mode(b"x", std::path::Path::new("/nonexistent-dir/x"), 0o644).is_err());
+}
+
+/// A symlink swapped in for the temp file between its creation and the chmod (a shared, group-writable publish
+/// folder): the mode goes to the file written through the open descriptor, never to the symlink's target, and the
+/// swapped name is not renamed into place.
+#[test]
+fn a_symlink_swapped_in_for_the_temp_file_is_never_chmodded_or_published() {
+    use std::os::unix::fs::PermissionsExt;
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let victim = tmp.path().join("victim-secret");
+    fs::write(&victim, "private").unwrap();
+    fs::set_permissions(&victim, fs::Permissions::from_mode(0o600)).unwrap();
+    let path = tmp.path().join("acme.macvpncatalog");
+    let swap = |temp: &std::path::Path| {
+        fs::remove_file(temp).unwrap();
+        std::os::unix::fs::symlink(&victim, temp).unwrap();
+    };
+    let result = exporter::write_with_mode_raced(b"catalog", &path, 0o644, &swap);
+    assert!(result.is_err(), "the swapped temp file is refused");
+    assert_eq!(mode(&victim), 0o600, "the symlink's target keeps its mode");
+    assert_eq!(fs::read(&victim).unwrap(), b"private");
+    assert!(fs::symlink_metadata(&path).is_err(), "nothing was published");
+}
+
+#[test]
 fn write_errors_are_localized() {
     lang(AppLanguage::Hu);
     let err = exporter::write(b"x", std::path::Path::new("/nonexistent-dir/x.conf")).unwrap_err();

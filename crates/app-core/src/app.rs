@@ -145,10 +145,13 @@ pub enum LaunchStep {
     UpdateHousekeeping,
     /// Only when the update source is configured (and from a real bundle).
     StartUpdateScheduler,
+    /// The team catalog scheduler (`CatalogService::run_scheduler`): its first round refreshes every subscription
+    /// once and deletes the pending removals that went down meanwhile; nothing runs while the vault is locked.
+    StartCatalogRefresh,
     StartPolling,
 }
 
-pub const LAUNCH_SEQUENCE: [LaunchStep; 10] = [
+pub const LAUNCH_SEQUENCE: [LaunchStep; 11] = [
     LaunchStep::MigrateKeychain,
     LaunchStep::SweepStagedProfiles,
     LaunchStep::RemoveLegacyProfiles,
@@ -158,6 +161,7 @@ pub const LAUNCH_SEQUENCE: [LaunchStep; 10] = [
     LaunchStep::RequestNotificationAuthorization,
     LaunchStep::UpdateHousekeeping,
     LaunchStep::StartUpdateScheduler,
+    LaunchStep::StartCatalogRefresh,
     LaunchStep::StartPolling,
 ];
 

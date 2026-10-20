@@ -91,6 +91,69 @@ pub trait ConnectionRepository: Send + Sync {
     fn load_config(&self, id: &Uuid) -> io::Result<String>;
     /// Deletes the connection's directory (`meta.json`, `config`).
     fn delete(&self, id: &Uuid) -> io::Result<()>;
+
+    /// The team catalog that manages the connection (team catalog spec 6): its config, name, folder and colour are
+    /// read-only here. `None`: the user's own connection (and every store without team catalogs).
+    fn team_managed(&self, _id: &Uuid) -> Option<TeamManaged> {
+        None
+    }
+
+    /// Stores only the acknowledged risky directives of a connection (sorted, without duplicates). The one write
+    /// a catalog connection's read-only editor makes (the acknowledgement is the subscriber's own). `seen_config`:
+    /// the config the user reviewed; a different stored config (a team catalog changed it meanwhile) is refused
+    /// with [`catalog_changed_message`].
+    fn set_acknowledged_risky(&self, id: &Uuid, seen_config: &str, directives: &[String]) -> io::Result<()> {
+        if self.load_config(id)? != seen_config {
+            return Err(io::Error::other(catalog_changed_message()));
+        }
+        let mut c = self
+            .list()?
+            .into_iter()
+            .find(|c| c.id == *id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such connection"))?;
+        let mut sorted = directives.to_vec();
+        sorted.sort();
+        sorted.dedup();
+        c.acknowledged_risky_directives = sorted;
+        self.save(&c, None)
+    }
+
+    /// Stores only the native service binding of a native connection (`None`: unbound). Also for a team catalog's
+    /// connection, whose other metadata is read-only (the binding is this Mac's own).
+    fn set_native_service(&self, id: &Uuid, service_id: Option<&str>) -> io::Result<()> {
+        let mut c = self
+            .list()?
+            .into_iter()
+            .find(|c| c.id == *id)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no such connection"))?;
+        c.native_service_id = service_id.map(str::to_string);
+        self.save(&c, None)
+    }
+
+    /// A team catalog connection's native profile, built from the version with config hash `built_from`
+    /// ([`TeamManaged::config_hash`]), shows as installed: clears [`TeamManaged::profile_outdated`] unless the
+    /// catalog changed the connection again meanwhile (`Ok(false)`: the mark stays).
+    fn profile_reinstalled(&self, _id: &Uuid, _built_from: &str) -> io::Result<bool> {
+        Ok(true)
+    }
+}
+
+/// "The team catalog changed this connection; review it again": an editor saved what the user saw of an older
+/// version of a catalog connection.
+pub fn catalog_changed_message() -> String {
+    macvpn_core::l10n::tr("The team catalog changed this connection; review it again", &[])
+}
+
+/// A connection a team catalog manages ([`ConnectionRepository::team_managed`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TeamManaged {
+    /// The catalog's name ("Managed by the team catalog “Acme VPN”").
+    pub catalog: String,
+    /// The catalog changed this native connection's settings: its profile needs a reinstall before the next
+    /// connect.
+    pub profile_outdated: bool,
+    /// The applied version's config hash: what a native profile is built from (compare-and-clear of the mark).
+    pub config_hash: Option<String>,
 }
 
 impl ConnectionRepository for ConnectionStore {
@@ -110,6 +173,11 @@ impl ConnectionRepository for ConnectionStore {
         ConnectionStore::delete(self, id)
     }
 }
+
+/// A team catalog source (plan Tasks 9 and 10): `macvpn-platform-mac`'s `CurlCatalogFetcher` for an HTTPS URL,
+/// [`crate::catalog_file::FileCatalogFetcher`] for a file path. Defined in core, because the platform layer does not
+/// depend on this crate.
+pub use macvpn_core::catalog::fetch::{CatalogFetcher, FetchOutcome, FetchRequest};
 
 /// The secret fields the manager reads (defined in core, next to the vault's `secrets` table).
 pub use macvpn_core::models::SecretField;

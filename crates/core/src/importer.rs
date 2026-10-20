@@ -210,6 +210,21 @@ pub fn remote_host(kind: VPNKind, config: &str) -> Option<String> {
     ok.then_some(host)
 }
 
+/// The server a connection sends its credentials to, for display (the credential prompt of a team slot, the
+/// catalog update notice): a native connection's server, else [`remote_host`] of the config. The same display rules
+/// as [`remote_host`].
+pub fn server_host(kind: VPNKind, native: Option<&crate::models::NativeSettings>, config: &str) -> Option<String> {
+    if kind.is_native() {
+        let host = native?.server.trim().to_string();
+        let ok = !host.is_empty()
+            && host.len() <= MAX_REMOTE_HOST_BYTES
+            && !crate::mfa::has_control(&host)
+            && !host.chars().any(|c| c.is_whitespace() || c == '"' || c == '\'');
+        return ok.then_some(host);
+    }
+    remote_host(kind, config)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InlineResult {
     pub config: String,

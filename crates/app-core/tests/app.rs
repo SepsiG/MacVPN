@@ -201,6 +201,10 @@ fn launch_order_migrates_the_keychain_first() {
     assert_eq!(index(LaunchStep::OpenVault) + 1, index(LaunchStep::ReloadConnections));
     assert!(index(LaunchStep::ReloadConnections) < index(LaunchStep::CheckSetup));
     assert!(index(LaunchStep::UpdateHousekeeping) < index(LaunchStep::StartUpdateScheduler));
+    // The team catalogs refresh once the connections are known, after the update scheduler, before polling.
+    assert!(index(LaunchStep::ReloadConnections) < index(LaunchStep::StartCatalogRefresh));
+    assert!(index(LaunchStep::StartUpdateScheduler) < index(LaunchStep::StartCatalogRefresh));
+    assert!(index(LaunchStep::StartCatalogRefresh) < index(LaunchStep::StartPolling));
     assert_eq!(*steps.last().unwrap(), LaunchStep::StartPolling);
 }
 

@@ -6,6 +6,7 @@
   // Return in a field does nothing; the buttons work only once the input lock passed.
   import type { VaultSetupView } from '../api';
   import Icon from '../Icon.svelte';
+  import { connectionsText, savedSecretsText } from '../counts';
   import { tr } from '../l10n.svelte';
   import { formatGroupInput } from './recovery';
   import { MIN_PASSWORD_CHARS, meetsMinimum, passwordsReady, strength } from './strength';
@@ -188,7 +189,7 @@
   {:else if setup.step === 'verified'}
     <h1><span class="bubble ok" aria-hidden="true"><Icon name="check" /></span>{tr('Your data is in the vault')}</h1>
     <p>
-      {tr('%lld connections and %lld saved secrets were moved and checked. The old copies are deleted when you continue.', setup.connections, setup.secrets)}
+      {tr('%@ and %@ were moved and checked. The old copies are deleted when you continue.', connectionsText(setup.connections), savedSecretsText(setup.secrets))}
     </p>
     {#if setup.skipped > 0}
       <p class="note" role="note"><Icon name="warning" /><span>

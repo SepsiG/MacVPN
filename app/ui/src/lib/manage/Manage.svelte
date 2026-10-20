@@ -12,9 +12,12 @@
   import Modal from './Modal.svelte';
   import Credentials from './Credentials.svelte';
   import PairedApps from './PairedApps.svelte';
+  import Publishing from '../catalog/Publishing.svelte';
+  import CatalogGate from '../catalog/CatalogGate.svelte';
   import { setSharedCredentials } from './sharedStore.svelte';
   import { flushActive } from './session.svelte';
   import Sidebar from './Sidebar.svelte';
+  import TeamCatalogs from '../catalog/TeamCatalogs.svelte';
   import SystemDetail from './SystemDetail.svelte';
   import { removedRow, shownRow } from './live';
   import type { Row } from '../api';
@@ -24,11 +27,14 @@
   let notice = $state<Notice | null>(null);
   let dropping = $state(false);
   let resolving = $state(false);
-  /// The Paired apps or the Credentials section is shown (in place of a connection: the selection is cleared
-  /// first).
-  let section = $state<'paired' | 'credentials' | null>(null);
+  /// The footer's sections (Credentials, Paired apps, Team catalogs, Publishing): one is shown in place of a
+  /// connection (the selection is cleared first).
+  type Section = 'paired' | 'credentials' | 'catalogs' | 'publishing';
+  let section = $state<Section | null>(null);
   const showPaired = $derived(section === 'paired');
   const showCredentials = $derived(section === 'credentials');
+  const showCatalogs = $derived(section === 'catalogs');
+  const showPublishing = $derived(section === 'publishing');
   /// A choice question's pick (the import's shared credential): the option's index.
   let choice = $state(0);
 
@@ -46,8 +52,15 @@
     return shown && shown !== listed ? removedRow(shown) : shown;
   });
 
+  /// A lock closes the catalog sections (their dialogs and what was typed into them go with them).
+  function lockedSection(current: Section | null, vaultState: string): Section | null {
+    const catalogSection = current === 'catalogs' || current === 'publishing';
+    return catalogSection && vaultState !== 'unlocked' ? null : current;
+  }
+
   function apply(next: ViewModel) {
     setLanguage(next.language);
+    section = lockedSection(section, next.vault.state);
     setSharedCredentials(next.credentials);
     if (next.manage.question?.id !== vm?.manage.question?.id) choice = 0;
     vm = next;
@@ -78,7 +91,7 @@
     await api.selectConnection(id);
   }
 
-  async function openSection(name: 'paired' | 'credentials') {
+  async function openSection(name: Section) {
     await flushActive();
     section = name;
     // Through the unsaved-changes check, like any selection change.
@@ -125,6 +138,13 @@
     credentialCount={vm?.credentials.items.length ?? 0}
     oncredentials={() => openSection('credentials').catch(console.error)}
     backupAvailable={vm?.backupAvailable ?? false}
+    teamCatalogs={showCatalogs && !selected}
+    teamCatalogCount={vm?.catalogs?.length ?? 0}
+    onteamcatalogs={() => openSection('catalogs').catch(console.error)}
+    teamFolders={vm?.teamFolders ?? {}}
+    publishing={showPublishing && !selected}
+    publicationCount={vm?.publishing?.publications.length ?? 0}
+    onpublishing={() => openSection('publishing').catch(console.error)}
   />
   <main class="main">
     {#if vm?.statusError}
@@ -138,9 +158,22 @@
       <PairedApps control={vm.control} rows={vm.rows} />
     {:else if showCredentials && !selected && vm}
       <Credentials view={vm.credentials} rows={vm.rows} />
+    {:else if showCatalogs && !selected && vm}
+      <CatalogGate vaultState={vm.vault.state}>
+        <TeamCatalogs
+          catalogs={vm.catalogs ?? []}
+          rows={vm.rows}
+          message={vm.credentials.available ? null : vm.credentials.message}
+          oncredentials={() => openSection('credentials').catch(console.error)}
+        />
+      </CatalogGate>
+    {:else if showPublishing && !selected && vm}
+      <CatalogGate vaultState={vm.vault.state}>
+        <Publishing view={vm.publishing} rows={vm.rows} tree={vm.tree} teamFolders={vm.teamFolders ?? {}} />
+      </CatalogGate>
     {:else if row && row.managed && row.kind}
       {#key row.id}
-        <Detail {row} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} />
+        <Detail {row} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} onselect={(id) => select(id).catch(console.error)} />
       {/key}
     {:else if row}
       {#key row.id}

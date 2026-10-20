@@ -1,7 +1,8 @@
 <script lang="ts">
   // The credential prompt as its window shows it (the window's logic is in CredentialPrompt.svelte): the
   // connection's name, the shared credential the password belongs to ("Password for Office AD — used by 4
-  // connections"; "Save in vault" then updates the credential), the re-prompt's "Sign-in failed" line, only the asked fields (the user name as text,
+  // connections"; "Save in vault" then updates the credential; a team slot also shows the server and the catalog's
+  // source), the re-prompt's "Sign-in failed" line, only the asked fields (the user name as text,
   // pre-filled when one is stored; the others as password fields), "Save in vault" (ticked by default) and Connect /
   // Cancel. There is no form and no default button: Return in a field does nothing, Connect needs a click (or Space
   // on the focused button), and it works only once the input lock passed and every field has a value.
@@ -56,7 +57,25 @@
     {tr('Credentials needed')}
   </h1>
   <p class="name">{prompt.connectionName}</p>
-  {#if prompt.credentialName}
+  {#if prompt.credentialName && prompt.team}
+    <!-- A team catalog's credential slot (its first use): "Save in vault" fills the slot for every connection. -->
+    <p class="caption shared">
+      {fields.includes('username')
+        ? tr('%@ (team catalog “%@”) — enter your user name and password', prompt.credentialName, prompt.team)
+        : tr('%@ (team catalog “%@”) — enter your password', prompt.credentialName, prompt.team)}
+    </p>
+    {#if prompt.server || prompt.teamSource}
+      <!-- Where the password goes and where the catalog comes from: a catalog named like another cannot pass for it. -->
+      <p class="caption origin">
+        {[
+          prompt.server ? tr('Server: %@', prompt.server) : null,
+          prompt.teamSource ? tr('Catalog source: %@', prompt.teamSource) : null,
+        ]
+          .filter((part) => part !== null)
+          .join(' · ')}
+      </p>
+    {/if}
+  {:else if prompt.credentialName}
     <p class="caption shared">
       {prompt.usedBy === 1
         ? tr('Password for %@ — used by 1 connection', prompt.credentialName)
@@ -187,6 +206,9 @@
   }
   .field input {
     min-height: 28px;
+  }
+  .origin {
+    overflow-wrap: anywhere;
   }
   .refused {
     color: var(--state-fail-text);

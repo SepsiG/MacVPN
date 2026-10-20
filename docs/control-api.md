@@ -168,6 +168,8 @@ Any request other than `pair` or `hello` before a successful `hello` gets `unaut
 
 Only the connections this program may use, in MacVPN's order. `kind` is `openvpn`, `wireguard`, `strongswan`, `sstp`, `l2tp`, `cisco`, or `system` for a VPN set up in macOS outside MacVPN. `state` is one of the states in [5.8](#58-states).
 
+**Team catalog connections** (MacVPN 1.3) appear like any other connection, with the `kind` of their VPN type. Their `id` is derived from the catalog and the item, so it stays the same across catalog versions and on every Mac, and two catalogs never share an id. When a connection is removed from its catalog, or the user unsubscribes from the catalog, MacVPN removes its id from every paired app's allowed connections; subscribing again later never grants access silently. A connection that is up when it is removed stays listed until it goes down.
+
 ### 5.5 `up`
 
 ```json

@@ -1,9 +1,115 @@
-# MacVPN – kézi tesztlista (1.2.0 és 1.1.0, Rust/Tauri)
+# MacVPN – kézi tesztlista (1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
 
-Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.1.0.dmg`), zöld: `cargo test --workspace`,
+Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.3.0.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
 az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
+
+## 1.3.0: csapatkatalógusok
+
+Előfeltétel: `scripts/build-dmg.sh` hiba nélkül lefutott (`dist/MacVPN-1.3.0.dmg`), a release gate az `mvpn`-ben nem talál `MVPNCAT1` és `macvpn-catalog-v1` szöveget; zöld: `cargo test --workspace`, `scripts/test-root.sh`, `cd app/ui && npm test && npm run build`, a smoke teszt a katalógus móddal együtt mindkét nyelven. Két valódi Mac kell: **A** (rendszergazda, közzétevő) és **B** (felhasználó, feliratkozó), mindkettőn MacVPN 1.3.0; egy SMB-megosztás, amelyet mindkettő csatol; egy általad üzemeltetett HTTPS-szerver (érvényes tanúsítvánnyal, a naplója olvasható, bearer tokent tud kérni). Példanevek: „Acme VPN”, „Office AD”, `vpn.example.com`.
+
+### Frissítés 1.2 → 1.3 és a Keychain kérdések
+- [ ] B-n az 1.2.0-ból appon belüli frissítés bekapcsolt automatikus feloldással: a macOS legfeljebb **egyszer** kérdez (a `local.macvpn.vault` miatt); **ténylegesen: ___**; kikapcsolt automatikus feloldással egyszer sem
+- [ ] A Rendszerállapot nem kér admin jelszót (a root réteg 8 marad)
+- [ ] Az első indítás után a `vault.db` mellett ott a `vault.db.bak-v1` (`600`); minden kapcsolat, mappa, közös hitelesítő adat és titok megvan. Futó app mellett a `vault.db-wal` és a `vault.db-shm` is ott lehet (`600`): ezek a SQLite naplófájljai, a `vault.db` részei; a `shasum` összevetés előtt lépj ki a MacVPN-ből, hogy a napló beíródjon
+- [ ] Az 1.2.0 visszatelepítve a v2-es széfet írásvédetten nyitja meg (csatlakozik, szerkeszteni nem enged), a `vault.db` nem változik (`shasum` előtte és utána); utána újra 1.3.0
+
+### A: aláírókulcs és közzététel
+- [ ] **Közzététel** → **Adminisztrátori aláírókulcs létrehozása** → az ujjlenyomat 8 csoportban, a **Másolás** működik
+- [ ] **Tartalék aláírókulcs létrehozása** → **Tartalék kulcs exportálása…**: 10 karakternél rövidebb jelszó elutasítva; a `.macvpnadminkey` `600`; a „törlés erről a Macről” jelölővel a tartalék kulcs csak a fájl megírása után tűnik el a listából
+- [ ] **Katalógus közzététele…**: egy OpenVPN (`auth-user-pass`, egy „Office AD” közös hitelesítő adathoz kötve), egy L2TP (mentett PSK-val) és egy SSTP kapcsolat egy színes almappában; a rendszer VPN-ek és más katalógus kapcsolatai nem választhatók
+- [ ] Titkok lépés: alapból semmi nincs bejelölve; az L2TP PSK bejelölésekor a figyelmeztetés („Mindenki, akinél megvan a csapatkulcs, elolvashatja ezt a titkot”); egy OpenVPN `<tls-crypt>` blokk külön jelölendő tételként jelenik meg
+- [ ] Egy WireGuard kapcsolat `PrivateKey`-jel: a varázsló a „mindenki ugyanazt a WireGuard kulcsot használja” jelölés nélkül nem enged tovább; egy inline `<auth-user-pass>` blokkos OpenVPN config elutasítva, a varázsló megnevezi
+- [ ] A közös belépési adatok helyei lépésben az „Office AD” bejelölve, felhasználónév és jelszó nélkül
+- [ ] Mentés az SMB-megosztásra `Acme VPN.macvpncatalog` néven → a fájl `644`; `grep -a -c 'vpn.example.com\|Office AD\|auth-user-pass' <fájl>` → 0 (a tartalom titkosított)
+- [ ] A csapatkulcs **egyszer** jelenik meg: **Másolás**, **Elmentettem**, a kért csoport beírása; rossz csoportra nem lép tovább; utána a kulcs sehol nem látható
+- [ ] Vágólap: futó vágólapkezelővel (pl. Maccy) a csapatkulcs, a feliratkozási kód és a helyreállítási kulcs **Másolás**a után a kezelő nem rögzíti (rejtett, átmeneti típus), egy másik, azonos Apple ID-s eszközre nem kerül át (Universal Clipboard); **Zárolás most** vagy kilépés után a vágólap üres, de ha közben mást másoltál, az megmarad; egy perc után magától is üres
+- [ ] **Feliratkozási kód másolása** → mesterjelszót kér (hibásra lassít, mint a feloldás), a forrás megadása után a vágólapon `macvpn-sub:…`, a képernyőn sehol
+- [ ] Ugyanez a katalógus a HTTPS-szerverre is felkerül (a fájl feltöltve), bearer tokent kérő helyre
+- [ ] A forráskapcsolatok A-n szerkeszthetők maradnak, rajtuk „Közzétéve: „Acme VPN” (v1)”; egy config módosítása után „módosult a legutóbbi közzététel óta”, a közzétételek listájában „1 módosult”
+- [ ] A naplókban (`~/Library/Logs`, debug kimenet) nincs csapatkulcs, feliratkozási kód, config sor vagy jelszó, csak események („published v1”)
+
+### B: feliratkozás fájlmegosztáson át
+- [ ] **Csapatkatalógusok** → **Csapatkatalógus hozzáadása…** → a feliratkozási kód beillesztése: a forrás és az ujjlenyomat kitöltődik, a csapatkulcs nem látszik
+- [ ] Egy levelezőprogramból több sorba tört kód → elutasítva; egy karakterében elírt csapatkulcs → elírásként jelzett, nem „rossz kulcs”
+- [ ] **Ellenőrzés** → az előnézet: név, v1, ujjlenyomat, 3 kapcsolat, 1 mappa, az „Office AD” hely; az ujjlenyomatot **telefonon** vetettük össze A-val
+- [ ] Egy rossz ujjlenyomattal → „A katalógust más kulcs írta alá, mint amelynek az ujjlenyomatát megadtad.”, semmi nem tárolódik; ujjlenyomat nélkül nem lehet feliratkozni
+- [ ] **Feliratkozás** → „Acme VPN” mappa **Csapat** jelvénnyel, benne a színes almappa; a menüben is
+- [ ] A szerkesztőben a név, a config, a mappa és a szín le van tiltva („A(z) „Acme VPN” csapatkatalógus kezeli”); a kitűzés, a saját szín („A csapat színének használata” visszaállítja) és a mappa csukása működik
+- [ ] Első csatlakozás az OpenVPN-nel → a bekérő ablak: „Office AD („Acme VPN” csapatkatalógus) — …”, **Mentés a széfbe** → a **Hitelesítő adatok** részben az „Office AD” kitöltve; a második, ugyanezt a helyet használó kapcsolat kérdés nélkül csatlakozik
+- [ ] Az L2TP profil telepítése egyszer kér jóváhagyást; a fióknév a hely felhasználóneve
+- [ ] Az SSTP kapcsolat a hely felhasználónevével jelentkezik be (szerveroldali napló), a tárolt config `user=` sora nem változott
+- [ ] **Másolat saját kapcsolatként…** → „<név> (saját)” a legfelső szinten, szerkeszthető, nincs Csapat jelvény; a katalógus kapcsolata változatlan
+
+### B: feliratkozás HTTPS-en át, tokennel
+- [ ] Második feliratkozás a HTTPS-forrásra a tokennel (egy másik katalógussal, vagy az elsőről leiratkozva) → működik; token nélkül „hozzáférés megtagadva (ellenőrizd a hozzáférési tokent)”
+- [ ] Egy **Frissítés most** alatt `ps -ww -o args= -p $(pgrep -n curl)` → a token nem szerepel
+- [ ] A szerver naplójában a változatlan frissítéseknél `304`
+- [ ] A forrás átírása másik hostra a **Forrás szerkesztése…** ablakban → a tárolt token törlődik, az ablak kéri az újat; a régi host naplójában ezután nincs token az új címre irányuló kéréseknél
+- [ ] Egy `http://`-re átirányító URL → „átirányítás nem HTTPS-címre”; nem megbízható tanúsítvány → „a tanúsítvány nem megbízható”
+- [ ] Beállított rendszerproxy mellett (és `https_proxy` a környezetben) a proxy naplójában nincs kérés: a MacVPN közvetlenül kapcsolódik, vagy „nem érhető el”
+
+### Frissítés: v2 egy törölt kapcsolattal
+- [ ] B-n az SSTP kapcsolat fennáll; A-n az OpenVPN átnevezve, az SSTP törölve a kiválasztásból, egy új kapcsolat felvéve → **Új verzió közzététele** ugyanoda
+- [ ] B: **Frissítés most** → értesítés: „A(z) „Acme VPN” csapatkatalógus frissült: 1 hozzáadva, 1 módosítva, 1 eltávolítva”
+- [ ] Az SSTP fent marad, átkerül a katalógus legfelső mappájába, rajta „Törölve a csapatkatalógusból — a bontás után eltűnik”; bontás után eltűnik a kitűzésével együtt
+- [ ] Az átnevezett OpenVPN kitűzése, saját színe és a kitöltött hely megmaradt
+- [ ] Egy fennálló kapcsolat configját változtató verzió → a kapcsolat fent marad, az új config a következő csatlakozáskor él; ha kockázatos direktíva változott, a csatlakozás előtt újra kéri a jóváhagyást
+- [ ] Ugyanaz a fájl újra feltöltve (azonos verzió) → nincs értesítés, nincs változás
+- [ ] B altatva 20 percre, közben A közzéteszi a v3-at; B ébresztése után **Frissítés most** nélkül megjön
+
+### Visszaléptetés elutasítása
+- [ ] A v1 fájlt a v3 helyére másolva (megosztás és HTTPS is) → B: **Frissítés most** → „A(z) „Acme VPN” csapatkatalógus régebbi verziót kínált (v1 a v3 után), ezért nem lett alkalmazva.” egyszer; a kapcsolatok változatlanok; további frissítéseknél nincs újabb értesítés ugyanarra a verzióra
+- [ ] Egy bájtjában módosított fájl → „A csapatkatalógus aláírása érvénytelen: módosították.”, a kapcsolatok változatlanok
+- [ ] A jó fájl visszatéve, vagy A egy újabb verziót tesz közzé → B rendben frissül
+
+### Csapatkulcs cseréje
+- [ ] A: **Csapatkulcs cseréje** → a magyarázat kimondja, hogy ez az egyetlen visszavonási mód; a fájlhely megerősítése után az új verzió kiírva, az új kulcs egyszer látszik
+- [ ] B: frissítés után „A(z) „Acme VPN” csapatkulcsa megváltozott. Kérd el a rendszergazdától az új kulcsot.” egyszer; az állapot „A csapatkulcs nem nyitja meg ezt a katalógust…”; a kapcsolatok változatlanok
+- [ ] B: **Csapatkulcs cseréje…** → az új csapatkulcs → a következő frissítés alkalmazza
+- [ ] A régi kulccsal (egy harmadik, régi kulcsos feliratkozás vagy sandbox) az új fájl nem nyílik meg
+
+### Váltás a tartalék kulcsra
+- [ ] A: **Aláírókulcs importálása…** a `.macvpnadminkey` fájllal (rossz jelszó → általános hibaüzenet) → **Váltás a tartalék kulcsra** → új verzió közzététele
+- [ ] B (a tartalék kulcs létrehozása óta frissített): újrafeliratkozás nélkül követi, a feliratkozásnál az új ujjlenyomat látszik; egy ezután a régi kulccsal aláírt fájl → „A csapatkatalógust más közzétevő írta alá, mint akiben megbízol.”
+
+### Leiratkozás
+- [ ] Egy fennálló katalóguskapcsolattal **Leiratkozás** → a megerősítés megnevezi a katalógust és a kapcsolatok számát; a fennálló kapcsolat előbb bontódik
+- [ ] Utána a katalógus mappája és kapcsolatai eltűntek; a kitöltött „Office AD” megmaradt a **Hitelesítő adatok** részben, a ki nem töltött helyek törlődtek
+- [ ] Újrafeliratkozás ugyanarra a katalógusra → ugyanazok a kapcsolatok, de egy párosított app nem kap hozzájuk automatikusan hozzáférést
+
+### Mentés és visszaállítás feliratkozással
+- [ ] B: **Teljes biztonsági mentés…**; A: ugyanez az aláírókulccsal és a közzétételekkel
+- [ ] B mentése egy friss felhasználói fiókban visszaállítva → a feliratkozás visszajön; az első frissítés újra létrehozza a kapcsolatokat a kitöltött „Office AD”-vel, a kitűzésekkel és a sorrenddel; nem kér újra felhasználónevet
+- [ ] Egy régebbi mentés összefésülése → az alkalmazott verzió nem csökken (egy régi fájl ezután is elutasítva)
+- [ ] Ugyanez **Minden cseréje** móddal: egy régebbi 1.3-as mentés (v2 alkalmazva) a v3-at alkalmazó B-n → az alkalmazott verzió v3 marad, a v2 fájl ezután is elutasítva
+- [ ] A-n (közzétevő) **Minden cseréje** egy 1.2-es mentéssel → a megerősítés megnevezi a törlődő feliratkozásokat, az aláírókulcsokat és a közzétételeket nem; utána az aláírókulcs ujjlenyomata és minden közzététel megvan, a következő közzététel a régi tagoknál gond nélkül megjön
+- [ ] A-n **Minden cseréje** egy régebbi 1.3-as mentéssel, amelyben más elsődleges aláírókulcs van → a megerősítés „A mentésben lévőre cserélt aláírókulcsok: 1”-et ír; utána a mentés kulcsa az elsődleges, a közzétételek verziója nem csökkent
+- [ ] Egy 1.3-as széfről az 1.2-vel készített mentés összefésülése B-n **Felülírás** móddal → a katalógus kapcsolatai és mappái nem változnak, az eredmény felsorolja őket („Ezeket egy csapatkatalógus adja…”)
+- [ ] A mentése egy friss fiókban → az aláírókulcs ujjlenyomata és a közzétételek megvannak; a következő közzététel a régi tagoknál gond nélkül megjön
+- [ ] Egy 1.2.0-s app a v2-es mentést elutasítja („újabb MacVPN készítette”)
+
+### Vezérlő API katalóguskapcsolattal
+- [ ] B-n egy párosított app (példakliens): a katalógus egyik kapcsolatát engedélyezve `$BIN list` → megjelenik az azonosítójával; `$BIN hold <id>` → csatlakozik, a bekérő ablak a MacVPN-ben jelenik meg, ha a hely nincs kitöltve
+- [ ] A kapcsolat törlése a katalógusból (új verzió) vagy leiratkozás → az app engedélyezett kapcsolatai közül eltűnik; `$BIN list` már nem mutatja
+- [ ] Az azonosító a verziók között nem változik (`$BIN list` v2 előtt és után)
+
+### Fájlforrás-ellenőrzések (a spike kézi lépései)
+Lásd `docs/superpowers/spikes/2026-10-19-catalog-spike.md`, „Manual checks for the maintainer”. Az eredményeket a spike riportba is írd be; ha egy errno nincs a B2 listán, jelezd.
+- [ ] **SMB:** a katalógus a megosztáson; `stat -f '%d %i %z %m' <fájl>` feljegyezve; a fájl lecserélve egy másik Macről (atomikus átnevezés), újra `stat`; B frissítése megtalálja a változást
+- [ ] **SMB, leállított szerver:** a szerver hálózatát lekapcsolva `time python3 -c 'import os;os.open("<fájl>", os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)'` és `time cat <fájl>` → errno: ___, idő: ___; B-n „nem érhető el”, nincs értesítésözön, a menü közben is reagál (legfeljebb 20 s-os olvasás a háttérben); a szerver visszakapcsolása után a következő frissítés rendben
+- [ ] **NFS vagy AFP** (ha van): ugyanaz, mint az SMB-nél
+- [ ] **Le nem csatolt megosztás** (`/Volumes/<név>` nincs) → „nem érhető el”, nem hiba
+- [ ] **iCloud Drive:** a katalógus egy iCloud-mappában, Finderben „Letöltés eltávolítása”; online az `open` letölti (blokkol? meddig: ___); offline: errno ___; B-n „nem érhető el”, értesítés nélkül
+- [ ] **OneDrive:** csak online elérhető fájl, ugyanaz, mint az iCloudnál; errno/idő: ___
+- [ ] **Dropbox:** csak online elérhető fájl, ugyanaz; errno/idő: ___
+- [ ] Egy szinkronizálási ütközés vagy egy régi példány visszaállítása a felhőben → B-n a régebbi verzióra figyelmeztet, nem alkalmazza
+- [ ] A forrásfájl helyén symlink, illetve egy könyvtár → „nem szabályos fájl” jellegű hiba, a symlink célja nem olvasódik be
+- [ ] **Élő HTTPS teszt:** `MACVPN_CATALOG_TEST_URL=https://… cargo test -p macvpn-platform-mac --test catalog_http -- --ignored` érvényes tanúsítvánnyal sikeres; `http://`-re átirányító szerverbeállítással elutasít
+
+### Nyelv
+- [ ] Angol felülettel (`-AppleLanguages '(en)'`) a Csapatkatalógusok, a Közzététel, a varázsló és az értesítések szövegei angolul; magyarral magyarul, „csapatkatalógus”, „csapatkulcs”, „ujjlenyomat”, „közzétevő” szóhasználattal
 
 ## 1.2.0: széf, mappák, közös hitelesítő adatok, mentés
 

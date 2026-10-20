@@ -45,6 +45,13 @@ pub struct CredentialPromptView {
     /// `None` for the connection's own fields.
     pub credential_name: Option<String>,
     pub used_by: Option<usize>,
+    /// The team catalog whose credential slot it is: "Office AD (team catalog “Acme VPN”) — enter your user name
+    /// and password". `None`: a personal credential or the connection's own fields.
+    pub team: Option<String>,
+    /// A team slot: the catalog's source host, or the short form of its publisher fingerprint (file sources).
+    pub team_source: Option<String>,
+    /// A team slot: the server the connection sends the password to.
+    pub server: Option<String>,
 }
 
 /// An answer from the window before the broker's checks.
@@ -101,6 +108,9 @@ impl CredentialPromptView {
             deadline: prompt.deadline.end().time_interval_since_1970(),
             credential_name: prompt.credential.as_ref().map(|c| c.name.clone()),
             used_by: prompt.credential.as_ref().map(|c| c.used_by),
+            team: prompt.credential.as_ref().and_then(|c| c.team.clone()),
+            team_source: prompt.credential.as_ref().filter(|c| c.team.is_some()).and_then(|c| c.team_source.clone()),
+            server: prompt.credential.as_ref().filter(|c| c.team.is_some()).and_then(|c| c.server.clone()),
         }
     }
 }

@@ -11,13 +11,22 @@
   import EditorHost from './EditorHost.svelte';
   import LogPanel from './LogPanel.svelte';
   import Modal from './Modal.svelte';
+  import TeamConnectionBar from '../catalog/TeamConnectionBar.svelte';
 
   let {
     row,
     manage,
     filters,
     onnotice,
-  }: { row: Row; manage: ManageView; filters: Choice<LogFilter>[]; onnotice: (n: Notice) => void } = $props();
+    onselect = () => {},
+  }: {
+    row: Row;
+    manage: ManageView;
+    filters: Choice<LogFilter>[];
+    onnotice: (n: Notice) => void;
+    /// Selects another connection (the personal copy of a team catalog connection).
+    onselect?: (id: string) => void;
+  } = $props();
 
   const id = untrack(() => row.id);
   const kind = untrack(() => row.kind as Kind);
@@ -87,14 +96,20 @@
       >
         <Icon name="bug" />
       </button>
-      <button class="icon" title={tr('Export… (passwords are never included)')} aria-label={tr('Export… (passwords are never included)')} onclick={() => startExport().catch(console.error)}>
-        <Icon name="export" />
-      </button>
-      <button class="icon destructive" title={tr('Delete')} aria-label={tr('Delete')} onclick={() => (confirmDelete = true)}>
-        <Icon name="trash" />
-      </button>
+      <!-- A team catalog's connection is neither exported nor deleted here (spec 6: duplicate it, or unsubscribe). -->
+      {#if !row.catalog}
+        <button class="icon" title={tr('Export… (passwords are never included)')} aria-label={tr('Export… (passwords are never included)')} onclick={() => startExport().catch(console.error)}>
+          <Icon name="export" />
+        </button>
+        <button class="icon destructive" title={tr('Delete')} aria-label={tr('Delete')} onclick={() => (confirmDelete = true)}>
+          <Icon name="trash" />
+        </button>
+      {/if}
     </div>
   </div>
+  {#if row.catalog}
+    <TeamConnectionBar {id} name={row.name} badge={row.catalog} {native} {onselect} />
+  {/if}
   {#if row.state === 'failed'}
     <p class="banner error"><Icon name="warning" /><span>{row.reason}</span></p>
   {:else if row.state === 'awaitingAuth'}

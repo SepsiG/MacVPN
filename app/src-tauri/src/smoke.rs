@@ -417,6 +417,8 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         folders(&app, &state, &dir);
         menu_shape(&app);
         shared(&app, &state, &dir);
+        team_catalog(&app, &state, &dir);
+        publishing(&app, &state, &dir);
         manage_shot(&app);
         popover_shots(&app, &dir);
         let result = run_script(&app, &dir, "manage", "quit.js", &|| renamed(&state, QUIT_RESULT, "QUIT"));
@@ -1304,4 +1306,330 @@ fn backup(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         if control { "on" } else { "off" }
     ));
     let _ = std::fs::remove_file(&file);
+}
+
+// MARK: - Team catalogs (the subscriber's side)
+
+/// The team catalog step's result connection (created in the vault for the step, deleted after it).
+const CATALOG_RESULT: &str = "E5111111-2222-4333-8444-555555555555";
+const CATALOG_NAME: &str = "Smoke Catalog";
+/// A config line that must never be in the catalog file in clear.
+const CATALOG_CONFIG_LINE: &str = "remote smoke-team.example.com 1194";
+
+/// The pre-sealed fixture catalog of the step: version 1 holds "Smoke Team A" (in the teal folder "Smoke Team", with
+/// a risky `user` line) and "Smoke Team B"; version 2 renames A and adds "Smoke Team C". Signed with a throwaway admin
+/// key and encrypted with a throwaway team key, both made here (never logged).
+struct SmokeCatalog {
+    admin: macvpn_core::catalog::keys::AdminKey,
+    team: macvpn_core::catalog::keys::TeamKey,
+    id: Uuid,
+}
+
+impl SmokeCatalog {
+    fn new() -> Result<Self, String> {
+        use macvpn_core::catalog::keys::{AdminKey, TeamKey};
+        let entropy = macvpn_platform_mac::vault_keys::SystemEntropy;
+        Ok(SmokeCatalog {
+            admin: AdminKey::generate(&entropy).map_err(|e| e.to_string())?,
+            team: TeamKey::generate(&entropy).map_err(|e| e.to_string())?,
+            id: Uuid::new_v4(),
+        })
+    }
+
+    fn write(&self, path: &Path, version: u64) -> Result<(), String> {
+        use macvpn_core::catalog::format::{CatalogHeaderInput, seal_catalog};
+        use macvpn_core::catalog::payload::{CatalogConnection, CatalogFolder, CatalogPayload, PAYLOAD_VERSION};
+        use macvpn_core::vault::FolderColor;
+        let folder = Uuid::from_u128(0x5A0E_0001);
+        let connection = |n: u128, name: &str, folder: Option<Uuid>, extra: &str| CatalogConnection {
+            id: Uuid::from_u128(0x5A0E_1000 + n),
+            name: name.into(),
+            kind: VPNKind::Openvpn,
+            folder,
+            color: None,
+            config: zeroize::Zeroizing::new(format!("client\ndev tun\n{CATALOG_CONFIG_LINE}\n{extra}")),
+            native: None,
+            otp: Default::default(),
+            slot: None,
+            secret_refs: Default::default(),
+        };
+        let mut connections = vec![
+            connection(1, if version == 1 { "Smoke Team A" } else { "Smoke Team A2" }, Some(folder), "user nobody\n"),
+            connection(2, "Smoke Team B", None, ""),
+        ];
+        if version > 1 {
+            connections.push(connection(3, "Smoke Team C", Some(folder), ""));
+        }
+        let payload = CatalogPayload {
+            version: PAYLOAD_VERSION,
+            folders: vec![CatalogFolder {
+                id: folder,
+                parent: None,
+                name: "Smoke Team".into(),
+                color: Some(FolderColor::Teal),
+                position: 0,
+            }],
+            connections,
+            credential_slots: vec![],
+            shared_secrets: Default::default(),
+        };
+        let input = CatalogHeaderInput {
+            catalog_id: self.id,
+            name: CATALOG_NAME.into(),
+            version,
+            created: Date::now(),
+            successor_key: None,
+        };
+        let bytes =
+            seal_catalog(input, &payload, &self.team, &self.admin, &macvpn_platform_mac::vault_keys::SystemEntropy)
+                .map_err(|e| e.to_string())?;
+        std::fs::write(path, bytes).map_err(|e| e.to_string())
+    }
+}
+
+/// The subscriber's UI end to end (plan Task 16), in the Connections window, phase by phase (`catalog.js`, each
+/// phase writing its result into [`CATALOG_RESULT`]'s name: `CATALOG <phase> OK` / `… FAILED <checks>`):
+/// `preview` adds the catalog through the file source (the open panel replaced by [`panel_file`]) with the team key
+/// and the fingerprint typed, and checks the preview; `subscribe` compares, subscribes and checks the detail and the
+/// Team badges; `readonly` opens a team connection (the read-only note, the disabled config, the risky checkbox
+/// active, the context menu's allowed actions, a refused drag with its reason); then version 2 is written and
+/// `update` clicks "Refresh now" (the outcome line, the renamed and the added connection); `ask` and `unsubscribe`
+/// confirm the unsubscribe. `MacVPN smoke: catalog: …` lines; the keys are only substituted into the script.
+fn team_catalog(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_core::models::Connection;
+    let say = |line: String| eprintln!("MacVPN smoke: catalog: {line}");
+    let source = match std::fs::read_to_string(dir.join("catalog.js")) {
+        Ok(source) => source,
+        Err(e) => return say(format!("ERROR catalog.js: {e}")),
+    };
+    let (Some(file), Some(result_id)) =
+        (panel_file(state, macvpn_core::catalog::format::EXTENSION), parse_uuid(CATALOG_RESULT))
+    else {
+        return;
+    };
+    let fixture = match SmokeCatalog::new() {
+        Ok(fixture) => fixture,
+        Err(e) => return say(format!("ERROR {e}")),
+    };
+    if let Err(e) = fixture.write(&file, 1) {
+        return say(format!("ERROR {e}"));
+    }
+    let bytes = std::fs::read(&file).unwrap_or_default();
+    let clear = ["Smoke Team A", CATALOG_CONFIG_LINE].iter().any(|n| bytes.windows(n.len()).any(|w| w == n.as_bytes()));
+    say(format!("fixture written clear={}", if clear { "yes" } else { "no" }));
+    let vault = match backup_service(state) {
+        Ok(service) => service.vault().clone(),
+        Err(e) => return say(format!("ERROR {e}")),
+    };
+    let result = Connection::with_id(result_id, "Zz Catalog result", VPNKind::Openvpn, Date::now());
+    if let Err(e) = vault.with(|v| v.save_connection(&result, Some("client\ndev tun\nremote vpn.example.com 1194\n"))) {
+        return say(format!("ERROR {e}"));
+    }
+    state.manager.reload();
+
+    let team_key = fixture.team.to_text();
+    let fingerprint = fixture.admin.public().fingerprint().to_text();
+    let phase = |phase: &str, shot: Option<&str>| {
+        let script = format!("window.__smokeCatalog = '{phase}';\n{source}")
+            .replace("__TEAM_KEY__", &team_key)
+            .replace("__FINGERPRINT__", &fingerprint);
+        let prefix = format!("CATALOG {phase} ");
+        let outcome = crate::commands::open(app, "manage").and_then(|()| eval(app, "manage", script)).and_then(|()| {
+            wait_for(60, || renamed(state, CATALOG_RESULT, &prefix)).ok_or_else(|| "no result".to_string())
+        });
+        say(format!("{phase}: {}", outcome.unwrap_or_else(|e| format!("ERROR {e}"))));
+        if let Some(name) = shot {
+            shoot(app, "manage", name, Duration::from_millis(600));
+        }
+    };
+    let names = || {
+        let badges = state.catalog.service.badges();
+        let mut names: Vec<String> = state
+            .manager
+            .connections()
+            .into_iter()
+            .filter(|c| badges.contains_key(&uuid_string(&c.id)))
+            .map(|c| c.name)
+            .collect();
+        names.sort();
+        names.join("+")
+    };
+
+    phase("preview", Some("catalog-preview"));
+    phase("subscribe", Some("catalog-detail"));
+    let views = state.catalog.service.view();
+    let read_only = state
+        .manager
+        .connections()
+        .into_iter()
+        .find(|c| c.name == "Smoke Team A")
+        .and_then(|c| state.catalog.service.read_only_reason(&uuid_string(&c.id)))
+        .is_some();
+    say(format!(
+        "subscribed catalogs={} version={} items={} read_only={read_only} team_folders={}",
+        views.len(),
+        views.first().and_then(|v| v.version).unwrap_or(0),
+        names(),
+        state.manager.folders().len(),
+    ));
+    phase("readonly", Some("catalog-readonly"));
+
+    // Version 2 on the "share"; the UI's "Refresh now" applies it.
+    if let Err(e) = fixture.write(&file, 2) {
+        return say(format!("ERROR {e}"));
+    }
+    phase("update", Some("catalog-refreshed"));
+    let version = state.catalog.service.view().first().and_then(|v| v.version).unwrap_or(0);
+    say(format!("updated version={version} items={}", names()));
+
+    phase("ask", Some("catalog-unsubscribe"));
+    phase("unsubscribe", None);
+    say(format!("unsubscribed catalogs={} items={}", state.catalog.service.view().len(), names().len()));
+
+    let _ = vault.with(|v| v.delete_connection(&result_id));
+    state.manager.reload();
+    let _ = std::fs::remove_dir_all(file.parent().unwrap_or(&file));
+}
+
+// MARK: - Publishing (the publisher's side)
+
+/// The smoke run's stand-in for the save and open panels of the catalog files (debug builds only):
+/// `<sandbox>/tmp/smoke-share/smoke.<extension>`: the subscriber's file source (a `.macvpncatalog`, sealed by
+/// [`team_catalog`] with the core's own functions) and the publisher's catalog and admin key files (a `.macvpncatalog`
+/// or a `.macvpnadminkey`, written by the UI in [`publishing`]). Each step removes the folder when it is done.
+pub fn panel_file(state: &AppState, extension: &str) -> Option<PathBuf> {
+    smoke_dir(state)?;
+    let dir = state.env.home.join("tmp").join("smoke-share");
+    std::fs::create_dir_all(&dir).ok()?;
+    Some(dir.join(format!("smoke.{extension}")))
+}
+
+/// The publishing step's seeded folder and connection (published by `publish.js`).
+const PUBLISH_CONNECTION: &str = "F3111111-2222-4333-8444-555555555555";
+const PUBLISH_FOLDER_NAME: &str = "Smoke Publish";
+const PUBLISH_CONNECTION_NAME: &str = "Smoke Published";
+const PUBLISH_CONFIG_LINE: &str = "remote smoke-publish.example.com 1194";
+
+/// Publishing (spec 7) through the real UI, `publish.js` phase by phase: the admin key and the backup key
+/// generated, a seeded folder published to the sandbox file (0644, opens with the stored team key and the admin
+/// key's fingerprint, no seeded text in clear), published again (v2), the team key rotated (v3: the old team key no
+/// longer opens it), the backup key exported with "remove after" (offline, the key file 0600) and imported again.
+/// `MacVPN smoke: publish: …`. With screenshots on, the section and the wizard's steps are taken.
+fn publishing(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_core::catalog::format::{CatalogError, OpenRequest, Trust, open_catalog};
+    use macvpn_core::models::Connection;
+    use macvpn_core::vault::AdminKeyRole;
+    use std::os::unix::fs::PermissionsExt;
+    let say = |line: String| eprintln!("MacVPN smoke: publish: {line}");
+    let Ok(source) = std::fs::read_to_string(dir.join("publish.js")) else {
+        return say("ERROR publish.js missing".into());
+    };
+    let vault = match backup_service(state) {
+        Ok(service) => service.vault().clone(),
+        Err(e) => return say(format!("ERROR no vault: {e}")),
+    };
+    let Some(id) = parse_uuid(PUBLISH_CONNECTION) else { return };
+    let seeded = vault.with(|v| {
+        let folder = v.create_folder(None, PUBLISH_FOLDER_NAME)?;
+        let c = Connection::with_id(id, PUBLISH_CONNECTION_NAME, VPNKind::Openvpn, Date::now());
+        v.save_connection(&c, Some(&format!("client\ndev tun\n{PUBLISH_CONFIG_LINE}\n")))?;
+        v.set_item_folder(PUBLISH_CONNECTION, Some(folder))?;
+        Ok(folder)
+    });
+    let folder = match seeded {
+        Ok(folder) => folder,
+        Err(e) => return say(format!("ERROR seeding: {e}")),
+    };
+    state.manager.reload_all();
+    state.publisher.mark();
+    let (Some(catalog_file), Some(key_file)) = (
+        panel_file(state, macvpn_core::catalog::format::EXTENSION),
+        panel_file(state, macvpn_core::catalog::admin_file::EXTENSION),
+    ) else {
+        return say("ERROR no sandbox tmp".into());
+    };
+    let _ = std::fs::remove_file(&catalog_file);
+    let _ = std::fs::remove_file(&key_file);
+    let script = source.replace("__FOLDER__", &uuid_string(&folder));
+    let phase = |phase: &str| {
+        let source = with_shot(&format!("window.__smokePublish = '{phase}';\n{script}"));
+        if let Err(e) = crate::commands::open(app, "manage").and_then(|()| eval(app, "manage", source)) {
+            say(format!("ERROR {phase}: {e}"));
+        }
+    };
+    let keys = || vault.with_read(|v| v.admin_keys()).unwrap_or_default();
+    let publication = || vault.with_read(|v| Ok(v.publications()?.into_iter().next())).ok().flatten();
+    let version = |n: u64| move || publication().filter(|p| p.version == n);
+    let mode = |path: &Path| std::fs::metadata(path).map(|m| m.permissions().mode() & 0o777).unwrap_or(0);
+    let opens = |team_key: &macvpn_core::catalog::keys::TeamKey| -> Result<u64, CatalogError> {
+        let bytes = std::fs::read(&catalog_file).map_err(|e| CatalogError::Io(e.to_string()))?;
+        let pinned = keys().into_iter().find(|k| k.role == AdminKeyRole::Primary).map(|k| k.fingerprint);
+        let pinned = pinned.ok_or(CatalogError::UnknownPublisher)?;
+        let trust = Trust { pinned, publisher_key: None, successor: None };
+        let request = OpenRequest { trust: &trust, catalog_id: None, applied_version: None, team_key };
+        open_catalog(&bytes, &request).map(|opened| opened.header.version)
+    };
+    let team_key =
+        |p: &macvpn_core::vault::PublicationRecord| vault.with_read(|v| v.publication_team_key(p.catalog_id));
+
+    // 1. The admin key and the backup key.
+    phase("keys");
+    let generated = wait_for(30, || (keys().len() == 2).then_some(()));
+    say(format!("keys generated={}", generated.is_some()));
+    shoot(app, "manage", "publishing-keys", Duration::from_secs(2));
+
+    // 2. The wizard: the folder, the review, the name, the file (v1), the team key once.
+    phase("select");
+    shoot(app, "manage", "publish-select", Duration::from_secs(3));
+    phase("review");
+    shoot(app, "manage", "publish-review", Duration::from_secs(4));
+    phase("name");
+    let first = wait_for(60, version(1));
+    shoot(app, "manage", "publish-reveal", Duration::from_secs(3));
+    phase("reveal");
+    let Some(first) = first else { return say("ERROR no version 1".into()) };
+    let bytes = std::fs::read(&catalog_file).unwrap_or_default();
+    let clear = [PUBLISH_CONNECTION_NAME, PUBLISH_CONFIG_LINE, PUBLISH_FOLDER_NAME]
+        .iter()
+        .any(|needle| bytes.windows(needle.len()).any(|w| w == needle.as_bytes()));
+    let opened = team_key(&first).map_err(|e| e.to_string()).and_then(|k| opens(&k).map_err(|e| e.to_string()));
+    say(format!(
+        "v1 mode={:o} opens={} clear={}",
+        mode(&catalog_file),
+        opened.map_or_else(|e| format!("ERROR {e}"), |v| format!("v{v}")),
+        if clear { "yes" } else { "no" }
+    ));
+    std::thread::sleep(Duration::from_secs(4));
+    shoot(app, "manage", "publications", Duration::from_secs(2));
+
+    // 3. Publish again: v2.
+    phase("again");
+    let second = wait_for(60, version(2));
+    say(format!("again version={}", second.as_ref().map_or(0, |p| p.version)));
+
+    // 4. Rotate the team key: v3, the old key no longer opens the file.
+    let old_key = second.as_ref().and_then(|p| team_key(p).ok());
+    phase("rotate");
+    shoot(app, "manage", "publish-rotate", Duration::from_secs(8));
+    let third = wait_for(90, version(3));
+    let old_refused = old_key.as_ref().map(|k| matches!(opens(k), Err(CatalogError::WrongTeamKey)));
+    let new_opens = third.as_ref().and_then(|p| team_key(p).ok()).map(|k| opens(&k).ok());
+    say(format!(
+        "rotate version={} old_key_refused={} new_key_opens={}",
+        third.as_ref().map_or(0, |p| p.version),
+        old_refused.unwrap_or(false),
+        new_opens.flatten().map_or_else(|| "no".to_string(), |v| format!("v{v}"))
+    ));
+    std::thread::sleep(Duration::from_secs(4));
+
+    // 5. Export the backup key (removed after), then import it again.
+    let offline = || keys().into_iter().find(|k| k.role == AdminKeyRole::Backup).map(|k| k.offline);
+    phase("export");
+    let exported = wait_for(90, || (offline() == Some(true) && key_file.exists()).then_some(()));
+    shoot(app, "manage", "publishing-offline", Duration::from_secs(2));
+    say(format!("export offline={} mode={:o}", exported.is_some(), mode(&key_file)));
+    phase("import");
+    let imported = wait_for(90, || (offline() == Some(false)).then_some(()));
+    say(format!("import online={}", imported.is_some()));
+    let _ = std::fs::remove_dir_all(catalog_file.parent().unwrap_or(&catalog_file));
 }

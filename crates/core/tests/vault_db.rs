@@ -269,14 +269,19 @@ fn a_failed_transaction_rolls_back() {
 // --- Schema ---------------------------------------------------------------------------------------------------
 
 #[test]
-fn schema_v1_has_the_spec_tables_and_columns() {
+fn schema_v2_has_the_spec_tables_and_columns() {
     let tmp = TempDir::new();
     let (_, vault) = new_vault(&tmp);
-    assert_eq!(CURRENT_SCHEMA, 1);
+    assert_eq!(CURRENT_SCHEMA, 2);
     assert_eq!(Vault::migrations().iter().map(|m| m.version).max(), Some(CURRENT_SCHEMA));
     assert_eq!(
         tables(&vault),
         [
+            "catalog_admin_keys",
+            "catalog_items",
+            "catalog_publications",
+            "catalog_slots",
+            "catalog_subscriptions",
             "connections",
             "control_clients",
             "credential_links",
@@ -302,6 +307,26 @@ fn schema_v1_has_the_spec_tables_and_columns() {
     expect("ranking", &["id", "json"]);
     expect("pins", &["id", "position"]);
     expect("control_clients", &["id", "json"]);
+    expect("catalog_subscriptions", &["catalog_id", "json", "team_key", "bearer", "publisher_key", "successor_key"]);
+    expect(
+        "catalog_items",
+        &[
+            "local_id",
+            "catalog_id",
+            "item_id",
+            "kind",
+            "color",
+            "slot_id",
+            "provided_secrets",
+            "config_hash",
+            "meta_hash",
+            "pending_removal",
+            "profile_outdated",
+        ],
+    );
+    expect("catalog_slots", &["catalog_id", "slot_id", "name", "credential_id"]);
+    expect("catalog_admin_keys", &["key_id", "role", "seed", "created"]);
+    expect("catalog_publications", &["catalog_id", "json", "team_key"]);
 }
 
 #[test]
@@ -311,7 +336,8 @@ fn meta_rows() {
     let get = |key: &str| -> String {
         vault.connection().query_row("SELECT value FROM meta WHERE key = ?1", [key], |r| r.get(0)).unwrap()
     };
-    assert_eq!(get("schema_version"), "1");
+    assert_eq!(get("schema_version"), "2");
+    // Schema v2 is additive: a 1.2 build (schema 1) may still write it.
     assert_eq!(get("min_app_schema"), "1");
     assert!(macvpn_core::date::Date::parse_iso8601(&get("created")).is_some(), "{}", get("created"));
 }
@@ -356,12 +382,28 @@ fn schema_cascades_and_restrictions() {
 
 // --- Schema versioning and migrations ----------------------------------------------------------------------
 
-const TEST_V2: Migration = Migration { version: 2, statements: &["CREATE TABLE test_v2(x INTEGER)"] };
-const TEST_V3: Migration = Migration { version: 3, statements: &["CREATE TABLE test_v3(x INTEGER)"] };
-const TEST_V4: Migration = Migration { version: 4, statements: &["CREATE TABLE test_v4(x INTEGER)"] };
+const TEST_V2: Migration =
+    Migration { version: 2, min_app_schema: 2, statements: &["CREATE TABLE test_v2(x INTEGER)"] };
+const TEST_V3: Migration =
+    Migration { version: 3, min_app_schema: 3, statements: &["CREATE TABLE test_v3(x INTEGER)"] };
+const TEST_V4: Migration =
+    Migration { version: 4, min_app_schema: 4, statements: &["CREATE TABLE test_v4(x INTEGER)"] };
+
+/// The runner tests start from a schema-v1 database (a 1.2 vault) and add their own steps 2, 3, 4 (in place of
+/// this build's real v2).
+fn v1() -> Vec<Migration> {
+    Vault::migrations()[..1].to_vec()
+}
+
+fn new_v1_vault(tmp: &TempDir) -> (PathBuf, Vault) {
+    fs::create_dir_all(tmp.path()).unwrap();
+    let dir = vault_dir(tmp);
+    let vault = Vault::create_with_migrations(&dir, &dek(1), &v1()).unwrap();
+    (dir, vault)
+}
 
 fn with(extra: &[Migration]) -> Vec<Migration> {
-    let mut m = Vault::migrations().to_vec();
+    let mut m = v1();
     m.extend_from_slice(extra);
     m
 }
@@ -396,7 +438,7 @@ fn backup_version(dir: &Path, name: &str) -> String {
 #[test]
 fn an_older_database_is_backed_up_and_migrated() {
     let tmp = TempDir::new();
-    let (dir, mut vault) = new_vault(&tmp);
+    let (dir, mut vault) = new_v1_vault(&tmp);
     insert_canary(&mut vault);
     vault.close();
     let migrations = with(&[TEST_V2]);
@@ -424,7 +466,7 @@ fn an_older_database_is_backed_up_and_migrated() {
 #[test]
 fn several_steps_run_in_order_in_one_atomic_migration() {
     let tmp = TempDir::new();
-    let (dir, vault) = new_vault(&tmp);
+    let (dir, vault) = new_v1_vault(&tmp);
     vault.close();
     let vault = Vault::open_with_migrations(&dir, &dek(1), &with(&[TEST_V2, TEST_V3])).unwrap();
     assert_eq!(meta(&vault, "schema_version"), "3");
@@ -436,17 +478,17 @@ fn several_steps_run_in_order_in_one_atomic_migration() {
 #[test]
 fn a_failing_step_leaves_the_old_version_and_the_backup() {
     let tmp = TempDir::new();
-    let (dir, mut vault) = new_vault(&tmp);
+    let (dir, mut vault) = new_v1_vault(&tmp);
     insert_canary(&mut vault);
     vault.close();
     // Step 2 succeeds, step 3 fails: nothing of step 2 may stay either.
-    let broken = Migration { version: 3, statements: &["CREATE TABLE half(x)", "THIS IS NOT SQL"] };
+    let broken = Migration { version: 3, min_app_schema: 3, statements: &["CREATE TABLE half(x)", "THIS IS NOT SQL"] };
     let err = Vault::open_with_migrations(&dir, &dek(1), &with(&[TEST_V2, broken])).unwrap_err();
     assert!(matches!(err, VaultError::MigrationFailed { from: 1, to: 3, .. }), "{err:?}");
     assert!(err.to_string().contains("1") && err.to_string().contains("3"), "{err}");
     assert_eq!(backups(&dir), ["vault.db.bak-v1"]);
 
-    let vault = Vault::open(&dir, &dek(1)).unwrap();
+    let vault = Vault::open_with_migrations(&dir, &dek(1), &v1()).unwrap();
     assert_eq!(meta(&vault, "schema_version"), "1");
     let t = tables(&vault);
     assert!(!t.contains(&"test_v2".to_string()) && !t.contains(&"half".to_string()), "{t:?}");
@@ -457,7 +499,7 @@ fn a_failing_step_leaves_the_old_version_and_the_backup() {
 #[test]
 fn backup_rotation_keeps_the_last_two() {
     let tmp = TempDir::new();
-    let (dir, vault) = new_vault(&tmp);
+    let (dir, vault) = new_v1_vault(&tmp);
     vault.close();
     Vault::open_with_migrations(&dir, &dek(1), &with(&[TEST_V2])).unwrap().close();
     Vault::open_with_migrations(&dir, &dek(1), &with(&[TEST_V2, TEST_V3])).unwrap().close();
@@ -471,14 +513,14 @@ fn backup_rotation_keeps_the_last_two() {
 #[test]
 fn a_newer_database_opens_read_only_and_refuses_every_write() {
     let tmp = TempDir::new();
-    let (dir, mut vault) = new_vault(&tmp);
+    let (dir, mut vault) = new_v1_vault(&tmp);
     insert_canary(&mut vault);
     vault.close();
     // A newer MacVPN migrated it to v2 (an additive change).
     Vault::open_with_migrations(&dir, &dek(1), &with(&[TEST_V2])).unwrap().close();
     let before = fs::read(dir.join(VAULT_FILE)).unwrap();
 
-    let mut vault = Vault::open(&dir, &dek(1)).unwrap();
+    let mut vault = Vault::open_with_migrations(&dir, &dek(1), &v1()).unwrap();
     assert!(vault.is_read_only());
     assert_eq!(vault.schema_version(), 2);
     // Reading works.
@@ -518,7 +560,7 @@ fn a_much_newer_but_readable_database_is_read_only() {
     vault.close();
     let mut vault = Vault::open(&dir, &dek(1)).unwrap();
     assert!(vault.is_read_only());
-    assert!(matches!(vault.transaction(|_| Ok(())), Err(VaultError::NewerSchema { db: 99, app: 1 })));
+    assert!(matches!(vault.transaction(|_| Ok(())), Err(VaultError::NewerSchema { db: 99, app: 2 })));
 }
 
 #[test]
@@ -536,7 +578,7 @@ fn an_unreadable_newer_database_is_refused() {
         .unwrap();
     vault.close();
     let r = Vault::open(&dir, &dek(1));
-    assert!(matches!(r, Err(VaultError::NewerSchema { db: 99, app: 1 })), "{r:?}");
+    assert!(matches!(r, Err(VaultError::NewerSchema { db: 99, app: 2 })), "{r:?}");
 }
 
 #[test]
@@ -620,7 +662,7 @@ fn hot_wal_child() {
 #[test]
 fn opening_a_newer_database_with_a_hot_wal_leaves_the_main_file_unchanged() {
     let tmp = TempDir::new();
-    let (dir, vault) = new_vault(&tmp);
+    let (dir, vault) = new_v1_vault(&tmp);
     vault.close();
     // A newer MacVPN migrated it to v2 and left committed rows in a hot WAL.
     Vault::open_with_migrations(&dir, &dek(1), &with(&[TEST_V2])).unwrap().close();
@@ -637,7 +679,7 @@ fn opening_a_newer_database_with_a_hot_wal_leaves_the_main_file_unchanged() {
     let main_before = fs::read(dir.join(VAULT_FILE)).unwrap();
 
     // This (v1) build opens it read-only, sees the committed rows, and closes it.
-    let vault = Vault::open(&dir, &dek(1)).unwrap();
+    let vault = Vault::open_with_migrations(&dir, &dek(1), &v1()).unwrap();
     assert!(vault.is_read_only());
     assert_eq!(row_count(&vault, "pins"), 50);
     vault.close();
@@ -724,4 +766,84 @@ fn debug_and_errors_show_no_key() {
     let err = Vault::open(&dir, &dek(2)).unwrap_err();
     let text = format!("{err:?} {err}");
     assert!(!text.contains(&dek(2).hex()[..8]), "{text}");
+}
+
+// --- Schema v2 (1.3, team catalogs) ------------------------------------------------------------------------------
+
+/// A 1.2 vault (schema v1) with data is backed up and migrated to v2: the catalog tables appear, the data stays,
+/// and `min_app_schema` stays 1.
+#[test]
+fn migration_v1_to_v2_keeps_the_data_and_min_app_schema_1() {
+    let tmp = TempDir::new();
+    let (dir, mut vault) = new_v1_vault(&tmp);
+    insert_canary(&mut vault);
+    vault
+        .transaction(|tx| {
+            tx.execute_batch(
+                "INSERT INTO folders(id, parent_id, name, position) VALUES ('F', NULL, 'Office', 0);
+                 INSERT INTO credentials(id, name, username, created, updated) VALUES ('C', 'Office AD', 'u', 'x', 'x');
+                 INSERT INTO pins(id, position) VALUES ('P', 0);",
+            )?;
+            Ok(())
+        })
+        .unwrap();
+    assert_eq!(vault.schema_version(), 1);
+    vault.close();
+
+    let vault = Vault::open(&dir, &dek(1)).unwrap();
+    assert!(!vault.is_read_only());
+    assert_eq!(vault.schema_version(), 2);
+    assert_eq!(meta(&vault, "schema_version"), "2");
+    assert_eq!(meta(&vault, "min_app_schema"), "1");
+    let t = tables(&vault);
+    for table in
+        ["catalog_subscriptions", "catalog_items", "catalog_slots", "catalog_admin_keys", "catalog_publications"]
+    {
+        assert!(t.contains(&table.to_string()), "{table} missing: {t:?}");
+    }
+    for (table, n) in [("connections", 1), ("folders", 1), ("credentials", 1), ("pins", 1)] {
+        assert_eq!(row_count(&vault, table), n, "{table}");
+    }
+    vault.close();
+    assert_eq!(backups(&dir), ["vault.db.bak-v1"]);
+    assert_eq!(backup_version(&dir, "vault.db.bak-v1"), "1");
+}
+
+/// The 1.2 code path: the v1 migration list opens a v2 database. It is readable (every v1 table and column is
+/// still there, and `min_app_schema` is 1), and the open-time rule of 1.2 (`schema_version` above the app's schema
+/// → read-only) applies, so 1.2 reads every v1 table without migrating or writing anything.
+#[test]
+fn a_v2_database_opens_in_a_1_2_build_and_reads_every_v1_table() {
+    let tmp = TempDir::new();
+    let (dir, mut vault) = new_vault(&tmp);
+    insert_canary(&mut vault);
+    assert_eq!(meta(&vault, "min_app_schema"), "1");
+    vault.close();
+    let before = fs::read(dir.join(VAULT_FILE)).unwrap();
+
+    let vault = Vault::open_with_migrations(&dir, &dek(1), &v1()).expect("1.2 can open a v2 vault");
+    assert_eq!(vault.schema_version(), 2);
+    for table in [
+        "meta",
+        "folders",
+        "connections",
+        "secrets",
+        "credentials",
+        "credential_links",
+        "system_items",
+        "system_otp",
+        "ranking",
+        "pins",
+        "control_clients",
+    ] {
+        let n: i64 = vault.connection().query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap();
+        assert!(n >= 0);
+    }
+    assert_eq!(row_count(&vault, "connections"), 1);
+    assert!(vault.is_read_only(), "1.2 treats a newer schema_version as read-only");
+    vault.close();
+    assert_eq!(fs::read(dir.join(VAULT_FILE)).unwrap(), before, "1.2 changes nothing");
+    assert!(backups(&dir).is_empty(), "no migration attempt");
+    // And this build still opens it normally.
+    assert!(!Vault::open(&dir, &dek(1)).unwrap().is_read_only());
 }

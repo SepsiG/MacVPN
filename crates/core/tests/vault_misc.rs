@@ -50,7 +50,7 @@ fn reopen_as_newer(dir: &Path, mut vault: Vault) -> Vault {
 }
 
 fn assert_newer<T: std::fmt::Debug>(r: Result<T, VaultError>) {
-    assert!(matches!(r, Err(VaultError::NewerSchema { db: 99, app: 1 })), "{r:?}");
+    assert!(matches!(r, Err(VaultError::NewerSchema { db: 99, app: 2 })), "{r:?}");
 }
 
 fn date(s: &str) -> Date {

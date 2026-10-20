@@ -10,6 +10,10 @@
 
 pub mod app;
 pub mod backup;
+pub mod catalog;
+pub mod catalog_file;
+pub mod catalog_publish;
+pub mod catalog_schedule;
 pub mod connections;
 pub mod control;
 pub mod credential_prompt;

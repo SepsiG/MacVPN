@@ -16,6 +16,8 @@ pub const CONNECTION_KEY: &str = "connectionID";
 pub const AUTH_PROMPT_KEY: &str = "authPrompt";
 /// The credential prompt's notification (new in the Rust app).
 pub const CREDENTIAL_PROMPT_KEY: &str = "credentialPrompt";
+/// A team catalog notice (updated, refused, team key changed): the catalog id.
+pub const CATALOG_KEY: &str = "teamCatalog";
 
 /// One notification to post.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -25,7 +27,7 @@ pub struct NotificationContent {
     pub title: String,
     pub body: String,
     /// `userInfo`: one of [`CONNECTION_KEY`] / [`AUTH_PROMPT_KEY`] / [`CREDENTIAL_PROMPT_KEY`] with the connection's
-    /// key.
+    /// key, or [`CATALOG_KEY`] with a catalog id.
     pub user_info: (&'static str, String),
 }
 
@@ -94,6 +96,17 @@ pub fn for_credential_prompt(prompt: &CredentialPromptView) -> NotificationConte
         ),
         body: l10n::tr("Click to enter the user name or password.", &[]),
         user_info: (CREDENTIAL_PROMPT_KEY, prompt.connection_id.clone()),
+    }
+}
+
+/// A team catalog notice (spec 6, plan Task 11). The text names the catalog and counts, never a connection's
+/// configuration or a key. `unique`: a fresh identifier.
+pub fn for_catalog(catalog_id: &str, text: String, unique: String) -> NotificationContent {
+    NotificationContent {
+        id: unique,
+        title: l10n::tr("Team catalog", &[]),
+        body: text,
+        user_info: (CATALOG_KEY, catalog_id.to_string()),
     }
 }
 

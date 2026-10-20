@@ -54,6 +54,11 @@
 
 <div class="restore-after">
   <p class="banner ok" role="status"><Icon name="check" /><span>{tr('The backup was restored.')}</span></p>
+  {#if outcome.skippedCatalogItems.length > 0}
+    <p class="caption skipped-catalog">
+      {tr('A team catalog provides these, so the backup’s copies were not restored: %@', outcome.skippedCatalogItems.join(', '))}
+    </p>
+  {/if}
   <section class="card preferences">
     <h2>{tr('Preferences')}</h2>
     <p class="caption">{tr('The backup’s preferences are not applied by themselves. Tick the ones to use on this Mac.')}</p>
@@ -102,7 +107,7 @@
       {#if remaining > 0}
         <button type="button" class="reinstall" disabled={busy} onclick={onreinstall}>
           {#if installing}<span class="spinner" aria-hidden="true"></span>{/if}
-          {tr('Reinstall %lld Native Profiles', remaining)}
+          {remaining === 1 ? tr('Reinstall 1 Native Profile') : tr('Reinstall %lld Native Profiles', remaining)}
         </button>
       {/if}
     </section>

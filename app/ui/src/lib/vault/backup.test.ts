@@ -171,6 +171,10 @@ const summary: RestoreSummary = {
   added: 4,
   conflicts: 13,
   lostOnReplace: 5,
+  lostSubscriptions: [],
+  lostAdminKeys: [],
+  lostPublications: [],
+  lostTotal: 5,
   acknowledgedRisky: ['Office up-script'],
   nativeProfiles: 1,
   fresh: false,
@@ -202,6 +206,26 @@ test('replace asks again, naming the count, and offers a backup first', async ()
   assert.ok(hu.includes('5 elem'), hu);
 });
 
+test('replace names the team catalogs, admin keys and publications it takes', async () => {
+  const catalogs = { ...summary, lostSubscriptions: ['Acme VPN'], lostAdminKeys: ['primary'], lostPublications: ['Published'], lostTotal: 8 };
+  for (const confirming of [false, true]) {
+    const html = await renderView('RestorePlanView', planProps({ summary: catalogs, choice: 'replace', confirming }));
+    assert.ok(html.includes('Team catalog subscriptions removed: Acme VPN'), html);
+    assert.ok(html.includes('Admin keys replaced by the backup’s: 1'));
+    assert.ok(html.includes('Publications replaced by the backup’s: Published'));
+    assert.ok(html.includes('Admin keys and publications the backup does not have stay on this Mac.'));
+  }
+  const hu = await renderView('RestorePlanView', planProps({ summary: catalogs, choice: 'replace', confirming: true }), 'hu');
+  assert.ok(hu.includes('Acme VPN') && hu.includes('Published'), hu);
+  assert.doesNotMatch(hu, /Team catalog subscriptions removed/);
+  // Nothing of it: no lines.
+  const plain = await renderView('RestorePlanView', planProps({ choice: 'replace', confirming: true }));
+  assert.doesNotMatch(plain, /Team catalog subscriptions removed|replaced by the backup/);
+  // The confirmation sends the whole count.
+  const restore = readFileSync(fileURLToPath(new URL('./Restore.svelte', import.meta.url)), 'utf8');
+  assert.match(restore, /backupApi\.replace\(summary!\.lostTotal\)/);
+});
+
 test('a fresh restore shows the numbers and the risky list, no merge question', async () => {
   const html = await renderView('RestorePlanView', planProps({ summary: { ...summary, fresh: true, conflicts: 0, lostOnReplace: 0 } }));
   assert.ok(html.includes('Office up-script'));
@@ -216,7 +240,17 @@ const outcome: RestoreOutcome = {
     { key: 'controlApi', backedUp: true, current: false, ticked: false },
   ],
   nativeProfiles: [{ id: '11111111-2222-4333-8444-555555555555', name: 'Branch L2TP', installed: false }],
+  skippedCatalogItems: [],
 };
+
+test('a merge names the team catalog items it did not restore', async () => {
+  const plain = await renderView('RestoreAfterView', afterProps());
+  assert.doesNotMatch(plain, /skipped-catalog/);
+  const skipped = await renderView('RestoreAfterView', afterProps({ outcome: { ...outcome, skippedCatalogItems: ['Team folder', 'Team Two'] } }));
+  assert.ok(skipped.includes('A team catalog provides these, so the backup’s copies were not restored: Team folder, Team Two'), skipped);
+  const hu = await renderView('RestoreAfterView', afterProps({ outcome: { ...outcome, skippedCatalogItems: ['Team Two'] } }), 'hu');
+  assert.ok(hu.includes('Team Two') && !hu.includes('A team catalog provides these'), hu);
+});
 
 function afterProps(extra: Record<string, unknown> = {}) {
   return { outcome, ticks: initialTicks(outcome.preferences), onapply: noop, onreinstall: noop, ondone: noop, ...extra };
@@ -238,7 +272,7 @@ test('each preference has its own checkbox; the control API is not ticked; nothi
   // The same value here: nothing to apply.
   assert.match(preferenceBox(html, 'launchAtLogin'), /disabled/);
   button(html, 'apply');
-  assert.ok(html.includes('Reinstall 1 Native Profiles'));
+  assert.match(html, /Reinstall 1 Native Profile(?!s)/, 'one profile: the singular');
   assert.ok(html.includes('Branch L2TP'));
   const applied = await renderView('RestoreAfterView', afterProps({ applied: [] }));
   assert.ok(applied.includes('The selected preferences were applied.'));

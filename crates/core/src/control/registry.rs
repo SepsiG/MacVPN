@@ -286,6 +286,18 @@ impl Registry {
         self.client_mut(id).map(|c| c.allowed = allowed).is_some()
     }
 
+    /// Removes `keys` from every client's allowlist (connections that no longer exist, such as removed team catalog
+    /// connections, whose deterministic ids would come back with a re-subscribe). `true`: something changed.
+    pub fn forget_keys(&mut self, keys: &[String]) -> bool {
+        let mut changed = false;
+        for client in &mut self.clients {
+            let before = client.allowed.len();
+            client.allowed.retain(|k| !keys.contains(k));
+            changed |= client.allowed.len() != before;
+        }
+        changed
+    }
+
     /// Records a successful `hello`. `false`: no such client.
     pub fn touch(&mut self, id: Uuid, now: Date) -> bool {
         self.client_mut(id).map(|c| c.last_used = Some(now)).is_some()

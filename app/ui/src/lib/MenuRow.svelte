@@ -6,6 +6,7 @@
   import { tr } from './l10n.svelte';
   import { statusLine, statusText } from './status';
   import TypeIcon from './TypeIcon.svelte';
+  import TeamBadge from './catalog/TeamBadge.svelte';
 
   let {
     row,
@@ -32,10 +33,14 @@
           <path d="M9.8 1.5l4.7 4.7-1.4 1.4-.9-.4-2.6 2.6.3 2.7-1.4 1.4-2.8-2.8-3 3-.9-.9 3-3-2.8-2.8 1.4-1.4 2.7.3 2.6-2.6-.4-.9z" fill="currentColor" />
         </svg>
       {/if}
+      {#if row.catalog}<TeamBadge name={row.catalog.name} />{/if}
     </div>
     <div class="subtitle" title={statusText(line)}>
       <span class="type">{line.type}</span>{#if line.status}<span class="dot" aria-hidden="true">·</span><span class="status">{line.status}</span>{/if}
     </div>
+    {#if row.catalog?.pendingRemoval}
+      <div class="removal">{tr('Removed from the team catalog — disappears after you disconnect')}</div>
+    {/if}
     {#if row.heldBy.length > 0}
       <div class="held">{tr('Held by %@', row.heldBy.join(', '))}</div>
     {/if}
@@ -131,6 +136,12 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .removal {
+    margin-top: 2px;
+    font-size: var(--text-xs);
+    line-height: 13px;
+    color: var(--state-busy-text);
   }
   .held {
     margin-top: 2px;

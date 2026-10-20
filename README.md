@@ -6,7 +6,13 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.2.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.3.
+
+### What's new in 1.3
+- **Team catalogs.** An administrator publishes a set of connections, with their folders, colours and named sign-ins, as one signed and encrypted file on an HTTPS server, a file share or a synced folder (iCloud Drive, OneDrive, Dropbox). Every subscribed MacVPN picks up additions, changes and removals by itself; each member signs in with their own user name and password, which never leave their vault. See [team catalogs](docs/user-guide.en.md#16-team-catalogs).
+- **Subscribe in one step.** Paste a subscription string, compare the publisher fingerprint, done. Catalog connections are read-only and carry a **Team** badge; **Duplicate as personal connection…** makes your own editable copy.
+- **For administrators:** the **Publishing** section: an admin key with an offline backup key, a publish wizard (team secrets only when you tick them) that writes the file where you choose, and **Rotate Team Key…** to cut off someone who left. MacVPN never uploads anything.
+- **Upgrading from 1.2:** the vault is updated on the first launch (the old one is kept as `vault.db.bak-v1`); the root layer stays 8, so no admin password is needed. See [Upgrading from 1.2](docs/user-guide.en.md#83-upgrading-from-12).
 
 ### What's new in 1.2
 - **Encrypted vault.** Connections and their passwords are kept in one encrypted vault, protected by a master password, with a recovery key shown once. **Unlock automatically** opens it without asking; **Lock Now** locks it. See [the vault chapter](docs/user-guide.en.md#11-vault).
@@ -27,7 +33,8 @@ MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (stron
 - **Encrypted vault.** Connections, configs, passwords, PSKs and key passwords are kept in one encrypted vault (SQLCipher), protected by a master password and a recovery key. With **Unlock automatically** the vault key stays in the macOS Keychain and MacVPN opens without asking; otherwise it asks at launch. **Lock Now** locks it while VPNs keep running.
 - **Folders and colours.** Nested folders for your connections and system VPNs, 12 colours, drag and drop, collapsible folders in the menu with a count of active connections.
 - **Shared credentials.** A named user name and password that several connections use; change it once for all of them.
-- **Full backup and restore.** **Back Up Everything…** writes one encrypted file with every connection, secret, folder and shared credential; **Restore from Backup…** merges it or replaces everything, here or on a new Mac.
+- **Full backup and restore.** **Back Up Everything…** writes one encrypted file with every connection, secret, folder and shared credential (and, from 1.3, the team catalog subscriptions and admin keys); **Restore from Backup…** merges it or replaces everything, here or on a new Mac.
+- **Team catalogs.** Share connections with a team through one signed (Ed25519) and encrypted (XChaCha20-Poly1305) file, fetched over HTTPS or from a file share or synced folder: refreshed at launch, every 15 minutes and on wake, with rollback protection, credential slots that each member fills in once, and a team key you rotate to revoke access.
 - **Import and export.** Choose or drag in one or more files. Referenced key files, PKCS#12 files and MikroTik RouterOS configs are handled. Credential files go into the vault if you confirm. Exports never contain passwords, and they only contain private keys if you choose that. Folders and the name of a shared credential travel with the export; a shared credential is never linked on import without asking.
 - **Editors.** A config editor with line-numbered errors and a panel for risky OpenVPN settings. Forms for SSTP, L2TP and Cisco IPsec. Passwords, PSKs and key passwords are stored in the vault.
 - **Multi-factor authentication.** OpenVPN static and dynamic challenges, sign-in in the browser (SAML, SSO, push), and a one-time code appended to the password for every type that has a password, including system VPNs.
@@ -45,7 +52,7 @@ MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (stron
 3. The app is ad-hoc signed, not signed with a Developer ID, so Gatekeeper blocks the first launch. On macOS 14, Control-click (right-click) the app in Applications, choose **Open**, then **Open** again. On macOS 15 or later, open System Settings → Privacy & Security and click **Open Anyway**.
 4. In the System Status window, install the missing Homebrew packages and click **Authorize** to install the root helper (one admin password prompt).
 
-Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 1.1? See [Upgrading from 1.1](docs/user-guide.en.md#82-upgrading-from-11). Coming from 0.x? See [Upgrading from 0.x](docs/user-guide.en.md#81-upgrading-from-0x).
+Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 1.2? See [Upgrading from 1.2](docs/user-guide.en.md#83-upgrading-from-12). Coming from 1.1? See [Upgrading from 1.1](docs/user-guide.en.md#82-upgrading-from-11). Coming from 0.x? See [Upgrading from 0.x](docs/user-guide.en.md#81-upgrading-from-0x).
 
 ### Requirements
 - macOS 14 or later, Apple silicon or Intel
@@ -59,7 +66,7 @@ Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 1.1? See [
 - Control API for other apps on the same Mac: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
 
 ### Security note
-Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
+Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. A team catalog is signed and encrypted, but everyone with the team key can read it, and whoever holds the admin key decides what your team connects to: see the [team catalog security model](docs/user-guide.en.md#1611-security-model). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
 
 ### Development
 MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
@@ -99,7 +106,13 @@ MIT – see [LICENSE](LICENSE). Third-party components (among them SQLCipher, BS
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.2.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.3.
+
+### Újdonságok az 1.3-ban
+- **Csapatkatalógusok.** A rendszergazda egy kapcsolatkészletet, a mappáival, színeivel és névvel ellátott bejelentkezési helyeivel együtt, egyetlen aláírt és titkosított fájlként tesz közzé egy HTTPS-szerveren, egy fájlmegosztáson vagy egy szinkronizált mappában (iCloud Drive, OneDrive, Dropbox). Minden feliratkozott MacVPN magától átveszi az új, a módosult és a törölt kapcsolatokat; mindenki a saját felhasználónevével és jelszavával jelentkezik be, ezek sosem hagyják el a széfjét. Lásd [csapatkatalógusok](docs/user-guide.hu.md#16-csapatkatalógusok).
+- **Feliratkozás egy lépésben.** Beilleszted a feliratkozási kódot, összeveted a közzétevő ujjlenyomatát, kész. A katalógus kapcsolatai csak olvashatók, és **Csapat** jelvényt viselnek; a **Másolat saját kapcsolatként…** saját, szerkeszthető példányt készít.
+- **Rendszergazdáknak:** a **Közzététel** rész: adminisztrátori aláírókulcs offline tartalék kulccsal, közzétételi varázsló (csapattitok csak külön jelölésre), amely oda írja a fájlt, ahová választod, és **Csapatkulcs cseréje…** a csapatot elhagyók kizárására. A MacVPN semmit nem tölt fel.
+- **Frissítés 1.2-ről:** az első indítás frissíti a széfet (a régi `vault.db.bak-v1` néven megmarad); a root réteg 8 marad, így nem kell admin jelszó. Lásd [Frissítés 1.2-ről](docs/user-guide.hu.md#83-frissítés-12-ről).
 
 ### Újdonságok az 1.2-ben
 - **Titkosított széf.** A kapcsolatok és jelszavaik egy titkosított széfben vannak, amelyet mesterjelszó véd, és van egy csak egyszer megjelenő helyreállítási kulcs. Az **Automatikus feloldás** kérdés nélkül megnyitja, a **Széf zárolása most** zárolja. Lásd [a széf fejezetet](docs/user-guide.hu.md#11-széf).
@@ -120,7 +133,8 @@ A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, 
 - **Titkosított széf.** A kapcsolatok, a configok, a jelszavak, a PSK-k és a kulcsjelszavak egyetlen titkosított széfben (SQLCipher) vannak, amelyet mesterjelszó és helyreállítási kulcs véd. **Automatikus feloldás** mellett a széfkulcs a macOS Keychainben marad, és a MacVPN kérdés nélkül megnyílik; különben induláskor kérdez. A **Széf zárolása most** zárol, a VPN-ek közben futnak tovább.
 - **Mappák és színek.** Egymásba ágyazható mappák a kapcsolatoknak és a rendszer VPN-eknek, 12 szín, húzás, a menüben csukható mappák az aktív kapcsolatok számával.
 - **Közös hitelesítő adatok.** Névvel ellátott felhasználónév és jelszó, amelyet több kapcsolat használ; egyszer módosítod mindegyiknek.
-- **Teljes biztonsági mentés és visszaállítás.** A **Teljes biztonsági mentés…** egyetlen titkosított fájlba írja az összes kapcsolatot, titkot, mappát és közös hitelesítő adatot; a **Visszaállítás biztonsági mentésből…** összefésüli vagy mindent lecserél, itt vagy egy új Macen.
+- **Teljes biztonsági mentés és visszaállítás.** A **Teljes biztonsági mentés…** egyetlen titkosított fájlba írja az összes kapcsolatot, titkot, mappát és közös hitelesítő adatot (az 1.3-tól a csapatkatalógus-feliratkozásokat és az aláírókulcsokat is); a **Visszaállítás biztonsági mentésből…** összefésüli vagy mindent lecserél, itt vagy egy új Macen.
+- **Csapatkatalógusok.** Kapcsolatok megosztása egy csapattal egyetlen aláírt (Ed25519) és titkosított (XChaCha20-Poly1305) fájlon át, HTTPS-ről, fájlmegosztásról vagy szinkronizált mappából: frissítés induláskor, 15 percenként és ébredéskor, visszaléptetés elleni védelemmel, közös belépési adatok helyeivel, amelyeket minden tag egyszer tölt ki, és cserélhető csapatkulccsal a hozzáférés visszavonásához.
 - **Import és export.** Válassz ki vagy húzz be egy vagy több fájlt. A hivatkozott kulcsfájlokat, a PKCS#12 fájlokat és a MikroTik RouterOS configokat is kezeli. A hitelesítőadat-fájlok tartalma megerősítés után a széfbe kerül. Az export soha nem tartalmaz jelszót, privát kulcsot pedig csak akkor, ha ezt választod. A mappa és a közös hitelesítő adat neve az exporttal utazik; importáláskor a közös hitelesítő adat sosem kapcsolódik kérdés nélkül.
 - **Szerkesztők.** Config szerkesztő sorszámozott hibalistával és egy panellel a kockázatos OpenVPN beállításokhoz. Űrlap az SSTP-hez, az L2TP-hez és a Cisco IPsec-hez. A jelszavak, a PSK-k és a kulcsjelszavak a széfbe kerülnek.
 - **Többfaktoros hitelesítés.** OpenVPN statikus és dinamikus challenge, böngészős bejelentkezés (SAML, SSO, push), és a jelszó végére fűzött egyszer használatos kód minden jelszavas típusnál, a rendszer VPN-eknél is.
@@ -138,7 +152,7 @@ A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, 
 3. Az app ad-hoc aláírású, nincs Developer ID-vel aláírva, ezért a Gatekeeper az első indításkor letiltja. macOS 14-en kattints a Control billentyűvel (jobb gombbal) az appra az Applications mappában, válaszd a **Megnyitás** pontot, majd újra a **Megnyitás** gombot. macOS 15-ön és újabbon: Rendszerbeállítások → Adatvédelem és biztonság → **Megnyitás mindenképp**.
 4. A Rendszerállapot ablakban telepítsd a hiányzó Homebrew csomagokat, majd az **Engedélyezés** gombbal telepítsd a root segédet (egy admin jelszó).
 
-Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Az 1.1-et használod? Lásd: [Frissítés 1.1-ről](docs/user-guide.hu.md#82-frissítés-11-ről). 0.x verzióról jössz? Lásd: [Frissítés 0.x verzióról](docs/user-guide.hu.md#81-frissítés-0x-verzióról).
+Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Az 1.2-t használod? Lásd: [Frissítés 1.2-ről](docs/user-guide.hu.md#83-frissítés-12-ről). Az 1.1-ről jössz? Lásd: [Frissítés 1.1-ről](docs/user-guide.hu.md#82-frissítés-11-ről). 0.x verzióról jössz? Lásd: [Frissítés 0.x verzióról](docs/user-guide.hu.md#81-frissítés-0x-verzióról).
 
 ### Követelmények
 - macOS 14 vagy újabb, Apple processzoros vagy Intel Mac
@@ -152,7 +166,7 @@ Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Az 1.1-et használ
 - Vezérlő API más appoknak ugyanazon a Macen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
 
 ### Biztonsági megjegyzés
-A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
+A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. A csapatkatalógus alá van írva és titkosítva van, de akinél megvan a csapatkulcs, elolvashatja, és aki az aláírókulcsot birtokolja, az dönti el, mihez csatlakozik a csapatod: lásd [a csapatkatalógusok biztonsági modelljét](docs/user-guide.hu.md#1611-biztonsági-modell). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
 
 ### Fejlesztés
 A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).

@@ -227,3 +227,16 @@ fn clicks_route_to_the_prompt_or_the_log() {
     );
     assert_eq!(route_click(&BTreeMap::new(), listed), ClickAction::ShowConnection { select: None, log_tab: false });
 }
+
+#[test]
+fn a_catalog_notice_names_the_catalog_and_routes_to_the_connections_window() {
+    let n = with_language(AppLanguage::Hu, || {
+        for_catalog("11111111-1111-4111-8111-111111111111", "szöveg".into(), "catalog-1".into())
+    });
+    assert_eq!(n.id, "catalog-1");
+    assert_eq!(n.title, "Csapatkatalógus");
+    assert_eq!(n.body, "szöveg");
+    assert_eq!(n.user_info, (CATALOG_KEY, "11111111-1111-4111-8111-111111111111".to_string()));
+    let info = BTreeMap::from([(CATALOG_KEY.to_string(), n.user_info.1.clone())]);
+    assert_eq!(route_click(&info, |_| None), ClickAction::ShowConnection { select: None, log_tab: false });
+}

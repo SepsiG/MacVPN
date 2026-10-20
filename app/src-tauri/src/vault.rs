@@ -251,6 +251,8 @@ fn finish_pending_migration(state: &AppState) {
 pub fn after_unlock(state: &Arc<AppState>) {
     finish_pending_migration(state);
     use_the_vault(state);
+    // The team catalogs refresh once (the scheduler skipped its rounds while locked).
+    state.catalog.service.unlocked();
 }
 
 /// The app reads the vault (after an unlock, or a migration that keeps the old data until the window's Continue).
@@ -267,6 +269,11 @@ pub fn after_lock(state: &AppState) {
     state.manager.enter_locked();
     crate::backup::vault_locked(state);
     state.connections.vault_locked();
+    // The add dialog's previews and the chosen files go; the scheduler skips its rounds while locked, and the
+    // view model drops the catalogs, the badges and the publishing side.
+    state.catalog.vault_locked();
+    // A recovery key, team key or subscription string copied earlier leaves the pasteboard (if still there).
+    crate::clipboard::clear_secret();
     state.publisher.mark();
 }
 
@@ -388,31 +395,23 @@ pub fn armed(state: &AppState, label: &str, expected: &str) -> Result<(), String
     state.vault.lock_of(label).check(Instant::now())
 }
 
-/// How long a copied recovery key may stay on the pasteboard.
-const CLIPBOARD_KEY_SECONDS: u64 = 60;
-
-/// Whether the pasteboard text is a recovery key (as copied from the create or the new-key window).
-fn holds_recovery_key(text: &str) -> bool {
+/// Whether the text is a recovery key (as the create or the new-key window shows it).
+fn is_recovery_key(text: &str) -> bool {
     RecoveryKey::parse(text.trim()).is_ok()
 }
 
-/// The create or the new-key window copied the recovery key: a minute later the pasteboard is emptied if it still
-/// holds a recovery key (the key itself is not sent here; anything else copied meanwhile is left alone).
+/// The create or the new-key window's "Copy": the recovery key (checked) goes to the pasteboard concealed, and
+/// leaves it a minute later, at a vault lock or at quit if it is still there.
 #[tauri::command]
-pub async fn vault_key_copied(window: Window) -> Result<(), String> {
+pub async fn vault_copy_recovery_key(window: Window, recovery_key: String) -> Result<(), String> {
+    let recovery_key = Zeroizing::new(recovery_key);
     if window.label() != CREATE_WINDOW && window.label() != RECOVERY_WINDOW {
         return Err("not this window's command".into());
     }
-    std::thread::Builder::new()
-        .name("macvpn-clipboard".into())
-        .spawn(|| {
-            std::thread::sleep(std::time::Duration::from_secs(CLIPBOARD_KEY_SECONDS));
-            if crate::platform::pasteboard_text().is_some_and(|text| holds_recovery_key(&text)) {
-                let _ = crate::platform::copy_to_pasteboard("");
-            }
-        })
-        .map(drop)
-        .map_err(|e| e.to_string())
+    if recovery_key.len() > 256 || !is_recovery_key(&recovery_key) {
+        return Err("invalid recovery key".into());
+    }
+    crate::clipboard::copy_secret(recovery_key.trim())
 }
 
 // MARK: - Create
@@ -720,12 +719,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_a_recovery_key_is_cleared_from_the_pasteboard() {
+    fn only_a_recovery_key_is_copied() {
         let key = RecoveryKey::generate(&macvpn_core::vault::FixedEntropy::new(4)).unwrap();
-        assert!(holds_recovery_key(key.as_str()));
-        assert!(holds_recovery_key(&format!("  {}\n", key.as_str())));
+        assert!(is_recovery_key(key.as_str()));
+        assert!(is_recovery_key(&format!("  {}\n", key.as_str())));
         for other in ["", "hello", "ABCD-EFGH", "https://example.com/"] {
-            assert!(!holds_recovery_key(other), "{other}");
+            assert!(!is_recovery_key(other), "{other}");
         }
     }
 

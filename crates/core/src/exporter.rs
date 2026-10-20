@@ -106,6 +106,26 @@ impl std::error::Error for WriteError {}
 /// Creates the export with 0600 from the start: a temp file in the target folder (`O_EXCL`, no symlink followed),
 /// an fsync, then an atomic rename and an fsync of the folder. An existing file's permissions are not inherited.
 pub fn write(data: &[u8], path: &Path) -> Result<(), WriteError> {
+    write_with_mode(data, path, 0o600)
+}
+
+/// [`write`] with another final mode (a team catalog is written 0644: it is meant to be served, and it is
+/// encrypted and signed). The temp file is created 0600 and gets `mode` explicitly (not through the umask) before
+/// the rename.
+///
+/// The mode is set on the open descriptor (`fchmod`), never by path: in a shared or group-writable folder someone
+/// could swap the temp name for a symlink to one of the user's files, and a chmod by path would follow it. Before
+/// the rename the temp name must still be the written file (same device and inode, not a symlink), else nothing is
+/// published.
+pub fn write_with_mode(data: &[u8], path: &Path, mode: u32) -> Result<(), WriteError> {
+    write_with_mode_raced(data, path, mode, &|_| {})
+}
+
+/// [`write_with_mode`] with a hook that runs on the temp file's path after it was written, before its mode is set
+/// and it is renamed: tests swap the temp file there to check that a race cannot redirect the chmod or the rename.
+#[doc(hidden)]
+pub fn write_with_mode_raced(data: &[u8], path: &Path, mode: u32, race: &dyn Fn(&Path)) -> Result<(), WriteError> {
+    use std::os::unix::fs::MetadataExt;
     let display = path.to_string_lossy().into_owned();
     let cannot_write = || WriteError { message: l10n::tr("Cannot write: %@", &[Arg::Str(&display)]) };
     let dir = path.parent().unwrap_or(Path::new("."));
@@ -118,16 +138,27 @@ pub fn write(data: &[u8], path: &Path) -> Result<(), WriteError> {
         .custom_flags(libc::O_NOFOLLOW)
         .open(&tmp)
         .map_err(|_| cannot_write())?;
+    let mut ours = true;
     let result = (|| {
         file.write_all(data).map_err(|_| cannot_write())?;
         file.sync_all().map_err(|_| cannot_write())?;
-        drop(file);
-        fs::set_permissions(&tmp, fs::Permissions::from_mode(0o600))
+        race(&tmp);
+        file.set_permissions(fs::Permissions::from_mode(mode))
             .map_err(|_| WriteError { message: l10n::tr("Cannot set the permissions: %@", &[Arg::Str(&display)]) })?;
+        let written = file.metadata().map_err(|_| cannot_write())?;
+        let named = fs::symlink_metadata(&tmp).map_err(|_| cannot_write())?;
+        if !named.file_type().is_file() || named.dev() != written.dev() || named.ino() != written.ino() {
+            ours = false;
+            return Err(cannot_write());
+        }
+        drop(file);
         fs::rename(&tmp, path).map_err(|_| cannot_write())
     })();
     if result.is_err() {
-        let _ = fs::remove_file(&tmp);
+        // Only our own temp file is removed (a swapped-in name is someone else's).
+        if ours {
+            let _ = fs::remove_file(&tmp);
+        }
         return result;
     }
     // Durability of the rename; if the directory cannot be opened, the write still succeeded.

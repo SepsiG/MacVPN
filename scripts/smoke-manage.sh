@@ -39,6 +39,16 @@
 #               first connect asks for the password once (naming the credential, "used by 2") and saves it into
 #               the credential, the second connects without a prompt; Delete with "Copy into each connection";
 #               an import naming a credential asks first (with the server) and links only after "Use";
+#   catalog.js – a team catalog as a subscriber (plan Task 16): the driver seals a fixture catalog with the core's
+#               functions into the sandbox (its own keys: publish.js runs after it); "Add team catalog…" with the file source (no open
+#               panel in the smoke run), the team key and the fingerprint typed, the preview, Subscribe; the Team badges,
+#               the read-only editor, the context menu and a refused drag; version 2 through "Refresh now"; Unsubscribe;
+#   publish.js – publishing a team catalog (in the vault): the Publishing section generates the admin key and the
+#               backup key, the wizard publishes a seeded folder to the sandbox tmp (no save panel in the smoke run:
+#               the file is 0644, opens with the stored team key and the admin key's fingerprint, holds no seeded
+#               text in clear) and shows the team key once (read, "I Saved It", one group retyped); Publish New
+#               Version (v2); Rotate Team Key after its revoke text and the review (v3: the old team key no longer
+#               opens the file); Export Backup Key with "remove after" (offline, the key file 0600) and Import it again;
 #   quit.js   – the quit flows' edge cases: a selection while the quit's "Unsaved Changes" is shown, the Update
 #               window closed during an install and while its quit question is shown (the update is cancelled);
 #   vault-menu.js, vault-unlock.js, vault-password.js – "Show “Lock Now”" turned on and "Lock Now" clicked in the
@@ -133,8 +143,15 @@ SHOTS_ENV=()
 env ${SHOTS_ENV[@]+"${SHOTS_ENV[@]}"} MACVPN_SANDBOX_HOME="$HOME_DIR" MACVPN_SMOKE_DIR="$PWD/scripts/smoke" "$APP" ${LANG_ARGS[@]+"${LANG_ARGS[@]}"} > "$LOG" 2>&1 &
 PID=$!
 CLIENT_PID=
-for _ in $(seq 1 300); do
+# The console's screen lock, sampled through the run (the session's CGSSessionScreenIsLocked, as ioreg shows it):
+# while it is locked, the windows are not drawn and their measured geometry is not what a user sees, so the popover
+# placement checks are not trustworthy. Only those checks, and only when the lock was seen, are reported as not
+# verified instead of failed (with a ⚠ line and in the final line); every other failure still fails.
+SCREEN_LOCKED="$HOME_DIR/screen-locked"
+screen_locked() { ioreg -n Root -d1 2>/dev/null | grep -q '"CGSSessionScreenIsLocked"=Yes'; }
+for _ in $(seq 1 480); do
   sleep 1
+  ! screen_locked || touch "$SCREEN_LOCKED"
   if grep -q '^MacVPN smoke: done' "$LOG" 2>/dev/null; then break; fi
   # The control API's test client, once the app listens.
   if [ -z "$CLIENT_PID" ] && grep -q '^MacVPN smoke: control: listening ' "$LOG" 2>/dev/null; then
@@ -168,6 +185,8 @@ grep '^MacVPN smoke: vault' "$LOG" || true
 grep '^MacVPN smoke: folders' "$LOG" || true
 grep '^MacVPN smoke: shared' "$LOG" || true
 grep '^MacVPN smoke: backup' "$LOG" || true
+grep '^MacVPN smoke: catalog' "$LOG" || true
+grep '^MacVPN smoke: publish' "$LOG" || true
 fail() { echo "✗ $1"; sed 's/^/  app: /' "$LOG"; exit 1; }
 grep -q '^MacVPN smoke: done' "$LOG" || fail "the smoke run did not finish"
 LANGUAGE=$(sed -n 's/^MacVPN smoke: language //p' "$LOG")
@@ -205,15 +224,27 @@ grep -q '^MacVPN smoke: vault: unlocked changed_password=true names_back=true$' 
 # The Connections window.
 grep -q '"user"' "$DUMP/$A/meta.json" || fail "the acknowledgement was not stored"
 grep -q '^user nobody$' "$DUMP/$A/config" || fail "the config was not saved"
-[ "$(name "$A")" = "SMOKE OK" ] || fail "Connections window: $(name "$A")"
+PLACEMENT_SKIPPED=
+if [ "$(name "$A")" != "SMOKE OK" ]; then
+  # `SMOKE FAILED <checks> <geometry>`: skipped only when every failed check is a placement check and the screen
+  # was locked during the run; anything else (or an unlocked screen) fails.
+  FAILED_CHECKS=$(name "$A" | sed -n 's/^SMOKE FAILED \([^ ]*\).*/\1/p')
+  OTHER=$(printf '%s' "$FAILED_CHECKS" | tr ',' '\n' | grep -Ev '^(contextBottomRight|contextTopRight|contextBottomLeft|pickerInside|newMenuInside)$' || true)
+  if [ -n "$FAILED_CHECKS" ] && [ -z "$OTHER" ] && [ -e "$SCREEN_LOCKED" ]; then
+    echo "⚠ display locked during the run: the popover placement checks ($FAILED_CHECKS) were not verified – unlock the display and run again"
+    PLACEMENT_SKIPPED=" – popover placement NOT verified: display locked"
+  else
+    fail "Connections window: $(name "$A")"
+  fi
+fi
 grep -q '^port=8443$' "$DUMP/$S/config" || fail "the SSTP form was not saved"
 PROFILE=$(find "$HOME_DIR/tmp" -path '*/macvpn-profile.*/Seeded L2.mobileconfig' | head -1)
 [ -n "$PROFILE" ] || fail "the native profile was not staged"
 [ "$(stat -f %Lp "$PROFILE")" = 600 ] || fail "the staged profile is not 0600"
 ! grep -rq native-secret "$HOME_DIR/tmp" || fail "the password is in a staged profile"
 # 16 seeded, one created and deleted, the backup step's canary (in the backup, so restored), one imported by the
-# shared credential step.
-[ "$(ls "$DUMP" | wc -l | tr -d ' ')" = 18 ] || fail "create / delete left $(ls "$DUMP" | wc -l | tr -d ' ') connections"
+# shared credential step, one published by the publishing step.
+[ "$(ls "$DUMP" | wc -l | tr -d ' ')" = 19 ] || fail "create / delete left $(ls "$DUMP" | wc -l | tr -d ' ') connections"
 
 # System Status and Update.
 [ "$(name "$SETUP")" = "SETUP OK" ] || fail "System Status window: $(name "$SETUP")"
@@ -273,6 +304,31 @@ grep -q '^MacVPN smoke: backup: replace restored=yes extra-gone=yes control-api=
 ! grep -q 'smoke backup pw\|smoke-canary-secret\|smoke-master-4711' "$LOG" || fail "the log shows a backup secret"
 ! grep -q '^MacVPN smoke: backup: ERROR' "$LOG" || fail "the backup smoke"
 [ ! -e "$HOME_DIR/tmp/smoke.macvpnbackup" ] || fail "the smoke backup file was left behind"
+# Publishing: the admin keys, v1 (0644, opens, nothing in clear), v2, the rotation (the old team key refused), the
+# backup key exported (offline, 0600) and imported again; no key file password or team key (of either step) in the log.
+grep -q '^MacVPN smoke: publish: keys generated=true$' "$LOG" || fail "publishing: the admin keys"
+grep -q '^MacVPN smoke: publish: v1 mode=644 opens=v1 clear=no$' "$LOG" || fail "publishing: the first version (mode, opening, plaintext)"
+grep -q '^MacVPN smoke: publish: again version=2$' "$LOG" || fail "publishing: the new version"
+grep -q '^MacVPN smoke: publish: rotate version=3 old_key_refused=true new_key_opens=v3$' "$LOG" || fail "publishing: the team key rotation"
+grep -q '^MacVPN smoke: publish: export offline=true mode=600$' "$LOG" || fail "publishing: the backup key export"
+grep -q '^MacVPN smoke: publish: import online=true$' "$LOG" || fail "publishing: the backup key import"
+grep -q 'published v3' "$LOG" || fail "publishing: no publish line in the log"
+! grep -q 'smoke key file 4711' "$LOG" || fail "the log shows the admin key file password"
+! grep -Eq 'TEAM-[0-9A-Z]{4}-' "$LOG" || fail "the log shows a team key"
+! grep -q '^MacVPN smoke: publish: ERROR' "$LOG" || fail "the publishing smoke"
+
+# Team catalogs (the subscriber): the fixture is sealed (no name or config line in clear), every UI phase passed, the
+# backend agrees after each step, and no team key reached the log.
+grep -q '^MacVPN smoke: catalog: fixture written clear=no$' "$LOG" || fail "team catalog: the fixture file"
+for p in preview subscribe readonly update ask unsubscribe; do
+  grep -q "^MacVPN smoke: catalog: $p: CATALOG $p OK$" "$LOG" || fail "team catalog: the $p phase"
+done
+grep -Eq '^MacVPN smoke: catalog: subscribed catalogs=1 version=1 items=Smoke Team A\+Smoke Team B read_only=true team_folders=[0-9]+$' "$LOG" \
+  || fail "team catalog: the subscription in the backend"
+grep -q '^MacVPN smoke: catalog: updated version=2 items=Smoke Team A2+Smoke Team B+Smoke Team C$' "$LOG" || fail "team catalog: version 2"
+grep -q '^MacVPN smoke: catalog: unsubscribed catalogs=0 items=0$' "$LOG" || fail "team catalog: unsubscribe"
+! grep -q '^MacVPN smoke: catalog: ERROR' "$LOG" || fail "the team catalog smoke"
+[ ! -e "$HOME_DIR/tmp/smoke-share" ] || fail "the team catalog files were left behind (the subscriber's fixture or the published files)"
 
 # The control API: the switch, the pairing window, the test client's session, the lease's end, the switch off.
 CONTROL_SOCKET="$HOME_DIR/Library/Application Support/MacVPN/control/macvpn.sock"
@@ -331,4 +387,4 @@ for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 ! kill -0 "$PID" 2>/dev/null || fail "the app did not quit after the quit question"
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
-echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, menu shape, quit flows, quit request)"
+echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, publishing, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"

@@ -501,6 +501,13 @@ impl Shared {
     }
 }
 
+/// [`ControlServer::forget_keys`] while the server is not running: the registry file in `dir` is read, pruned and
+/// written back (only when something changed). A missing file is nothing to do.
+pub fn forget_keys_in_registry(dir: &Path, keys: &[String]) -> io::Result<()> {
+    let mut registry = Registry::load(dir)?;
+    if registry.forget_keys(keys) { registry.save(dir) } else { Ok(()) }
+}
+
 // MARK: - Server
 
 /// A running control server. Dropping it stops it.
@@ -570,6 +577,17 @@ impl ControlServer {
             return Err(e);
         }
         Ok(true)
+    }
+
+    /// Removes `keys` from every client's allowlist and saves once (only when something changed). Removed team
+    /// catalog connections and unsubscribing call it, so a re-subscribe (same deterministic ids) never re-grants
+    /// access silently. Fails closed: the pruned allowlists stay in effect even when saving fails (the error is
+    /// returned, and the next save writes them).
+    pub fn forget_keys(&self, keys: &[String]) -> io::Result<()> {
+        if !self.shared.lock().registry.forget_keys(keys) {
+            return Ok(());
+        }
+        self.shared.persist()
     }
 
     /// Unpairs a client and closes its open connections at once (their leases end through the normal close

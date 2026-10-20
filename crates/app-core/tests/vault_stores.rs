@@ -313,6 +313,9 @@ fn the_view_model_while_locked_contains_no_name() {
         deadline: 0.0,
         credential_name: Some("Seeded Credential".into()),
         used_by: Some(2),
+        team: Some("Seeded Team".into()),
+        team_source: Some("seeded.example.com".into()),
+        server: Some("seeded-vpn.example.com".into()),
     });
     vm.prompts.push(macvpn_app_core::prompt::PromptView {
         id: 2,

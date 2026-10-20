@@ -275,3 +275,11 @@
   height: auto;
   overflow: visible;
 }
+/* What "Replace everything" takes from the team catalog side: one line each. */
+.manage.vault-window .check .caption,
+.manage.vault-window .lost-list .caption {
+  display: block;
+}
+.manage.vault-window .lost-list {
+  margin: 0;
+}

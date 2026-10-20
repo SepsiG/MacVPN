@@ -176,6 +176,9 @@ mod tests {
             deadline: 0.0,
             credential_name: None,
             used_by: None,
+            team: None,
+            team_source: None,
+            server: None,
         };
         let one = window_height(&view(vec!["password"], None));
         let two = window_height(&view(vec!["username", "password"], None));

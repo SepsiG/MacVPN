@@ -3,6 +3,7 @@
 //! dirty registry, the pending action waiting for the "Unsaved Changes" answer (selection change, window close,
 //! quit), "save all" with the "Saving failed" report, and the one-time Log / Settings tab requests.
 
+use crate::deps::SecretField;
 use crate::editor::{Draft, EditorDeps, EditorFields, EditorView, Target};
 use crate::import_export::{self, ImportReport};
 use crate::manager::ConnectionItem;
@@ -12,11 +13,13 @@ use macvpn_core::importer;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
 use macvpn_core::models::{Connection, NativeSettings, VPNKind, ValidationIssue, uuid_string};
+use macvpn_core::{exporter, mobileconfig};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// What waits for the "Unsaved Changes" answer.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -134,7 +137,26 @@ struct WindowState {
     known_services: HashSet<String>,
     /// System VPNs that were listed and are gone, kept only while selected or edited.
     removed_services: HashSet<String>,
+    /// Team catalog profiles staged by "Install profile" and not yet seen installed: the "reinstall its profile"
+    /// mark is cleared only once macOS shows the new profile ([`ConnectionsModel::system_services_changed`]).
+    pending_installs: HashMap<Uuid, PendingInstall>,
 }
+
+/// A staged team catalog profile waiting for macOS to show it installed.
+#[derive(Debug, Clone)]
+struct PendingInstall {
+    /// The config hash of the version the profile was built from (compare-and-clear in the vault).
+    built_from: String,
+    /// The service the connection mapped to when the profile was staged, with its server address (`None`: none).
+    baseline: Option<(String, Option<String>)>,
+    /// The service was gone at a check since (removed, then installed again).
+    gone: bool,
+    /// The last check (the fresh `scutil` reads run at most every [`INSTALL_CHECK_INTERVAL`] seconds).
+    checked: Option<f64>,
+}
+
+/// Seconds between two checks of a pending profile install.
+const INSTALL_CHECK_INTERVAL: f64 = 3.0;
 
 impl WindowState {
     /// Drops every editor (none of them is shown with unsaved changes any more).
@@ -628,6 +650,110 @@ impl ConnectionsModel {
     pub fn system_services_changed(&self) {
         let _one_at_a_time = self.services_sync.lock().unwrap_or_else(PoisonError::into_inner);
         self.services_changed(&self.deps.manager.listed_service_ids());
+        self.reload_changed_catalog_drafts();
+        self.check_pending_installs();
+    }
+
+    /// Clears the "reinstall its profile" mark of a staged team catalog profile once macOS shows it installed:
+    /// its service appears (there was none), is replaced (another service ID, or gone and back), or shows the new
+    /// server address. A cancelled install changes none of these, so the connect stays blocked. The vault clears
+    /// the mark only if the profile was built from the version applied now (an apply racing the install keeps its
+    /// new mark). A profile whose service stays the same and whose server did not change cannot be told from a
+    /// cancelled one: remove the old VPN in System Settings → Network and install the profile again.
+    fn check_pending_installs(&self) {
+        let now = self.deps.clock.now().time_interval_since_1970();
+        let due: Vec<(Uuid, PendingInstall)> = {
+            let s = self.lock();
+            s.pending_installs
+                .iter()
+                .filter(|(_, p)| p.checked.is_none_or(|t| now - t >= INSTALL_CHECK_INTERVAL || now < t))
+                .map(|(id, p)| (*id, p.clone()))
+                .collect()
+        };
+        let mut cleared = false;
+        for (id, mut pending) in due {
+            pending.checked = Some(now);
+            let current = match self.deps.manager.item(&uuid_string(&id)) {
+                Some(ConnectionItem::Managed(c)) if self.deps.store.team_managed(&id).is_some() => c,
+                _ => {
+                    // Deleted, or no longer a catalog connection: nothing to wait for.
+                    self.lock().pending_installs.remove(&id);
+                    continue;
+                }
+            };
+            let installed = match self.deps.manager.native_service_for(&current) {
+                None => false,
+                Some(None) => {
+                    pending.gone = true;
+                    false
+                }
+                Some(Some(seen)) => match &pending.baseline {
+                    None => true,
+                    Some(_) if pending.gone => true,
+                    Some((service, address)) => seen.0 != *service || seen.1 != *address,
+                },
+            };
+            let mut s = self.lock();
+            if !installed {
+                if s.pending_installs.contains_key(&id) {
+                    s.pending_installs.insert(id, pending);
+                }
+                continue;
+            }
+            s.pending_installs.remove(&id);
+            drop(s);
+            // `Ok(false)`: built from an older version; the mark stays and the user installs again.
+            if self.deps.store.profile_reinstalled(&id, &pending.built_from).is_ok_and(|done| done) {
+                cleared = true;
+            }
+        }
+        if cleared {
+            self.changed();
+        }
+    }
+
+    /// The open editors of team catalog connections the catalog changed since they were loaded (an apply reloads
+    /// the manager, which calls [`Self::system_services_changed`]) load again from the new version: a read-only
+    /// editor only holds the risky checkbox, and it must never stand for a config the user has not seen. The vault
+    /// refuses a stale acknowledgement anyway (`set_acknowledged_risky` compares the config).
+    fn reload_changed_catalog_drafts(&self) {
+        let open: Vec<(String, Connection, Option<String>)> = self
+            .lock()
+            .drafts
+            .iter()
+            .filter(|(_, d)| d.read_only.is_some())
+            .filter_map(|(k, d)| match (&d.target, &d.original) {
+                (Target::Connection(c), EditorFields::Text(o)) => Some((k.clone(), c.clone(), Some(o.text.clone()))),
+                (Target::Connection(c), _) => Some((k.clone(), c.clone(), None)),
+                _ => None,
+            })
+            .collect();
+        let mut changed = false;
+        for (key, before, text) in open {
+            let Some(ConnectionItem::Managed(now)) = self.deps.manager.item(&key) else { continue };
+            let settings_changed = now.kind != before.kind
+                || now.name != before.name
+                || now.native != before.native
+                || now.otp != before.otp;
+            let config_changed = match &text {
+                Some(text) => self.deps.store.load_config(&now.id).is_ok_and(|current| current != *text),
+                None => false,
+            };
+            if !settings_changed && !config_changed {
+                continue;
+            }
+            let loaded = Draft::load(&self.deps, Target::Connection(now), Vec::new());
+            let mut s = self.lock();
+            if let Some(draft) = s.drafts.get_mut(&key)
+                && draft.read_only.is_some()
+            {
+                *draft = loaded;
+                changed = true;
+            }
+        }
+        if changed {
+            self.changed();
+        }
     }
 
     // MARK: - Create, import, delete
@@ -684,6 +810,11 @@ impl ConnectionsModel {
     /// pane for a native one, and refreshes).
     pub fn delete(&self, id: &Uuid) -> Option<Connection> {
         self.unlocked().ok()?;
+        // A team catalog's connection is removed by the catalog (or by unsubscribing), never here: its slot link,
+        // team secrets and pin stay.
+        if self.deps.store.team_managed(id).is_some() {
+            return None;
+        }
         let key = uuid_string(id);
         let c = self.deps.manager.connections().into_iter().find(|c| c.id == *id)?;
         if self.deps.manager.state(&key).is_active() {
@@ -696,8 +827,12 @@ impl ConnectionsModel {
         }
         // No "Save" of a connect still in flight may bring its Keychain items back.
         self.deps.manager.forget_saves(id);
-        let _ = self.deps.store.delete(id);
-        self.deps.secret_writer.delete_all(id);
+        // Fail closed: the secrets and the credential link go only with the connection itself (the vault refuses
+        // to delete a team catalog's connection even when the ownership read above failed).
+        let deleted = self.deps.store.delete(id).is_ok();
+        if deleted {
+            self.deps.secret_writer.delete_all(id);
+        }
         self.deps.manager.reload();
         {
             let mut s = self.lock();
@@ -706,7 +841,79 @@ impl ConnectionsModel {
             }
         }
         self.changed();
-        Some(c)
+        deleted.then_some(c)
+    }
+
+    /// "Install profile" of a team catalog's native connection (spec 6), also the reinstall its "the team catalog
+    /// changed this connection" mark offers: the profile from the catalog's settings without an account (the slot's
+    /// user name is passed at connect) and with the stored (team) PSK, through the same installer as the native
+    /// editor. The mark is cleared only once macOS shows the profile installed (see
+    /// [`Self::system_services_changed`]): staging it is not installing it.
+    pub fn install_team_profile(&self, key: &str) -> Result<(), String> {
+        self.unlocked()?;
+        let Some(ConnectionItem::Managed(listed)) = self.deps.manager.item(key) else {
+            return Err("unknown connection".into());
+        };
+        let team = self.deps.store.team_managed(&listed.id);
+        if !listed.kind.is_native() || team.is_none() {
+            return Err("not a team catalog profile".into());
+        }
+        // The version the profile is built from: its hash before and after reading the settings must agree.
+        let built_from = team.and_then(|t| t.config_hash).ok_or("not a team catalog profile")?;
+        let c = self
+            .deps
+            .store
+            .list()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .find(|c| c.id == listed.id)
+            .ok_or("unknown connection")?;
+        if self.deps.store.team_managed(&c.id).and_then(|t| t.config_hash).as_deref() != Some(built_from.as_str()) {
+            return Err(crate::deps::catalog_changed_message());
+        }
+        let mut profile = c.clone();
+        if let Some(native) = profile.native.as_mut() {
+            native.account.clear();
+        }
+        let psk = Zeroizing::new(self.deps.secrets.get(&c.id, SecretField::Psk).unwrap_or_default());
+        let data = Zeroizing::new(mobileconfig::generate(&profile, &psk).map_err(|e| e.message())?);
+        drop(psk);
+        let baseline = self.deps.manager.native_service_for(&c).flatten();
+        let existed = self.deps.manager.installed_native_ids().contains(&c.id);
+        self.deps.profiles.install(&c.id, &data, &exporter::file_name(&c), existed)?;
+        self.lock().pending_installs.insert(c.id, PendingInstall { built_from, baseline, gone: false, checked: None });
+        self.changed();
+        Ok(())
+    }
+
+    /// "I installed it" (the UI asks first and explains the risk): the user says the profile staged by
+    /// [`Self::install_team_profile`] is installed, for the case macOS cannot show it (the same service ID and server,
+    /// only the group name or "send all traffic" changed). Clears the "reinstall its profile" mark explicitly, but only
+    /// for a staged profile and only if it was built from the version applied now (compare-and-clear in the vault).
+    pub fn confirm_team_profile_installed(&self, key: &str) -> Result<(), String> {
+        self.unlocked()?;
+        let Some(ConnectionItem::Managed(listed)) = self.deps.manager.item(key) else {
+            return Err("unknown connection".into());
+        };
+        if self.deps.store.team_managed(&listed.id).is_none() {
+            return Err("not a team catalog profile".into());
+        }
+        let pending = self.lock().pending_installs.remove(&listed.id);
+        let Some(pending) = pending else {
+            return Err(macvpn_core::l10n::tr("Install the profile first.", &[]));
+        };
+        match self.deps.store.profile_reinstalled(&listed.id, &pending.built_from) {
+            Ok(true) => {
+                self.changed();
+                Ok(())
+            }
+            // An apply changed the connection after the profile was staged: that profile is outdated too.
+            Ok(false) => Err(crate::deps::catalog_changed_message()),
+            Err(e) => {
+                self.lock().pending_installs.insert(listed.id, pending);
+                Err(e.to_string())
+            }
+        }
     }
 
     /// The editors' fields by key (tests, diagnostics).

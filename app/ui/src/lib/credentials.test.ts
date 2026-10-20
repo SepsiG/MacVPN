@@ -56,6 +56,9 @@ const base: CredentialPromptView = {
   deadline: 0,
   credentialName: null,
   usedBy: null,
+  team: null,
+  teamSource: null,
+  server: null,
 };
 
 async function view(props: Record<string, unknown>, prompt: Partial<CredentialPromptView> = {}): Promise<string> {
@@ -139,6 +142,36 @@ test('a refused answer is shown, not silently ignored', async () => {
   assert.doesNotMatch(await view({ values: {}, armed: true }), /role="alert"/);
   assert.match(await view({ values: {}, armed: true, error: 'tooEarly' }), /role="alert"[^>]*>\s*Not ready yet/);
   assert.match(await view({ values: {}, armed: true, error: 'rejected' }), /role="alert"[^>]*>\s*MacVPN did not accept/);
+});
+
+test('a team catalog slot is named with its catalog', async () => {
+  const both = await view(
+    { values: {}, armed: true },
+    { fields: ['username', 'password'], credentialName: 'Office AD', usedBy: 2, team: 'Acme VPN' },
+  );
+  assert.match(both, /<p class="caption shared[^"]*">\s*Office AD \(team catalog “Acme VPN”\) — enter your user name and password\s*<\/p>/);
+  assert.doesNotMatch(both, /used by/);
+  const password = await view(
+    { values: {}, armed: true },
+    { fields: ['password'], credentialName: 'Office AD', usedBy: 2, team: 'Acme VPN' },
+  );
+  assert.match(password, /Office AD \(team catalog “Acme VPN”\) — enter your password/);
+});
+
+test('a team slot shows its catalog source and the server the password goes to', async () => {
+  const html = await view(
+    { values: {}, armed: true },
+    {
+      credentialName: 'Office AD',
+      usedBy: 2,
+      team: 'Acme VPN',
+      teamSource: 'catalogs.example.org',
+      server: 'vpn.example.com',
+    },
+  );
+  assert.match(html, /<p class="caption origin[^"]*">[^<]*Server: vpn\.example\.com[^<]*Catalog source: catalogs\.example\.org/);
+  // A personal credential has no origin line.
+  assert.doesNotMatch(await view({ values: {}, armed: true }, { credentialName: 'Office AD', usedBy: 2 }), /origin/);
 });
 
 test('a shared credential is named with its use count', async () => {

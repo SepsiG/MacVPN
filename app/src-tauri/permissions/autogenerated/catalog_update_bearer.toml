@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-update-bearer"
+description = "Enables the catalog_update_bearer command without any pre-configured scope."
+commands.allow = ["catalog_update_bearer"]
+
+[[permission]]
+identifier = "deny-catalog-update-bearer"
+description = "Denies the catalog_update_bearer command without any pre-configured scope."
+commands.deny = ["catalog_update_bearer"]

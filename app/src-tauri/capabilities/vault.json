@@ -24,6 +24,6 @@
     "allow-vault-enable-auto-unlock",
     "allow-vault-new-recovery-key",
     "allow-vault-confirm-new-key",
-    "allow-vault-key-copied"
+    "allow-vault-copy-recovery-key"
   ]
 }

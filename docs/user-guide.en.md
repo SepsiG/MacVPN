@@ -2,11 +2,18 @@
 
 [Magyar változat](user-guide.hu.md)
 
-MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.2 (see [What's new in 1.2](#whats-new-in-12)). The menu's **Help** item opens it.
+MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.3 (see [What's new in 1.3](#whats-new-in-13)). The menu's **Help** item opens it.
 
 For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference. Developers who want another program on this Mac to bring MacVPN connections up and down (**Paired apps** in the Connections window) should read the [Control API guide](control-api.md).
 
 > **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
+
+## What's new in 1.3
+
+- **Team catalogs.** An administrator publishes a set of connections, with their folders, colours and named sign-ins, as one signed and encrypted file on a web server, a file share or a synced folder. Every subscribed MacVPN picks up additions, changes and removals by itself, and each member signs in with their own user name and password. See [16](#16-team-catalogs).
+- **For administrators:** an admin key with an offline backup key, a publish wizard, a team key that can be rotated to cut off someone who left, and a subscription string that carries everything a member needs. See [16.7](#167-for-administrators-the-admin-key).
+- **Full backup.** Backups now also hold your catalog subscriptions, admin keys and publications. See [14.1](#141-what-a-backup-contains).
+- **Upgrading from 1.2:** the vault is updated on the first launch (a copy of the old one is kept), the root layer stays 8, so no admin password is needed. See [8.3](#83-upgrading-from-12).
 
 ## What's new in 1.2
 
@@ -36,7 +43,7 @@ For short step-by-step instructions, see the [How-to guide](how-to.en.md). This 
 5. [Connecting](#5-connecting)
 6. [Debug mode and the log](#6-debug-mode-and-the-log)
 7. [Troubleshooting from the log](#7-troubleshooting-from-the-log)
-8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x), [Upgrading from 1.1](#82-upgrading-from-11))
+8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x), [Upgrading from 1.1](#82-upgrading-from-11), [Upgrading from 1.2](#83-upgrading-from-12))
 9. [Uninstalling](#9-uninstalling)
 10. [Security notes](#10-security-notes)
 11. [Vault](#11-vault)
@@ -44,6 +51,7 @@ For short step-by-step instructions, see the [How-to guide](how-to.en.md). This 
 13. [Shared credentials](#13-shared-credentials)
 14. [Backup and restore](#14-backup-and-restore)
 15. [Vault FAQ](#15-vault-faq)
+16. [Team catalogs](#16-team-catalogs) ([for users](#161-subscribing-to-a-catalog), [for administrators](#167-for-administrators-the-admin-key), [security model](#1611-security-model))
 
 ---
 
@@ -607,6 +615,16 @@ MacVPN 1.2 moves everything into an encrypted vault (see [11](#11-vault)) and br
 
 **Paired apps** (control API) carry over and keep working after the migration.
 
+### 8.3 Upgrading from 1.2
+
+MacVPN 1.3 is the usual in-app update. The root layer stays 8, so **System Status** does not ask for the admin password.
+
+- **The vault is updated on the first launch.** MacVPN 1.3 adds the tables for team catalogs. Before it changes anything, it keeps a copy of the still-encrypted old vault as `vault.db.bak-v1` next to `vault.db`. Nothing else changes in your data.
+- **Going back to 1.2** only works read-only: 1.2 opens the updated vault read-only (it can connect, but it cannot edit, and it cannot restore a backup into it either). Do not put `vault.db.bak-v1` back by hand: that is not a supported way back. To edit your connections again, update to 1.3.
+- **Keychain:** macOS may ask once whether MacVPN may read the vault key (only with **Unlock automatically** on), as after every update. Allow it only for MacVPN's own prompt (see [8](#8-updates)).
+- **Team catalogs** need MacVPN 1.3 on every Mac that publishes or subscribes.
+- **When to delete `vault.db.bak-v1`:** once you are happy with 1.3 (you will not go back to 1.2, and you have a fresh full backup, see [14.2](#142-back-up-everything)), delete it. It holds your data as it was before the upgrade, encrypted with the same vault key, so whoever can open your vault can open it too; MacVPN never updates or uses it.
+
 ---
 
 ## 9. Uninstalling
@@ -657,6 +675,8 @@ If MacVPN created `/etc/ppp/options` for SSTP (it leaves a marker when it does) 
 - **Sudoers and Homebrew (known limitation).** To connect, MacVPN uses a sudoers rule to run the `/usr/local/libexec/macvpn/mvpn` binary as root without a password, and that binary runs the Homebrew tools (`openvpn`, `wg-quick`, `charon`, `sstpc`). The Homebrew directory (`/opt/homebrew`) is writable by your user. Malware running in your user account could replace those programs and gain root that way. Config filtering protects against accidental or imported dangerous settings, not against malware already running in your account. On a single-user Mac that you administer yourself, this is an acceptable risk. If it is not for you, do not enable the root layer, and use only L2TP / Cisco connections.
 - **SSTP password on the command line (known limitation).** The Homebrew `sstpc` computes the SSTP crypto binding keys from the password itself, so it only starts when the password is given on its command line (`--password`). MacVPN passes it there and never writes it into the log (`***`). `sstpc` masks its own command line right after reading it, but for that first moment other local users could see the password with `ps`. On a single-user Mac this is an acceptable risk. If it is not for you, do not use SSTP.
 - **Paired apps (control API).** Off by default. When you turn on **Allow other apps to control VPNs** (Connections window → **Paired apps**), programs of your user account that you pair can list the connections you allow and bring them up and down, through a private socket; they never see configs or passwords. Pairing pins the program's executable path, and every action is listed under **Activity**. Details and limitations: [Control API guide](control-api.md#4-security-model).
+- **Team catalogs (1.3).** A catalog is signed with the administrator's admin key and encrypted with the team key; MacVPN checks the signature against the fingerprint you pinned, refuses older versions, and checks every config like an import. What each part protects, and what it does not: [16.11](#1611-security-model).
+- **No proxy (updates, team catalogs).** MacVPN downloads updates and HTTPS team catalogs with the system `curl` in a cleared environment, so proxy settings (`https_proxy`, `all_proxy`, the macOS proxy settings) are not used: the update server and the catalog host must be reachable directly. A proxy setting may come in a later version.
 - **Update integrity.** MacVPN installs an update only if it carries a valid Ed25519 signature made with the maintainer's offline key. The public keys (a primary and a backup) are built into the app; the private keys are never on GitHub or in the build system. So even if someone takes over the GitHub account or repository, they cannot push an update to MacVPN: a release without a valid signature is not offered, or is refused with **The update is not signed by the MacVPN maintainer**. The signature covers the version and the SHA-256 of the DMG that MacVPN computes itself after downloading. **Remaining risk:** whoever holds the maintainer's signing key can sign an update.
 - **How the updater limits the risk further.**
   - It asks GitHub for the latest release by the repository's fixed numeric ID (`MacVPNUpdateRepoID` in the app's `Info.plist`), not by its name. If the repository were renamed or deleted and someone created a new one under the old name, the app would not take updates from it. Without the ID, the app does not check for updates at all.
@@ -840,9 +860,10 @@ The per-connection export (see [4](#4-import-and-export)) never contains passwor
 - the folders, colours, order, pins and usage ranking,
 - the shared credentials,
 - the one-time-code settings and folder placement of system VPNs,
-- the app preferences: automatic update checks, the 24-hour delay, **Launch at Login**, **Allow other apps to control VPNs** and **Unlock automatically**.
+- the app preferences: automatic update checks, the 24-hour delay, **Launch at Login**, **Allow other apps to control VPNs** and **Unlock automatically**,
+- from 1.3: your **team catalog subscriptions** (source, team key, access token, the pinned publisher key and the last applied version), your **admin keys**, and your **publications** with their team keys. The catalog's connections and folders themselves are not in the backup: after a restore, the next refresh brings them back from the source, with your filled-in credential slots, pins and order. No restore, a merge or **Replace everything**, lowers the last applied version of a catalog this Mac already follows, so the rollback protection keeps working.
 
-Not included: the **paired apps** (they are tied to program paths on this Mac: pair them again after a restore), the vault key and the recovery key, and the logs.
+A backup with admin keys can sign catalogs for your team: protect it like the admin key. Not included: the **paired apps** (they are tied to program paths on this Mac: pair them again after a restore), the vault key and the recovery key, and the logs.
 
 ### 14.2 Back Up Everything
 
@@ -856,7 +877,7 @@ Not included: the **paired apps** (they are tied to program paths on this Mac: p
 
 ### 14.3 Restore on a new Mac
 
-1. Install MacVPN 1.2 or later, and start it.
+1. Install MacVPN, and start it. A backup made by 1.2 needs 1.2 or later; a 1.3 backup needs 1.3 or later (1.2 refuses it as made by a newer MacVPN).
 2. In the **Set Up the Vault** window, click **Restore from backup…**. (This needs a new, empty vault.)
 3. **Choose File…**, enter the **Backup password**, and click **Open Backup**.
 4. Choose a new master password for this Mac and save the new recovery key, as in [11.1](#111-master-password-and-recovery-key).
@@ -868,8 +889,10 @@ Not included: the **paired apps** (they are tied to program paths on this Mac: p
 2. **Choose File…**, enter the **Backup password**, **Open Backup**. A wrong password or a damaged file gives one message: **The backup cannot be opened. The password is wrong, or the file is damaged.**
 3. The summary shows when and by which version it was made (**Made on … by MacVPN 1.2.0**) and how many **Connections**, **Folders** and **Shared credentials** it holds. It lists first the connections whose risky OpenVPN settings were acknowledged (such as scripts that run as root): restore only a backup you made yourself.
 4. Choose:
-   - **Merge**: adds what is missing here. For items that already exist, choose once for all (**When an item already exists:**): **Overwrite it with the backup’s copy**, **Keep the item that is here**, or **Keep both (the backup’s copy is named “(backup)”)**. A merge drops the risky-setting acknowledgements of the restored connections, unless the same connection with the same config is already here; its editor then asks again.
+   - **Merge**: adds what is missing here. For items that already exist, choose once for all (**When an item already exists:**): **Overwrite it with the backup’s copy**, **Keep the item that is here**, or **Keep both (the backup’s copy is named “(backup)”)**. A merge drops the risky-setting acknowledgements of the restored connections, unless the same connection with the same config is already here; its editor then asks again. A merge never changes a team catalog's connections or folders: a backup item with the same id (a 1.2 backup made from a 1.3 vault holds them as ordinary items) is skipped in every mode, and the result names it.
    - **Replace everything**: clears the vault first. A confirmation says how many connections, folders and shared credentials will be deleted; **This cannot be undone.** **Back Up the Current State First…** makes a backup of the current state before you go on. Paired apps stay. Replace keeps the acknowledgements.
+     - **Team catalog subscriptions** are replaced by the backup's. The confirmation names the subscriptions here that are not in the backup: they go, with their connections and folders. A catalog in both keeps the higher applied version.
+     - **Admin keys and publications** belong to this Mac, like the paired apps: a role (primary or backup key) or a catalog that the backup has nothing for keeps this Mac's key or publication (a 1.2 backup has none, so they all stay). Where the backup has its own, the backup's is used, and the confirmation counts the keys and names the publications it replaces. A publication's version is never lowered.
 5. **The backup was restored.**
 
 If anything fails, **The restore failed. Nothing was changed.** A backup whose folders would form a loop with the folders here is refused too.
@@ -921,3 +944,165 @@ You started an older MacVPN after a newer one. Install the latest version.
 
 **How do I remove everything when uninstalling?**
 Tick **Also delete user data** in **Uninstall MacVPN…**: it deletes the vault, the vault key in the Keychain and any 1.1 Keychain items ([9](#9-uninstalling)). Delete your `.macvpnbackup` files yourself.
+
+---
+
+## 16. Team catalogs
+
+A **team catalog** shares VPN connections with a team. An administrator publishes a set of connections once, with their folders, colours and named sign-in placeholders. Every team member's MacVPN subscribes to it and picks up additions, changes and removals by itself. Each member keeps their own user names, passwords and one-time-code secrets, and their own pins, order and collapsed folders.
+
+- The catalog is one file, `<name>.macvpncatalog`. It is **signed** with the administrator's **admin key** and **encrypted** with the **team key**.
+- MacVPN never uploads anything. The administrator puts the file on an HTTPS web server, a file share or a synced folder, and every member reads it from there.
+- Every team member needs MacVPN 1.3 or later.
+- Several catalogs can be used side by side, and you can publish and subscribe on the same Mac.
+
+What a member needs from the administrator: the **source** (an `https://` URL or a file path), the **team key** (`TEAM-` followed by 14 groups of 4 characters) and the **publisher fingerprint** (8 groups of 4 hex digits). A **subscription string** (`macvpn-sub:…`) carries all three in one line.
+
+### 16.1 Subscribing to a catalog
+
+1. Open the **Connections** window and select **Team catalogs** in the sidebar. Click **Add team catalog…**.
+2. Paste the **subscription string** you got from your administrator. It fills in the source and the fingerprint; the team key is checked and kept hidden. Without a subscription string, fill in the fields yourself:
+   - **Source:** an `https://` URL, or **File** and **Choose File…** for a file on a share or in a synced folder (iCloud Drive, OneDrive, Dropbox).
+   - **Team key:** `TEAM-XXXX-…`. Case, dashes and spaces do not matter; `O` counts as `0`, `I` and `L` as `1`. The last group is a check group, so a typo is caught as you enter it and is almost never mistaken for a wrong key.
+   - **Publisher fingerprint:** 8 groups of 4 characters. It is required: MacVPN never trusts the first download without it.
+3. **Access token** (optional, HTTPS only): if the web server needs a bearer token, enter it here. It is not part of the subscription string, because a token is often personal; ask your administrator.
+4. Click **Check**. MacVPN downloads the catalog, checks its signature against the fingerprint you entered and opens it with the team key. The preview shows the catalog's name, version and fingerprint, the number of connections and folders, the credential slots (see [16.3](#163-credential-slots)), and how many connections have risky settings.
+5. **Compare the fingerprint** with what your administrator told you through another channel, for example by phone. If it differs, do not subscribe.
+6. Tick **The fingerprint matches what my administrator sent me** and click **Subscribe**. The catalog's connections appear at once, and **Team catalogs** shows the new subscription. **Cancel** or **Back** drops the downloaded preview.
+
+A subscription string that a mail program broke across lines is refused: copy it again as one line. The preview expires after 10 minutes (**The catalog preview expired. Add the catalog again.**). A catalog you already have is refused with **You are already subscribed to this catalog.**
+
+**Sources.**
+- **HTTPS:** `https://` only, checked against the macOS trust store. Redirects are followed only to `https://` addresses, at most 5. The access token is sent only to the subscription URL's own host and port, never to another host after a redirect. **Proxies are not supported:** MacVPN fetches with the system `curl` in a cleared environment, so `https_proxy`, `all_proxy` and the macOS proxy settings are not used, and the catalog host must be reachable directly.
+- **File:** a path on a mounted network share (SMB, NFS) or in a synced folder. The file itself must not be a symbolic link and must be a regular file of at most 8 MB. A share that is not mounted, or a cloud file that cannot be downloaded right now, counts as **unavailable**, not as an error (see [16.6](#166-troubleshooting-for-users)).
+
+### 16.2 Catalog connections
+
+- Each catalog has its own top-level folder named after the catalog, with a **Team** badge, in the menu and in the Connections window. The publisher's folders and colours are inside it.
+- **Read-only:** the name, the config, the folder and the publisher's colour. The editor says **Managed by the team catalog “Acme VPN”**, and its fields are disabled.
+- **Yours to change:** connect and disconnect, pin and order, collapse folders, your own colour for a connection (**Use team colour** goes back to the publisher's), and the risky-settings checkbox (the only part of the editor you save). Your user name and password come from the catalog's credential slot (see [16.3](#163-credential-slots)), which you change in **Credentials**. Catalog connections and folders cannot be renamed, moved, dragged or deleted; their context menu offers only **Pin to Top** / **Unpin**, **Colour…**, **Duplicate as personal connection…** and, when the catalog changed a native connection, **Install profile**.
+- **Risky settings** (see [7.7](#77-directive-not-allowed--forbidden-directive)) are never acknowledged by the catalog: you tick them yourself in the editor's yellow panel. When a new catalog version changes the config, you are asked again.
+- **L2TP and Cisco IPsec** connections need their macOS profile, as usual (**Install profile**, then approval in System Settings). When the catalog changes such a connection, the connection's detail says **The team catalog changed this connection: reinstall its profile**, and the connect is refused until the new profile is installed. Click **Install profile** and approve it in System Settings. The mark clears once macOS shows the new profile. When only the group name or **Send all traffic over VPN** changed, macOS shows no difference: after approving the profile, click **I installed it** and confirm. Confirm only after the approval: with the old profile still installed, the connection would use settings the catalog has replaced.
+- **Paired apps** (control API) see catalog connections like any other; you allow them per connection, as in [5.4](#54-paired-apps-control-api). A catalog connection's id stays the same across versions.
+- **Duplicate as personal connection…** (in the connection's detail or context menu) makes an independent, editable copy at the top level, named “<name> (personal)” unless you change it. The copy keeps the config, your own secrets and the provided secrets, and the same shared credential. Its risky-settings acknowledgement starts empty. The copy is yours: later catalog versions do not change it.
+
+### 16.3 Credential slots
+
+A **credential slot** is a named sign-in, such as “Office AD”, that the catalog uses without any user name or password in it. Each member fills it in with their own.
+
+- When the catalog is first applied, MacVPN creates a **shared credential** (see [13](#13-shared-credentials)) named after each slot, empty. If you already have a credential with that name, the new one gets the catalog's name as a suffix, such as “Office AD (Acme VPN)”. A slot is never linked to one of your existing credentials automatically.
+- At the first connect, the credential prompt asks: **Office AD (team catalog “Acme VPN”) — enter your user name and password**. With **Save in vault** they are saved into that shared credential, and every other catalog connection with the same slot connects without asking. Your user name and password stay in your vault: they never go to the administrator or into the catalog.
+- **SSTP** connections use the slot's user name in place of the config's `user=` line, and **L2TP / Cisco** connections use it as the account name. Nothing in the stored config changes.
+- You can change the user name or password later in **Credentials**, like any shared credential. A connection that already has its own saved user name and password is not linked to the slot.
+
+### 16.4 Refresh and updates
+
+MacVPN checks every catalog:
+
+- at launch and when the vault is unlocked (nothing is checked while it is locked),
+- every 15 minutes,
+- when the Mac wakes from sleep,
+- when you click **Refresh now** in **Team catalogs**.
+
+While a source keeps failing, MacVPN waits longer between attempts: 1, 2, 4, 8, 16, 32 minutes, then every 60 minutes (with a little random delay). Waking from sleep and **Refresh now** always try at once. An HTTPS server that has not changed the file answers “not modified”; a file source is read and compared with what was applied last.
+
+A new version is applied in one step: everything or nothing. A notification lists the changes, for example **Team catalog “Acme VPN” updated: 2 added, 3 changed, 1 removed**.
+
+- A connection that is **up** when it changes stays up with the settings it was started with. The new config is used from the next connect.
+- A connection that is **up** when it is removed from the catalog stays up, moves to the catalog's top folder and shows **Removed from the team catalog — disappears after you disconnect**. After you disconnect, it is deleted, with its pin and order.
+- The same version uploaded again changes nothing and gives no notification.
+
+**Team catalogs** shows each subscription with its source (an HTTPS address without its query part), status, version, last refresh, publisher fingerprint and the last error.
+
+### 16.5 Changing or removing a subscription
+
+- **Change team key…** (after the administrator rotated it), **Change access token…** and **Edit source…** are in the subscription's detail. If the new source is on another host or port, or is a file, the stored access token is dropped: the token is never sent to a new address. Enter the token for the new address if it needs one.
+- **Unsubscribe…** names the catalog and how many connections it removes. Connections that are up are disconnected first. Then every catalog connection and folder is removed, and paired apps lose access to them. Credential slots you filled in are kept as ordinary shared credentials in **Credentials**; empty ones are deleted.
+- To keep a connection after unsubscribing, duplicate it first (**Duplicate as personal connection…**).
+
+### 16.6 Troubleshooting for users
+
+- **The catalog is signed by a different key than the fingerprint you entered.** (when subscribing): the file was not signed by the key your administrator gave you. Check the fingerprint with your administrator by phone. Never “fix” it by typing the fingerprint the file has.
+- **The team catalog was signed by another publisher than the one you trust.** (on refresh): the file on the source is signed by a key your MacVPN does not trust. Either someone else placed a file there, or your administrator changed keys without the announcement reaching you (see [16.10](#1610-changing-the-admin-key-and-compromise)). Ask your administrator; you may have to unsubscribe and subscribe again with the new fingerprint.
+- **The team catalog's signature is not valid: it was changed.**: the file was modified or damaged after it was signed. The items stay as they were. Ask your administrator to publish again.
+- **The team key of “Acme VPN” has changed. Ask your administrator for the new key.** (notification; status **The team key does not open this catalog (it is wrong or was rotated).**): the administrator rotated the team key. Get the new key through a secure channel, then **Change team key…** and **Refresh now**. Until then the catalog's connections stay as they were.
+- **Team catalog “Acme VPN” offered an older version (v3 after v5) and was not applied.**: the source holds an older version than the one you already have. This is the rollback protection (see [16.11](#1611-security-model)): an old copy came back on the server (a restored server backup, a sync conflict), or someone tries to bring back old settings. Your connections are unchanged. Tell your administrator; publishing a new version solves it.
+- **The team catalog source is unavailable (…).**: the share is not mounted, the server or the network is down, or a cloud file cannot be downloaded right now. There is no error notification for this; MacVPN tries again with the back-off of [16.4](#164-refresh-and-updates). Mount the share, or download the file in Finder, then click **Refresh now**.
+- **The team catalog could not be read: access denied (check the access token)**: the HTTPS server refused the request (HTTP 401 or 403). Enter the current token with **Change access token…**. If you just changed the source to another host, the token was dropped on purpose (see [16.5](#165-changing-or-removing-a-subscription)): enter it again.
+- **… certificate not trusted**: the server's certificate is not trusted by macOS. Ask the server's administrator; MacVPN has no option to skip the check.
+- **… redirect to a non-HTTPS address**: the server redirects to `http://`. The catalog must be served over HTTPS end to end.
+- **The source holds another team catalog.**: the file at the source is a different catalog. Check the source with your administrator.
+- **The team catalog was made by a newer MacVPN.**: update MacVPN.
+- **The team catalog contains a connection MacVPN cannot use.**: a connection in the catalog does not pass MacVPN's checks. Nothing was applied; ask your administrator.
+- **Behind a proxy:** proxies are not supported (see [16.1](#161-subscribing-to-a-catalog)). The catalog host must be reachable directly, or the catalog must be on a file share.
+
+### 16.7 For administrators: the admin key
+
+Publishing needs an **admin key**: an Ed25519 signing key kept in your vault. Its **fingerprint** is what your team compares when subscribing.
+
+1. **Connections** window → **Publishing** → **Generate Admin Key**. The fingerprint is shown in 8 groups; **Copy** copies it.
+2. **Generate Backup Admin Key**, then **Export Backup Key…**: choose where to save the `.macvpnadminkey` file and a password of at least 10 characters (twice). Tick **Remove the backup key from this Mac after export**: the backup key is then only in that file. Keep the file offline (for example on a USB stick in a safe) and its password somewhere else (for example in a password manager).
+
+Every catalog you publish announces the backup key as the **successor** of the current key, inside the signed part of the file. Subscribers that refresh store the announcement. When you switch to the backup key, they accept catalogs signed by it and stop accepting the old key.
+
+**Switching to the backup key** (a planned key change):
+1. On the Mac that publishes from now on: **Publishing** → **Import Admin Key…**, choose the `.macvpnadminkey` file and enter its password. This Mac must also have your publications (each catalog's id, version and team key): they are in the vault, not in the key file, so use the same vault or restore a full backup first. Without them, the next publish makes a new catalog, and every member must subscribe to it again.
+2. **Switch to the Backup Key…**: the backup key becomes the admin key, and the old admin key is deleted from this Mac.
+3. Publish a new version of each catalog. Subscribers that refreshed since the backup key was created follow automatically. Those that did not must subscribe again with the new fingerprint.
+4. Generate and export a new backup key, so the next change is prepared too.
+
+The admin keys, your publications and their team keys are part of the vault, so a full backup ([14](#14-backup-and-restore)) contains them. Keep backups as safe as the admin key itself.
+
+### 16.8 For administrators: publishing a catalog
+
+**Publishing** → **Publish Catalog…** opens the wizard:
+
+1. **Connections.** Tick folders and connections. A ticked folder brings everything inside it; a connection whose folder is not ticked goes to the catalog's top level. System VPNs and connections from other catalogs cannot be published.
+2. **Secrets.** Each stored PSK and key password of the selection, none ticked. Tick only the team secrets everyone may know, such as a shared L2TP PSK; ticking one says **Everyone with the team key can read this secret**. Secrets written inside a config are listed for a tick each too: a WireGuard `PresharedKey`, and OpenVPN `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>` and `<secret>` blocks.
+3. **Credential slots.** The shared credentials the selected connections use, ticked, **without user names or passwords**: only the name and an id go into the catalog. Without a slot, each member is asked for that connection's sign-in separately.
+4. **Review.**
+   - Connections MacVPN refuses to publish are listed; fix them first. Refused are an OpenVPN config with an inline `<auth-user-pass>` or `<http-proxy-user-pass>` block, a strongSwan config with a `secrets` section (a catalog never carries a user's password; use a slot instead), and a config with errors.
+   - Personal fields are listed: an SSTP `user=` line (replaced at each member's connect by the slot's user name), an OpenVPN inline `<key>` or `<pkcs12>`, and a WireGuard `PrivateKey`. A WireGuard private key needs the tick **Everyone with this catalog uses the same WireGuard key**: everyone then appears to the server as the same peer. The account name of L2TP / Cisco connections is never published.
+5. **Name and file.** A name for a new catalog, and where to save `<name>.macvpncatalog`. **MacVPN does not upload anything: put the file on your web server or share.**
+6. **Done.** Version N is written. The version goes up by one at every publish. For a new catalog, the **team key is shown once**: **Copy** it, keep it safe, click **I Saved It** and type the group the window asks for. Then **Copy Subscription String…** (see [16.9](#169-for-administrators-the-team-key-and-the-subscription-string)).
+
+**Where to put the file.** Publish to the same place every time, so the members' source stays valid.
+- **Web server:** serve the file over `https://` with a certificate macOS trusts. `ETag` or `Last-Modified` headers let MacVPN skip unchanged downloads. An access token (`Authorization: Bearer …`) is optional; members enter it in **Add team catalog…**.
+- **File share (SMB, NFS):** members mount the share and choose the file. Replace the file as a whole (MacVPN writes it that way when you save it there directly).
+- **Synced folder (iCloud Drive, OneDrive, Dropbox):** members choose the file in their synced folder. An online-only file is downloaded when MacVPN reads it. A sync conflict that brings back an older copy triggers the members' rollback warning; publish again to fix it.
+
+The file is written readable by others (`644`), because it is meant to be served; it is signed and encrypted.
+
+**After publishing.** The connections you published stay normal, editable connections on your Mac. They show **Published in “Acme VPN” (v12)**, and **changed since the last publish** once you edit them. **Publishing** lists each publication with its version, last publish time, file and the number of changed connections, with **Publish New Version…** (the wizard with the saved selection), **Rotate Team Key…**, **Copy Subscription String…** and **Forget…**. A rotation needs a reviewed publish first: while connections changed since the last publish, MacVPN offers **Publish New Version…** in its place.
+
+### 16.9 For administrators: the team key and the subscription string
+
+- The **team key** is 256 random bits, made at the first publish of a catalog. It is **shown once**. MacVPN keeps it in your vault to publish later versions, but never shows it again.
+- **Copy Subscription String…** asks for your **master password** and for the source your team will use (the URL, or the path as it looks on the members' Macs). It puts the `macvpn-sub:…` string on the clipboard without showing it. The string contains the team key: send it only through a secure channel (a shared vault of your password manager, an end-to-end encrypted messenger), never by plain e-mail. Tell members the fingerprint separately, ideally by voice, so they can compare it. The access token is not in the string.
+- **Rotate Team Key…** (to cut off someone who left the team): a new team key is made and published at once as the next version, to the last file location (confirm it in the save panel). The new key is shown once. Send it, or a new subscription string, to the remaining members; they enter it with **Change team key…**. **Rotating the team key is the only way to revoke access to a catalog someone already has.** The person who left keeps what they already downloaded, including any team secrets in it: change those secrets (for example the PSK on the server) and their server-side account too.
+
+### 16.10 Changing the admin key, and compromise
+
+- **Switching to the backup key** ([16.7](#167-for-administrators-the-admin-key)) is a planned key change. **It is not recovery from a compromise:** whoever holds a leaked admin key can announce their own successor and sign new versions that your members accept.
+- **If the admin key may have leaked** (a stolen Mac without the vault locked, a leaked backup with its password, an exported key file with its password):
+  1. Generate a new admin key on a Mac you trust, and publish the connections as a **new catalog** (a new name, so a new catalog id and a new team key).
+  2. Remove the old catalog file from the web server or share, so nobody can publish to the old subscription there.
+  3. Send every member the new subscription string and the new fingerprint through a trusted channel. They **Unsubscribe…** from the old catalog and subscribe to the new one.
+  4. Change any team secrets that were in the old catalog.
+  Until members unsubscribe, whoever holds the old key can sign versions for them, if they can also write the file at the source. Even then the connections still pass MacVPN's checks and every risky setting needs each member's own tick.
+- **If only the team key leaked:** rotate it ([16.9](#169-for-administrators-the-team-key-and-the-subscription-string)).
+
+### 16.11 Security model
+
+- **Signature (admin key, Ed25519).** Every catalog is signed. MacVPN checks the signature first, against the publisher key you pinned with the fingerprint, before it decrypts or uses anything.
+  - *Protects against:* changes by anyone without the admin key, including people who have the team key and people who can write the web server or the share.
+  - *Does not protect against:* a leaked admin key, or an administrator who publishes something bad. Trust your administrator as you would trust a config file they send you.
+- **Encryption (team key, XChaCha20-Poly1305).** The contents (connections, configs, folders, slot names, team secrets) are encrypted with the team key. The key is random, not a password, so it cannot be guessed.
+  - *Protects against:* reading the catalog from a leaked file, a web server log or a share, without the team key.
+  - *Does not protect against:* anyone who has the team key, including a former member until you rotate it. They can read everything in the catalog, including the team secrets you ticked. The catalog's id, name, version, creation date, publisher key and successor public key are in the unencrypted header, and the file size is visible.
+- **Rollback protection (version number).** Each subscription remembers the last applied version. A lower version is refused with a warning; the same version is ignored.
+  - *Protects against:* someone putting back an older signed version, for example one with a server you removed or a team secret you replaced.
+  - *Does not protect against:* a source that simply stops showing new versions; the status shows the last successful refresh, so a member can notice it. A subscription string can name the catalog and its lowest acceptable version, so the first download is bound too.
+- **Checks like an import.** Every config in a catalog goes through the same validators as an import, and risky settings need each member's own tick. A catalog cannot carry a user's password, and nothing changes in the root layer.
+- **Your secrets.** The team key and the access token are kept in the vault, and in a full backup (sealed with its password, see [14](#14-backup-and-restore)); they are never logged. The subscription string is never stored or shown: **Copy Subscription String…** puts it on the clipboard, marked so that clipboard managers skip it and Universal Clipboard does not send it to your other devices, and clears it after 60 seconds, at **Lock Now** and at quit (unless you copied something else meanwhile). The team key's **Copy** works the same way. The access token goes to `curl` on its standard input, never on its command line, and never to another host. Your own user names and passwords never leave your vault.
+- **Paired apps.** Removing a catalog connection or unsubscribing removes it from every paired app's allowed connections, so subscribing again later never gives an app access silently.

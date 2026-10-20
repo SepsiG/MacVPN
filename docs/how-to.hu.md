@@ -2,7 +2,7 @@
 
 [English version](how-to.en.md)
 
-Rövid, lépésenkénti leírások a MacVPN 1.2-höz. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
+Rövid, lépésenkénti leírások a MacVPN 1.3-hoz. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
 
 ## Tartalom
 
@@ -23,6 +23,10 @@ Rövid, lépésenkénti leírások a MacVPN 1.2-höz. A részletek a [felhaszná
 15. [Kapcsolatok mappákba rendezése](#15-kapcsolatok-mappákba-rendezése)
 16. [Egy bejelentkezés több kapcsolatnak](#16-egy-bejelentkezés-több-kapcsolatnak)
 17. [Teljes biztonsági mentés és visszaállítás](#17-teljes-biztonsági-mentés-és-visszaállítás)
+18. [Feliratkozás egy csapatkatalógusra](#18-feliratkozás-egy-csapatkatalógusra)
+19. [Kapcsolatok megosztása a csapattal (katalógus közzététele)](#19-kapcsolatok-megosztása-a-csapattal-katalógus-közzététele)
+20. [Egy csapattag hozzáférésének visszavonása (csapatkulcs cseréje)](#20-egy-csapattag-hozzáférésének-visszavonása-csapatkulcs-cseréje)
+21. [Az aláírókulcs átvitele új Macre](#21-az-aláírókulcs-átvitele-új-macre)
 
 ---
 
@@ -288,3 +292,62 @@ Ha olyan fájlt importálsz, amely közös hitelesítő adatot nevez meg, a MacV
 **Visszaállítás a jelenlegi széfbe:** menü → **Beállítások** → **Visszaállítás biztonsági mentésből…**, nyisd meg a fájlt, nézd át az összesítőt, majd válaszd az **Összefésülés** (hozzáadja, ami hiányzik; a már meglévő elemekről te döntesz) vagy a **Minden cseréje…** lehetőséget (törli, ami nincs a mentésben; előtte az **Előbb a jelenlegi állapot mentése…** gombbal menthetsz).
 
 Részletek: [útmutató, 14.](user-guide.hu.md#14-biztonsági-mentés-és-visszaállítás)
+
+## 18. Feliratkozás egy csapatkatalógusra
+
+Amit a rendszergazdától kapsz: egy feliratkozási kódot (`macvpn-sub:…`), vagy a forrást, a csapatkulcsot és a közzétevő ujjlenyomatát; egyes webszervereknél hozzáférési tokent is.
+
+1. **Kapcsolatok** ablak → az oldalsávban **Csapatkatalógusok** → **Csapatkatalógus hozzáadása…**.
+2. Illeszd be a feliratkozási kódot (egy sorban). Vagy add meg a **Forrás** (egy `https://` cím, vagy **Fájl kiválasztása…** egy megosztáson, illetve iCloud Drive-, OneDrive- vagy Dropbox-mappában), a **Csapatkulcs** és **A közzétevő ujjlenyomata** mezőt.
+3. Ha a webszerver kéri, add meg a **Hozzáférési token** mezőt.
+4. Kattints az **Ellenőrzés** gombra. Vesd össze az előnézetben látható ujjlenyomatot azzal, amit a rendszergazda telefonon vagy személyesen mondott. Ha eltér, állj meg.
+5. Kattints a **Feliratkozás** gombra. A kapcsolatok a katalógus nevét viselő, **Csapat** jelvényes mappában jelennek meg.
+6. Csatlakozz. Az első alkalommal a MacVPN minden közös belépési adat helyéhez (például **Office AD**) bekéri a saját felhasználónevedet és jelszavadat; jelöld be a **Mentés a széfbe** négyzetet.
+
+A MacVPN induláskor, 15 percenként és ébredéskor frissíti a katalógust; a **Frissítés most** azonnal ellenőriz. Kilépéshez válaszd ki a katalógust, és kattints a **Leiratkozás…** gombra (a fennálló kapcsolatokat előbb bontja). Ha egy kapcsolatot magadnak megtartanál, előbb használd a **Másolat saját kapcsolatként…** pontot. Részletek: [útmutató, 16.](user-guide.hu.md#16-csapatkatalógusok)
+
+## 19. Kapcsolatok megosztása a csapattal (katalógus közzététele)
+
+**Egyszer:**
+1. **Kapcsolatok** ablak → **Közzététel** → **Adminisztrátori aláírókulcs létrehozása**. Jegyezd fel az ujjlenyomatot.
+2. **Tartalék aláírókulcs létrehozása** → **Tartalék kulcs exportálása…**, egy legalább 10 karakteres jelszó, és jelöld be: **A tartalék kulcs törlése erről a Macről az export után**. A fájlt offline tartsd, a jelszavát máshol.
+
+**Közzététel:**
+1. **Közzététel** → **Katalógus közzététele…**.
+2. Jelöld be a megosztandó mappákat és kapcsolatokat.
+3. Csak azokat a csapattitkokat jelöld be, amelyeket mindenki ismerhet (például egy közös PSK-t). A többit hagyd üresen.
+4. A közös belépési adatok helyeit hagyd bejelölve: így a tagok a saját felhasználónevüket és jelszavukat adják meg.
+5. Javítsd, amit az áttekintés elutasítottként listáz. WireGuard privát kulcsnál jelöld be, hogy mindenki ugyanazt a kulcsot használja, vagy hagyd ki a kapcsolatot.
+6. Nevezd el a katalógust, és mentsd el a `<név>.macvpncatalog` fájlt.
+7. Másold ki a **csapatkulcsot** (csak most látszik), tartsd biztonságban, kattints az **Elmentettem** gombra, és írd be a kért csoportot.
+8. Tedd a fájlt oda, ahonnan a csapat olvassa:
+   - **Webszerver:** töltsd fel úgy, hogy `https://`-en, a macOS által elfogadott tanúsítvánnyal legyen elérhető (ha kell, bearer token mögött).
+   - **Fájlmegosztás:** másold arra az SMB- vagy NFS-megosztásra, amelyet a csapat csatol.
+   - **Szinkronizált mappa:** mentsd egy megosztott iCloud Drive-, OneDrive- vagy Dropbox-mappába.
+9. **Feliratkozási kód másolása…**: add meg a mesterjelszavadat, és azt a címet vagy útvonalat, amelyet a csapat használni fog. A kódot biztonságos csatornán küldd el (ne sima e-mailben), az ujjlenyomatot pedig külön, szóban mondd meg.
+
+**Új verzió:** szerkeszd a kapcsolatokat a szokásos módon, majd a **Közzététel** részben **Új verzió közzététele**, és mentsd ugyanoda (webszervernél töltsd fel újra). A tagok 15 percen belül megkapják, a **Frissítés most** gombbal azonnal. Részletek: [útmutató, 16.8](user-guide.hu.md#168-rendszergazdáknak-katalógus-közzététele)
+
+## 20. Egy csapattag hozzáférésének visszavonása (csapatkulcs cseréje)
+
+1. **Kapcsolatok** ablak → **Közzététel** → a katalógus → **Csapatkulcs cseréje…**. Olvasd el a magyarázatot, és erősítsd meg.
+2. Erősítsd meg a fájl helyét a mentési ablakban. Az új verzió azonnal oda kerül (webszervernél töltsd fel újra).
+3. Másold ki az **új csapatkulcsot** (csak most látszik), kattints az **Elmentettem** gombra, és írd be a kért csoportot.
+4. Küldd el a maradó tagoknak az új kulcsot (vagy egy új kódot a **Feliratkozási kód másolása…** ponttal) biztonságos csatornán. Náluk megjelenik: **A(z) „…” csapatkulcsa megváltozott**, és a **Csapatkatalógusok** részben a **Csapatkulcs cseréje…** gombbal adják meg.
+5. Változtasd meg a katalógusban lévő csapattitkokat (például a szerveren a PSK-t), és tiltsd le a távozó fiókját a VPN-szerveren.
+
+Aki távozott, megtartja, amit már letöltött, de egyetlen újabb verziót sem tud megnyitni. Részletek: [útmutató, 16.9](user-guide.hu.md#169-rendszergazdáknak-a-csapatkulcs-és-a-feliratkozási-kód)
+
+## 21. Az aláírókulcs átvitele új Macre
+
+A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, az aláírókulcs mellett. Együtt vidd át őket, teljes biztonsági mentéssel.
+
+1. A régi Macen: **Beállítások** → **Teljes biztonsági mentés…** ([17.](#17-teljes-biztonsági-mentés-és-visszaállítás)).
+2. Az új Macen: telepítsd a MacVPN 1.3-at vagy újabbat, és állítsd vissza a mentést (**Visszaállítás biztonsági mentésből…** a **Széf beállítása** ablakban).
+3. **Kapcsolatok** ablak → **Közzététel**: ellenőrizd, hogy az aláírókulcs ujjlenyomata a régi, és minden közzététel megvan.
+4. Tedd közzé minden katalógus következő verzióját ugyanoda. A tagok semmit nem vesznek észre.
+5. A mentésfájlt töröld, ha már nem kell, vagy őrizd olyan biztonságosan, mint az aláírókulcsot. A régi Macen a **MacVPN eltávolítása…** gombbal távolítsd el, bejelölve: **A felhasználói adatok törlése is (kapcsolatok, a széf és a kulcsa)**.
+
+**Ha közben a régi kulcsot is lecserélnéd** (például a régi Mac másé lesz): a 2. lépés után **Aláírókulcs importálása…** a `.macvpnadminkey` fájllal, majd **Váltás a tartalék kulcsra…**, tedd közzé a katalógusokat, és hozz létre, majd exportálj egy új tartalék kulcsot. Akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik; a többieknek újra fel kell iratkozniuk.
+
+**Teljes biztonsági mentés nélkül** (elveszett a régi Mac): a tartalék kulcs fájlja önmagában nem tartalmazza a közzétételeket, így a következő közzététel új katalógust hoz létre. Tedd közzé a kapcsolatokat új katalógusként, és küldd el minden tagnak az új feliratkozási kódot; ők leiratkoznak a régiről. Ha az elveszett Mac széfje nyitva lehetett, kezeld kiszivárgottként az aláírókulcsot: lásd [útmutató, 16.10](user-guide.hu.md#1610-az-aláírókulcs-cseréje-és-a-kompromittálódás).

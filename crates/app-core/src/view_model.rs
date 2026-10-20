@@ -117,6 +117,10 @@ pub struct RowView {
     pub switch_enabled: bool,
     /// The paired apps holding the connection through the control API ("Held by …"), sorted.
     pub held_by: Vec<String>,
+    /// A team catalog connection: the "Team" badge (`None` for the user's own and system VPNs).
+    pub catalog: Option<crate::catalog::CatalogBadge>,
+    /// A source connection the user publishes: "Published in “…” (vN)" per publication (empty otherwise).
+    pub published: Vec<crate::catalog_publish::PublishedBadge>,
 }
 
 /// One row of the folder tree (spec 3), in display order: per folder its subfolders, then its items (pinned first,
@@ -287,6 +291,56 @@ pub struct ViewModel {
     pub vault_setup: Option<VaultSetupView>,
     /// "Back up everything…" and "Restore from backup…" are offered (the vault is open).
     pub backup_available: bool,
+    /// The "Team catalogs" section (`CatalogService::view`). Never a team key, a token or a source's query.
+    pub catalogs: Vec<crate::catalog::SubscriptionView>,
+    /// The folders a team catalog owns (its root folder and the publisher's tree): folder id → catalog id. They
+    /// carry the "Team" badge and are read-only.
+    pub team_folders: BTreeMap<String, String>,
+    /// The "Publishing" section: the admin keys and the publications. Never a key or a team key.
+    pub publishing: PublishingView,
+}
+
+/// An admin key in the "Publishing" section: its role and fingerprint, never the seed.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AdminKeyView {
+    /// `primary` or `backup`.
+    pub role: &'static str,
+    /// The 8 groups of the fingerprint.
+    pub fingerprint: String,
+    /// Unix time (seconds).
+    pub created: f64,
+    /// A backup key exported and removed from this Mac (only its public half is kept).
+    pub offline: bool,
+}
+
+impl From<&macvpn_core::vault::AdminKeyRecord> for AdminKeyView {
+    fn from(k: &macvpn_core::vault::AdminKeyRecord) -> Self {
+        AdminKeyView {
+            role: k.role.as_str(),
+            fingerprint: k.fingerprint.to_text(),
+            created: k.created.time_interval_since_1970(),
+            offline: k.offline,
+        }
+    }
+}
+
+/// The publisher's side (spec 7): empty while the vault is locked.
+#[derive(Debug, Clone, Default, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PublishingView {
+    pub admin_keys: Vec<AdminKeyView>,
+    pub publications: Vec<crate::catalog_publish::PublicationView>,
+}
+
+impl PublishingView {
+    /// From the publisher (nothing while the vault is locked or cannot be read).
+    pub fn build(publisher: &crate::catalog_publish::Publisher) -> PublishingView {
+        PublishingView {
+            admin_keys: publisher.admin_keys().unwrap_or_default().iter().map(AdminKeyView::from).collect(),
+            publications: publisher.publications().unwrap_or_default(),
+        }
+    }
 }
 
 /// The vault's part of the view model (spec 2.3). Never a password, a recovery key or a key.
@@ -448,6 +502,8 @@ impl ViewModel {
                     switch_on: state.is_active(),
                     switch_enabled: available && *state != ConnectionState::Disconnecting,
                     held_by: Vec::new(),
+                    catalog: None,
+                    published: Vec::new(),
                 }
             })
             .collect();
@@ -482,6 +538,23 @@ impl ViewModel {
             vault: VaultView::default(),
             vault_setup: None,
             backup_available: false,
+            catalogs: Vec::new(),
+            team_folders: BTreeMap::new(),
+            publishing: PublishingView::default(),
+        }
+    }
+
+    /// The "Team" badges of the catalog connections (`CatalogService::badges`).
+    pub fn set_catalog_badges(&mut self, badges: &HashMap<String, crate::catalog::CatalogBadge>) {
+        for row in &mut self.rows {
+            row.catalog = badges.get(&row.id).cloned();
+        }
+    }
+
+    /// The "Published in “…” (vN)" badges of the source connections (`Publisher::published_badges`).
+    pub fn set_published_badges(&mut self, badges: &HashMap<String, Vec<crate::catalog_publish::PublishedBadge>>) {
+        for row in &mut self.rows {
+            row.published = badges.get(&row.id).cloned().unwrap_or_default();
         }
     }
 
@@ -510,6 +583,10 @@ impl ViewModel {
             }
             self.control.clients.clear();
             self.control.activity.clear();
+            // The team catalogs and the publishing side (names, sources, fingerprints) are vault data too.
+            self.catalogs.clear();
+            self.team_folders.clear();
+            self.publishing = PublishingView::default();
             self.manage.selected = None;
             self.manage.dirty.clear();
         }

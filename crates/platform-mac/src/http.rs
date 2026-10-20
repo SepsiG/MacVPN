@@ -68,6 +68,7 @@ pub struct CurlHttpClient {
 const CURL: &str = "/usr/bin/curl";
 const REQUEST_TIMEOUT: &str = "30";
 const RESOURCE_TIMEOUT: f64 = 600.0;
+const USER_AGENT: &str = "MacVPN-Updater";
 
 impl Default for CurlHttpClient {
     fn default() -> Self {
@@ -97,8 +98,9 @@ impl CurlHttpClient {
         ProcessCommandRunner::new(RESOURCE_TIMEOUT + 30.0).with_environment(Self::environment())
     }
 
-    /// The common arguments: HTTPS only, no redirect following by curl, no config file, timeouts, user agent.
-    pub fn base_arguments(accept: Option<&str>, max_time: f64) -> Vec<String> {
+    /// The common arguments: HTTPS only, no redirect following by curl, no URL globbing, no config file (`-q`
+    /// first), timeouts, user agent.
+    pub fn base_arguments(accept: Option<&str>, max_time: f64, user_agent: &str) -> Vec<String> {
         let mut args: Vec<String> = [
             "-q",
             // A URL is taken literally: `[]` and `{}` are never curl's globbing.
@@ -109,6 +111,8 @@ impl CurlHttpClient {
             "=https",
             "--max-redirs",
             "0",
+            // No URL globbing: `[ ] { }` in a URL (a redirect target) never fans out into many requests.
+            "--globoff",
             "--connect-timeout",
             REQUEST_TIMEOUT,
             "--max-time",
@@ -118,7 +122,7 @@ impl CurlHttpClient {
         .collect();
         args.push(format!("{}", max_time as i64));
         args.push("--user-agent".into());
-        args.push("MacVPN-Updater".into());
+        args.push(user_agent.into());
         if let Some(accept) = accept {
             args.push("--header".into());
             args.push(format!("Accept: {accept}"));
@@ -142,8 +146,8 @@ impl CurlHttpClient {
         max_time: f64,
     ) -> Result<(i64, String), HttpError> {
         // A previous hop's body (a 3xx page) must never be taken as this hop's data.
-        remove_output(output)?;
-        let mut args = Self::base_arguments(accept, max_time);
+        remove_output(output).map_err(HttpError::Io)?;
+        let mut args = Self::base_arguments(accept, max_time, USER_AGENT);
         args.extend(["--write-out".to_string(), "%{http_code} %{redirect_url}".to_string()]);
         args.extend(["--output".to_string(), output.to_string_lossy().into_owned()]);
         args.extend(["--".to_string(), url.to_string()]);
@@ -168,23 +172,30 @@ impl CurlHttpClient {
             }
             if (300..400).contains(&status) {
                 // A redirect that is not followed: its body is no data.
-                remove_output(output)?;
+                remove_output(output).map_err(HttpError::Io)?;
             }
             return Ok(status);
         }
-        remove_output(output)?;
+        remove_output(output).map_err(HttpError::Io)?;
         Err(HttpError::Transport(47, "too many redirects".into()))
     }
 
     /// Runs `body` with a fresh private directory, removed afterwards.
     fn with_private_directory<T>(body: impl FnOnce(&Path) -> Result<T, HttpError>) -> Result<T, HttpError> {
-        let base = temporary_directory().map_err(|e| HttpError::Io(std::io::Error::other(e.0)))?;
-        let dir = make_private_temp_directory("macvpn-download", &base)
-            .map_err(|e| HttpError::Io(std::io::Error::other(e.0)))?;
-        let result = body(&dir);
-        let _ = std::fs::remove_dir_all(&dir);
-        result
+        with_private_directory("macvpn-download", body)
+            .map_err(|e| HttpError::Io(std::io::Error::other(e)))
+            .and_then(|r| r)
     }
+}
+
+/// Runs `body` with a fresh private (0700) directory `<user temp>/<prefix>.XXXXXX`, removed afterwards whatever
+/// `body` returned. `Err`: the directory could not be made (the message).
+pub(crate) fn with_private_directory<T>(prefix: &str, body: impl FnOnce(&Path) -> T) -> Result<T, String> {
+    let base = temporary_directory().map_err(|e| e.0)?;
+    let dir = make_private_temp_directory(prefix, &base).map_err(|e| e.0)?;
+    let result = body(&dir);
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(result)
 }
 
 /// A redirect target as handed to curl: only if [`UpdateURLPolicy::is_allowed_redirect`] accepts it and its host
@@ -223,11 +234,11 @@ pub fn canonical_redirect_url(url: &str) -> Option<String> {
 }
 
 /// Deletes the output file of a hop (missing is fine).
-fn remove_output(output: &Path) -> Result<(), HttpError> {
+pub(crate) fn remove_output(output: &Path) -> std::io::Result<()> {
     match std::fs::remove_file(output) {
         Ok(()) => Ok(()),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(HttpError::Io(e)),
+        Err(e) => Err(e),
     }
 }
 

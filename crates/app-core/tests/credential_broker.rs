@@ -262,6 +262,9 @@ fn view(id: u64, connection: &str) -> CredentialPromptView {
         deadline: 0.0,
         credential_name: None,
         used_by: None,
+        team: None,
+        team_source: None,
+        server: None,
     }
 }
 

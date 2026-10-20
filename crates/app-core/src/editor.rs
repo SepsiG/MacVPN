@@ -539,6 +539,16 @@ pub struct Draft {
     /// The shared credential the connection's username and password come from (its name; spec 3a). While it is
     /// set, the editor hides its own username and password fields and never writes them.
     pub credential: Option<String>,
+    /// "Managed by the team catalog “…”" (team catalog spec 6): the config, name and the other settings are
+    /// read-only; only the risky-directive acknowledgement is saved.
+    pub read_only: Option<String>,
+}
+
+/// The read-only reason of a team catalog's connection.
+fn read_only_reason(deps: &EditorDeps, target: &Target) -> Option<String> {
+    let Target::Connection(c) = target else { return None };
+    let team = deps.store.team_managed(&c.id)?;
+    Some(l10n::tr("Managed by the team catalog “%@”", &[Arg::Str(&team.catalog)]))
 }
 
 /// An editor's shared-credential state ([`Draft::link_state`]).
@@ -564,6 +574,7 @@ impl Draft {
     pub fn load(deps: &EditorDeps, target: Target, import_issues: Vec<ValidationIssue>) -> Draft {
         let credential = secret_item(&target).and_then(|id| deps.secrets.credential_for(&id)).map(|c| c.name);
         let linked = credential.is_some();
+        let read_only = read_only_reason(deps, &target);
         let (fields, stored) = match &target {
             Target::Connection(c) => {
                 let stored = StoredSecrets::read(&deps.secrets.secrets(&c.id));
@@ -644,6 +655,7 @@ impl Draft {
             stored,
             removed: false,
             credential,
+            read_only,
         }
     }
 
@@ -731,8 +743,44 @@ impl Draft {
         }
     }
 
+    /// A team catalog's connection (spec 6): only the risky-directive acknowledgement of an OpenVPN config is saved
+    /// (the subscriber's own, through [`ConnectionRepository::set_acknowledged_risky`]); any other change is refused
+    /// with the read-only text.
+    fn save_read_only(&mut self, deps: &EditorDeps, reason: String) -> bool {
+        let (Target::Connection(c), EditorFields::Text(f), EditorFields::Text(o)) =
+            (&self.target, &self.fields, &self.original)
+        else {
+            self.issues = vec![reason.clone()];
+            self.error = Some(reason);
+            return false;
+        };
+        let only_acknowledged = TextFields { acknowledged: o.acknowledged.clone(), ..f.clone() } == *o;
+        if !only_acknowledged || c.kind != VPNKind::Openvpn {
+            self.issues = vec![reason];
+            return false;
+        }
+        let risky = self.risky();
+        let acknowledged = if self.acknowledges_risk(&risky) { Self::risky_names(&risky) } else { BTreeSet::new() };
+        let names: Vec<String> = acknowledged.iter().cloned().collect();
+        // The config the user reviewed: the vault refuses the acknowledgement if the catalog changed it since.
+        if let Err(e) = deps.store.set_acknowledged_risky(&c.id, &o.text, &names) {
+            self.issues = vec![e.to_string()];
+            return false;
+        }
+        deps.manager.reload();
+        self.issues.clear();
+        let mut saved = f.clone();
+        saved.acknowledged = acknowledged;
+        self.adopt_saved(EditorFields::Text(saved));
+        self.saved_at = Some(deps.clock.now().time_interval_since_1970());
+        true
+    }
+
     /// Saves the fields (the Swift drafts' `save()`). True: saved.
     pub fn save(&mut self, deps: &EditorDeps) -> bool {
+        if let Some(reason) = self.read_only.clone() {
+            return self.save_read_only(deps, reason);
+        }
         let fields = self.fields.clone();
         match (&self.target, &fields) {
             (Target::Connection(c), EditorFields::Text(f)) => {
@@ -908,6 +956,7 @@ impl Draft {
             has_stored_secret: self.stored,
             removed: self.removed,
             credential: self.credential.clone(),
+            read_only: self.read_only.clone(),
         }
     }
 }
@@ -957,6 +1006,9 @@ pub struct EditorView {
     /// The shared credential (its name) the username and password come from: the selector shows "Use
     /// credential: <name>" and the own username and password fields are hidden. `None`: its own fields.
     pub credential: Option<String>,
+    /// A team catalog's connection: "Managed by the team catalog “…”". The editor is read-only except for the
+    /// risky settings' checkbox.
+    pub read_only: Option<String>,
 }
 
 /// The editor key of a connection.

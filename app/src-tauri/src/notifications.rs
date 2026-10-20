@@ -40,6 +40,14 @@ pub fn event(state: &AppState, event: &ConnectionEvent) {
     }
 }
 
+/// A team catalog notice (updated, an older version refused, the team key changed, failed): the catalog service's
+/// own text, which names the catalog but carries no key, token or content.
+pub fn catalog(state: &AppState, content: &NotificationContent) {
+    if state.notifications_enabled() {
+        post(content);
+    }
+}
+
 /// "…: authentication needed" (the prompt window does not take the focus).
 pub fn prompt_opened(state: &AppState, prompt: &PromptView) {
     if state.notifications_enabled() {

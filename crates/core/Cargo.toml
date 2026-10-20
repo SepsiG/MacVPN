@@ -78,6 +78,46 @@ required-features = ["vault"]
 name = "vault_credentials"
 required-features = ["vault"]
 
+[[test]]
+name = "catalog_keys"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_payload"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_format"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_source"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_subscription"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_catalog"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_planner"
+required-features = ["vault"]
+
+[[test]]
+name = "vault_catalog_apply"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_publish"
+required-features = ["vault"]
+
+[[test]]
+name = "catalog_admin_file"
+required-features = ["vault"]
+
 [dev-dependencies]
 macvpn-core = { path = ".", features = ["test-support"] }
 plist = "1.10.1"

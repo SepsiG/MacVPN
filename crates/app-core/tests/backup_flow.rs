@@ -276,7 +276,8 @@ fn merge_with_each_mode() {
         let summary = f.open(&bytes);
         assert_eq!((summary.added, summary.conflicts, summary.lost_on_replace), (1, 1, 0), "{mode:?}");
         assert!(!summary.fresh);
-        f.apply(RestoreChoice::Merge(mode)).unwrap();
+        let outcome = f.apply(RestoreChoice::Merge(mode)).unwrap();
+        assert!(outcome.skipped_catalog_items.is_empty(), "no team catalog here");
         assert_eq!(f.names(), expected, "{mode:?}");
         // The staged backup is used up.
         assert!(!f.service.has_staged(WINDOW));
@@ -305,6 +306,38 @@ fn replace_names_the_lost_count_and_refuses_a_stale_one() {
     assert!(f.service.has_staged(WINDOW));
     f.apply(RestoreChoice::Replace { expected_lost: 2 }).unwrap();
     assert_eq!(f.names(), ["Office"]);
+}
+
+/// "Replace everything" names what it takes from the publisher side too: an admin key the backup replaces with its
+/// own counts in the number the confirmation sends; one the backup has nothing for stays.
+#[test]
+fn replace_names_the_admin_keys_it_replaces() {
+    use macvpn_core::catalog::keys::AdminKey;
+    use macvpn_core::vault::AdminKeyRole;
+    let admin = |seed| AdminKey::generate(&FixedEntropy::new(seed)).unwrap();
+    let f = Fixture::new(true);
+    f.save(&openvpn(1, "Office"), OVPN);
+    f.service.vault().with(|v| v.save_admin_key(&admin(1), AdminKeyRole::Primary, now())).unwrap();
+    let bytes = f.backup(BackupPreferences::default());
+    f.service
+        .vault()
+        .with(|v| {
+            v.delete_admin_key(&admin(1).public().fingerprint())?;
+            v.save_admin_key(&admin(2), AdminKeyRole::Primary, now())?;
+            v.save_admin_key(&admin(3), AdminKeyRole::Backup, now())
+        })
+        .unwrap();
+    let summary = f.open(&bytes);
+    assert_eq!(summary.lost_on_replace, 0);
+    assert_eq!(summary.lost_admin_keys, ["primary"]);
+    assert!(summary.lost_subscriptions.is_empty() && summary.lost_publications.is_empty());
+    assert_eq!(summary.lost_total, 1);
+    en(|| assert!(f.apply(RestoreChoice::Replace { expected_lost: 0 }).is_err(), "the items alone are stale"));
+    f.apply(RestoreChoice::Replace { expected_lost: 1 }).unwrap();
+    let keys = f.service.vault().with_read(|v| v.admin_keys()).unwrap();
+    let public = |role| keys.iter().find(|k| k.role == role).map(|k| k.public);
+    assert_eq!(public(AdminKeyRole::Primary), Some(admin(1).public()), "the backup's");
+    assert_eq!(public(AdminKeyRole::Backup), Some(admin(3).public()), "not in the backup: kept");
 }
 
 #[test]

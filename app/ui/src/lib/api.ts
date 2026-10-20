@@ -2,6 +2,7 @@
 // capability file allows only these commands and listening to events.
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { CatalogBadge, SubscriptionView } from './catalog/catalogApi';
 
 export type RowState =
   | { state: 'disconnected' }
@@ -26,6 +27,10 @@ export type Row = RowState & {
   switchEnabled: boolean;
   /// The paired apps holding the connection through the control API.
   heldBy: string[];
+  /// A team catalog's connection: the "Team" badge (null for the user's own and system VPNs).
+  catalog?: CatalogBadge | null;
+  /// A source connection the user publishes: "Published in “…” (vN)" per publication.
+  published?: import('./catalog/publishApi').PublishedBadge[];
 };
 
 /// The folder and connection colour palette (spec 3): the `--folder-<id>` tokens.
@@ -115,6 +120,14 @@ export interface CredentialPromptView {
   /// the connection's own fields.
   credentialName: string | null;
   usedBy: number | null;
+  /// The team catalog whose credential slot it is ("Office AD (team catalog “Acme VPN”) — enter your user name and
+  /// password"), or null.
+  team: string | null;
+  /// A team slot: where the catalog comes from (the HTTPS source's host, or the short form of the publisher
+  /// fingerprint for a file source), shown next to the catalog's name so a look-alike catalog cannot pass for it.
+  teamSource: string | null;
+  /// A team slot: the server the connection sends the password to.
+  server: string | null;
 }
 
 export type TrayIcon = 'idle' | 'active' | 'failure' | 'auth';
@@ -302,6 +315,8 @@ export interface EditorView {
   removed: boolean;
   /// The shared credential (its name) the username and password come from; `null`: its own fields.
   credential: string | null;
+  /// A team catalog's connection: "Managed by the team catalog “…”". Read-only except the risky settings' checkbox.
+  readOnly?: string | null;
 }
 
 export interface Report {
@@ -479,6 +494,12 @@ export interface ViewModel {
   vaultSetup: VaultSetupView | null;
   /// "Back up everything…" and "Restore from backup…" are offered (the vault is open).
   backupAvailable: boolean;
+  /// The "Team catalogs" section (empty while the vault is locked).
+  catalogs?: SubscriptionView[];
+  /// The folders a team catalog owns (its root folder and the publisher's tree): folder id → catalog id.
+  teamFolders?: Record<string, string>;
+  /// The "Publishing" section: the admin keys and the publications (empty while the vault is locked).
+  publishing?: import('./catalog/publishApi').PublishingView;
 }
 
 export type WindowName = 'manage' | 'setup' | 'update';
@@ -575,7 +596,7 @@ export const api = {
   vaultNewRecoveryKey: (password: string) => invoke<NewKeyReply>('vault_new_recovery_key', { password }),
   vaultConfirmNewKey: (group: number, typed: string) => invoke<void>('vault_confirm_new_key', { group, typed }),
   /// The recovery key was copied: the backend empties the pasteboard a minute later if it still holds a key.
-  vaultKeyCopied: () => invoke<void>('vault_key_copied'),
+  vaultCopyRecoveryKey: (recoveryKey: string) => invoke<void>('vault_copy_recovery_key', { recoveryKey }),
   // The vault from the menu (and the Connections window).
   vaultShow: (window: VaultWindowName) => invoke<void>('vault_show', { window }),
   vaultLockNow: () => invoke<void>('vault_lock_now'),

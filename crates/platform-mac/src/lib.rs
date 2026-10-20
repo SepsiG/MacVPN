@@ -9,6 +9,7 @@
 
 pub mod app_hooks;
 pub mod brew;
+pub mod catalog_http;
 mod cf;
 pub mod command;
 pub mod control_socket;
@@ -21,6 +22,7 @@ pub mod login_item;
 pub mod mvpn_client;
 pub mod native_vpn;
 pub mod notifications;
+pub mod pasteboard;
 pub mod preferences;
 pub mod profile_staging;
 pub mod root_installer;

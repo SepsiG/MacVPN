@@ -1,28 +1,15 @@
-// Copying a shown recovery key: the async clipboard, else the shown text selected and copied. The key never goes
-// back to the backend for this; the backend only empties the pasteboard a minute later if it still holds a key.
+// Copying a shown recovery key: the backend puts it on the pasteboard concealed (clipboard managers skip it,
+// Universal Clipboard does not send it) and empties it a minute later, at a lock or at quit if it is still there.
+// The web view never writes a secret to the clipboard itself.
 import { api } from '../api';
 
 export async function copyRecoveryKey(key: string | null): Promise<boolean> {
-  const copied = await copyText(key);
-  if (copied) api.vaultKeyCopied().catch(console.error);
-  return copied;
-}
-
-async function copyText(key: string | null): Promise<boolean> {
   if (!key) return false;
   try {
-    await navigator.clipboard.writeText(key);
+    await api.vaultCopyRecoveryKey(key);
     return true;
-  } catch {
-    const code = document.querySelector('[data-recovery-key]');
-    const selection = window.getSelection();
-    if (!code || !selection) return false;
-    const range = document.createRange();
-    range.selectNodeContents(code);
-    selection.removeAllRanges();
-    selection.addRange(range);
-    const copied = document.execCommand('copy');
-    selection.removeAllRanges();
-    return copied;
+  } catch (e) {
+    console.error(e);
+    return false;
   }
 }

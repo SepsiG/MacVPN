@@ -120,7 +120,7 @@ pub trait PreferencePort: Send + Sync {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RestoreChoice {
     Merge(ConflictMode),
-    /// `expected_lost`: the number of items lost, as the confirmation named it.
+    /// `expected_lost`: everything lost ([`RestoreSummary::lost_total`]), as the confirmation named it.
     Replace {
         expected_lost: usize,
     },
@@ -157,6 +157,15 @@ pub struct RestoreSummary {
     pub conflicts: usize,
     /// What "Replace everything" loses: the vault's items that are not in the backup.
     pub lost_on_replace: usize,
+    /// The team catalog subscriptions "Replace everything" removes (not in the backup), by name.
+    pub lost_subscriptions: Vec<String>,
+    /// The admin key roles (`primary`, `backup`) the backup replaces with its own key. A role the backup has no
+    /// key for keeps this Mac's key.
+    pub lost_admin_keys: Vec<&'static str>,
+    /// The publications the backup replaces with its own record (the version is never lowered), by name.
+    pub lost_publications: Vec<String>,
+    /// Everything "Replace everything" loses, counted together: the number its confirmation sends back.
+    pub lost_total: usize,
     /// The connections whose acknowledged risky OpenVPN directives a replace (and a fresh restore) keeps; a merge
     /// drops them unless the same connection with the same config already exists.
     pub acknowledged_risky: Vec<String>,
@@ -193,6 +202,8 @@ pub struct NativeProfileView {
 pub struct RestoreOutcome {
     pub preferences: Vec<PreferenceChoice>,
     pub native_profiles: Vec<NativeProfileView>,
+    /// The backup's folders and connections a team catalog owns here: not restored (the catalog's stay).
+    pub skipped_catalog_items: Vec<String>,
 }
 
 /// A preference that could not be applied.
@@ -302,6 +313,9 @@ fn fresh_plan(p: &BackupPayload) -> RestorePlan {
             .filter(|c| !c.connection.acknowledged_risky_directives.is_empty())
             .map(|c| c.connection.name.clone())
             .collect(),
+        lost_subscriptions: Vec::new(),
+        lost_admin_keys: Vec::new(),
+        lost_publications: Vec::new(),
     }
 }
 
@@ -408,6 +422,10 @@ impl BackupService {
             added: plan.added,
             conflicts: plan.conflicts,
             lost_on_replace: plan.lost_on_replace,
+            lost_total: plan.lost_total(),
+            lost_subscriptions: plan.lost_subscriptions,
+            lost_admin_keys: plan.lost_admin_keys.iter().map(|r| r.as_str()).collect(),
+            lost_publications: plan.lost_publications,
             acknowledged_risky: plan.acknowledged_risky,
             native_profiles: payload.native_connections().count(),
             fresh,
@@ -468,26 +486,24 @@ impl BackupService {
         format::mark_missing_system_items(&mut staged.payload, known_services, now);
         let result = (|| {
             let before = self.native_ids()?;
-            let written = self.vault.with(|v| {
-                match choice {
-                    RestoreChoice::Merge(mode) => format::merge(v, &staged.payload, mode)?,
-                    RestoreChoice::Replace { expected_lost } => {
-                        let lost = format::plan_restore(v, &staged.payload)?.lost_on_replace;
-                        if lost != expected_lost {
-                            return Ok(false);
-                        }
-                        format::replace(v, &staged.payload)?;
+            let written = self.vault.with(|v| match choice {
+                RestoreChoice::Merge(mode) => Ok(Some(format::merge(v, &staged.payload, mode)?)),
+                RestoreChoice::Replace { expected_lost } => {
+                    let lost = format::plan_restore(v, &staged.payload)?.lost_total();
+                    if lost != expected_lost {
+                        return Ok(None);
                     }
+                    format::replace(v, &staged.payload)?;
+                    Ok(Some(format::RestoreReport::default()))
                 }
-                Ok(true)
             });
-            match written {
-                Ok(true) => {}
-                Ok(false) => {
+            let report = match written {
+                Ok(Some(report)) => report,
+                Ok(None) => {
                     return Err(tr("The vault changed since the summary. Review the restore again.", &[]));
                 }
                 Err(e) => return Err(restore_error_message(&e)),
-            }
+            };
             let backup_ids: HashSet<Uuid> = staged.payload.native_connections().map(|c| c.id).collect();
             // Reinstalled: the backup's native connections as they are now in the vault (Keep existing leaves the
             // existing one, which needs nothing), and the new copies "Keep both" made.
@@ -496,10 +512,10 @@ impl BackupService {
                 let new = !before.contains(id);
                 new || (backup_ids.contains(id) && !keep_existing)
             })?;
-            Ok(natives)
+            Ok((natives, report.skipped_catalog_items))
         })();
         match result {
-            Ok(natives) => Ok(self.finish(owner, staged.payload.preferences, natives, prefs)),
+            Ok((natives, skipped)) => Ok(self.finish(owner, staged.payload.preferences, natives, skipped, prefs)),
             Err(message) => {
                 self.put_back(staged);
                 Err(message)
@@ -540,7 +556,7 @@ impl BackupService {
             Err(e) => Err(restore_error_message(&e)),
         };
         match result {
-            Ok(natives) => Ok(self.finish(owner, staged.payload.preferences, natives, prefs)),
+            Ok(natives) => Ok(self.finish(owner, staged.payload.preferences, natives, Vec::new(), prefs)),
             Err(message) => {
                 self.put_back(staged);
                 Err(message)
@@ -578,11 +594,13 @@ impl BackupService {
         owner: &str,
         backed_up: BackupPreferences,
         natives: Vec<NativeProfileView>,
+        skipped_catalog_items: Vec<String>,
         prefs: &dyn PreferencePort,
     ) -> RestoreOutcome {
         let outcome = RestoreOutcome {
             preferences: preference_choices(&backed_up, &prefs.current()),
             native_profiles: natives.clone(),
+            skipped_catalog_items,
         };
         guard(&self.session).restored = Some(Restored { owner: owner.to_string(), preferences: backed_up, natives });
         outcome

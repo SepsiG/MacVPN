@@ -62,6 +62,19 @@ fn prefs() -> BackupPreferences {
     }
 }
 
+/// A plan's team catalog part when nothing of it is lost.
+fn no_catalog_losses() -> RestorePlan {
+    RestorePlan {
+        added: 0,
+        conflicts: 0,
+        lost_on_replace: 0,
+        acknowledged_risky: Vec::new(),
+        lost_subscriptions: Vec::new(),
+        lost_admin_keys: Vec::new(),
+        lost_publications: Vec::new(),
+    }
+}
+
 fn kdf() -> KdfParams {
     KdfParams::insecure_for_tests()
 }
@@ -186,7 +199,7 @@ fn collect_takes_everything_but_the_paired_clients() {
     let tmp = TempDir::new();
     let vault = filled_vault(&tmp, "a");
     let p = collect(&vault);
-    assert_eq!(p.version, 1);
+    assert_eq!(p.version, 2);
     assert_eq!(p.created, now());
     assert_eq!(p.app_version, "1.2.0");
     assert_eq!(p.preferences, prefs());
@@ -345,9 +358,9 @@ fn a_newer_format_is_refused_as_newer() {
 #[test]
 fn a_newer_payload_version_is_refused_as_newer() {
     let mut payload = BackupPayload::empty(now(), "9.0.0", prefs());
-    payload.version = 2;
+    payload.version = 3;
     let bytes = sealed(&payload);
-    assert!(matches!(backup::open(&bytes, PASSWORD), Err(BackupError::NewerVersion(2))));
+    assert!(matches!(backup::open(&bytes, PASSWORD), Err(BackupError::NewerVersion(3))));
     payload.version = 0;
     assert_cannot_open(&sealed(&payload), PASSWORD, "payload version 0");
 }
@@ -575,11 +588,26 @@ fn plan_restore_counts_new_items_conflicts_and_what_replace_loses() {
     let plan = backup::plan_restore(&vault, &incoming()).unwrap();
     // Added: Beta, Sub, Fresh. Conflicts: Alpha, Work, Office AD (id), Lab (name). Lost on replace: Zulu and the
     // existing Lab (its id is not in the backup).
-    assert_eq!(plan, RestorePlan { added: 3, conflicts: 4, lost_on_replace: 2, acknowledged_risky: Vec::new() });
+    assert_eq!(
+        plan,
+        RestorePlan {
+            added: 3,
+            conflicts: 4,
+            lost_on_replace: 2,
+            acknowledged_risky: Vec::new(),
+            ..no_catalog_losses()
+        }
+    );
     let empty = new_vault(&tmp, "empty");
     assert_eq!(
         backup::plan_restore(&empty, &incoming()).unwrap(),
-        RestorePlan { added: 7, conflicts: 0, lost_on_replace: 0, acknowledged_risky: Vec::new() }
+        RestorePlan {
+            added: 7,
+            conflicts: 0,
+            lost_on_replace: 0,
+            acknowledged_risky: Vec::new(),
+            ..no_catalog_losses()
+        }
     );
 }
 
@@ -764,7 +792,7 @@ fn a_failing_restore_changes_nothing() {
     // A folder cycle in the backup: a typed error (review L5), not "the vault is damaged".
     bad.folders[0].parent = Some(id(11));
     let tree = |r: Result<(), VaultError>| matches!(r, Err(VaultError::InvalidBackup(InvalidBackup::FolderTree)));
-    assert!(tree(backup::merge(&mut vault, &bad, ConflictMode::Overwrite)));
+    assert!(tree(backup::merge(&mut vault, &bad, ConflictMode::Overwrite).map(drop)));
     assert!(tree(backup::replace(&mut vault, &bad)));
     assert_eq!(collect(&vault), before);
     assert_eq!(vault.control_clients().unwrap(), vec![client("client-1")]);
@@ -1049,9 +1077,9 @@ fn a_restored_link_leaves_the_item_no_own_username_or_password() {
         let mut vault = new_vault(&tmp, "v");
         match restore {
             "replace" => backup::replace(&mut vault, &p).unwrap(),
-            "Overwrite" => backup::merge(&mut vault, &p, ConflictMode::Overwrite).unwrap(),
-            "KeepExisting" => backup::merge(&mut vault, &p, ConflictMode::KeepExisting).unwrap(),
-            _ => backup::merge(&mut vault, &p, ConflictMode::KeepBoth).unwrap(),
+            "Overwrite" => drop(backup::merge(&mut vault, &p, ConflictMode::Overwrite).unwrap()),
+            "KeepExisting" => drop(backup::merge(&mut vault, &p, ConflictMode::KeepExisting).unwrap()),
+            _ => drop(backup::merge(&mut vault, &p, ConflictMode::KeepBoth).unwrap()),
         }
         for item in ["SVC-1".to_string(), uuid_string(&id(1))] {
             assert_eq!(vault.credential_of(&item).unwrap(), Some(id(100)), "{restore} {item}");
@@ -1185,5 +1213,576 @@ fn a_merge_keeps_acknowledged_risky_directives_only_for_the_same_connection_and_
     backup::replace(&mut vault, &p).unwrap();
     for name in ["Same", "Changed", "New"] {
         assert_eq!(acknowledged(&vault, name), ["up"], "{name}");
+    }
+}
+
+// MARK: - payload v2: team catalogs (1.3, plan Task 8)
+
+mod catalogs {
+    use super::*;
+    use macvpn_core::catalog::ids::{CatalogItemKind, local_id, root_folder_id};
+    use macvpn_core::catalog::keys::{AdminKey, TeamKey};
+    use macvpn_core::catalog::payload::{CatalogConnection, CatalogFolder, CatalogPayload, CredentialSlot};
+    use macvpn_core::catalog::planner::plan_apply;
+    use macvpn_core::catalog::selection::PublishSelection;
+    use macvpn_core::catalog::source::{CatalogSource, HttpsUrl};
+    use macvpn_core::vault::backup::{BackupAdminKey, BackupOfflineKey, BackupPublication, BackupSubscription};
+    use macvpn_core::vault::{
+        AdminKeyRole, ApplyContext, PublicationRecord, SourceValidators, SubscriptionRecord, SubscriptionStatus,
+    };
+
+    const TOKEN: &str = "per-user-bearer-token_123";
+    const CONFIG: &str = "client\ndev tun\nremote vpn.example.com 1194\nauth-user-pass\n";
+
+    fn cat() -> Uuid {
+        id(0xCA7)
+    }
+
+    fn local(n: u128) -> Uuid {
+        local_id(cat(), CatalogItemKind::Connection, id(n))
+    }
+
+    fn team_key() -> TeamKey {
+        TeamKey::generate(&FixedEntropy::new(77)).unwrap()
+    }
+
+    fn admin(seed: u64) -> AdminKey {
+        AdminKey::generate(&FixedEntropy::new(seed)).unwrap()
+    }
+
+    fn record(applied: Option<u64>) -> SubscriptionRecord {
+        SubscriptionRecord {
+            catalog_id: cat(),
+            name: "Acme VPN".into(),
+            source: CatalogSource::Https(HttpsUrl::parse("https://vpn.example.com/acme.macvpncatalog").unwrap()),
+            pinned: admin(1).public().fingerprint(),
+            applied_version: applied,
+            reapply: false,
+            status: SubscriptionStatus::Ok,
+            validators: SourceValidators { etag: Some("\"e1\"".into()), ..Default::default() },
+            last_attempt: Some(now()),
+            last_success: Some(now()),
+            failures: 0,
+            has_bearer: true,
+            publisher_key: Some(admin(1).public()),
+            successor_key: Some(admin(2).public()),
+            added: now(),
+        }
+    }
+
+    fn publication(version: u64) -> PublicationRecord {
+        PublicationRecord {
+            catalog_id: id(0xB0B),
+            name: "Published".into(),
+            version,
+            selection: PublishSelection::default(),
+            secret_ids: BTreeMap::new(),
+            item_hashes: BTreeMap::new(),
+            last_path: None,
+            last_published: Some(now()),
+            announced_successor: None,
+        }
+    }
+
+    /// Folder 50 with connection 1 (slot 200, a team PSK), connection 2 at the root.
+    fn catalog() -> CatalogPayload {
+        let conn = |n: u128, name: &str| CatalogConnection {
+            id: id(n),
+            name: name.into(),
+            kind: VPNKind::Openvpn,
+            folder: None,
+            color: None,
+            config: z(CONFIG),
+            native: None,
+            otp: Default::default(),
+            slot: None,
+            secret_refs: BTreeMap::new(),
+        };
+        let mut one = conn(1, "Team One");
+        one.folder = Some(id(50));
+        one.slot = Some(id(200));
+        one.secret_refs.insert(SecretField::Psk, id(300));
+        CatalogPayload {
+            version: 1,
+            folders: vec![CatalogFolder {
+                id: id(50),
+                parent: None,
+                name: "Team folder".into(),
+                color: None,
+                position: 0,
+            }],
+            connections: vec![one, conn(2, "Team Two")],
+            credential_slots: vec![CredentialSlot { id: id(200), name: "Team AD".into() }],
+            shared_secrets: BTreeMap::from([(id(300), z("team-psk"))]),
+        }
+    }
+
+    fn apply(vault: &mut Vault, version: u64) {
+        let mut r = vault.subscription(cat()).unwrap().unwrap();
+        let payload = catalog();
+        let plan = plan_apply(&vault.local_catalog(cat()).unwrap(), &r.name, &payload, &HashSet::new());
+        r.applied_version = Some(version);
+        r.reapply = false;
+        vault.apply_catalog(&plan, &ApplyContext { catalog_id: cat(), payload: &payload, now: now() }, &r).unwrap();
+    }
+
+    /// A personal connection, a subscription with v3 applied, the user's own secrets, pin and filled slot on a
+    /// catalog connection, two admin keys and a publication.
+    fn catalog_vault(tmp: &TempDir, name: &str) -> Vault {
+        let mut vault = new_vault(tmp, name);
+        vault.save_connection(&connection(id(9), "Personal"), Some("remote personal\n")).unwrap();
+        vault.add_subscription(&record(None), &team_key(), Some(TOKEN)).unwrap();
+        apply(&mut vault, 3);
+        let k1 = uuid_string(&local(1));
+        vault.set_item_secret(&k1, SecretField::KeyPassword, "own-keypass").unwrap();
+        vault.save_prompted_secret(&k1, SecretField::Username, "alice").unwrap();
+        vault.save_prompted_secret(&k1, SecretField::Password, "alice-pw").unwrap();
+        vault.save_ranking(&ConnectionRanking::new(vec![k1.clone()], HashMap::from([(k1, usage(2.0))]))).unwrap();
+        vault.save_admin_key(&admin(1), AdminKeyRole::Primary, now()).unwrap();
+        vault.save_admin_key(&admin(2), AdminKeyRole::Backup, now()).unwrap();
+        vault.save_publication(&publication(4), Some(&TeamKey::generate(&FixedEntropy::new(78)).unwrap())).unwrap();
+        vault
+    }
+
+    #[test]
+    fn collect_leaves_catalog_rows_out_but_keeps_the_user_state() {
+        let tmp = TempDir::new();
+        let vault = catalog_vault(&tmp, "a");
+        let p = collect(&vault);
+        assert_eq!(p.connections.iter().map(|c| c.connection.name.as_str()).collect::<Vec<_>>(), ["Personal"]);
+        assert!(p.folders.is_empty(), "the catalog root and folders come back from the source");
+        let k1 = uuid_string(&local(1));
+        let own = &p.system_secrets[&k1];
+        assert_eq!(own.iter().map(|(f, _)| *f).collect::<Vec<_>>(), [SecretField::KeyPassword], "no provided PSK");
+        assert_eq!(p.ranking.pinned(), std::slice::from_ref(&k1));
+        assert!(p.credential_links.iter().any(|(item, _)| *item == k1));
+        assert!(p.credentials.iter().any(|c| c.name == "Team AD" && c.username.as_str() == "alice"));
+
+        assert_eq!(p.subscriptions.len(), 1);
+        let s = &p.subscriptions[0];
+        assert_eq!(s.record.applied_version, Some(3));
+        assert_eq!(s.team_key.as_bytes(), team_key().as_bytes());
+        assert_eq!(s.bearer.as_deref().map(String::as_str), Some(TOKEN));
+        let slot_credential = vault.credential_of(&k1).unwrap();
+        assert_eq!(s.slots, [(id(200), "Team AD".to_string(), slot_credential)]);
+        assert_eq!(p.admin_keys.len(), 2);
+        assert_eq!(p.admin_keys[0].role, AdminKeyRole::Primary);
+        assert_eq!(p.publications.len(), 1);
+        assert_eq!(p.publications[0].record.version, 4);
+    }
+
+    #[test]
+    fn catalog_data_round_trips_and_its_key_material_is_only_in_the_sealed_file() {
+        let tmp = TempDir::new();
+        let vault = catalog_vault(&tmp, "a");
+        let p = collect(&vault);
+        let bytes = sealed(&p);
+        assert_eq!(backup::open(&bytes, PASSWORD).unwrap(), p);
+        let seed = admin(1).seed();
+        for needle in [
+            team_key().to_text().as_bytes(),
+            &team_key().as_bytes()[..],
+            TOKEN.as_bytes(),
+            &seed[..],
+            b"Acme VPN",
+            b"vpn.example.com",
+        ] {
+            assert!(!contains(&bytes, needle), "{:?}", String::from_utf8_lossy(needle));
+        }
+        let debug = format!("{p:?}");
+        assert!(!debug.contains(TOKEN) && !debug.contains(team_key().to_text().as_str()), "{debug}");
+    }
+
+    #[test]
+    fn a_v1_payload_opens_with_empty_catalog_collections() {
+        let mut p = BackupPayload::empty(now(), "1.2.0", prefs());
+        p.credentials = vec![credential(id(100), "Office AD", "alice", Some("pw"))];
+        let json = backup::payload_json(&p).unwrap();
+        let mut v: serde_json::Value = serde_json::from_slice(&json).unwrap();
+        let root = v.as_object_mut().unwrap();
+        for key in ["subscriptions", "adminKeys", "publications"] {
+            assert!(root.remove(key).is_some());
+        }
+        root.insert("version".into(), json!(1));
+        let bytes =
+            backup::seal_json_unchecked(&serde_json::to_vec(&v).unwrap(), PASSWORD, kdf(), &FixedEntropy::new(5))
+                .unwrap();
+        let opened = backup::open(&bytes, PASSWORD).unwrap();
+        assert_eq!(opened.version, 2);
+        assert!(opened.subscriptions.is_empty() && opened.admin_keys.is_empty() && opened.publications.is_empty());
+        assert_eq!(opened.credentials, p.credentials);
+    }
+
+    fn crafted_catalog() -> BackupPayload {
+        let mut p = BackupPayload::empty(now(), "1.3.0", prefs());
+        p.subscriptions = vec![BackupSubscription {
+            record: record(Some(1)),
+            team_key: team_key(),
+            bearer: Some(z(TOKEN)),
+            slots: vec![],
+        }];
+        p.admin_keys = vec![BackupAdminKey { role: AdminKeyRole::Primary, seed: admin(1).seed(), created: now() }];
+        p.publications = vec![BackupPublication { record: publication(1), team_key: team_key() }];
+        p
+    }
+
+    #[test]
+    fn crafted_catalog_payloads_are_invalid() {
+        assert_eq!(backup::validate(&crafted_catalog()), Ok(()));
+        let invalid = |p: &BackupPayload, kind: InvalidBackup, what: &str| {
+            assert_eq!(backup::validate(p), Err(kind), "{what}");
+            let bytes = backup::seal_unchecked(p, PASSWORD, kdf(), &FixedEntropy::new(5)).unwrap();
+            assert_eq!(backup::open(&bytes, PASSWORD), Err(BackupError::Invalid(kind)), "{what}");
+        };
+        let mut p = crafted_catalog();
+        p.admin_keys.push(BackupAdminKey { role: AdminKeyRole::Primary, seed: admin(2).seed(), created: now() });
+        invalid(&p, InvalidBackup::AdminKeys, "two primary admin keys");
+        let mut p = crafted_catalog();
+        p.subscriptions[0].bearer = Some(z("bad token\r\nX-Evil: 1"));
+        invalid(&p, InvalidBackup::BearerToken, "a bad bearer token");
+        let mut p = crafted_catalog();
+        p.publications[0].record.version = 0;
+        invalid(&p, InvalidBackup::PublicationVersion, "publication version 0");
+        let mut p = crafted_catalog();
+        p.subscriptions[0].record.name = "\u{1b}[31m".into();
+        invalid(&p, InvalidBackup::CatalogName, "a control character in a catalog name");
+        let mut p = crafted_catalog();
+        p.subscriptions.push(p.subscriptions[0].clone());
+        invalid(&p, InvalidBackup::Duplicate, "two subscriptions with one id");
+
+        // An http:// source cannot even be typed: crafted in the JSON.
+        let json = backup::payload_json(&crafted_catalog()).unwrap();
+        let text =
+            String::from_utf8(json.to_vec()).unwrap().replace("https://vpn.example.com", "http://vpn.example.com");
+        let bytes = backup::seal_json_unchecked(text.as_bytes(), PASSWORD, kdf(), &FixedEntropy::new(5)).unwrap();
+        assert_eq!(backup::open(&bytes, PASSWORD), Err(BackupError::Invalid(InvalidBackup::CatalogSource)));
+    }
+
+    #[test]
+    fn merge_never_lowers_an_applied_or_published_version() {
+        for (vault_version, backup_version) in [(5u64, 3u64), (3, 5)] {
+            for mode in [ConflictMode::Overwrite, ConflictMode::KeepExisting, ConflictMode::KeepBoth] {
+                let tmp = TempDir::new();
+                let mut vault = new_vault(&tmp, "v");
+                vault.add_subscription(&record(Some(vault_version)), &team_key(), None).unwrap();
+                vault.save_publication(&publication(vault_version), Some(&team_key())).unwrap();
+                let mut p = crafted_catalog();
+                p.subscriptions[0].record.applied_version = Some(backup_version);
+                p.publications[0].record.catalog_id = id(0xB0B);
+                p.publications[0].record.version = backup_version;
+                backup::merge(&mut vault, &p, mode).unwrap();
+                let max = vault_version.max(backup_version);
+                assert_eq!(vault.subscriptions().unwrap().len(), 1, "{mode:?}");
+                assert_eq!(vault.subscription(cat()).unwrap().unwrap().applied_version, Some(max), "{mode:?}");
+                assert_eq!(vault.publications().unwrap()[0].version, max, "{mode:?}");
+                assert_eq!(vault.folders().unwrap().len(), 1, "one root folder, {mode:?}");
+            }
+        }
+    }
+
+    /// A merge never rewrites what a team catalog owns (the reviewer's `i_`): a backup made by 1.2 from a v2 vault
+    /// holds the catalog's connections and folders as ordinary items under the same ids. They are skipped in every
+    /// mode (no overwrite, no "(backup)" copy, no secret or link onto them) and reported; the rest is restored.
+    #[test]
+    fn a_merge_skips_the_items_a_team_catalog_owns() {
+        let folder = local_id(cat(), CatalogItemKind::Folder, id(50));
+        for mode in [ConflictMode::Overwrite, ConflictMode::KeepExisting, ConflictMode::KeepBoth] {
+            let tmp = TempDir::new();
+            let mut vault = catalog_vault(&tmp, "a");
+            let k2 = uuid_string(&local(2));
+            let mut p = BackupPayload::empty(now(), "1.2.0", prefs());
+            let mut two = backup_connection(local(2), "Team Two", "client\nremote evil.example.com 1194\n", None);
+            two.secrets = vec![(SecretField::Psk, z("backup-psk"))];
+            p.connections = vec![two, backup_connection(id(10), "Personal two", "remote two\n", Some(folder))];
+            p.folders = vec![FolderNode {
+                id: folder,
+                parent: Some(root_folder_id(cat())),
+                name: "Renamed by backup".into(),
+                color: Some(FolderColor::Red),
+                position: 0,
+                collapsed: false,
+            }];
+            p.folders.push(FolderNode {
+                id: root_folder_id(cat()),
+                parent: None,
+                name: "Renamed root".into(),
+                color: None,
+                position: 0,
+                collapsed: false,
+            });
+            let report = backup::merge(&mut vault, &p, mode).unwrap();
+            assert_eq!(report.skipped_catalog_items, ["Renamed root", "Renamed by backup", "Team Two"], "{mode:?}");
+            let names: Vec<String> = vault.folders().unwrap().into_iter().map(|f| f.name).collect();
+            assert!(names.contains(&"Team folder".to_string()), "{mode:?}: {names:?}");
+            assert!(names.contains(&"Acme VPN".to_string()), "{mode:?}: {names:?}");
+            assert!(!names.iter().any(|n| n.contains("Renamed")), "{mode:?}: {names:?}");
+            assert_eq!(vault.config(&local(2)).unwrap().as_str(), CONFIG, "{mode:?}");
+            assert!(vault.catalog_owner(&k2).unwrap().is_some(), "{mode:?}");
+            assert_eq!(secret(&vault, &k2, SecretField::Psk), None, "{mode:?}");
+            let all: Vec<String> = vault.connections().unwrap().into_iter().map(|c| c.connection.name).collect();
+            assert_eq!(all.iter().filter(|n| n.starts_with("Team Two")).count(), 1, "{mode:?}: {all:?}");
+            // The personal item is restored, outside the catalog's folder.
+            let personal = named(&vault, "Personal two");
+            assert_eq!(vault.catalog_owner(&uuid_string(&personal.id)).unwrap(), None);
+            let tree = vault.folder_tree().unwrap();
+            assert!(tree.get(folder).is_some());
+            assert_ne!(
+                vault.connections().unwrap().into_iter().find(|c| c.connection.id == personal.id).unwrap().folder_id,
+                Some(folder),
+                "{mode:?}"
+            );
+        }
+    }
+
+    /// An older backup never lowers a catalog's rollback floor, with Replace as with a merge (the reviewer's `j_`):
+    /// the vault's v5 stays when the backup says v3, the backup's v5 is taken over the vault's v3.
+    #[test]
+    fn replace_never_lowers_an_applied_version() {
+        for (vault_version, backup_version) in [(5u64, 3u64), (3, 5)] {
+            let tmp = TempDir::new();
+            let mut vault = new_vault(&tmp, "v");
+            vault.add_subscription(&record(Some(vault_version)), &team_key(), None).unwrap();
+            let mut p = crafted_catalog();
+            p.subscriptions[0].record.applied_version = Some(backup_version);
+            backup::replace(&mut vault, &p).unwrap();
+            let restored = vault.subscription(cat()).unwrap().unwrap();
+            assert_eq!(
+                restored.applied_version,
+                Some(vault_version.max(backup_version)),
+                "{vault_version}/{backup_version}"
+            );
+            assert!(restored.reapply, "the items come back at the next refresh");
+            assert_eq!(restored.validators, SourceValidators::default(), "never stopped by a 304");
+        }
+        // A catalog only in the backup keeps the backup's floor; one only here is replaced (gone).
+        let tmp = TempDir::new();
+        let mut vault = new_vault(&tmp, "v");
+        let mut p = crafted_catalog();
+        p.subscriptions[0].record.applied_version = Some(2);
+        backup::replace(&mut vault, &p).unwrap();
+        assert_eq!(vault.subscription(cat()).unwrap().unwrap().applied_version, Some(2));
+    }
+
+    #[test]
+    fn an_admin_key_role_is_replaced_only_with_overwrite() {
+        for (mode, expected) in [(ConflictMode::Overwrite, admin(1)), (ConflictMode::KeepExisting, admin(3))] {
+            let tmp = TempDir::new();
+            let mut vault = new_vault(&tmp, "v");
+            vault.save_admin_key(&admin(3), AdminKeyRole::Primary, now()).unwrap();
+            backup::merge(&mut vault, &crafted_catalog(), mode).unwrap();
+            let keys = vault.admin_keys().unwrap();
+            assert_eq!(keys.len(), 1);
+            assert_eq!(keys[0].public, expected.public(), "{mode:?}");
+        }
+    }
+
+    #[test]
+    fn an_offline_backup_key_is_backed_up_and_still_announced_after_a_restore() {
+        let tmp = TempDir::new();
+        let mut source = catalog_vault(&tmp, "a");
+        source.take_backup_key_offline(&admin(2).public().fingerprint()).unwrap();
+        let p = backup::open(&sealed(&collect(&source)), PASSWORD).unwrap();
+        let offline = p.offline_backup_key.as_ref().expect("the offline backup key's public half");
+        assert_eq!(offline.public, admin(2).public());
+        assert_eq!(offline.created, now());
+        assert!(p.admin_keys.iter().all(|k| k.role == AdminKeyRole::Primary), "no backup seed");
+
+        let fresh = TempDir::new();
+        let mut vault = new_vault(&fresh, "b");
+        backup::replace(&mut vault, &p).unwrap();
+        let keys = vault.admin_keys().unwrap();
+        let backup_key = keys.iter().find(|k| k.role == AdminKeyRole::Backup).expect("the backup key is listed");
+        assert!(backup_key.offline);
+        assert_eq!(backup_key.public, admin(2).public(), "announced as the successor again");
+    }
+
+    #[test]
+    fn a_restore_with_another_backup_key_is_not_refused_by_an_offline_one() {
+        for mode in [ConflictMode::Overwrite, ConflictMode::KeepExisting, ConflictMode::KeepBoth] {
+            let tmp = TempDir::new();
+            let mut vault = new_vault(&tmp, "v");
+            vault.save_admin_key(&admin(1), AdminKeyRole::Primary, now()).unwrap();
+            vault.save_admin_key(&admin(5), AdminKeyRole::Backup, now()).unwrap();
+            vault.take_backup_key_offline(&admin(5).public().fingerprint()).unwrap();
+            let mut p = crafted_catalog();
+            p.admin_keys.push(BackupAdminKey { role: AdminKeyRole::Backup, seed: admin(2).seed(), created: now() });
+            backup::merge(&mut vault, &p, mode).unwrap();
+            let backup_key = vault.admin_keys().unwrap().into_iter().find(|k| k.role == AdminKeyRole::Backup).unwrap();
+            if mode == ConflictMode::Overwrite {
+                assert_eq!((backup_key.public, backup_key.offline), (admin(2).public(), false), "{mode:?}");
+            } else {
+                assert_eq!((backup_key.public, backup_key.offline), (admin(5).public(), true), "{mode:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn an_offline_backup_key_in_the_backup_is_merged_like_a_role_holder() {
+        let offline = |p: &mut BackupPayload| {
+            p.offline_backup_key = Some(BackupOfflineKey { public: admin(2).public(), created: now() });
+        };
+        // Nothing holds the role: the announcement is restored.
+        let tmp = TempDir::new();
+        let mut vault = new_vault(&tmp, "v");
+        let mut p = crafted_catalog();
+        offline(&mut p);
+        backup::merge(&mut vault, &p, ConflictMode::KeepExisting).unwrap();
+        let k = vault.admin_keys().unwrap().into_iter().find(|k| k.role == AdminKeyRole::Backup).unwrap();
+        assert_eq!((k.public, k.offline), (admin(2).public(), true));
+        // An online backup key is kept without overwrite, replaced with it.
+        for (mode, expected) in [
+            (ConflictMode::KeepExisting, (admin(5).public(), false)),
+            (ConflictMode::Overwrite, (admin(2).public(), true)),
+        ] {
+            let tmp = TempDir::new();
+            let mut vault = new_vault(&tmp, "v");
+            vault.save_admin_key(&admin(5), AdminKeyRole::Backup, now()).unwrap();
+            backup::merge(&mut vault, &p, mode).unwrap();
+            let k = vault.admin_keys().unwrap().into_iter().find(|k| k.role == AdminKeyRole::Backup).unwrap();
+            assert_eq!((k.public, k.offline), expected, "{mode:?}");
+        }
+        // The same key online here keeps its seed.
+        let tmp = TempDir::new();
+        let mut vault = new_vault(&tmp, "v");
+        vault.save_admin_key(&admin(2), AdminKeyRole::Backup, now()).unwrap();
+        backup::merge(&mut vault, &p, ConflictMode::Overwrite).unwrap();
+        assert!(vault.admin_key(AdminKeyRole::Backup).unwrap().is_some(), "the seed stays");
+        // A payload with the offline key and an online backup key, or the offline key as its primary: refused.
+        let mut both = p.clone();
+        both.admin_keys.push(BackupAdminKey { role: AdminKeyRole::Backup, seed: admin(3).seed(), created: now() });
+        assert!(backup::merge(&mut new_vault(&TempDir::new(), "x"), &both, ConflictMode::Overwrite).is_err());
+        let mut same = crafted_catalog();
+        same.offline_backup_key = Some(BackupOfflineKey { public: admin(1).public(), created: now() });
+        assert!(backup::merge(&mut new_vault(&TempDir::new(), "y"), &same, ConflictMode::Overwrite).is_err());
+    }
+
+    /// Replace keeps this Mac's offline backup key when the backup has no backup key of its own; a backup that
+    /// carries one (online or offline) replaces it.
+    #[test]
+    fn replace_keeps_this_macs_offline_backup_key_unless_the_backup_has_one() {
+        let setup = || {
+            let tmp = TempDir::new();
+            let mut vault = new_vault(&tmp, "v");
+            vault.save_admin_key(&admin(5), AdminKeyRole::Backup, now()).unwrap();
+            vault.take_backup_key_offline(&admin(5).public().fingerprint()).unwrap();
+            (tmp, vault)
+        };
+        let backup_key =
+            |vault: &Vault| vault.admin_keys().unwrap().into_iter().find(|k| k.role == AdminKeyRole::Backup);
+        let (_tmp, mut vault) = setup();
+        assert_eq!(backup::plan_restore(&vault, &crafted_catalog()).unwrap().lost_admin_keys, []);
+        backup::replace(&mut vault, &crafted_catalog()).unwrap();
+        let k = backup_key(&vault).unwrap();
+        assert_eq!((k.public, k.offline), (admin(5).public(), true));
+
+        let mut p = crafted_catalog();
+        p.offline_backup_key = Some(BackupOfflineKey { public: admin(2).public(), created: now() });
+        let (_tmp, mut vault) = setup();
+        assert_eq!(backup::plan_restore(&vault, &p).unwrap().lost_admin_keys, [AdminKeyRole::Backup]);
+        backup::replace(&mut vault, &p).unwrap();
+        let k = backup_key(&vault).unwrap();
+        assert_eq!((k.public, k.offline), (admin(2).public(), true));
+    }
+
+    /// "Replace everything" with a backup that has no admin keys or publications (a 1.2 backup, say) keeps the
+    /// publisher's keys and publications, like the paired clients; the subscriptions are replaced, and the plan
+    /// names what goes.
+    #[test]
+    fn replace_with_a_backup_without_catalog_data_keeps_the_publisher_side() {
+        let tmp = TempDir::new();
+        let mut vault = catalog_vault(&tmp, "a");
+        let mut p = BackupPayload::empty(now(), "1.2.0", prefs());
+        p.connections = vec![backup_connection(id(9), "Personal", "remote personal\n", None)];
+        let plan = backup::plan_restore(&vault, &p).unwrap();
+        assert_eq!(plan.lost_subscriptions, ["Acme VPN"]);
+        assert_eq!(plan.lost_admin_keys, []);
+        assert_eq!(plan.lost_publications, Vec::<String>::new());
+        backup::replace(&mut vault, &p).unwrap();
+        assert!(vault.subscriptions().unwrap().is_empty(), "the subscriptions are replaced");
+        let keys = vault.admin_keys().unwrap();
+        assert_eq!(
+            keys.iter().map(|k| (k.role, k.public)).collect::<Vec<_>>(),
+            [(AdminKeyRole::Primary, admin(1).public()), (AdminKeyRole::Backup, admin(2).public())]
+        );
+        assert!(vault.admin_key(AdminKeyRole::Primary).unwrap().is_some(), "with its seed");
+        let publications = vault.publications().unwrap();
+        assert_eq!(publications.len(), 1);
+        assert_eq!((publications[0].name.as_str(), publications[0].version), ("Published", 4));
+        // The plan is now empty of catalog losses: nothing more goes on a second replace.
+        let plan = backup::plan_restore(&vault, &p).unwrap();
+        assert!(plan.lost_subscriptions.is_empty() && plan.lost_admin_keys.is_empty());
+    }
+
+    /// A backup with its own admin keys and publications wins for that role and that catalog (a publication's
+    /// version is never lowered); what the backup does not carry stays.
+    #[test]
+    fn replace_takes_the_backups_admin_keys_and_publications_where_it_has_them() {
+        let tmp = TempDir::new();
+        let mut vault = new_vault(&tmp, "v");
+        vault.save_admin_key(&admin(3), AdminKeyRole::Primary, now()).unwrap();
+        vault.save_admin_key(&admin(5), AdminKeyRole::Backup, now()).unwrap();
+        vault.save_publication(&publication(6), Some(&team_key())).unwrap();
+        let mut other = publication(2);
+        other.catalog_id = id(0xB0C);
+        other.name = "Other".into();
+        vault.save_publication(&other, Some(&team_key())).unwrap();
+        let p = crafted_catalog();
+        let plan = backup::plan_restore(&vault, &p).unwrap();
+        assert_eq!(plan.lost_subscriptions, Vec::<String>::new());
+        assert_eq!(plan.lost_admin_keys, [AdminKeyRole::Primary]);
+        assert_eq!(plan.lost_publications, ["Published"]);
+        backup::replace(&mut vault, &p).unwrap();
+        let primary = vault.admin_keys().unwrap().into_iter().find(|k| k.role == AdminKeyRole::Primary).unwrap();
+        assert_eq!(primary.public, admin(1).public(), "the backup's primary");
+        let backup_key = vault.admin_keys().unwrap().into_iter().find(|k| k.role == AdminKeyRole::Backup).unwrap();
+        assert_eq!(backup_key.public, admin(5).public(), "the backup has none: kept");
+        let mut versions: Vec<(String, u64)> =
+            vault.publications().unwrap().into_iter().map(|p| (p.name, p.version)).collect();
+        versions.sort();
+        assert_eq!(versions, [("Other".to_string(), 2), ("Published".to_string(), 6)]);
+    }
+
+    #[test]
+    fn restore_then_reapply_recreates_the_items_with_the_user_state_attached() {
+        let tmp = TempDir::new();
+        let source = catalog_vault(&tmp, "a");
+        let p = backup::open(&sealed(&collect(&source)), PASSWORD).unwrap();
+        let alice_credential = source.credential_of(&uuid_string(&local(1))).unwrap();
+
+        let fresh = TempDir::new();
+        let mut vault = new_vault(&fresh, "b");
+        backup::replace(&mut vault, &p).unwrap();
+        let restored = vault.subscription(cat()).unwrap().unwrap();
+        assert!(restored.reapply);
+        assert_eq!(restored.applied_version, Some(3), "the rollback floor is kept");
+        assert_eq!(
+            restored.validators,
+            SourceValidators::default(),
+            "a 304 or the same content hash must not keep the items from coming back"
+        );
+        assert_eq!(vault.subscription_secrets(cat()).unwrap().1.as_deref().map(String::as_str), Some(TOKEN));
+        assert_eq!(vault.folders().unwrap().len(), 1, "only the root until the refresh");
+        assert_eq!(vault.connections().unwrap().len(), 1, "only the personal connection");
+        assert_eq!(vault.admin_keys().unwrap().len(), 2);
+        assert_eq!(vault.publications().unwrap().len(), 1);
+
+        // The next refresh applies the same version once (the service checks the floor).
+        apply(&mut vault, 3);
+        let k1 = uuid_string(&local(1));
+        let names: Vec<String> = vault.connections().unwrap().into_iter().map(|c| c.connection.name).collect();
+        assert_eq!(names, ["Personal", "Team One", "Team Two"]);
+        assert_eq!(secret(&vault, &k1, SecretField::KeyPassword).as_deref(), Some("own-keypass"));
+        assert_eq!(secret(&vault, &k1, SecretField::Psk).as_deref(), Some("team-psk"));
+        assert_eq!(vault.credential_of(&k1).unwrap(), alice_credential, "the filled slot credential again");
+        assert_eq!(
+            vault.resolved_secret(&k1, SecretField::Username).unwrap().as_deref().map(String::as_str),
+            Some("alice")
+        );
+        assert_eq!(vault.ranking().unwrap().pinned(), std::slice::from_ref(&k1));
+        let tree = vault.folder_tree().unwrap();
+        let folder = local_id(cat(), CatalogItemKind::Folder, id(50));
+        assert_eq!(tree.get(folder).unwrap().parent, Some(root_folder_id(cat())));
+        // One credential named "Team AD": the slot did not create another.
+        assert_eq!(vault.credentials().unwrap().iter().filter(|c| c.name.starts_with("Team AD")).count(), 1);
     }
 }

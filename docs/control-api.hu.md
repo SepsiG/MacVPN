@@ -168,6 +168,8 @@ Ha a sikeres `hello` előtt a `pair` és a `hello` kivételével bármilyen kér
 
 Csak azok a kapcsolatok, amelyeket ez a program használhat, a MacVPN sorrendjében. A `kind` értéke `openvpn`, `wireguard`, `strongswan`, `sstp`, `l2tp`, `cisco`, vagy `system` egy, a MacVPN-en kívül, a macOS-ben beállított VPN-nél. A `state` az [5.8](#58-állapotok) egyik állapota.
 
+**A csapatkatalógus kapcsolatai** (MacVPN 1.3) ugyanúgy jelennek meg, mint bármely más kapcsolat, a VPN-típusuknak megfelelő `kind` értékkel. Az `id` a katalógusból és az elemből képződik, így a katalógus verziói között és minden Macen ugyanaz marad, és két katalógusnak sosem lehet közös azonosítója. Ha egy kapcsolatot törölnek a katalógusból, vagy a felhasználó leiratkozik a katalógusról, a MacVPN az azonosítóját minden párosított app engedélyezett kapcsolatai közül törli; egy későbbi újrafeliratkozás sosem ad hozzáférést észrevétlenül. A törléskor fennálló kapcsolat a bontásáig a listában marad.
+
 ### 5.5 `up`
 
 ```json

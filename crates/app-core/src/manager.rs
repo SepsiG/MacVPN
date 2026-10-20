@@ -31,7 +31,7 @@ use macvpn_core::models::{
 };
 use macvpn_core::native::NativeKind;
 use macvpn_core::ranking::ConnectionRanking;
-use macvpn_core::validators::OpenVPNValidator;
+use macvpn_core::validators::{ConfigValidator, OpenVPNValidator, SSTPConfig, SSTPValidator};
 use macvpn_core::vault::{FolderNode, FolderTree, TreeEntry, order_tree};
 use serde::Serialize;
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -141,6 +141,29 @@ pub fn native_failure_reason() -> String {
 
 pub fn auth_timeout_reason() -> String {
     l10n::tr("Authentication was not completed in time", &[])
+}
+
+/// A team catalog changed a native connection's settings (spec 6): the old profile is not used, the connect offers
+/// the reinstall ("Install profile") first.
+pub fn profile_outdated_reason() -> String {
+    l10n::tr("The team catalog changed this connection: reinstall its profile", &[])
+}
+
+/// A team catalog's SSTP connection with its credential slot (spec 6, plan "Per-user fields"): the user name lives in
+/// the config's `user=` line, so the slot's user name replaces it in memory before the config goes to the root
+/// layer. The stored config is not changed. A user name the line cannot carry is refused with the validator's text,
+/// and so is a stored config with any issue: parsing and serializing it would silently drop what the validator
+/// refuses and send a config nobody validated.
+fn sstp_with_user(config: &str, username: &str) -> Result<String, String> {
+    if let Some(issue) = SSTPValidator.validate(config).into_iter().next() {
+        return Err(issue.display());
+    }
+    if let Some(error) = SSTPValidator::user_error(username) {
+        return Err(error);
+    }
+    let mut parsed = SSTPConfig::parse(config);
+    parsed.user = username.to_string();
+    Ok(parsed.serialized())
 }
 
 /// The failure reason after the user cancelled (or declined) an MFA prompt during `up`.
@@ -782,6 +805,21 @@ impl ConnectionManager {
         self.read(|i| i.status_error.clone())
     }
 
+    /// The listed service a managed native connection maps to now, with its server address, both read fresh
+    /// (`scutil --nc list` / `--nc show`): `Some(None)` when no service matches, `None` when that is unknown (the
+    /// listing failed, or more than one service has the name).
+    pub fn native_service_for(&self, c: &Connection) -> Option<Option<(String, Option<String>)>> {
+        let services = self.deps.native.list().ok()?;
+        match match_service(c, &services) {
+            NativeMatch::Service(s) => {
+                let address = self.deps.native.remote_address(&s.id);
+                Some(Some((s.id, address)))
+            }
+            NativeMatch::None => Some(None),
+            NativeMatch::Ambiguous(_) => None,
+        }
+    }
+
     pub fn installed_native_ids(&self) -> HashSet<Uuid> {
         self.read(|i| i.installed_native_ids.clone())
     }
@@ -1089,7 +1127,8 @@ impl ConnectionManager {
     // MARK: - Native service binding
 
     /// Binding: a bound but vanished ID is cleared; an unbound connection binds to the first service with its
-    /// name whose server address matches too (and that no other connection is bound to). Saved to `meta.json`.
+    /// name whose server address matches too (and that no other connection is bound to). Saved to `meta.json`
+    /// (only the binding, [`ConnectionRepository::set_native_service`], so a catalog connection keeps it too).
     fn bind_native_services(&self, services: &[SystemService]) {
         let listed: HashSet<&str> = services.iter().map(|s| s.id.as_str()).collect();
         let snapshot = self.read(|i| i.connections.clone());
@@ -1138,7 +1177,8 @@ impl ConnectionManager {
                 None => false,
             });
             if replaced {
-                let _ = self.deps.store.save(&updated, None);
+                // Only the binding: a catalog connection's other metadata is read-only.
+                let _ = self.deps.store.set_native_service(&updated.id, updated.native_service_id.as_deref());
             }
         }
     }
@@ -1442,6 +1482,9 @@ impl ConnectionManager {
     }
 
     fn connect_native(&self, c: &Connection, key: &str, token: &mut u64) -> Result<(), String> {
+        if self.deps.store.team_managed(&c.id).is_some_and(|t| t.profile_outdated) {
+            return Err(profile_outdated_reason());
+        }
         let name = c.native_service_name.clone().unwrap_or_else(|| c.name.clone());
         let services = self.deps.native.list()?;
         let service = match match_service(c, &services) {
@@ -1528,7 +1571,13 @@ impl ConnectionManager {
         {
             return Err(reason);
         }
-        let required = credentials::required_fields(c.kind, Some(&config));
+        let mut required = credentials::required_fields(c.kind, Some(&config));
+        // A team SSTP connection on its credential slot: the slot's user name goes into `user=` (asked when empty).
+        let team_sstp =
+            c.kind == VPNKind::Sstp && self.deps.secrets.credential_for(&c.id).is_some_and(|r| r.team.is_some());
+        if team_sstp {
+            required.fields.insert(CredentialField::Username);
+        }
         let mut retry = false;
         loop {
             // Credentials first (the missing ones; after a sign-in failure the user name and password again),
@@ -1548,6 +1597,10 @@ impl ConnectionManager {
                 self.abandon_connect(key, &c.name, token);
                 return Ok(());
             }
+            let sent = match typed.secrets.username.as_deref().filter(|u| team_sstp && !u.is_empty()) {
+                Some(username) => Zeroizing::new(sstp_with_user(&config, username)?),
+                None => Zeroizing::new(config.clone()),
+            };
             if !self.keep_save(key, token, typed.save) {
                 return Ok(());
             }
@@ -1563,7 +1616,8 @@ impl ConnectionManager {
             let watch = (c.kind == VPNKind::Openvpn).then(|| self.start_auth_watch(c));
             let accept_risky =
                 if c.kind == VPNKind::Openvpn { c.acknowledged_risky_directives.clone() } else { Vec::new() };
-            let up = self.deps.root.up(c.kind, &c.id, config.as_bytes(), &prepared, debug, &accept_risky);
+            let up = self.deps.root.up(c.kind, &c.id, sent.as_bytes(), &prepared, debug, &accept_risky);
+            drop(sent);
             drop(prepared);
             if let Some(watch) = watch {
                 self.stop_auth_watch(key, watch);
@@ -2202,5 +2256,28 @@ impl ConnectionManager {
             }
             AuthUIStateKind::Failed | AuthUIStateKind::Cancelled | AuthUIStateKind::Done => {}
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sstp_with_user;
+
+    const SSTP: &str = "server=vpn.example.com\nport=443\nuser=placeholder\ncert=system\nroute_all=yes\npeer_dns=yes\n";
+
+    #[test]
+    fn the_slot_user_replaces_the_user_line_of_a_valid_config() {
+        let sent = sstp_with_user(SSTP, "alice").unwrap();
+        assert!(sent.contains("user=alice\n"), "{sent}");
+        assert!(!sent.contains("placeholder"));
+    }
+
+    #[test]
+    fn an_invalid_stored_config_is_refused_not_rewritten() {
+        // Parsing and serializing would drop the line the validator refuses and send a "clean" config.
+        let stored = format!("{SSTP}plugin=/tmp/evil.so\n");
+        let e = sstp_with_user(&stored, "alice").unwrap_err();
+        assert!(e.contains("plugin"), "{e}");
+        assert!(sstp_with_user("server=\n", "alice").is_err());
     }
 }

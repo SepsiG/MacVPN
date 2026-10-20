@@ -86,7 +86,7 @@
       {busy}
       {error}
       onrestore={restore}
-      onconfirm={() => summary && run(() => backupApi.replace(summary!.lostOnReplace)).catch(console.error)}
+      onconfirm={() => summary && run(() => backupApi.replace(summary!.lostTotal)).catch(console.error)}
       oncancelconfirm={() => (confirming = false)}
       onbackupfirst={() => backupApi.showWindow('backup').catch((e) => (error = String(e)))}
       onback={back}

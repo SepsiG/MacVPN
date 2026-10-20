@@ -28,7 +28,7 @@
   const card = (name) =>
     [...document.querySelectorAll('[data-credential]')].find((c) => c.querySelector('.name')?.textContent === name);
   const openSection = async () => {
-    document.querySelector('nav .shared-credentials').click();
+    document.querySelector('nav .link-credentials').click();
     return waitFor(() => document.querySelector('.credentials-section h1'));
   };
   const vm = await invoke('get_view_model');

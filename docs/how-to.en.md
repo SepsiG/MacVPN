@@ -2,7 +2,7 @@
 
 [Magyar változat](how-to.hu.md)
 
-Short step-by-step instructions for MacVPN 1.2. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
+Short step-by-step instructions for MacVPN 1.3. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
 
 ## Contents
 
@@ -23,6 +23,10 @@ Short step-by-step instructions for MacVPN 1.2. The [user guide](user-guide.en.m
 15. [Organize connections in folders](#15-organize-connections-in-folders)
 16. [Share one sign-in between connections](#16-share-one-sign-in-between-connections)
 17. [Back up everything and restore](#17-back-up-everything-and-restore)
+18. [Subscribe to a team catalog](#18-subscribe-to-a-team-catalog)
+19. [Share connections with your team (publish a catalog)](#19-share-connections-with-your-team-publish-a-catalog)
+20. [Remove a team member's access (rotate the team key)](#20-remove-a-team-members-access-rotate-the-team-key)
+21. [Move the admin key to a new Mac](#21-move-the-admin-key-to-a-new-mac)
 
 ---
 
@@ -288,3 +292,62 @@ When you import a file that names a shared credential, MacVPN asks before linkin
 **Restore into the current vault:** menu → **Settings** → **Restore from Backup…**, open the file, read the summary, then choose **Merge** (adds what is missing; choose what happens to items that already exist) or **Replace Everything…** (deletes what is not in the backup; you can **Back Up the Current State First…**).
 
 Details: [user guide, 14](user-guide.en.md#14-backup-and-restore).
+
+## 18. Subscribe to a team catalog
+
+You need from your administrator: a subscription string (`macvpn-sub:…`), or the source, the team key and the publisher fingerprint; and, for some web servers, an access token.
+
+1. **Connections** window → **Team catalogs** in the sidebar → **Add team catalog…**.
+2. Paste the subscription string (as one line). Or enter the **Source** (an `https://` URL, or **Choose File…** on a share or in iCloud Drive, OneDrive or Dropbox), the **Team key** and the **Publisher fingerprint**.
+3. If the web server needs it, enter the **Access token**.
+4. Click **Check**. Compare the fingerprint in the preview with the one your administrator gave you by phone or in person. If it differs, stop.
+5. Click **Subscribe**. The connections appear in a folder named after the catalog, with a **Team** badge.
+6. Connect. The first time, MacVPN asks for your own user name and password for each credential slot (for example **Office AD**); tick **Save in vault**.
+
+MacVPN refreshes the catalog at launch, every 15 minutes and on wake; **Refresh now** checks at once. To leave, select the catalog and click **Unsubscribe…** (connections that are up are disconnected first). To keep a connection for yourself, use **Duplicate as personal connection…** first. Details: [user guide, 16](user-guide.en.md#16-team-catalogs).
+
+## 19. Share connections with your team (publish a catalog)
+
+**Once:**
+1. **Connections** window → **Publishing** → **Generate Admin Key**. Note the fingerprint.
+2. **Generate Backup Admin Key** → **Export Backup Key…**, a password of at least 10 characters, tick **Remove the backup key from this Mac after export**. Keep the file offline and its password elsewhere.
+
+**Publish:**
+1. **Publishing** → **Publish Catalog…**.
+2. Tick the folders and connections to share.
+3. Tick only the team secrets everyone may know (for example a shared PSK). Leave the rest unticked.
+4. Keep the credential slots ticked: members then enter their own user names and passwords.
+5. Fix anything the review lists as refused. For a WireGuard private key, tick that everyone uses the same key, or leave the connection out.
+6. Name the catalog and save `<name>.macvpncatalog`.
+7. Copy the **team key** (shown only now), keep it safe, click **I Saved It** and type the group it asks for.
+8. Put the file where the team reads it:
+   - **Web server:** upload it so it is served over `https://` with a certificate macOS trusts (optionally behind a bearer token).
+   - **File share:** copy it to the SMB or NFS share the team mounts.
+   - **Synced folder:** save it in a shared iCloud Drive, OneDrive or Dropbox folder.
+9. **Copy Subscription String…**: enter your master password and the URL or path your team will use. Send the string through a secure channel (not plain e-mail), and tell the fingerprint separately, by voice.
+
+**A new version:** edit the connections as usual, then **Publish New Version…** in **Publishing**, and save to the same place (upload it again for a web server). Members get it within 15 minutes, or at once with **Refresh now**. Details: [user guide, 16.8](user-guide.en.md#168-for-administrators-publishing-a-catalog).
+
+## 20. Remove a team member's access (rotate the team key)
+
+1. **Connections** window → **Publishing** → the catalog → **Rotate Team Key…**. Read the explanation and confirm.
+2. Confirm the file location in the save panel. The new version is published there at once (upload it again for a web server).
+3. Copy the **new team key** (shown only now), click **I Saved It** and type the group.
+4. Send the remaining members the new key (or a new subscription string from **Copy Subscription String…**) through a secure channel. They see **The team key of “…” has changed**, and enter it with **Change team key…** in **Team catalogs**.
+5. Change any team secrets that were in the catalog (for example the PSK on the server), and disable the person's account on the VPN server.
+
+The person who left keeps what they already downloaded, but cannot open any newer version. Details: [user guide, 16.9](user-guide.en.md#169-for-administrators-the-team-key-and-the-subscription-string).
+
+## 21. Move the admin key to a new Mac
+
+Your publications (each catalog's id, version and team key) are in the vault, next to the admin key. Move them together, with a full backup.
+
+1. On the old Mac: **Settings** → **Back Up Everything…** ([17](#17-back-up-everything-and-restore)).
+2. On the new Mac: install MacVPN 1.3 or later and restore the backup (**Restore from backup…** in **Set Up the Vault**).
+3. **Connections** window → **Publishing**: check that the admin key's fingerprint is the old one and that every publication is listed.
+4. Publish the next version of each catalog to the same place. Members notice nothing.
+5. Delete the backup file once you no longer need it, or keep it as safely as the admin key. On the old Mac, **Uninstall MacVPN…** with **Also delete user data (connections, the vault and its key)** ticked.
+
+**To retire the old key at the same time** (for example the old Mac goes to someone else): after step 2, **Import Admin Key…** with your `.macvpnadminkey` file, then **Switch to the Backup Key…**, publish each catalog, and generate and export a new backup key. Members who refreshed since the backup key was created follow automatically; the others must subscribe again.
+
+**Without a full backup** (the old Mac is lost): the backup key file alone does not hold the publications, so the next publish makes a new catalog. Publish the connections as a new catalog and send every member the new subscription string; they unsubscribe from the old one. If the lost Mac's vault may have been open, treat the admin key as leaked: see [user guide, 16.10](user-guide.en.md#1610-changing-the-admin-key-and-compromise).

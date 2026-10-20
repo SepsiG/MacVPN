@@ -253,6 +253,11 @@ impl SSTPValidator {
         matches(s, "^[0-9]{1,5}$") && s.parse::<i64>().is_ok_and(|n| (1..=65535).contains(&n))
     }
 
+    /// The message for a `user=` value the config cannot carry (`None`: fine). It does not quote the value.
+    pub fn user_error(value: &str) -> Option<String> {
+        Self::check("user", value)
+    }
+
     /// Checks one value; `None` = fine. The message does not quote the value.
     fn check(key: &str, value: &str) -> Option<String> {
         match key {

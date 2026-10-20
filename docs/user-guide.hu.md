@@ -2,11 +2,18 @@
 
 [English version](user-guide.en.md)
 
-A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.2-es verziót írja le (lásd: [Újdonságok az 1.2-ben](#újdonságok-az-12-ben)). A menü **Súgó** pontja ezt nyitja meg.
+A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.3-as verziót írja le (lásd: [Újdonságok az 1.3-ban](#újdonságok-az-13-ban)). A menü **Súgó** pontja ezt nyitja meg.
 
 Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útmutató a teljes referencia. Ha fejlesztőként azt szeretnéd, hogy egy másik program ezen a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait (**Párosított appok** a Kapcsolatok ablakban), olvasd el a [vezérlő API leírását](control-api.hu.md).
 
 > **Nyelv:** a MacVPN a macOS nyelvi beállítását követi (Rendszerbeállítások → Általános → Nyelv és régió, illetve az appra beállított nyelv). Magyarul és angolul érhető el; ha a preferált nyelvek között egyik sincs, angolul jelenik meg. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](user-guide.en.md) az angolokat.
+
+## Újdonságok az 1.3-ban
+
+- **Csapatkatalógusok.** A rendszergazda egy kapcsolatkészletet, a mappáival, színeivel és névvel ellátott bejelentkezési helyeivel együtt, egyetlen aláírt és titkosított fájlként tesz közzé egy webszerveren, egy fájlmegosztáson vagy egy szinkronizált mappában. Minden feliratkozott MacVPN magától átveszi az új, a módosult és a törölt kapcsolatokat, és mindenki a saját felhasználónevével és jelszavával jelentkezik be. Lásd [16.](#16-csapatkatalógusok)
+- **Rendszergazdáknak:** adminisztrátori aláírókulcs offline tartalék kulccsal, közzétételi varázsló, cserélhető csapatkulcs a csapatot elhagyók kizárására, és egy feliratkozási kód, amely mindent tartalmaz, ami egy tagnak kell. Lásd [16.7](#167-rendszergazdáknak-az-adminisztrátori-aláírókulcs).
+- **Teljes biztonsági mentés.** A mentés mostantól a katalógus-feliratkozásokat, az aláírókulcsokat és a közzétételeket is tartalmazza. Lásd [14.1](#141-mi-van-a-mentésben).
+- **Frissítés 1.2-ről:** az első indítás frissíti a széfet (a régiről másolat marad), a root réteg 8 marad, így nem kell admin jelszó. Lásd [8.3](#83-frissítés-12-ről).
 
 ## Újdonságok az 1.2-ben
 
@@ -36,7 +43,7 @@ Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útm
 5. [Csatlakozás](#5-csatlakozás)
 6. [Debug mód és a napló](#6-debug-mód-és-a-napló)
 7. [Hibaelhárítás a napló alapján](#7-hibaelhárítás-a-napló-alapján)
-8. [Frissítés](#8-frissítés) ([Frissítés 0.x verzióról](#81-frissítés-0x-verzióról), [Frissítés 1.1-ről](#82-frissítés-11-ről))
+8. [Frissítés](#8-frissítés) ([Frissítés 0.x verzióról](#81-frissítés-0x-verzióról), [Frissítés 1.1-ről](#82-frissítés-11-ről), [Frissítés 1.2-ről](#83-frissítés-12-ről))
 9. [Eltávolítás](#9-eltávolítás)
 10. [Biztonsági megjegyzések](#10-biztonsági-megjegyzések)
 11. [Széf](#11-széf)
@@ -44,6 +51,7 @@ Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útm
 13. [Közös hitelesítő adatok](#13-közös-hitelesítő-adatok)
 14. [Biztonsági mentés és visszaállítás](#14-biztonsági-mentés-és-visszaállítás)
 15. [Gyakori kérdések a széfről](#15-gyakori-kérdések-a-széfről)
+16. [Csapatkatalógusok](#16-csapatkatalógusok) ([felhasználóknak](#161-feliratkozás-egy-katalógusra), [rendszergazdáknak](#167-rendszergazdáknak-az-adminisztrátori-aláírókulcs), [biztonsági modell](#1611-biztonsági-modell))
 
 ---
 
@@ -607,6 +615,16 @@ A MacVPN 1.2 mindent egy titkosított széfbe költöztet (lásd [11.](#11-széf
 
 A **párosított appok** (vezérlő API) átkerülnek, és az átköltöztetés után is működnek.
 
+### 8.3 Frissítés 1.2-ről
+
+A MacVPN 1.3 a szokásos, appon belüli frissítés. A root réteg 8 marad, így a **Rendszerállapot** nem kér admin jelszót.
+
+- **Az első indítás frissíti a széfet.** A MacVPN 1.3 felveszi a csapatkatalógusok tábláit. Mielőtt bármit módosítana, a még titkosított régi széfről másolatot készít `vault.db.bak-v1` néven a `vault.db` mellé. Az adataidban más nem változik.
+- **Visszatérés az 1.2-re** csak írásvédetten működik: az 1.2 a frissített széfet írásvédetten nyitja meg (csatlakozni tud, de szerkeszteni nem, és mentést sem tud visszaállítani bele). A `vault.db.bak-v1` fájlt ne tedd vissza kézzel: ez nem támogatott visszaút. Ha újra szerkesztenéd a kapcsolataidat, frissíts az 1.3-ra.
+- **Keychain:** a macOS egyszer megkérdezheti, hogy a MacVPN olvashatja-e a széfkulcsot (csak bekapcsolt **Automatikus feloldás** mellett), mint minden frissítés után. Csak a MacVPN saját kérdésénél engedélyezd (lásd [8.](#8-frissítés)).
+- A **csapatkatalógusokhoz** minden közzétevő és feliratkozó Macen MacVPN 1.3 kell.
+- **Mikor törölhető a `vault.db.bak-v1`:** ha elégedett vagy az 1.3-mal (nem térsz vissza az 1.2-re, és van friss teljes mentésed, lásd [14.2](#142-teljes-biztonsági-mentés)), töröld. A frissítés előtti állapotában tartalmazza az adataidat, ugyanazzal a széfkulccsal titkosítva, így aki a széfedet meg tudja nyitni, ezt is; a MacVPN sosem frissíti és nem használja.
+
 ---
 
 ## 9. Eltávolítás
@@ -657,6 +675,8 @@ Ha a `/etc/ppp/options` fájlt az SSTP miatt a MacVPN hozta létre (ilyenkor jel
 - **Sudoers és Homebrew (ismert korlát).** A csatlakozáshoz a MacVPN egy sudoers szabállyal, jelszó nélkül futtatja rootként a `/usr/local/libexec/macvpn/mvpn` binárist, ez pedig a Homebrew eszközeit (`openvpn`, `wg-quick`, `charon`, `sstpc`). A Homebrew könyvtára (`/opt/homebrew`) a felhasználó által írható. Egy, a felhasználói fiókodban futó kártevő kicserélheti ezeket a programokat, és így rootjogot szerezhet. A configok szűrése a véletlen vagy importált veszélyes beállítások ellen véd, a fiókodon belül futó kártevő ellen nem. Egyfelhasználós, általad adminisztrált gépen ez elfogadható kockázat. Ha nem az, ne engedélyezd a root réteget, és csak L2TP / Cisco kapcsolatot használj.
 - **SSTP jelszó a parancssorban (ismert korlát).** A Homebrew `sstpc` az SSTP crypto binding kulcsait maga számolja a jelszóból, ezért csak akkor indul el, ha a jelszót a parancssorában kapja (`--password`). A MacVPN ott adja át, a naplóba soha nem írja (`***`). Az `sstpc` a saját parancssorát a beolvasás után azonnal kicsillagozza, de ebben az első pillanatban a gép más felhasználói a `ps` paranccsal láthatják a jelszót. Egyfelhasználós gépen ez elfogadható kockázat. Ha nálad nem az, ne használj SSTP-t.
 - **Párosított appok (vezérlő API).** Alapból ki van kapcsolva. Ha bekapcsolod ezt: **Más appok vezérelhetik a VPN-eket** (Kapcsolatok ablak → **Párosított appok**), a felhasználói fiókod általad párosított programjai egy privát socketen át listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket; configot és jelszót sosem látnak. A párosítás a program futtatható fájljának útvonalához kötődik, és minden művelet megjelenik a **Tevékenység** listában. Részletek és korlátok: [a vezérlő API leírása](control-api.hu.md#4-biztonsági-modell).
+- **Csapatkatalógusok (1.3).** A katalógust a rendszergazda adminisztrátori aláírókulcsa aláírja, a csapatkulcs titkosítja; a MacVPN az aláírást a rögzített ujjlenyomattal ellenőrzi, a régebbi verziókat elutasítja, és minden configot úgy ellenőriz, mint egy importnál. Hogy melyik rész mi ellen véd, és mi ellen nem: [16.11](#1611-biztonsági-modell).
+- **Nincs proxy (frissítések, csapatkatalógusok).** A MacVPN a frissítéseket és a HTTPS-es csapatkatalógusokat a rendszer `curl` programjával tölti le, kiürített környezetben, ezért a proxybeállításokat (`https_proxy`, `all_proxy`, a macOS proxybeállításai) nem használja: a frissítési szervernek és a katalógus kiszolgálójának közvetlenül elérhetőnek kell lennie. Proxybeállítás egy későbbi verzióban jöhet.
 - **A frissítés hitelessége.** A MacVPN csak olyan frissítést telepít, amely a fejlesztő offline kulcsával készült érvényes Ed25519 aláírást hordoz. A nyilvános kulcsok (egy elsődleges és egy tartalék) be vannak építve az appba; a privát kulcsok soha nincsenek a GitHubon vagy a build rendszerben. Így ha valaki át is veszi a GitHub-fiókot vagy a repót, a MacVPN-nek nem tud frissítést kiadni: az érvényes aláírás nélküli kiadást az app nem ajánlja fel, vagy **A frissítést nem a MacVPN fejlesztője írta alá** üzenettel elutasítja. Az aláírás a verzióra és a DMG azon SHA-256-jára szól, amelyet a MacVPN a letöltés után maga számol ki. **Maradék kockázat:** aki a fejlesztő aláíró kulcsát birtokolja, aláírhat frissítést.
 - **Hogyan szűkíti tovább a kockázatot az updater.**
   - A legfrissebb kiadást a repó rögzített numerikus azonosítójával kéri le a GitHubtól (`MacVPNUpdateRepoID` az app `Info.plist`-jében), nem a nevével. Ha a repót átneveznék vagy törölnék, és valaki a régi néven újat hozna létre, az app onnan nem frissülne. Az azonosító nélkül az app egyáltalán nem keres frissítést.
@@ -840,9 +860,10 @@ A kapcsolatonkénti export (lásd [4.](#4-import-és-export)) sosem tartalmaz je
 - a mappák, színek, a sorrend, a kitűzések és a használati rangsor,
 - a közös hitelesítő adatok,
 - a rendszer VPN-ek egyszer használatos kód beállításai és mappabeli helye,
-- az app beállításai: automatikus frissítéskeresés, a 24 órás késleltetés, **Indítás bejelentkezéskor**, **Más appok vezérelhetik a VPN-eket** és **Automatikus feloldás**.
+- az app beállításai: automatikus frissítéskeresés, a 24 órás késleltetés, **Indítás bejelentkezéskor**, **Más appok vezérelhetik a VPN-eket** és **Automatikus feloldás**,
+- az 1.3-tól: a **csapatkatalógus-feliratkozásaid** (forrás, csapatkulcs, hozzáférési token, a rögzített közzétevői kulcs és a legutóbb alkalmazott verzió), az **adminisztrátori aláírókulcsaid** és a **közzétételeid** a csapatkulcsaikkal. Maguk a katalógus kapcsolatai és mappái nincsenek a mentésben: visszaállítás után a következő frissítés visszahozza őket a forrásból, a kitöltött közös belépési adatok helyeivel, a kitűzésekkel és a sorrenddel együtt. Egyetlen visszaállítás, sem az összefésülés, sem a **Minden cseréje**, nem csökkenti egy ezen a Macen már követett katalógus legutóbb alkalmazott verzióját, így a visszaléptetés elleni védelem tovább működik.
 
-Nincs benne: a **párosított appok** (ezen a Macen lévő programútvonalakhoz kötődnek: visszaállítás után párosítsd őket újra), a széfkulcs és a helyreállítási kulcs, valamint a naplók.
+Az aláírókulcsot tartalmazó mentéssel katalógust lehet aláírni a csapatodnak: úgy védd, mint magát az aláírókulcsot. Nincs benne: a **párosított appok** (ezen a Macen lévő programútvonalakhoz kötődnek: visszaállítás után párosítsd őket újra), a széfkulcs és a helyreállítási kulcs, valamint a naplók.
 
 ### 14.2 Teljes biztonsági mentés
 
@@ -856,7 +877,7 @@ Nincs benne: a **párosított appok** (ezen a Macen lévő programútvonalakhoz 
 
 ### 14.3 Visszaállítás új Macen
 
-1. Telepítsd a MacVPN 1.2-t vagy újabbat, és indítsd el.
+1. Telepítsd a MacVPN-t, és indítsd el. Az 1.2 készítette mentéshez 1.2 vagy újabb kell; az 1.3-as mentéshez 1.3 vagy újabb (az 1.2 elutasítja, mert újabb MacVPN készítette).
 2. A **Széf beállítása** ablakban kattints a **Visszaállítás biztonsági mentésből…** gombra. (Ehhez új, üres széf kell.)
 3. **Fájl kiválasztása…**, add meg **A mentés jelszava** mezőt, és kattints a **Mentés megnyitása** gombra.
 4. Válassz új mesterjelszót ehhez a Machez, és mentsd el az új helyreállítási kulcsot, ahogy a [11.1](#111-mesterjelszó-és-helyreállítási-kulcs) leírja.
@@ -868,8 +889,10 @@ Nincs benne: a **párosított appok** (ezen a Macen lévő programútvonalakhoz 
 2. **Fájl kiválasztása…**, **A mentés jelszava**, **Mentés megnyitása**. Hibás jelszónál vagy sérült fájlnál egyetlen üzenet jön: **A mentés nem nyitható meg. Hibás a jelszó, vagy sérült a fájl.**
 3. Az összesítő megmutatja, mikor és melyik verzió készítette (**Készült: …, MacVPN 1.2.0**), és hány **Kapcsolatok**, **Mappák** és **Közös hitelesítő adatok** tétel van benne. Elöl felsorolja azokat a kapcsolatokat, amelyeknél kockázatos OpenVPN-beállítások (például rootként futó szkriptek) vannak jóváhagyva: csak saját készítésű mentést állíts vissza.
 4. Válassz:
-   - **Összefésülés**: hozzáadja, ami itt hiányzik. A már létező elemekre egyszer, mindegyikre érvényesen döntesz (**Ha egy elem már létezik:**): **Felülírás a mentésben lévő példánnyal**, **Az itt lévő elem megtartása**, vagy **Mindkettő megtartása (a mentésből származó másolat neve „(backup)” végződést kap)**. Az összefésülés elveti a visszaállított kapcsolatok kockázatos beállításainak jóváhagyását, hacsak ugyanez a kapcsolat ugyanezzel a configgal már nincs itt; ilyenkor a szerkesztő újra rákérdez.
+   - **Összefésülés**: hozzáadja, ami itt hiányzik. A már létező elemekre egyszer, mindegyikre érvényesen döntesz (**Ha egy elem már létezik:**): **Felülírás a mentésben lévő példánnyal**, **Az itt lévő elem megtartása**, vagy **Mindkettő megtartása (a mentésből származó másolat neve „(backup)” végződést kap)**. Az összefésülés elveti a visszaállított kapcsolatok kockázatos beállításainak jóváhagyását, hacsak ugyanez a kapcsolat ugyanezzel a configgal már nincs itt; ilyenkor a szerkesztő újra rákérdez. Az összefésülés sosem módosítja egy csapatkatalógus kapcsolatait vagy mappáit: az azonos azonosítójú mentett elemet (egy 1.3-as széfről az 1.2 által készített mentés közönséges elemként tartalmazza őket) minden módban kihagyja, és az eredmény megnevezi.
    - **Minden cseréje**: előbb kiüríti a széfet. Egy megerősítés megmondja, hány kapcsolat, mappa és közös hitelesítő adat törlődik; **Ez nem vonható vissza.** Az **Előbb a jelenlegi állapot mentése…** gomb a folytatás előtt elmenti a mostani állapotot. A párosított appok maradnak. A csere megtartja a jóváhagyásokat.
+     - A **csapatkatalógus-feliratkozások** helyére a mentésben lévők kerülnek. A megerősítés megnevezi az itteni, a mentésben nem szereplő feliratkozásokat: ezek a kapcsolataikkal és mappáikkal együtt törlődnek. A mindkettőben meglévő katalógus a magasabb alkalmazott verziót tartja meg.
+     - Az **aláírókulcsok és a közzétételek** ehhez a Machez tartoznak, mint a párosított appok: az a szerep (elsődleges vagy tartalék kulcs) vagy katalógus, amelyhez a mentésben nincs semmi, megtartja az itteni kulcsot vagy közzétételt (az 1.2-es mentésben egyik sincs, így mind megmarad). Ahol a mentésnek saját van, az kerül a helyére, és a megerősítés megszámolja a lecserélt kulcsokat és megnevezi a lecserélt közzétételeket. Egy közzététel verziója sosem csökken.
 5. **A mentés visszaállítva.**
 
 Ha bármi hibára fut: **A visszaállítás nem sikerült. Semmi sem változott.** Azt a mentést is elutasítja, amelynek mappái kört alkotnának az itteni mappákkal.
@@ -921,3 +944,165 @@ Egy újabb után egy régebbi MacVPN-t indítottál. Telepítsd a legújabb verz
 
 **Hogyan távolítok el mindent?**
 A **MacVPN eltávolítása…** ablakban jelöld be **A felhasználói adatok törlése is** négyzetet: ez törli a széfet, a Keychainben lévő széfkulcsot és az 1.1-ből megmaradt Keychain-elemeket ([9.](#9-eltávolítás)). A `.macvpnbackup` fájlokat töröld magad.
+
+---
+
+## 16. Csapatkatalógusok
+
+A **csapatkatalógus** VPN-kapcsolatokat oszt meg egy csapattal. A közzétevő (a rendszergazda) egyszer közzétesz egy kapcsolatkészletet, a mappáikkal, színeikkel és névvel ellátott bejelentkezési helyekkel együtt. A csapattagok MacVPN-je feliratkozik rá, és magától átveszi az új, a módosult és a törölt kapcsolatokat. Mindenki megtartja a saját felhasználónevét, jelszavát és egyszer használatos kódjának titkát, valamint a saját kitűzéseit, sorrendjét és csukott mappáit.
+
+- A katalógus egyetlen fájl, `<név>.macvpncatalog`. A rendszergazda **adminisztrátori aláírókulcsa** **aláírja**, a **csapatkulcs** pedig **titkosítja**.
+- A MacVPN semmit nem tölt fel. A rendszergazda a fájlt egy HTTPS-es webszerverre, egy fájlmegosztásra vagy egy szinkronizált mappába teszi, és a tagok onnan olvassák.
+- Minden csapattagnak MacVPN 1.3 vagy újabb kell.
+- Több katalógus is használható egyszerre, és ugyanazon a Macen közzé is tehetsz, és fel is iratkozhatsz.
+
+Amit a tag a rendszergazdától kap: a **forrás** (egy `https://` cím vagy egy fájl útvonala), a **csapatkulcs** (`TEAM-`, utána 14 darab 4 karakteres csoport) és a **közzétevő ujjlenyomata** (8 darab 4 hexadecimális jegyből álló csoport). A **feliratkozási kód** (`macvpn-sub:…`) mindhármat egy sorban tartalmazza.
+
+### 16.1 Feliratkozás egy katalógusra
+
+1. Nyisd meg a **Kapcsolatok** ablakot, és az oldalsávban válaszd a **Csapatkatalógusok** részt. Kattints a **Csapatkatalógus hozzáadása…** gombra.
+2. Illeszd be a rendszergazdától kapott **feliratkozási kódot**. Ez kitölti a forrást és az ujjlenyomatot; a csapatkulcsot ellenőrzi, és rejtve tartja. Feliratkozási kód nélkül töltsd ki magad a mezőket:
+   - **Forrás:** egy `https://` cím, vagy **Fájl** és **Fájl kiválasztása…** egy megosztáson vagy szinkronizált mappában (iCloud Drive, OneDrive, Dropbox) lévő fájlhoz.
+   - **Csapatkulcs:** `TEAM-XXXX-…`. A kis- és nagybetű, a kötőjel és a szóköz nem számít; az `O` `0`-nak, az `I` és az `L` `1`-nek számít. Az utolsó csoport ellenőrző csoport, így az elírás már beíráskor kiderül, és szinte sosem téveszthető össze egy rossz kulccsal.
+   - **A közzétevő ujjlenyomata:** 8 darab 4 karakteres csoport. Kötelező: a MacVPN nélküle sosem bízik meg az első letöltésben.
+3. **Hozzáférési token** (nem kötelező, csak HTTPS-nél): ha a webszerver bearer tokent kér, itt add meg. Nincs benne a feliratkozási kódban, mert a token gyakran személyes; kérd el a rendszergazdától.
+4. Kattints az **Ellenőrzés** gombra. A MacVPN letölti a katalógust, a megadott ujjlenyomattal ellenőrzi az aláírását, és a csapatkulccsal megnyitja. Az előnézet mutatja a katalógus nevét, verzióját és ujjlenyomatát, a kapcsolatok és mappák számát, a közös belépési adatok helyeit (lásd [16.3](#163-közös-belépési-adatok-helyei)), és hogy hány kapcsolatban van kockázatos beállítás.
+5. **Hasonlítsd össze az ujjlenyomatot** azzal, amit a rendszergazda egy másik csatornán, például telefonon mondott. Ha eltér, ne iratkozz fel.
+6. Jelöld be **Az ujjlenyomat egyezik azzal, amit a rendszergazda küldött** négyzetet, és kattints a **Feliratkozás** gombra. A katalógus kapcsolatai azonnal megjelennek, és a **Csapatkatalógusok** rész mutatja az új feliratkozást. A **Mégse** vagy a **Vissza** eldobja a letöltött előnézetet.
+
+Ha egy levelezőprogram több sorba törte a feliratkozási kódot, a MacVPN elutasítja: másold ki újra egy sorban. Az előnézet 10 perc után lejár (**A katalógus előnézete lejárt. Add hozzá újra a katalógust.**). Egy már meglévő katalógusnál: **Erre a katalógusra már feliratkoztál.**
+
+**Források.**
+- **HTTPS:** csak `https://`, a macOS megbízható tanúsítványaival ellenőrizve. Átirányítást csak `https://` címre követ, legfeljebb ötöt. A hozzáférési tokent csak a feliratkozási cím saját hostjának és portjának küldi el, átirányítás után más hostnak soha. **Proxy nem támogatott:** a MacVPN a rendszer `curl` programjával, kiürített környezetben tölt le, ezért a `https_proxy`, az `all_proxy` és a macOS proxybeállításai nem érvényesek; a katalógus kiszolgálójának közvetlenül elérhetőnek kell lennie.
+- **Fájl:** egy csatolt hálózati megosztáson (SMB, NFS) vagy szinkronizált mappában lévő útvonal. Maga a fájl nem lehet szimbolikus link, szabályos fájlnak kell lennie, legfeljebb 8 MB-osnak. A nem csatolt megosztás, vagy egy éppen le nem tölthető felhőbeli fájl **nem elérhető** állapotot jelent, nem hibát (lásd [16.6](#166-hibaelhárítás-felhasználóknak)).
+
+### 16.2 A katalógus kapcsolatai
+
+- Minden katalógusnak saját, legfelső szintű mappája van a katalógus nevével és **Csapat** jelvénnyel, a menüben és a Kapcsolatok ablakban is. Benne vannak a közzétevő mappái és színei.
+- **Csak olvasható:** a név, a config, a mappa és a közzétevő színe. A szerkesztő kiírja: **A(z) „Acme VPN” csapatkatalógus kezeli**, és a mezői le vannak tiltva.
+- **Amit te állíthatsz:** csatlakozás és bontás, kitűzés és sorrend, mappák csukása, egy kapcsolat saját színe (**A csapat színének használata** visszaállítja a közzétevőét), és a kockázatos beállítások jelölője (a szerkesztőben csak ezt mented). A felhasználóneved és a jelszavad a katalógus közös belépési adatának helyéből jön (lásd [16.3](#163-közös-belépési-adatok-helyei)), ezt a **Hitelesítő adatok** részben módosíthatod. A katalógus kapcsolatai és mappái nem nevezhetők át, nem helyezhetők át, nem húzhatók és nem törölhetők; a helyi menüjük csak a **Kitűzés** / **Kitűzés megszüntetése**, a **Szín…**, a **Másolat saját kapcsolatként…** és – ha a katalógus megváltoztatott egy natív kapcsolatot – a **Profil telepítése** pontot kínálja.
+- **Kockázatos beállításokat** (lásd [7.7](#77-nem-engedélyezett-direktíva--tiltott-direktíva)) a katalógus sosem hagy jóvá: a szerkesztő sárga paneljén te jelölöd be őket. Ha egy új katalógusverzió megváltoztatja a configot, újra rákérdez.
+- Az **L2TP és Cisco IPsec** kapcsolatokhoz a szokásos módon kell a macOS profil (**Profil telepítése**, majd jóváhagyás a Rendszerbeállításokban). Ha a katalógus módosít egy ilyen kapcsolatot, a kapcsolat részleteiben ez áll: **A csapatkatalógus megváltoztatta ezt a kapcsolatot: telepítsd újra a profilját**, és a csatlakozás az új profil telepítéséig nem indul. Kattints a **Profil telepítése** gombra, és hagyd jóvá a Rendszerbeállításokban. A jelzés eltűnik, amint a macOS mutatja az új profilt. Ha csak a csoportnév vagy a **Minden forgalom a VPN-en keresztül** változott, a macOS nem mutat különbséget: a profil jóváhagyása után kattints a **Telepítettem** gombra, és erősítsd meg. Csak a jóváhagyás után erősítsd meg: ha még a régi profil van telepítve, a kapcsolat a katalógus által már lecserélt beállításokat használná.
+- A **párosított appok** (vezérlő API) a katalógus kapcsolatait ugyanúgy látják, mint a többit; kapcsolatonként engedélyezed őket, mint az [5.4](#54-párosított-appok-vezérlő-api) részben. A katalógus egy kapcsolatának azonosítója a verziók között nem változik.
+- A **Másolat saját kapcsolatként…** (a kapcsolat részleteiben vagy helyi menüjében) önálló, szerkeszthető másolatot készít a legfelső szinten, „<név> (saját)” néven, ha nem írsz mást. A másolat megtartja a configot, a saját és a katalógus által adott titkokat, és ugyanazt a közös hitelesítő adatot. A kockázatos beállítások jóváhagyása üresen indul. A másolat a tiéd: a későbbi katalógusverziók nem módosítják.
+
+### 16.3 Közös belépési adatok helyei
+
+A **közös belépési adat helye** egy névvel ellátott bejelentkezés, például „Office AD”, amelyet a katalógus felhasználónév és jelszó nélkül használ. Minden tag a sajátjával tölti ki.
+
+- A katalógus első alkalmazásakor a MacVPN minden helyhez létrehoz egy üres **közös hitelesítő adatot** (lásd [13.](#13-közös-hitelesítő-adatok)) a hely nevével. Ha már van ilyen nevű hitelesítő adatod, az új a katalógus nevét kapja utótagként, például „Office AD (Acme VPN)”. A hely sosem kapcsolódik magától egy meglévő hitelesítő adatodhoz.
+- Az első csatlakozáskor a bekérő ablak ezt kérdezi: **Office AD („Acme VPN” csapatkatalógus) — add meg a felhasználóneved és a jelszavad**. A **Mentés a széfbe** jelölővel ebbe a közös hitelesítő adatba kerülnek, és a katalógus többi, ugyanezt a helyet használó kapcsolata már kérdés nélkül csatlakozik. A felhasználóneved és a jelszavad a széfedben marad: sosem jut el a rendszergazdához vagy a katalógusba.
+- Az **SSTP** kapcsolatok a config `user=` sora helyett a hely felhasználónevét használják, az **L2TP / Cisco** kapcsolatok pedig fióknévként. A tárolt config nem változik.
+- A felhasználónevet és a jelszót később a **Hitelesítő adatok** részben módosíthatod, mint bármely közös hitelesítő adatot. Az a kapcsolat, amelynek már van saját mentett felhasználóneve és jelszava, nem kapcsolódik a helyhez.
+
+### 16.4 Frissítés és változások
+
+A MacVPN minden katalógust ellenőriz:
+
+- induláskor és a széf feloldásakor (zárolt széf mellett semmit),
+- 15 percenként,
+- amikor a Mac felébred alvásból,
+- amikor a **Csapatkatalógusok** részben a **Frissítés most** gombra kattintasz.
+
+Ha egy forrás tartósan hibás, a MacVPN egyre ritkábban próbálkozik: 1, 2, 4, 8, 16, 32 perc múlva, utána óránként (egy kis véletlen késleltetéssel). Az ébredés és a **Frissítés most** mindig azonnal próbálkozik. Ha a HTTPS-szerveren nem változott a fájl, a szerver „nem módosult” választ ad; a fájlforrást a MacVPN beolvassa, és összeveti a legutóbb alkalmazottal.
+
+Az új verzió egyetlen lépésben kerül alkalmazásra: vagy minden, vagy semmi. Egy értesítés felsorolja a változásokat, például: **A(z) „Acme VPN” csapatkatalógus frissült: 2 hozzáadva, 3 módosítva, 1 eltávolítva**.
+
+- Az a kapcsolat, amely a változáskor **fennáll**, fennmarad azokkal a beállításokkal, amelyekkel elindult. Az új configot a következő csatlakozástól használja.
+- Az a kapcsolat, amely a katalógusból való törléskor **fennáll**, fennmarad, átkerül a katalógus legfelső mappájába, és ez áll mellette: **Törölve a csapatkatalógusból — a bontás után eltűnik**. A bontás után törlődik, a kitűzésével és a sorrendbeli helyével együtt.
+- Ugyanaz a verzió újra feltöltve semmit nem változtat, és nem ad értesítést.
+
+A **Csapatkatalógusok** rész minden feliratkozásnál mutatja a forrást (HTTPS-címnél a lekérdezési rész nélkül), az állapotot, a verziót, a legutóbbi frissítést, a közzétevő ujjlenyomatát és a legutóbbi hibát.
+
+### 16.5 Feliratkozás módosítása és leiratkozás
+
+- A feliratkozás részleteiben a **Csapatkulcs cseréje…** (ha a rendszergazda lecserélte), a **Hozzáférési token cseréje…** és a **Forrás szerkesztése…** található. Ha az új forrás másik hoston vagy porton van, vagy fájl, a tárolt hozzáférési token törlődik: a token sosem megy új címre. Ha az új cím tokent kér, add meg.
+- A **Leiratkozás…** megnevezi a katalógust, és hogy hány kapcsolatot töröl. A fennálló kapcsolatokat előbb bontja. Utána a katalógus minden kapcsolata és mappája törlődik, és a párosított appok elveszítik hozzájuk a hozzáférést. A kitöltött közös belépési adatok helyei közönséges közös hitelesítő adatként megmaradnak a **Hitelesítő adatok** részben; az üresek törlődnek.
+- Ha egy kapcsolatot a leiratkozás után is meg akarsz tartani, előbb készíts róla másolatot (**Másolat saját kapcsolatként…**).
+
+### 16.6 Hibaelhárítás felhasználóknak
+
+- **A katalógust más kulcs írta alá, mint amelynek az ujjlenyomatát megadtad.** (feliratkozáskor): a fájlt nem az a kulcs írta alá, amelyet a rendszergazda adott. Ellenőrizd az ujjlenyomatot a rendszergazdával telefonon. Soha ne „javítsd” úgy, hogy a fájlban lévő ujjlenyomatot írod be.
+- **A csapatkatalógust más közzétevő írta alá, mint akiben megbízol.** (frissítéskor): a forrásban lévő fájlt olyan kulcs írta alá, amelyben a MacVPN-ed nem bízik. Vagy valaki más tett oda egy fájlt, vagy a rendszergazda úgy cserélt kulcsot, hogy a bejelentés nem jutott el hozzád (lásd [16.10](#1610-az-aláírókulcs-cseréje-és-a-kompromittálódás)). Kérdezd meg a rendszergazdát; lehet, hogy le kell iratkoznod, és az új ujjlenyomattal újra fel kell iratkoznod.
+- **A csapatkatalógus aláírása érvénytelen: módosították.**: a fájlt az aláírás után módosították, vagy megsérült. A kapcsolatok változatlanok maradnak. Kérd meg a rendszergazdát, hogy tegye közzé újra.
+- **A(z) „Acme VPN” csapatkulcsa megváltozott. Kérd el a rendszergazdától az új kulcsot.** (értesítés; az állapot: **A csapatkulcs nem nyitja meg ezt a katalógust (hibás, vagy lecserélték).**): a rendszergazda lecserélte a csapatkulcsot. Kérd el az új kulcsot biztonságos csatornán, majd **Csapatkulcs cseréje…** és **Frissítés most**. Addig a katalógus kapcsolatai változatlanok maradnak.
+- **A(z) „Acme VPN” csapatkatalógus régebbi verziót kínált (v3 a v5 után), ezért nem lett alkalmazva.**: a forrásban régebbi verzió van, mint ami nálad már megvan. Ez a visszaléptetés elleni védelem (lásd [16.11](#1611-biztonsági-modell)): egy régi példány került vissza a szerverre (szervermentés visszaállítása, szinkronizálási ütközés), vagy valaki régi beállításokat próbál visszahozni. A kapcsolataid nem változtak. Szólj a rendszergazdának; egy új verzió közzététele megoldja.
+- **A csapatkatalógus forrása nem érhető el (…).**: a megosztás nincs csatolva, a szerver vagy a hálózat nem működik, vagy egy felhőbeli fájl éppen nem tölthető le. Erről nincs hibaértesítés; a MacVPN a [16.4](#164-frissítés-és-változások) szerinti, egyre ritkább próbálkozással újra megpróbálja. Csatold a megosztást, vagy töltsd le a fájlt a Finderben, majd kattints a **Frissítés most** gombra.
+- **A csapatkatalógus nem olvasható: hozzáférés megtagadva (ellenőrizd a hozzáférési tokent)**: a HTTPS-szerver elutasította a kérést (HTTP 401 vagy 403). A **Hozzáférési token cseréje…** gombbal add meg az érvényes tokent. Ha épp most állítottad át a forrást másik hostra, a token szándékosan törlődött (lásd [16.5](#165-feliratkozás-módosítása-és-leiratkozás)): add meg újra.
+- **… a tanúsítvány nem megbízható**: a szerver tanúsítványában a macOS nem bízik meg. Szólj a szerver üzemeltetőjének; a MacVPN-ben nincs lehetőség az ellenőrzés kihagyására.
+- **… átirányítás nem HTTPS-címre**: a szerver `http://` címre irányít át. A katalógust végig HTTPS-en kell kiszolgálni.
+- **A forrás egy másik csapatkatalógust tartalmaz.**: a forrásban lévő fájl egy másik katalógus. Ellenőrizd a forrást a rendszergazdával.
+- **A csapatkatalógust újabb MacVPN készítette.**: frissítsd a MacVPN-t.
+- **A csapatkatalógus olyan kapcsolatot tartalmaz, amelyet a MacVPN nem tud használni.**: a katalógus egyik kapcsolata nem megy át a MacVPN ellenőrzésén. Semmi nem lett alkalmazva; szólj a rendszergazdának.
+- **Proxy mögött:** proxy nem támogatott (lásd [16.1](#161-feliratkozás-egy-katalógusra)). A katalógus kiszolgálójának közvetlenül elérhetőnek kell lennie, vagy a katalógusnak fájlmegosztáson kell lennie.
+
+### 16.7 Rendszergazdáknak: az adminisztrátori aláírókulcs
+
+A közzétételhez **adminisztrátori aláírókulcs** kell: egy Ed25519 aláírókulcs a széfedben. Az **ujjlenyomatát** veti össze a csapat feliratkozáskor.
+
+1. **Kapcsolatok** ablak → **Közzététel** → **Adminisztrátori aláírókulcs létrehozása**. Az ujjlenyomat 8 csoportban jelenik meg; a **Másolás** kimásolja.
+2. **Tartalék aláírókulcs létrehozása**, majd **Tartalék kulcs exportálása…**: válaszd ki a `.macvpnadminkey` fájl helyét, és adj meg (kétszer) egy legalább 10 karakteres jelszót. Jelöld be ezt: **A tartalék kulcs törlése erről a Macről az export után**: így a tartalék kulcs csak abban a fájlban lesz meg. A fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol (például jelszókezelőben).
+
+Minden közzétett katalógus a fájl aláírt részében bejelenti a tartalék kulcsot a jelenlegi kulcs **utódjaként**. A frissítő feliratkozók eltárolják a bejelentést. Amikor átváltasz a tartalék kulcsra, elfogadják az általa aláírt katalógusokat, és a régi kulcsot többé nem fogadják el.
+
+**Váltás a tartalék kulcsra** (tervezett kulcscsere):
+1. Azon a Macen, amelyről ezután közzéteszel: **Közzététel** → **Aláírókulcs importálása…**, válaszd ki a `.macvpnadminkey` fájlt, és add meg a jelszavát. Ezen a Macen a közzétételeidnek (minden katalógus azonosítójának, verziójának és csapatkulcsának) is meg kell lenniük: ezek a széfben vannak, nem a kulcsfájlban, ezért ugyanazt a széfet használd, vagy előbb állíts vissza egy teljes biztonsági mentést. Nélkülük a következő közzététel új katalógust hoz létre, amelyre minden tagnak újra fel kell iratkoznia.
+2. **Váltás a tartalék kulcsra…**: a tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a Macről.
+3. Tedd közzé minden katalógus új verzióját. Azok a feliratkozók, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást. A többieknek az új ujjlenyomattal újra fel kell iratkozniuk.
+4. Hozz létre és exportálj egy új tartalék kulcsot, hogy a következő csere is elő legyen készítve.
+
+Az aláírókulcsok, a közzétételeid és azok csapatkulcsai a széf részei, így a teljes biztonsági mentés ([14.](#14-biztonsági-mentés-és-visszaállítás)) is tartalmazza őket. A mentéseket ugyanúgy védd, mint magát az aláírókulcsot.
+
+### 16.8 Rendszergazdáknak: katalógus közzététele
+
+A **Közzététel** → **Katalógus közzététele…** megnyitja a varázslót:
+
+1. **Kapcsolatok.** Jelöld be a mappákat és a kapcsolatokat. A bejelölt mappa a teljes tartalmát viszi; az a kapcsolat, amelynek a mappája nincs bejelölve, a katalógus legfelső szintjére kerül. Rendszer VPN-t és más katalógusból származó kapcsolatot nem lehet közzétenni.
+2. **Titkok.** A kiválasztott kapcsolatok minden tárolt PSK-ja és kulcsjelszava, egyik sincs bejelölve. Csak azokat a csapattitkokat jelöld be, amelyeket mindenki ismerhet, például egy közös L2TP PSK-t; bejelöléskor ez jelenik meg: **Mindenki, akinél megvan a csapatkulcs, elolvashatja ezt a titkot**. A configba írt titkok is egyenként, külön jelöléssel szerepelnek: a WireGuard `PresharedKey`, valamint az OpenVPN `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>` és `<secret>` blokkja.
+3. **Közös belépési adatok helyei.** A kiválasztott kapcsolatok által használt közös hitelesítő adatok, bejelölve, **felhasználónév és jelszó nélkül**: csak a név és egy azonosító kerül a katalógusba. Hely nélkül minden tagtól az adott kapcsolat bejelentkezését külön kérdezi.
+4. **Áttekintés.**
+   - Felsorolja azokat a kapcsolatokat, amelyeket a MacVPN nem hajlandó közzétenni; ezeket előbb javítsd. Elutasított: az inline `<auth-user-pass>` vagy `<http-proxy-user-pass>` blokkot tartalmazó OpenVPN config, a `secrets` részt tartalmazó strongSwan config (a katalógus sosem visz felhasználói jelszót; használj helyette közös belépési adat helyet), és a hibás config.
+   - Felsorolja a személyes mezőket: az SSTP `user=` sora (a tagok csatlakozásakor a hely felhasználóneve váltja fel), az OpenVPN inline `<key>` vagy `<pkcs12>` blokkja, és a WireGuard `PrivateKey`. A WireGuard privát kulcshoz külön jelölés kell: **A katalógus minden felhasználója ugyanazt a WireGuard kulcsot használja**: a szerver ekkor mindenkit ugyanannak a peernek lát. Az L2TP / Cisco kapcsolatok fiókneve sosem kerül közzétételre.
+5. **Név és fájl.** Új katalógusnál egy név, és a `<név>.macvpncatalog` mentési helye. **A MacVPN semmit nem tölt fel: a fájlt te tedd a webszerveredre vagy a megosztásra.**
+6. **Kész.** Az N. verzió elkészült. A verziószám minden közzétételnél eggyel nő. Új katalógusnál a **csapatkulcs csak egyszer jelenik meg**: **Másold** ki, tartsd biztonságban, kattints az **Elmentettem** gombra, és írd be a kért csoportot. Utána **Feliratkozási kód másolása…** (lásd [16.9](#169-rendszergazdáknak-a-csapatkulcs-és-a-feliratkozási-kód)).
+
+**Hová tedd a fájlt?** Mindig ugyanoda tedd közzé, hogy a tagok forrása érvényes maradjon.
+- **Webszerver:** `https://`-en szolgáld ki, a macOS által elfogadott tanúsítvánnyal. Az `ETag` vagy `Last-Modified` fejléc mellett a MacVPN kihagyja a változatlan letöltéseket. Hozzáférési token (`Authorization: Bearer …`) nem kötelező; a tagok a **Csapatkatalógus hozzáadása…** ablakban adják meg.
+- **Fájlmegosztás (SMB, NFS):** a tagok csatolják a megosztást, és kiválasztják a fájlt. A fájlt egészében cseréld (a MacVPN így írja, ha közvetlenül oda mented).
+- **Szinkronizált mappa (iCloud Drive, OneDrive, Dropbox):** a tagok a saját szinkronizált mappájukban választják ki a fájlt. A csak online elérhető fájlt a MacVPN olvasáskor letölti. Ha egy szinkronizálási ütközés régebbi példányt hoz vissza, a tagoknál megjelenik a régebbi verzióra figyelmeztető üzenet; egy újabb közzététel megoldja.
+
+A fájl mások számára is olvasható (`644`), mert kiszolgálásra készül; alá van írva és titkosítva van.
+
+**A közzététel után.** A közzétett kapcsolatok a te Maceden közönséges, szerkeszthető kapcsolatok maradnak. Mellettük ez áll: **Közzétéve: „Acme VPN” (v12)**, módosítás után pedig: **módosult a legutóbbi közzététel óta**. A **Közzététel** rész minden közzétételt felsorol a verziójával, a legutóbbi közzététel idejével, a fájllal és a módosult kapcsolatok számával; a gombok: **Új verzió közzététele…** (a varázsló a mentett kiválasztással), **Csapatkulcs cseréje…**, **Feliratkozási kód másolása…** és **Elfelejtés…**. A csere előtt átnézett közzététel kell: ha a legutóbbi közzététel óta kapcsolatok módosultak, a MacVPN helyette az **Új verzió közzététele…** gombot kínálja.
+
+### 16.9 Rendszergazdáknak: a csapatkulcs és a feliratkozási kód
+
+- A **csapatkulcs** 256 véletlen bit, a katalógus első közzétételekor készül. **Csak egyszer jelenik meg.** A MacVPN a széfedben tartja a későbbi verziók közzétételéhez, de többé nem mutatja.
+- A **Feliratkozási kód másolása…** kéri a **mesterjelszavadat** és azt a forrást, amelyet a csapat használni fog (a címet, vagy az útvonalat úgy, ahogy a tagok Macjén látszik). A `macvpn-sub:…` kódot megjelenítés nélkül a vágólapra teszi. A kód tartalmazza a csapatkulcsot: csak biztonságos csatornán küldd el (jelszókezelő megosztott tárolója, végponttól végpontig titkosított üzenetküldő), sima e-mailben soha. Az ujjlenyomatot külön mondd meg a tagoknak, lehetőleg szóban, hogy össze tudják vetni. A hozzáférési token nincs a kódban.
+- **Csapatkulcs cseréje…** (annak kizárására, aki elhagyta a csapatot): új csapatkulcs készül, és a MacVPN azonnal közzéteszi a következő verzióként a legutóbbi fájlhelyre (a mentési ablakban erősítsd meg). Az új kulcs egyszer jelenik meg. Küldd el (vagy egy új feliratkozási kódot) a maradó tagoknak; ők a **Csapatkulcs cseréje…** gombbal adják meg. **A csapatkulcs cseréje az egyetlen módja annak, hogy valakitől visszavond a hozzáférést egy olyan katalógushoz, amely már nála van.** Aki távozott, megtartja, amit már letöltött, a benne lévő csapattitkokkal együtt: ezeket a titkokat (például a szerveren a PSK-t) és a szerveroldali fiókját is változtasd meg.
+
+### 16.10 Az aláírókulcs cseréje és a kompromittálódás
+
+- A **váltás a tartalék kulcsra** ([16.7](#167-rendszergazdáknak-az-adminisztrátori-aláírókulcs)) tervezett kulcscsere. **Nem helyreállítás kompromittálódás után:** akinek kiszivárgott aláírókulcs van a kezében, a saját utódkulcsát is bejelentheti, és olyan új verziókat írhat alá, amelyeket a tagjaid elfogadnak.
+- **Ha az aláírókulcs kiszivároghatott** (ellopott Mac zárolatlan széffel, kiszivárgott mentés a jelszavával, exportált kulcsfájl a jelszavával):
+  1. Hozz létre új adminisztrátori aláírókulcsot egy megbízható Macen, és tedd közzé a kapcsolatokat **új katalógusként** (új néven, így új katalógusazonosítóval és új csapatkulccsal).
+  2. Töröld a régi katalógusfájlt a webszerverről vagy a megosztásról, hogy ott senki ne tehessen közzé a régi feliratkozásnak.
+  3. Küldd el minden tagnak az új feliratkozási kódot és az új ujjlenyomatot megbízható csatornán. Ők a **Leiratkozás…** gombbal leiratkoznak a régi katalógusról, és feliratkoznak az újra.
+  4. Változtasd meg a régi katalógusban lévő csapattitkokat.
+  Amíg a tagok le nem iratkoznak, a régi kulcs birtokosa aláírhat nekik verziókat, ha a forrásban lévő fájlt is tudja írni. A kapcsolatoknak ekkor is át kell menniük a MacVPN ellenőrzésén, és minden kockázatos beállításhoz kell a tagok saját jóváhagyása.
+- **Ha csak a csapatkulcs szivárgott ki:** cseréld le ([16.9](#169-rendszergazdáknak-a-csapatkulcs-és-a-feliratkozási-kód)).
+
+### 16.11 Biztonsági modell
+
+- **Aláírás (adminisztrátori aláírókulcs, Ed25519).** Minden katalógus alá van írva. A MacVPN először az aláírást ellenőrzi, azzal a közzétevői kulccsal, amelyet az ujjlenyomattal rögzítettél, és csak utána fejt vissza vagy használ bármit.
+  - *Véd:* a módosítás ellen bárkitől, akinek nincs meg az aláírókulcs, azoktól is, akiknél megvan a csapatkulcs, vagy akik írhatják a webszervert vagy a megosztást.
+  - *Nem véd:* kiszivárgott aláírókulcs ellen, és az ellen, hogy a rendszergazda rossz dolgot tesz közzé. Úgy bízz a rendszergazdában, mint egy tőle kapott config fájlban.
+- **Titkosítás (csapatkulcs, XChaCha20-Poly1305).** A tartalom (kapcsolatok, configok, mappák, a helyek nevei, csapattitkok) a csapatkulccsal titkosított. A kulcs véletlen, nem jelszó, így nem található ki.
+  - *Véd:* az ellen, hogy valaki csapatkulcs nélkül elolvassa a katalógust egy kiszivárgott fájlból, webszervernaplóból vagy megosztásról.
+  - *Nem véd:* azok ellen, akiknél megvan a csapatkulcs, a csere előtt távozott tagot is beleértve. Ők mindent elolvashatnak a katalógusban, a bejelölt csapattitkokat is. A katalógus azonosítója, neve, verziója, létrehozási ideje, a közzétevő kulcsa és az utódkulcs nyilvános fele a titkosítatlan fejlécben van, és a fájl mérete is látszik.
+- **Visszaléptetés elleni védelem (verziószám).** Minden feliratkozás megjegyzi a legutóbb alkalmazott verziót. Alacsonyabb verziót figyelmeztetéssel elutasít, ugyanazt a verziót figyelmen kívül hagyja.
+  - *Véd:* az ellen, hogy valaki egy régebbi aláírt verziót tegyen vissza, például egy olyat, amelyben még benne van egy törölt szerver vagy egy lecserélt csapattitok.
+  - *Nem véd:* az ellen, hogy a forrás egyszerűen nem mutat új verziót; az állapot a legutóbbi sikeres frissítést mutatja, így egy tag észreveheti. A feliratkozási kód megnevezheti a katalógust és a legalacsonyabb elfogadható verziót, így az első letöltés is kötött.
+- **Ellenőrzés, mint importnál.** A katalógus minden configja ugyanazokon a validátorokon megy át, mint egy import, és a kockázatos beállításokhoz minden tag saját jóváhagyása kell. A katalógus nem vihet felhasználói jelszót, és a root rétegben semmi nem változik.
+- **A titkaid.** A csapatkulcs és a hozzáférési token a széfben van, és a teljes mentésben (annak jelszavával lezárva, lásd [14.](#14-biztonsági-mentés-és-visszaállítás)); sosem kerülnek naplóba. A feliratkozási kódot a MacVPN sosem tárolja és nem mutatja: a **Feliratkozási kód másolása…** a vágólapra teszi úgy megjelölve, hogy a vágólapkezelők kihagyják, és az univerzális vágólap ne küldje át a többi eszközödre, majd 60 másodperc után, a **Széf zárolása most** parancsnál és kilépéskor törli (hacsak közben mást nem másoltál). A csapatkulcs **Másolás** gombja ugyanígy működik. A hozzáférési token a `curl` szabványos bemenetén megy, sosem a parancssorán, és sosem más hostra. A saját felhasználóneved és jelszavad sosem hagyja el a széfedet.
+- **Párosított appok.** Egy katalóguskapcsolat törlése vagy a leiratkozás minden párosított app engedélyezett kapcsolatai közül törli, így egy későbbi újrafeliratkozás sosem ad hozzáférést észrevétlenül egy appnak.

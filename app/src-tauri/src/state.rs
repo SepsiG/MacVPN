@@ -82,11 +82,17 @@ pub struct AppState {
     pub vault: crate::vault::VaultApp,
     /// The full backup and restore (once the vault is attached).
     pub backup: crate::backup::BackupApp,
+    /// The team catalogs: the subscriptions, the publishing side, the refresh scheduler.
+    pub catalog: crate::catalog::CatalogApp,
 }
 
 impl AppState {
-    /// Quitting: the status poller, the live reload and the watcher stop.
+    /// Quitting: the status poller, the live reload, the watcher and the team catalog scheduler stop (the
+    /// scheduler is joined).
     pub fn stop_polling(&self) {
+        self.catalog.stop_scheduler();
+        // A copied recovery key, team key or subscription string leaves the pasteboard (if still there).
+        crate::clipboard::clear_secret();
         self.poller.stop();
         self.live.stop();
         if let Some(watcher) = self.watcher.lock().unwrap_or_else(PoisonError::into_inner).take() {
@@ -136,6 +142,8 @@ impl AppState {
         vm.credential_prompts = self.credential_broker.pending();
         vm.credentials = self.connections.credentials_view();
         vm.backup_available = self.backup.available();
+        // The team catalogs, their badges and the publishing side (empty while locked).
+        self.catalog.fill(&mut vm);
         // Last: while locked (or before the vault exists) the rows and paired apps are removed again.
         let (vault, setup) = self.vault.view(self.prefs.bool(crate::vault::SHOW_LOCK_NOW_KEY).unwrap_or(false));
         vm.apply_vault(vault);

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-publication-copy-subscription"
+description = "Enables the publication_copy_subscription command without any pre-configured scope."
+commands.allow = ["publication_copy_subscription"]
+
+[[permission]]
+identifier = "deny-publication-copy-subscription"
+description = "Denies the publication_copy_subscription command without any pre-configured scope."
+commands.deny = ["publication_copy_subscription"]

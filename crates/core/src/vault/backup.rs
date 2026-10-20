@@ -17,8 +17,9 @@
 //!                 AAD = the 64 header bytes), the 16-byte tag last
 //! ```
 //!
-//! The key derivation and the AEAD are the vault's own ([`derive_kek`], with its floor), under a lower ceiling of
-//! its own ([`MAX_KDF`]: 256 MiB, 64 passes, 4 lanes), checked before the KDF runs, so a crafted header cannot make
+//! The container is shared with the admin key file (`vault/sealed.rs`). The key derivation and the AEAD are the
+//! vault's own (`derive_kek`, with its floor), under a lower ceiling of its own ([`MAX_KDF`]: 256 MiB, 64 passes,
+//! 4 lanes), checked before the KDF runs, so a crafted header cannot make
 //! the app allocate a gigabyte or spin for minutes. Even within the ceiling the KDF takes seconds: the app calls
 //! [`open`] (and [`seal`]) off the main thread (plan B Task 21). Opening fails with one generic
 //! [`BackupError::CannotOpen`] for a wrong password, any damaged byte, a truncated file, an unknown KDF or
@@ -39,17 +40,34 @@
 //! right size, the intermediate `serde_json::Value` trees are wiped before they are dropped, and the config and the
 //! secret values are base64 inside the JSON (so the parser never copies them into its unescaping scratch buffer).
 //! Nothing here writes a temporary file; [`write_backup`] writes only the sealed bytes.
+//!
+//! **Team catalogs (payload v2, 1.3):** the subscriptions (with their team keys, bearer tokens, publisher keys
+//! and slot bindings), the admin signing keys and the publications (with their team keys). The catalog-owned
+//! connections and folders are left out, because they come back from the source, but the user's own secrets for
+//! them (in `systemSecrets`, by their local id, without the secrets the catalog provides), their links, pins and
+//! ranking are kept. A restored subscription gets `reapply = true` and keeps its `applied_version` as the rollback
+//! floor: the next refresh applies the same version once and re-creates the items under the same deterministic
+//! ids, so the restored secrets, pins and links attach again. A merge never lowers an applied or published version.
 
 use super::color::FolderColor;
 use super::db::{Vault, VaultError};
 use super::entropy::Entropy;
-use super::keys::{KdfParams, derive_kek};
+use super::keys::KdfParams;
+use super::repo_catalog::{
+    AdminKeyRole, PublicationRecord, SourceValidators, SubscriptionRecord, check_catalog_name, delete_offline_backup,
+    offline_backup_in, provided_of, publication_from_value, publication_in, publication_value, record_from_value,
+    record_value, set_offline_backup, source_of, subscription_in, valid_bearer_token,
+};
 use super::repo_connections::wiped_bytes_opt;
 use super::repo_credentials::{
     MAX_CREDENTIAL_NAME_CHARACTERS, check_item, check_password, check_username, validate_credential_name,
 };
 use super::repo_misc::SystemItem;
+use super::sealed::{self, SealedError};
 use super::tree::{FolderNode, FolderTree, MAX_FOLDER_NAME_CHARACTERS, validate_folder_name};
+use super::wiped_json::{WipedValue, to_wiped_vec};
+use crate::catalog::ids::root_folder_id;
+use crate::catalog::keys::{AdminKey, PublisherKey, TeamKey};
 use crate::date::Date;
 use crate::exporter;
 use crate::mfa;
@@ -58,34 +76,29 @@ use crate::ranking::ConnectionRanking;
 use crate::swift_json;
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
-use chacha20poly1305::aead::AeadInOut;
-use chacha20poly1305::{KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use rusqlite::OptionalExtension;
 use rusqlite::types::ValueRef;
 use serde_json::{Map, Value};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt;
-use std::fs::OpenOptions;
-use std::io::{self, Read};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use uuid::Uuid;
-use zeroize::{Zeroize, Zeroizing};
+use zeroize::Zeroizing;
 
 pub const MAGIC: &[u8; 8] = b"MVPNBKUP";
 /// The container format this build writes and reads.
 pub const FORMAT: u16 = 1;
 /// The payload schema this build writes; older ones are migrated on open.
-pub const PAYLOAD_VERSION: u32 = 1;
-pub const HEADER_LEN: usize = 64;
+pub const PAYLOAD_VERSION: u32 = 2;
+pub const HEADER_LEN: usize = sealed::HEADER_LEN;
 /// The largest payload (the serialized JSON) sealed or opened.
 pub const MAX_PLAINTEXT_BYTES: usize = 64 * 1024 * 1024;
 /// The largest backup file read or written: the header, [`MAX_PLAINTEXT_BYTES`] and the tag.
 pub const MAX_BACKUP_BYTES: usize = HEADER_LEN + MAX_PLAINTEXT_BYTES + TAG_LEN;
 /// The KDF ceiling of a backup header (below the vault's own): a header above it cannot be opened, before the KDF
 /// runs. [`seal`] refuses parameters above it.
-pub const MAX_KDF: KdfParams = KdfParams { m_kib: 256 * 1024, t: 64, p: 4 };
+pub const MAX_KDF: KdfParams = sealed::MAX_KDF;
 /// The most entries of each collection in a payload (connections, folders, credentials, links, pins, usage
 /// entries, system items, system secrets, system OTP settings).
 pub const MAX_ITEMS: usize = 10_000;
@@ -96,10 +109,7 @@ const MAX_APP_VERSION_BYTES: usize = 64;
 /// The file name extension (`MacVPN-backup-<YYYY-MM-DD>.macvpnbackup`).
 pub const EXTENSION: &str = "macvpnbackup";
 
-const KDF_ARGON2ID: u8 = 1;
-const SALT_LEN: usize = 16;
-const NONCE_LEN: usize = 24;
-const TAG_LEN: usize = 16;
+const TAG_LEN: usize = sealed::TAG_LEN;
 const BACKUP_SUFFIX: &str = "backup";
 
 /// Why a backup could not be written or read. No variant carries a password or payload contents.
@@ -144,6 +154,9 @@ pub enum Collection {
     SystemItems,
     SystemSecrets,
     SystemOtp,
+    Subscriptions,
+    AdminKeys,
+    Publications,
 }
 
 /// Why a payload is refused ([`validate`]). Carries no value from the payload.
@@ -171,6 +184,16 @@ pub enum InvalidBackup {
     Secret,
     /// The `appVersion` is over 64 bytes or has a control character.
     AppVersion,
+    /// A team catalog subscription or publication whose name is not a valid catalog name in its stored form.
+    CatalogName,
+    /// A team catalog source that is not an `https://` URL or an absolute file path by the source rules.
+    CatalogSource,
+    /// A bearer token that is not an RFC 6750 `b64token` of 1 to 4096 bytes.
+    BearerToken,
+    /// More than one admin key for a role, a damaged admin key, or two subscriptions or publications with one id.
+    AdminKeys,
+    /// A publication version of 0.
+    PublicationVersion,
 }
 
 impl fmt::Display for InvalidBackup {
@@ -186,6 +209,11 @@ impl fmt::Display for InvalidBackup {
             InvalidBackup::ItemId => "an invalid item id",
             InvalidBackup::Secret => "an invalid secret",
             InvalidBackup::AppVersion => "an invalid app version",
+            InvalidBackup::CatalogName => "an invalid team catalog name",
+            InvalidBackup::CatalogSource => "an invalid team catalog source",
+            InvalidBackup::BearerToken => "an invalid access token",
+            InvalidBackup::AdminKeys => "invalid admin keys",
+            InvalidBackup::PublicationVersion => "an invalid publication version",
         };
         write!(f, "the backup cannot be restored: it has {what}")
     }
@@ -242,6 +270,98 @@ impl fmt::Debug for BackupCredential {
     }
 }
 
+/// A team catalog subscription (plan Task 8): its record, its secrets and its slot bindings
+/// (slot id, slot name, the shared credential that holds the user's login).
+pub struct BackupSubscription {
+    pub record: SubscriptionRecord,
+    pub team_key: TeamKey,
+    pub bearer: Option<Zeroizing<String>>,
+    pub slots: Vec<(Uuid, String, Option<Uuid>)>,
+}
+
+impl Clone for BackupSubscription {
+    fn clone(&self) -> Self {
+        BackupSubscription {
+            record: self.record.clone(),
+            team_key: copy_team_key(&self.team_key),
+            bearer: self.bearer.clone(),
+            slots: self.slots.clone(),
+        }
+    }
+}
+
+impl PartialEq for BackupSubscription {
+    fn eq(&self, other: &Self) -> bool {
+        self.record == other.record
+            && self.team_key.as_bytes() == other.team_key.as_bytes()
+            && self.bearer == other.bearer
+            && self.slots == other.slots
+    }
+}
+
+impl fmt::Debug for BackupSubscription {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BackupSubscription")
+            .field("record", &self.record)
+            .field("has_bearer", &self.bearer.is_some())
+            .field("slots", &self.slots)
+            .finish_non_exhaustive()
+    }
+}
+
+/// An admin signing key (spec 7: "exported as part of the encrypted full backup").
+#[derive(Clone, PartialEq)]
+pub struct BackupAdminKey {
+    pub role: AdminKeyRole,
+    pub seed: Zeroizing<[u8; 32]>,
+    pub created: Date,
+}
+
+impl fmt::Debug for BackupAdminKey {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BackupAdminKey")
+            .field("role", &self.role)
+            .field("created", &self.created)
+            .finish_non_exhaustive()
+    }
+}
+
+/// The public half of a backup admin key taken offline (spec 7): it has no seed here, but every new version still
+/// announces it as the successor, so a restore must bring the announcement back (payload v2, an additive field).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct BackupOfflineKey {
+    pub public: PublisherKey,
+    pub created: Date,
+}
+
+/// A publication with its team key.
+pub struct BackupPublication {
+    pub record: PublicationRecord,
+    pub team_key: TeamKey,
+}
+
+impl Clone for BackupPublication {
+    fn clone(&self) -> Self {
+        BackupPublication { record: self.record.clone(), team_key: copy_team_key(&self.team_key) }
+    }
+}
+
+impl PartialEq for BackupPublication {
+    fn eq(&self, other: &Self) -> bool {
+        self.record == other.record && self.team_key.as_bytes() == other.team_key.as_bytes()
+    }
+}
+
+impl fmt::Debug for BackupPublication {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("BackupPublication").field("record", &self.record).finish_non_exhaustive()
+    }
+}
+
+fn copy_team_key(key: &TeamKey) -> TeamKey {
+    TeamKey::from_bytes(key.as_bytes()).expect("a team key is 32 bytes")
+}
+
 /// The app preferences carried in a backup (spec 3b); the app reads and applies them (Task 21).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct BackupPreferences {
@@ -275,6 +395,15 @@ pub struct BackupPayload {
     /// Usage and pins.
     pub ranking: ConnectionRanking,
     pub preferences: BackupPreferences,
+    /// Team catalog subscriptions, sorted by catalog id (payload v2).
+    pub subscriptions: Vec<BackupSubscription>,
+    /// Admin signing keys, primary first (payload v2).
+    pub admin_keys: Vec<BackupAdminKey>,
+    /// The backup admin key taken offline, if any: its public half only (payload v2, `offlineBackupAdminKey`;
+    /// absent in a payload made before it existed).
+    pub offline_backup_key: Option<BackupOfflineKey>,
+    /// Publications, sorted by catalog id (payload v2).
+    pub publications: Vec<BackupPublication>,
 }
 
 impl fmt::Debug for BackupPayload {
@@ -292,6 +421,10 @@ impl fmt::Debug for BackupPayload {
             .field("system_otp", &self.system_otp)
             .field("ranking", &self.ranking)
             .field("preferences", &self.preferences)
+            .field("subscriptions", &self.subscriptions)
+            .field("admin_keys", &self.admin_keys)
+            .field("offline_backup_key", &self.offline_backup_key)
+            .field("publications", &self.publications)
             .finish()
     }
 }
@@ -312,6 +445,10 @@ impl BackupPayload {
             system_otp: HashMap::new(),
             ranking: ConnectionRanking::default(),
             preferences,
+            subscriptions: Vec::new(),
+            admin_keys: Vec::new(),
+            offline_backup_key: None,
+            publications: Vec::new(),
         }
     }
 
@@ -333,9 +470,23 @@ pub fn collect(
 ) -> Result<BackupPayload, VaultError> {
     let conn = vault.connection();
     let mut secrets = all_secrets(conn)?;
+    // Catalog-owned rows come back from their source: left out, but their own secrets stay (by local id) without
+    // the ones the catalog provides.
+    let owned = catalog_owned(conn)?;
+    for (item, provided) in &owned {
+        if let Some(fields) = secrets.get_mut(item) {
+            fields.retain(|(f, _)| !provided.contains(f));
+            if fields.is_empty() {
+                secrets.remove(item);
+            }
+        }
+    }
     let mut connections = Vec::new();
     {
-        let mut stmt = conn.prepare("SELECT meta_json, config, folder_id, color, position FROM connections")?;
+        let mut stmt = conn.prepare(
+            "SELECT meta_json, config, folder_id, color, position FROM connections
+             WHERE id NOT IN (SELECT local_id FROM catalog_items)",
+        )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
             let meta: String = row.get(0)?;
@@ -363,6 +514,7 @@ pub fn collect(
     });
 
     let mut folders = vault.folders()?;
+    folders.retain(|f| !owned.contains_key(&uuid_string(&f.id)));
     folders.sort_by_key(|f| uuid_string(&f.id));
 
     let mut credentials = Vec::new();
@@ -415,7 +567,69 @@ pub fn collect(
         system_otp: vault.system_otp_map()?,
         ranking: vault.ranking()?,
         preferences: prefs,
+        subscriptions: collect_subscriptions(vault)?,
+        admin_keys: collect_admin_keys(conn)?,
+        offline_backup_key: offline_backup_in(conn)?.map(|k| BackupOfflineKey { public: k.public, created: k.created }),
+        publications: collect_publications(vault)?,
     })
+}
+
+/// Every catalog-owned row (connections, folders, roots) with the secret fields the catalog provides.
+fn catalog_owned(conn: &rusqlite::Connection) -> Result<HashMap<String, Vec<SecretField>>, VaultError> {
+    let mut stmt = conn.prepare("SELECT local_id, provided_secrets FROM catalog_items")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+    let mut out = HashMap::new();
+    for row in rows {
+        let (id, provided) = row?;
+        out.insert(id, provided_of(&provided).into_iter().collect());
+    }
+    Ok(out)
+}
+
+fn collect_subscriptions(vault: &Vault) -> Result<Vec<BackupSubscription>, VaultError> {
+    let mut out = Vec::new();
+    for record in vault.subscriptions()? {
+        let (team_key, bearer) = vault.subscription_secrets(record.catalog_id)?;
+        let local = vault.local_catalog(record.catalog_id)?;
+        let slots = local.slots.into_iter().map(|(slot, (name, credential))| (slot, name, credential)).collect();
+        out.push(BackupSubscription { record, team_key, bearer, slots });
+    }
+    out.sort_by_key(|s| s.record.catalog_id);
+    Ok(out)
+}
+
+fn collect_admin_keys(conn: &rusqlite::Connection) -> Result<Vec<BackupAdminKey>, VaultError> {
+    let mut stmt = conn.prepare("SELECT role, seed, created FROM catalog_admin_keys")?;
+    let mut rows = stmt.query([])?;
+    let damaged = || VaultError::Corrupt("a stored admin key is damaged".into());
+    let mut out = Vec::new();
+    while let Some(row) = rows.next()? {
+        let role: String = row.get(0)?;
+        let seed = wiped_bytes_opt(row, 1)?.ok_or_else(damaged)?;
+        if seed.len() != 32 {
+            return Err(damaged());
+        }
+        let mut bytes = Zeroizing::new([0u8; 32]);
+        bytes.copy_from_slice(&seed);
+        let created: String = row.get(2)?;
+        out.push(BackupAdminKey {
+            role: AdminKeyRole::parse(&role).ok_or_else(damaged)?,
+            seed: bytes,
+            created: Date::parse_iso8601(&created).ok_or_else(damaged)?,
+        });
+    }
+    out.sort_by_key(|k| k.role);
+    Ok(out)
+}
+
+fn collect_publications(vault: &Vault) -> Result<Vec<BackupPublication>, VaultError> {
+    let mut out = Vec::new();
+    for record in vault.publications()? {
+        let team_key = vault.publication_team_key(record.catalog_id)?;
+        out.push(BackupPublication { record, team_key });
+    }
+    out.sort_by_key(|p| p.record.catalog_id);
+    Ok(out)
 }
 
 /// Every stored secret by item, each item's fields in [`SecretField::ALL`] order.
@@ -486,6 +700,24 @@ pub fn seal_unchecked(
     seal_payload(payload, password, kdf, e)
 }
 
+/// The payload's JSON, as [`seal`] would encrypt it. Test builds only (to craft payloads the typed
+/// [`BackupPayload`] cannot hold).
+#[cfg(feature = "test-support")]
+pub fn payload_json(payload: &BackupPayload) -> Result<Zeroizing<Vec<u8>>, BackupError> {
+    encode_payload(payload)
+}
+
+/// Seals raw payload JSON without any check. Test builds only.
+#[cfg(feature = "test-support")]
+pub fn seal_json_unchecked(
+    json: &[u8],
+    password: &str,
+    kdf: KdfParams,
+    e: &dyn Entropy,
+) -> Result<Vec<u8>, BackupError> {
+    sealed::seal_with_password(MAGIC, FORMAT, json, password, kdf, e).map_err(sealed_error)
+}
+
 fn within_ceiling(kdf: KdfParams) -> bool {
     kdf.m_kib <= MAX_KDF.m_kib && kdf.t <= MAX_KDF.t && kdf.p <= MAX_KDF.p
 }
@@ -496,67 +728,31 @@ fn seal_payload(
     kdf: KdfParams,
     e: &dyn Entropy,
 ) -> Result<Vec<u8>, BackupError> {
-    let kdf = kdf.strengthened();
-    if !within_ceiling(kdf) {
+    if !within_ceiling(kdf.strengthened()) {
         return Err(BackupError::Io("the key derivation parameters are above the backup ceiling".into()));
     }
-    let mut plaintext = encode_payload(payload)?;
+    let plaintext = encode_payload(payload)?;
     if plaintext.len() > MAX_PLAINTEXT_BYTES {
         return Err(BackupError::TooLarge);
     }
-    let mut salt = [0u8; SALT_LEN];
-    let mut nonce = [0u8; NONCE_LEN];
-    e.fill(&mut salt).map_err(io_error)?;
-    e.fill(&mut nonce).map_err(io_error)?;
-    let header = header(kdf, &salt, &nonce);
-    let key = derive_kek(password.as_bytes(), &salt, kdf).map_err(|e| BackupError::Io(e.to_string()))?;
-    let cipher = XChaCha20Poly1305::new_from_slice(&key[..]).map_err(|_| BackupError::Io("invalid key".into()))?;
-    let tag = cipher
-        .encrypt_inout_detached(&XNonce::from(nonce), &header, (&mut plaintext[..]).into())
-        .map_err(|_| BackupError::Io("encryption failed".into()))?;
-    // `plaintext` now holds the ciphertext.
-    let mut out = Vec::with_capacity(HEADER_LEN + plaintext.len() + TAG_LEN);
-    out.extend_from_slice(&header);
-    out.extend_from_slice(&plaintext);
-    out.extend_from_slice(&tag);
-    Ok(out)
+    sealed::seal_with_password(MAGIC, FORMAT, &plaintext, password, kdf, e).map_err(sealed_error)
+}
+
+/// The container's errors as the backup's own.
+fn sealed_error(e: SealedError) -> BackupError {
+    match e {
+        SealedError::CannotOpen => BackupError::CannotOpen,
+        SealedError::NewerVersion(v) => BackupError::NewerVersion(v),
+        SealedError::TooLarge => BackupError::TooLarge,
+        SealedError::Io(message) => BackupError::Io(message),
+    }
 }
 
 /// Opens a sealed backup (see the module docs for the errors) and [`validate`]s the payload. Runs the KDF (up to
 /// [`MAX_KDF`], seconds): the app calls it off the main thread.
 pub fn open(bytes: &[u8], password: &str) -> Result<BackupPayload, BackupError> {
-    if bytes.len() > MAX_BACKUP_BYTES {
-        return Err(BackupError::TooLarge);
-    }
-    if bytes.len() < HEADER_LEN + TAG_LEN || &bytes[..8] != MAGIC {
-        return Err(BackupError::CannotOpen);
-    }
-    let format = u16::from_be_bytes([bytes[8], bytes[9]]);
-    if format > FORMAT {
-        return Err(BackupError::NewerVersion(format));
-    }
-    if format != FORMAT || bytes[10] != KDF_ARGON2ID || bytes[11] != 0 {
-        return Err(BackupError::CannotOpen);
-    }
-    let word = |at: usize| u32::from_be_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]);
-    let kdf = KdfParams { m_kib: word(12), t: word(16), p: word(20) };
-    let mut salt = [0u8; SALT_LEN];
-    salt.copy_from_slice(&bytes[24..40]);
-    let mut nonce = [0u8; NONCE_LEN];
-    nonce.copy_from_slice(&bytes[40..HEADER_LEN]);
-    let (header, rest) = bytes.split_at(HEADER_LEN);
-    let (ciphertext, tag) = rest.split_at(rest.len() - TAG_LEN);
-    // Above the backup ceiling: refused before the KDF runs. Below the vault's floor: refused by `derive_kek`.
-    if !within_ceiling(kdf) {
-        return Err(BackupError::CannotOpen);
-    }
-    let key = derive_kek(password.as_bytes(), &salt, kdf).map_err(|_| BackupError::CannotOpen)?;
-    let cipher = XChaCha20Poly1305::new_from_slice(&key[..]).map_err(|_| BackupError::CannotOpen)?;
-    let tag = Tag::try_from(tag).map_err(|_| BackupError::CannotOpen)?;
-    let mut plaintext = Zeroizing::new(ciphertext.to_vec());
-    cipher
-        .decrypt_inout_detached(&XNonce::from(nonce), header, (&mut plaintext[..]).into(), &tag)
-        .map_err(|_| BackupError::CannotOpen)?;
+    let plaintext =
+        sealed::open_with_password(bytes, MAGIC, FORMAT, password, MAX_BACKUP_BYTES).map_err(sealed_error)?;
     let payload = decode_payload(&plaintext)?;
     validate(&payload).map_err(BackupError::Invalid)?;
     Ok(payload)
@@ -566,25 +762,10 @@ pub fn open(bytes: &[u8], password: &str) -> Result<BackupPayload, BackupError> 
 /// (`O_NONBLOCK`), only a regular file, and at most [`MAX_BACKUP_BYTES`] (read through `take`, so a file that grows
 /// while it is read cannot exhaust memory). The app reads backups only through this, never with `fs::read`.
 pub fn read_backup_file(path: &Path) -> Result<Vec<u8>, BackupError> {
-    let cannot_read = || BackupError::Io(crate::l10n::tr("Cannot read the file", &[]));
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
-        .map_err(|_| cannot_read())?;
-    let meta = file.metadata().map_err(|_| cannot_read())?;
-    if !meta.file_type().is_file() {
-        return Err(cannot_read());
-    }
-    if meta.len() > MAX_BACKUP_BYTES as u64 {
-        return Err(BackupError::TooLarge);
-    }
-    let mut bytes = Vec::new();
-    file.take(MAX_BACKUP_BYTES as u64 + 1).read_to_end(&mut bytes).map_err(|_| cannot_read())?;
-    if bytes.len() > MAX_BACKUP_BYTES {
-        return Err(BackupError::TooLarge);
-    }
-    Ok(bytes)
+    sealed::read_sealed_file(path, MAX_BACKUP_BYTES).map_err(|e| match e {
+        sealed::ReadError::TooLarge => BackupError::TooLarge,
+        sealed::ReadError::CannotRead => BackupError::Io(crate::l10n::tr("Cannot read the file", &[])),
+    })
 }
 
 /// Writes the sealed bytes atomically (a temp file in the same directory, `O_EXCL | O_NOFOLLOW`, 0600, fsync,
@@ -596,57 +777,7 @@ pub fn write_backup(path: &Path, bytes: &[u8]) -> Result<(), BackupError> {
     exporter::write(bytes, path).map_err(|e| BackupError::Io(e.message))
 }
 
-fn header(kdf: KdfParams, salt: &[u8; SALT_LEN], nonce: &[u8; NONCE_LEN]) -> [u8; HEADER_LEN] {
-    let mut h = [0u8; HEADER_LEN];
-    h[..8].copy_from_slice(MAGIC);
-    h[8..10].copy_from_slice(&FORMAT.to_be_bytes());
-    h[10] = KDF_ARGON2ID;
-    h[11] = 0;
-    h[12..16].copy_from_slice(&kdf.m_kib.to_be_bytes());
-    h[16..20].copy_from_slice(&kdf.t.to_be_bytes());
-    h[20..24].copy_from_slice(&kdf.p.to_be_bytes());
-    h[24..40].copy_from_slice(salt);
-    h[40..HEADER_LEN].copy_from_slice(nonce);
-    h
-}
-
-fn io_error(e: io::Error) -> BackupError {
-    BackupError::Io(e.to_string())
-}
-
 // MARK: - the payload JSON
-
-/// A JSON tree whose strings are wiped when it is dropped.
-struct WipedValue(Value);
-
-impl Drop for WipedValue {
-    fn drop(&mut self) {
-        fn wipe(v: &mut Value) {
-            match v {
-                Value::String(s) => s.zeroize(),
-                Value::Array(items) => items.iter_mut().for_each(wipe),
-                Value::Object(map) => map.values_mut().for_each(wipe),
-                _ => {}
-            }
-        }
-        wipe(&mut self.0);
-    }
-}
-
-/// Counts the bytes a serialization would take, so the real one goes into a buffer that never reallocates (a
-/// reallocation would leave an unwiped copy behind).
-struct Counter(usize);
-
-impl io::Write for Counter {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0 += buf.len();
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
 
 fn secret_b64(value: &str) -> Value {
     Value::String(BASE64.encode(value.as_bytes()))
@@ -662,6 +793,30 @@ fn opt<T>(value: Option<T>, f: impl FnOnce(T) -> Value) -> Value {
 
 fn secrets_value(secrets: &ItemSecrets) -> Value {
     Value::Object(secrets.iter().map(|(field, value)| (field.raw_value().to_string(), secret_b64(value))).collect())
+}
+
+fn subscription_value(s: &BackupSubscription) -> Result<Value, BackupError> {
+    let r = &s.record;
+    let mut m = Map::new();
+    m.insert("catalogId".into(), uuid_value(&r.catalog_id));
+    m.insert("record".into(), record_value(r).map_err(|e| BackupError::Io(e.to_string()))?);
+    m.insert("teamKey".into(), Value::String(BASE64.encode(s.team_key.as_bytes())));
+    m.insert("bearer".into(), opt(s.bearer.as_deref(), |b| secret_b64(b)));
+    m.insert("publisherKey".into(), opt(r.publisher_key, |k| Value::String(BASE64.encode(k.as_bytes()))));
+    m.insert("successorKey".into(), opt(r.successor_key, |k| Value::String(BASE64.encode(k.as_bytes()))));
+    let slots = s
+        .slots
+        .iter()
+        .map(|(slot, name, credential)| {
+            let mut m = Map::new();
+            m.insert("slot".into(), uuid_value(slot));
+            m.insert("name".into(), Value::String(name.clone()));
+            m.insert("credential".into(), opt(credential.as_ref(), uuid_value));
+            Value::Object(m)
+        })
+        .collect();
+    m.insert("slots".into(), Value::Array(slots));
+    Ok(Value::Object(m))
 }
 
 fn encode_payload(p: &BackupPayload) -> Result<Zeroizing<Vec<u8>>, BackupError> {
@@ -756,20 +911,63 @@ fn encode_payload(p: &BackupPayload) -> Result<Zeroizing<Vec<u8>>, BackupError> 
     m.insert("controlApiEnabled".into(), Value::Bool(prefs.control_api_enabled));
     m.insert("autoUnlock".into(), Value::Bool(prefs.auto_unlock));
     root.insert("preferences".into(), Value::Object(m));
+    root.insert(
+        "subscriptions".into(),
+        Value::Array(p.subscriptions.iter().map(subscription_value).collect::<Result<_, _>>()?),
+    );
+    let admin_keys = p
+        .admin_keys
+        .iter()
+        .map(|k| {
+            let mut m = Map::new();
+            m.insert("role".into(), Value::String(k.role.as_str().into()));
+            m.insert("seed".into(), Value::String(BASE64.encode(&k.seed[..])));
+            m.insert("created".into(), Value::String(k.created.iso8601()));
+            Value::Object(m)
+        })
+        .collect();
+    root.insert("adminKeys".into(), Value::Array(admin_keys));
+    if let Some(k) = &p.offline_backup_key {
+        let mut m = Map::new();
+        m.insert("role".into(), Value::String(AdminKeyRole::Backup.as_str().into()));
+        m.insert("public".into(), Value::String(BASE64.encode(k.public.as_bytes())));
+        m.insert("created".into(), Value::String(k.created.iso8601()));
+        m.insert("offline".into(), Value::Bool(true));
+        root.insert("offlineBackupAdminKey".into(), Value::Object(m));
+    }
+    let publications = p
+        .publications
+        .iter()
+        .map(|pb| {
+            let mut m = Map::new();
+            m.insert("catalogId".into(), uuid_value(&pb.record.catalog_id));
+            m.insert("record".into(), publication_value(&pb.record).map_err(|e| BackupError::Io(e.to_string()))?);
+            m.insert("teamKey".into(), Value::String(BASE64.encode(pb.team_key.as_bytes())));
+            Ok(Value::Object(m))
+        })
+        .collect::<Result<_, BackupError>>()?;
+    root.insert("publications".into(), Value::Array(publications));
 
     let tree = WipedValue(Value::Object(root));
-    let mut counter = Counter(0);
-    serde_json::to_writer(&mut counter, &tree.0).map_err(|e| BackupError::Io(e.to_string()))?;
-    let mut out = Zeroizing::new(Vec::with_capacity(counter.0));
-    serde_json::to_writer(&mut *out, &tree.0).map_err(|e| BackupError::Io(e.to_string()))?;
-    Ok(out)
+    to_wiped_vec(&tree.0).map_err(|e| BackupError::Io(e.to_string()))
 }
 
 /// One payload migration step on the JSON object; `None` refuses the payload.
 type PayloadMigration = fn(&mut Map<String, Value>) -> Option<()>;
 
-/// Payload migrations: `MIGRATIONS[i]` turns version `i + 1` into `i + 2`. None yet (version 1 is the first).
-const MIGRATIONS: &[PayloadMigration] = &[];
+/// Payload migrations: `MIGRATIONS[i]` turns version `i + 1` into `i + 2`.
+const MIGRATIONS: &[PayloadMigration] = &[v1_to_v2];
+
+/// v1 → v2 (1.3): empty team catalog collections.
+fn v1_to_v2(root: &mut Map<String, Value>) -> Option<()> {
+    for key in ["subscriptions", "adminKeys", "publications"] {
+        if root.contains_key(key) {
+            return None;
+        }
+        root.insert(key.into(), Value::Array(Vec::new()));
+    }
+    Some(())
+}
 
 fn decode_payload(plaintext: &[u8]) -> Result<BackupPayload, BackupError> {
     let mut tree = WipedValue(serde_json::from_slice(plaintext).map_err(|_| BackupError::CannotOpen)?);
@@ -786,7 +984,44 @@ fn decode_payload(plaintext: &[u8]) -> Result<BackupPayload, BackupError> {
         step(root).ok_or(BackupError::CannotOpen)?;
     }
     root.insert("version".into(), Value::from(PAYLOAD_VERSION));
+    precheck_catalog(root).map_err(BackupError::Invalid)?;
     decode_root(root).ok_or(BackupError::CannotOpen)
+}
+
+/// The catalog rules that the typed payload cannot even hold (a source the source rules refuse), reported as
+/// [`BackupError::Invalid`] rather than as a damaged file.
+fn precheck_catalog(root: &Map<String, Value>) -> Result<(), InvalidBackup> {
+    let Some(subscriptions) = root.get("subscriptions").and_then(Value::as_array) else { return Ok(()) };
+    for s in subscriptions {
+        if let Some(source) = s.get("record").and_then(|r| r.get("source"))
+            && source_of(source).is_none()
+        {
+            return Err(InvalidBackup::CatalogSource);
+        }
+    }
+    Ok(())
+}
+
+fn key32(v: &Value) -> Option<Zeroizing<Vec<u8>>> {
+    let text = v.as_str()?;
+    let mut buffer = Zeroizing::new(vec![0u8; base64::decoded_len_estimate(text.len())]);
+    let n = BASE64.decode_slice(text, &mut buffer[..]).ok()?;
+    buffer.truncate(n);
+    (n == 32).then_some(buffer)
+}
+
+fn subscription_of(v: &Value) -> Option<BackupSubscription> {
+    let id = uuid_of(v.get("catalogId")?)?;
+    let bearer = optional(v, "bearer", secret_of)?;
+    let publisher = optional(v, "publisherKey", |k| key32(k).map(|b| b.to_vec()))?;
+    let successor = optional(v, "successorKey", |k| key32(k).map(|b| b.to_vec()))?;
+    let record = record_from_value(id, v.get("record")?, bearer.is_some(), publisher, successor)?;
+    let team_key = TeamKey::from_bytes(&key32(v.get("teamKey")?)?)?;
+    let mut slots = Vec::new();
+    for s in v.get("slots")?.as_array()? {
+        slots.push((uuid_of(s.get("slot")?)?, string(s, "name")?, optional(s, "credential", uuid_of)?));
+    }
+    Some(BackupSubscription { record, team_key, bearer, slots })
 }
 
 fn string(v: &Value, key: &str) -> Option<String> {
@@ -898,6 +1133,39 @@ fn decode_root(root: &Map<String, Value>) -> Option<BackupPayload> {
         system_otp.insert(id.clone(), OTPSetting::from_json(s).ok()?);
     }
     let ranking = ConnectionRanking::from_json(root.get("ranking")?).ok()?;
+    let mut subscriptions = Vec::new();
+    for s in array(root, "subscriptions")? {
+        subscriptions.push(subscription_of(s)?);
+    }
+    let mut admin_keys = Vec::new();
+    for k in array(root, "adminKeys")? {
+        let bytes = key32(k.get("seed")?)?;
+        let mut seed = Zeroizing::new([0u8; 32]);
+        seed.copy_from_slice(&bytes);
+        admin_keys.push(BackupAdminKey {
+            role: AdminKeyRole::parse(k.get("role")?.as_str()?)?,
+            seed,
+            created: date_of(k.get("created")?)?,
+        });
+    }
+    let offline_backup_key = match root.get("offlineBackupAdminKey") {
+        None | Some(Value::Null) => None,
+        Some(k) => {
+            if AdminKeyRole::parse(k.get("role")?.as_str()?)? != AdminKeyRole::Backup || !k.get("offline")?.as_bool()? {
+                return None;
+            }
+            let public = PublisherKey::from_bytes(&BASE64.decode(k.get("public")?.as_str()?).ok()?)?;
+            Some(BackupOfflineKey { public, created: date_of(k.get("created")?)? })
+        }
+    };
+    let mut publications = Vec::new();
+    for pb in array(root, "publications")? {
+        let id = uuid_of(pb.get("catalogId")?)?;
+        publications.push(BackupPublication {
+            record: publication_from_value(id, pb.get("record")?)?,
+            team_key: TeamKey::from_bytes(&key32(pb.get("teamKey")?)?)?,
+        });
+    }
     let p = root.get("preferences")?;
     let flag = |key: &str| p.get(key).and_then(Value::as_bool);
     let preferences = BackupPreferences {
@@ -920,6 +1188,10 @@ fn decode_root(root: &Map<String, Value>) -> Option<BackupPayload> {
         system_otp,
         ranking,
         preferences,
+        subscriptions,
+        admin_keys,
+        offline_backup_key,
+        publications,
     })
 }
 
@@ -1021,6 +1293,62 @@ pub fn validate(p: &BackupPayload) -> Result<(), InvalidBackup> {
     for id in p.system_otp.keys().chain(p.ranking.usage().keys()).chain(p.ranking.pinned()) {
         valid_item(id)?;
     }
+    validate_catalog(p)
+}
+
+/// The team catalog part of [`validate`] (payload v2).
+fn validate_catalog(p: &BackupPayload) -> Result<(), InvalidBackup> {
+    use InvalidBackup as I;
+    cap(p.subscriptions.len(), Collection::Subscriptions)?;
+    cap(p.admin_keys.len(), Collection::AdminKeys)?;
+    cap(p.publications.len(), Collection::Publications)?;
+    let mut ids = HashSet::new();
+    for s in &p.subscriptions {
+        if !ids.insert(s.record.catalog_id) {
+            return Err(I::Duplicate);
+        }
+        check_catalog_name(&s.record.name).map_err(|_| I::CatalogName)?;
+        if s.bearer.as_deref().is_some_and(|b| !valid_bearer_token(b)) {
+            return Err(I::BearerToken);
+        }
+        if s.record.successor_key.is_some() && s.record.successor_key == s.record.publisher_key {
+            return Err(I::AdminKeys);
+        }
+        cap(s.slots.len(), Collection::Subscriptions)?;
+        let mut slots = HashSet::new();
+        for (slot, name, _) in &s.slots {
+            if !slots.insert(*slot) {
+                return Err(I::Duplicate);
+            }
+            if !stored_form(name, validate_credential_name) {
+                return Err(I::CredentialName);
+            }
+        }
+    }
+    let mut roles = HashSet::new();
+    let mut keys = HashSet::new();
+    for k in &p.admin_keys {
+        let public = AdminKey::from_seed(&k.seed[..]).map(|a| a.public()).ok_or(I::AdminKeys)?;
+        if !roles.insert(k.role) || !keys.insert(public) {
+            return Err(I::AdminKeys);
+        }
+    }
+    // The offline backup key holds the backup role, and is not an online key too.
+    if let Some(k) = &p.offline_backup_key
+        && (roles.contains(&AdminKeyRole::Backup) || keys.contains(&k.public))
+    {
+        return Err(I::AdminKeys);
+    }
+    let mut ids = HashSet::new();
+    for pb in &p.publications {
+        if !ids.insert(pb.record.catalog_id) {
+            return Err(I::Duplicate);
+        }
+        check_catalog_name(&pb.record.name).map_err(|_| I::CatalogName)?;
+        if pb.record.version == 0 {
+            return Err(I::PublicationVersion);
+        }
+    }
     Ok(())
 }
 
@@ -1048,6 +1376,15 @@ pub struct RestorePlan {
     /// The vault's connections, folders and credentials whose id is not in the backup: what "Replace everything"
     /// loses.
     pub lost_on_replace: usize,
+    /// The names of the vault's subscriptions that are not in the backup: "Replace everything" removes them (their
+    /// catalog connections and folders go with them).
+    pub lost_subscriptions: Vec<String>,
+    /// The roles of the vault's admin keys that the backup replaces with another key of that role. A role the
+    /// backup has no key for keeps this Mac's key.
+    pub lost_admin_keys: Vec<AdminKeyRole>,
+    /// The names of the vault's publications that the backup replaces with its own record of that catalog (the
+    /// published version is never lowered). A publication the backup does not have stays.
+    pub lost_publications: Vec<String>,
     /// The names of the backup's connections with acknowledged risky OpenVPN directives, in the backup's order.
     /// "Replace everything" (and a fresh restore) keeps those acknowledgements, so the restore window lists these
     /// connections (Task 21); a merge drops them unless the same connection with the same config already exists.
@@ -1135,7 +1472,55 @@ pub fn plan_restore(vault: &Vault, payload: &BackupPayload) -> Result<RestorePla
         .filter(|c| !c.connection.acknowledged_risky_directives.is_empty())
         .map(|c| c.connection.name.clone())
         .collect();
-    Ok(RestorePlan { added, conflicts, lost_on_replace, acknowledged_risky })
+    let (lost_subscriptions, lost_admin_keys, lost_publications) = catalog_losses(vault, payload)?;
+    Ok(RestorePlan {
+        added,
+        conflicts,
+        lost_on_replace,
+        acknowledged_risky,
+        lost_subscriptions,
+        lost_admin_keys,
+        lost_publications,
+    })
+}
+
+impl RestorePlan {
+    /// Everything "Replace everything" loses, counted together (the restore window confirms this number).
+    pub fn lost_total(&self) -> usize {
+        self.lost_on_replace + self.lost_subscriptions.len() + self.lost_admin_keys.len() + self.lost_publications.len()
+    }
+}
+
+/// The lost subscriptions (names), admin key roles and publications (names).
+type CatalogLosses = (Vec<String>, Vec<AdminKeyRole>, Vec<String>);
+
+/// What "Replace everything" loses of the team catalog side (see [`replace`]): the subscriptions not in the
+/// backup, the admin key roles the backup holds another key for, the publications the backup has its own of.
+fn catalog_losses(vault: &Vault, payload: &BackupPayload) -> Result<CatalogLosses, VaultError> {
+    let in_backup: HashSet<Uuid> = payload.subscriptions.iter().map(|s| s.record.catalog_id).collect();
+    let subscriptions =
+        vault.subscriptions()?.into_iter().filter(|s| !in_backup.contains(&s.catalog_id)).map(|s| s.name).collect();
+    let here = vault.admin_keys()?;
+    let mut admin_keys = Vec::new();
+    for role in [AdminKeyRole::Primary, AdminKeyRole::Backup] {
+        let Some(existing) = here.iter().find(|k| k.role == role) else { continue };
+        let mut theirs: Vec<PublisherKey> = payload
+            .admin_keys
+            .iter()
+            .filter(|k| k.role == role)
+            .filter_map(|k| AdminKey::from_seed(&k.seed[..]).map(|a| a.public()))
+            .collect();
+        if role == AdminKeyRole::Backup {
+            theirs.extend(payload.offline_backup_key.as_ref().map(|k| k.public));
+        }
+        if theirs.iter().any(|k| *k != existing.public) {
+            admin_keys.push(role);
+        }
+    }
+    let theirs: HashSet<Uuid> = payload.publications.iter().map(|p| p.record.catalog_id).collect();
+    let publications =
+        vault.publications()?.into_iter().filter(|p| theirs.contains(&p.catalog_id)).map(|p| p.name).collect();
+    Ok((subscriptions, admin_keys, publications))
 }
 
 /// Adds the backup to the vault in one transaction, resolving every conflict with `mode`. Items only in the vault
@@ -1152,19 +1537,61 @@ pub fn plan_restore(vault: &Vault, payload: &BackupPayload) -> Result<RestorePla
 ///
 /// Every link is written through [`super::db::Tx::link`], and at the end no linked item keeps its own username or
 /// password (spec 3a).
-pub fn merge(vault: &mut Vault, payload: &BackupPayload, mode: ConflictMode) -> Result<(), VaultError> {
+///
+/// What a team catalog owns here (its root folder, its folders and connections, and with them their provided
+/// secrets and slot links) is never written by a restore: a backup item with such an id (a 1.2 backup made from a
+/// v2 vault holds them as ordinary items) is skipped in every mode and named in [`RestoreReport`]. The catalog
+/// brings its own version back with the next refresh.
+pub fn merge(vault: &mut Vault, payload: &BackupPayload, mode: ConflictMode) -> Result<RestoreReport, VaultError> {
     let current = vault.ranking()?;
     vault.transaction(|tx| restore_into(tx, payload, mode, &current, false))
 }
 
-/// Clears every table but `control_clients` and `meta` (the paired clients belong to this Mac) and writes the
-/// backup, in one transaction: ids, positions, the acknowledged risky directives (listed by
-/// [`RestorePlan::acknowledged_risky`]) and the ranking exactly as backed up. On any error nothing changes.
+/// What a merge did not restore.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct RestoreReport {
+    /// The backup's folders and connections (by their names in the backup) whose ids a team catalog owns here:
+    /// skipped, the catalog's own stay.
+    pub skipped_catalog_items: Vec<String>,
+}
+
+/// The ids a team catalog owns: its root folders and its folders and connections.
+fn catalog_owned_ids(conn: &rusqlite::Connection) -> Result<HashSet<String>, VaultError> {
+    let mut owned = HashSet::new();
+    let mut stmt = conn.prepare("SELECT local_id FROM catalog_items")?;
+    for row in stmt.query_map([], |r| r.get::<_, String>(0))? {
+        owned.insert(row?);
+    }
+    let mut stmt = conn.prepare("SELECT catalog_id FROM catalog_subscriptions")?;
+    for row in stmt.query_map([], |r| r.get::<_, String>(0))? {
+        let id = parse_uuid(&row?).ok_or_else(|| VaultError::Corrupt("invalid catalog id".into()))?;
+        owned.insert(uuid_string(&root_folder_id(id)));
+    }
+    Ok(owned)
+}
+
+/// Clears every table but `control_clients` and `meta` and writes the backup, in one transaction: ids, positions,
+/// the acknowledged risky directives (listed by [`RestorePlan::acknowledged_risky`]) and the ranking exactly as
+/// backed up. On any error nothing changes.
+///
+/// The team catalogs:
+/// - The **subscriptions** are replaced by the backup's (their catalog-owned rows come back with the next refresh).
+///   A catalog the vault already had keeps its higher applied version: a restore never lowers the rollback floor.
+/// - The **admin keys** and the **publications** belong to this Mac like the paired clients: a role or a catalog
+///   the backup has nothing for keeps this Mac's key or publication (a 1.2 backup has none at all); where the
+///   backup has its own, the backup's wins (a publication's version is never lowered).
+///
+/// [`RestorePlan`] lists what goes.
 pub fn replace(vault: &mut Vault, payload: &BackupPayload) -> Result<(), VaultError> {
+    let floors: Vec<(Uuid, u64)> =
+        vault.subscriptions()?.into_iter().filter_map(|s| Some((s.catalog_id, s.applied_version?))).collect();
     vault.transaction(|tx| {
         validate(payload).map_err(VaultError::InvalidBackup)?;
         tx.execute_batch(
-            "DELETE FROM credential_links;
+            "DELETE FROM catalog_items;
+             DELETE FROM catalog_slots;
+             DELETE FROM catalog_subscriptions;
+             DELETE FROM credential_links;
              DELETE FROM secrets;
              DELETE FROM connections;
              DELETE FROM credentials;
@@ -1174,7 +1601,15 @@ pub fn replace(vault: &mut Vault, payload: &BackupPayload) -> Result<(), VaultEr
              DELETE FROM pins;
              DELETE FROM folders;",
         )?;
-        restore_into(tx, payload, ConflictMode::Overwrite, &ConnectionRanking::default(), true)
+        restore_into(tx, payload, ConflictMode::Overwrite, &ConnectionRanking::default(), true)?;
+        // The rollback floor of a catalog the vault had: never lowered by an older backup (as in a merge).
+        for (id, floor) in floors {
+            if let Some(mut record) = subscription_in(tx, id)? {
+                record.applied_version = max_version(record.applied_version, Some(floor));
+                tx.save_subscription_record(&record)?;
+            }
+        }
+        Ok(())
     })
 }
 
@@ -1249,8 +1684,10 @@ fn restore_into(
     mode: ConflictMode,
     current: &ConnectionRanking,
     replace: bool,
-) -> Result<(), VaultError> {
+) -> Result<RestoreReport, VaultError> {
     validate(payload).map_err(VaultError::InvalidBackup)?;
+    let catalog_owned = catalog_owned_ids(tx)?;
+    let mut report = RestoreReport::default();
     let exact = replace;
     let conn: &rusqlite::Connection = tx;
     let tree =
@@ -1267,6 +1704,11 @@ fn restore_into(
         for &id in tree.children(parent) {
             queue.push(Some(id));
             let Some(f) = tree.get(id) else { continue };
+            // A team catalog's folder: never written, and nothing of the backup is put into it.
+            if catalog_owned.contains(&uuid_string(&f.id)) {
+                report.skipped_catalog_items.push(f.name.clone());
+                continue;
+            }
             let parent = f.parent.and_then(|p| folder_map.get(&p).copied());
             let target = match (existing.folders.contains_key(&f.id), mode) {
                 (false, _) => {
@@ -1361,11 +1803,20 @@ fn restore_into(
         credential_map.insert(c.id, target);
     }
 
+    // Team catalogs (payload v2): after the credentials (the slot bindings map through them).
+    restore_catalog(tx, payload, mode, &credential_map)?;
+
     // Connections: backup id → the item written (`None`: kept the existing one).
     let mut connection_map: HashMap<String, Option<String>> = HashMap::new();
     let mut connection_names = Names::new(existing.connections.values().cloned(), None);
     for c in &payload.connections {
         let key = uuid_string(&c.connection.id);
+        // A team catalog's connection: never written (nor its secrets or link: it is mapped to "kept").
+        if catalog_owned.contains(&key) {
+            report.skipped_catalog_items.push(c.connection.name.clone());
+            connection_map.insert(key, None);
+            continue;
+        }
         let folder = place(c.folder_id);
         let exists = existing.connections.contains_key(&key);
         // Acknowledgements survive a merge only onto the same connection with the same config.
@@ -1419,11 +1870,21 @@ fn restore_into(
         if has.is_some() && !overwrite {
             continue;
         }
-        conn.execute("DELETE FROM secrets WHERE connection_id = ?1", [item])?;
+        // A catalog item's provided secrets belong to the catalog, never to the backup.
+        let provided: Vec<SecretField> = conn
+            .query_row("SELECT provided_secrets FROM catalog_items WHERE local_id = ?1", [item], |r| {
+                r.get::<_, String>(0)
+            })
+            .optional()?
+            .map(|text| provided_of(&text).into_iter().collect())
+            .unwrap_or_default();
+        for field in SecretField::ALL.iter().filter(|f| !provided.contains(f)) {
+            conn.execute("DELETE FROM secrets WHERE connection_id = ?1 AND field = ?2", (item, field.raw_value()))?;
+        }
         if overwrite {
             conn.execute("DELETE FROM credential_links WHERE item_id = ?1", [item])?;
         }
-        for (field, value) in secrets {
+        for (field, value) in secrets.iter().filter(|(f, _)| !provided.contains(f)) {
             set_secret(conn, item, *field, value)?;
         }
     }
@@ -1533,6 +1994,137 @@ fn restore_into(
         })
         .collect::<Result<Vec<_>, VaultError>>()?;
     FolderTree::new(nodes).map_err(VaultError::Tree)?;
+    Ok(report)
+}
+
+fn max_version(a: Option<u64>, b: Option<u64>) -> Option<u64> {
+    match (a, b) {
+        (Some(a), Some(b)) => Some(a.max(b)),
+        (a, b) => a.or(b),
+    }
+}
+
+/// Restores the subscriptions, admin keys and publications. A new subscription gets `reapply = true` and no
+/// validators (its items come back from the source at the next refresh, under the same ids); an existing one follows `mode` (KeepBoth
+/// keeps the existing one: a catalog cannot be subscribed twice). The applied and published versions are never
+/// lowered. An admin key replaces the vault's key of the same role only with [`ConflictMode::Overwrite`].
+fn restore_catalog(
+    tx: &super::db::Tx<'_>,
+    payload: &BackupPayload,
+    mode: ConflictMode,
+    credentials: &HashMap<Uuid, Uuid>,
+) -> Result<(), VaultError> {
+    let conn: &rusqlite::Connection = tx;
+    let overwrite = mode == ConflictMode::Overwrite;
+    for s in &payload.subscriptions {
+        let id = s.record.catalog_id;
+        let key = uuid_string(&id);
+        match subscription_in(conn, id)? {
+            None => {
+                let mut record = s.record.clone();
+                record.reapply = true;
+                // The items are not in the backup: the next refresh must download the catalog again, never stop
+                // at a 304 or an equal content hash.
+                record.validators = SourceValidators::default();
+                tx.add_subscription(&record, &s.team_key, s.bearer.as_deref().map(String::as_str))?;
+            }
+            Some(existing) => {
+                let mut record = if overwrite { s.record.clone() } else { existing.clone() };
+                record.reapply = existing.reapply;
+                record.applied_version = max_version(existing.applied_version, s.record.applied_version);
+                if record.reapply {
+                    record.validators = SourceValidators::default();
+                }
+                tx.save_subscription_record(&record)?;
+                if overwrite {
+                    conn.execute(
+                        "UPDATE catalog_subscriptions SET team_key = ?2, bearer = ?3 WHERE catalog_id = ?1",
+                        (&key, &s.team_key.as_bytes()[..], s.bearer.as_deref().map(|b| b.as_bytes())),
+                    )?;
+                    conn.execute(
+                        "UPDATE folders SET name = ?2 WHERE id = ?1",
+                        (uuid_string(&root_folder_id(id)), &record.name),
+                    )?;
+                } else {
+                    continue;
+                }
+            }
+        }
+        for (slot, name, credential) in &s.slots {
+            let credential = credential.and_then(|c| credentials.get(&c).copied()).map(|c| uuid_string(&c));
+            conn.execute(
+                "INSERT INTO catalog_slots(catalog_id, slot_id, name, credential_id) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(catalog_id, slot_id) DO UPDATE SET
+                     name = excluded.name, credential_id = coalesce(excluded.credential_id, catalog_slots.credential_id)",
+                (&key, uuid_string(slot), name, credential),
+            )?;
+        }
+    }
+
+    for k in &payload.admin_keys {
+        let admin = AdminKey::from_seed(&k.seed[..]).ok_or(VaultError::InvalidBackup(InvalidBackup::AdminKeys))?;
+        let key_id = admin.public().fingerprint().to_text();
+        let known: Option<i64> =
+            conn.query_row("SELECT 1 FROM catalog_admin_keys WHERE key_id = ?1", [&key_id], |r| r.get(0)).optional()?;
+        if known.is_some() {
+            continue;
+        }
+        let holder: Option<String> = conn
+            .query_row("SELECT key_id FROM catalog_admin_keys WHERE role = ?1", [k.role.as_str()], |r| r.get(0))
+            .optional()?;
+        // A backup key taken offline here holds the backup role like a stored one. The same key comes back online
+        // (`save_admin_key` turns the marker into the stored key).
+        let offline = offline_backup_in(conn)?
+            .filter(|o| k.role == AdminKeyRole::Backup && o.fingerprint != admin.public().fingerprint());
+        if holder.is_some() || offline.is_some() {
+            if !overwrite {
+                continue;
+            }
+            conn.execute("DELETE FROM catalog_admin_keys WHERE role = ?1", [k.role.as_str()])?;
+            if offline.is_some() {
+                delete_offline_backup(conn)?;
+            }
+        }
+        tx.save_admin_key(&admin, k.role, k.created)?;
+    }
+    if let Some(k) = &payload.offline_backup_key {
+        let fingerprint = k.public.fingerprint();
+        let stored_backup: Option<String> = conn
+            .query_row("SELECT key_id FROM catalog_admin_keys WHERE role = 'backup'", [], |r| r.get(0))
+            .optional()?;
+        let offline = offline_backup_in(conn)?;
+        let stored_as_primary: Option<i64> = conn
+            .query_row("SELECT 1 FROM catalog_admin_keys WHERE key_id = ?1", [fingerprint.to_text()], |r| r.get(0))
+            .optional()?;
+        let same_online = stored_backup.as_deref() == Some(fingerprint.to_text().as_str());
+        let same_offline = offline.is_some_and(|o| o.fingerprint == fingerprint);
+        // Already here (with its seed, or as the marker), or this Mac signs with it: nothing to restore.
+        let known = same_online || same_offline || stored_as_primary.is_some();
+        if !known && stored_backup.is_none() && offline.is_none() {
+            set_offline_backup(conn, &k.public, k.created)?;
+        } else if !known && overwrite {
+            conn.execute("DELETE FROM catalog_admin_keys WHERE role = 'backup'", ())?;
+            set_offline_backup(conn, &k.public, k.created)?;
+        }
+    }
+
+    for pb in &payload.publications {
+        match publication_in(conn, pb.record.catalog_id)? {
+            None => tx.save_publication(&pb.record, Some(&pb.team_key))?,
+            Some(existing) => {
+                let version = existing.version.max(pb.record.version);
+                if overwrite {
+                    let mut record = pb.record.clone();
+                    record.version = version;
+                    tx.save_publication(&record, Some(&pb.team_key))?;
+                } else {
+                    let mut record = existing;
+                    record.version = version;
+                    tx.save_publication(&record, None)?;
+                }
+            }
+        }
+    }
     Ok(())
 }
 

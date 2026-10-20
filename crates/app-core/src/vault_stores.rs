@@ -25,9 +25,13 @@
 use crate::control::RegistryStore;
 use crate::deps::{
     ConnectionRepository, RankingPersistence, SecretField, SecretReader, SecretWriter, SystemOTPPersistence,
+    TeamManaged,
 };
 use crate::vault::{VaultLifecycle, VaultState};
+use macvpn_core::catalog::ids::CatalogItemKind;
+use macvpn_core::catalog::source::CatalogSource;
 use macvpn_core::control::registry::Registry;
+use macvpn_core::importer;
 use macvpn_core::l10n;
 use macvpn_core::models::{Connection, CredentialRef, OTPSetting, uuid_string};
 use macvpn_core::ranking::ConnectionRanking;
@@ -47,6 +51,11 @@ pub fn read_only_message() -> String {
     l10n::tr("MacVPN is using the old storage in read-only mode until the migration succeeds", &[])
 }
 
+/// The refusal of a generic write to a connection or folder a team catalog manages (spec 6: read-only).
+pub fn catalog_managed_message() -> String {
+    l10n::tr("A team catalog manages this item: it cannot be changed here.", &[])
+}
+
 fn read_only_error() -> io::Error {
     io::Error::new(io::ErrorKind::PermissionDenied, read_only_message())
 }
@@ -57,6 +66,8 @@ pub fn vault_io_error(e: VaultError) -> io::Error {
     match e {
         VaultError::Locked => io::Error::new(io::ErrorKind::PermissionDenied, locked_message()),
         VaultError::ReadOnly => read_only_error(),
+        VaultError::CatalogManaged => io::Error::new(io::ErrorKind::PermissionDenied, catalog_managed_message()),
+        VaultError::CatalogChanged => io::Error::other(crate::deps::catalog_changed_message()),
         VaultError::Io(e) => e,
         other => io::Error::other(other.to_string()),
     }
@@ -180,6 +191,40 @@ impl ConnectionRepository for VaultConnections {
             return Err(read_only_error());
         }
         self.vault.with(|v| v.delete_connection(id)).map_err(vault_io_error)
+    }
+
+    /// Locked or unreadable: `None` (every write is refused by the vault anyway).
+    fn team_managed(&self, id: &Uuid) -> Option<TeamManaged> {
+        if legacy_mode(&self.vault) {
+            return None;
+        }
+        let owner = self.vault.with_read(|v| v.catalog_owner(&uuid_string(id))).ok().flatten()?;
+        (owner.kind == CatalogItemKind::Connection).then_some(TeamManaged {
+            catalog: owner.catalog_name,
+            profile_outdated: owner.profile_outdated,
+            config_hash: owner.config_hash,
+        })
+    }
+
+    fn set_acknowledged_risky(&self, id: &Uuid, seen_config: &str, directives: &[String]) -> io::Result<()> {
+        if legacy_mode(&self.vault) {
+            return Err(read_only_error());
+        }
+        self.vault.with(|v| v.set_acknowledged_risky(*id, seen_config, directives)).map_err(vault_io_error)
+    }
+
+    fn set_native_service(&self, id: &Uuid, service_id: Option<&str>) -> io::Result<()> {
+        if legacy_mode(&self.vault) {
+            return Err(read_only_error());
+        }
+        self.vault.with(|v| v.set_native_service_id(*id, service_id)).map_err(vault_io_error)
+    }
+
+    fn profile_reinstalled(&self, id: &Uuid, built_from: &str) -> io::Result<bool> {
+        if legacy_mode(&self.vault) {
+            return Err(read_only_error());
+        }
+        self.vault.with(|v| v.clear_profile_outdated(*id, built_from)).map_err(vault_io_error)
     }
 }
 
@@ -327,11 +372,48 @@ impl VaultSecrets {
                 VaultError::NewerSchema { .. } => "the vault was saved by a newer MacVPN".to_string(),
                 VaultError::Constraint(_) => "the value was refused".to_string(),
                 VaultError::LinkedToCredential => "the item uses a shared credential".to_string(),
+                VaultError::CatalogManaged => "a team catalog provides it".to_string(),
                 _ => "vault error".to_string(),
             };
             self.vault.log(&format!("{what} not saved: {reason}"));
         }
     }
+}
+
+/// The team catalog's slot `credential` is for `item` (spec 6): the catalog's name, its source (the HTTPS host, or
+/// the pinned publisher fingerprint's short form for a file) and the item's server, so the prompt cannot be passed
+/// off by a catalog named like another. `None` for a personal connection, or for a catalog connection the user
+/// linked to a credential of their own.
+fn team_slot(v: &Vault, item: &str, credential: Uuid) -> Result<Option<TeamSlot>, VaultError> {
+    let Some(owner) = v.catalog_owner(item)? else { return Ok(None) };
+    let Some(slot) = owner.slot_id else { return Ok(None) };
+    let slots = v.local_catalog(owner.catalog_id)?.slots;
+    if slots.get(&slot).and_then(|(_, c)| *c) != Some(credential) {
+        return Ok(None);
+    }
+    let source = v.subscription(owner.catalog_id)?.map(|r| match &r.source {
+        CatalogSource::Https(url) => url.origin().0,
+        CatalogSource::File(_) => r.pinned.to_text().chars().take(9).collect(),
+    });
+    let server = match macvpn_core::models::parse_uuid(item) {
+        Some(id) => v
+            .connections()?
+            .into_iter()
+            .find(|c| c.connection.id == id)
+            .map(|c| (c.connection.kind, c.connection.native))
+            .and_then(|(kind, native)| {
+                let config = v.config(&id).ok()?;
+                importer::server_host(kind, native.as_ref(), &config)
+            }),
+        None => None,
+    };
+    Ok(Some(TeamSlot { catalog: owner.catalog_name, source, server }))
+}
+
+struct TeamSlot {
+    catalog: String,
+    source: Option<String>,
+    server: Option<String>,
 }
 
 impl SecretReader for VaultSecrets {
@@ -353,7 +435,14 @@ impl SecretReader for VaultSecrets {
                 let Some(credential) = v.credential_of(&item)? else { return Ok(None) };
                 let Some(found) = v.credential(credential)? else { return Ok(None) };
                 let used_by = v.linked_items(credential)?.len();
-                Ok(Some(CredentialRef { name: found.name, used_by }))
+                let team = team_slot(v, &item, credential)?;
+                Ok(Some(CredentialRef {
+                    name: found.name,
+                    used_by,
+                    team_source: team.as_ref().and_then(|t| t.source.clone()),
+                    server: team.as_ref().and_then(|t| t.server.clone()),
+                    team: team.map(|t| t.catalog),
+                }))
             })
             .ok()
             .flatten()

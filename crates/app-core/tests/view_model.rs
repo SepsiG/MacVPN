@@ -322,3 +322,31 @@ fn manager_texts_are_in_the_table() {
         assert!(l10n::hungarian(&key).is_some(), "missing from strings.json: {key}");
     }
 }
+
+#[test]
+fn catalog_connections_carry_the_team_badge() {
+    use macvpn_app_core::catalog::CatalogBadge;
+    let f = Fixture::new(AppLanguage::En);
+    let a = Connection::new("Office", VPNKind::Openvpn);
+    let b = Connection::new("Own", VPNKind::Openvpn);
+    f.store.save(&a, Some("remote x\n")).unwrap();
+    f.store.save(&b, Some("remote x\n")).unwrap();
+    let m = f.manager();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    assert!(vm.rows.iter().all(|r| r.catalog.is_none()));
+    let badge = CatalogBadge {
+        catalog_id: "11111111-1111-4111-8111-111111111111".into(),
+        name: "Acme VPN".into(),
+        pending_removal: true,
+        profile_outdated: false,
+    };
+    vm.set_catalog_badges(&std::collections::HashMap::from([(uuid_string(&a.id), badge.clone())]));
+    assert_eq!(vm.rows.iter().find(|r| r.name == "Office").unwrap().catalog, Some(badge));
+    assert_eq!(vm.rows.iter().find(|r| r.name == "Own").unwrap().catalog, None);
+    let json = serde_json::to_value(&vm).unwrap();
+    let office = json["rows"].as_array().unwrap().iter().find(|r| r["name"] == "Office").unwrap().clone();
+    assert_eq!(
+        office["catalog"],
+        serde_json::json!({"catalogId":"11111111-1111-4111-8111-111111111111","name":"Acme VPN","pendingRemoval":true,"profileOutdated":false})
+    );
+}

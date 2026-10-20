@@ -9,20 +9,26 @@
 //! buffers and their `Debug` output is redacted.
 
 pub mod backup;
+mod catalog_apply;
 mod color;
+pub(crate) mod crockford;
 mod db;
 mod entropy;
 mod keys;
 mod keystore;
 mod legacy;
 mod recovery;
+mod repo_catalog;
 mod repo_connections;
 mod repo_credentials;
 mod repo_folders;
 mod repo_misc;
 mod schema;
+pub(crate) mod sealed;
 mod tree;
+pub(crate) mod wiped_json;
 
+pub use catalog_apply::{ApplyContext, UnsubscribeReport};
 pub use color::FolderColor;
 pub use db::{Tx, VAULT_FILE, Vault, VaultError};
 pub use entropy::{Entropy, FixedEntropy};
@@ -33,6 +39,10 @@ pub use keys::{
 pub use keystore::{KeyStore, KeyStoreError, MemoryKeyStore};
 pub use legacy::{LegacyKeychain, LegacyRead};
 pub use recovery::{RecoveryKey, RecoveryKeyError};
+pub use repo_catalog::{
+    AdminKeyRecord, AdminKeyRole, CatalogOwnership, MAX_BEARER_BYTES, PublicationRecord, SourceValidators,
+    SubscriptionRecord, SubscriptionStatus, valid_bearer_token,
+};
 pub use repo_connections::{ConnectionRecord, StoredConnection};
 pub use repo_credentials::{
     CredentialInUse, MAX_CREDENTIAL_NAME_CHARACTERS, MAX_CREDENTIAL_PASSWORD_BYTES, MAX_CREDENTIAL_USERNAME_BYTES,

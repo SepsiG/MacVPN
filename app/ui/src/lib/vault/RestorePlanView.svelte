@@ -37,7 +37,26 @@
     onbackupfirst: () => void;
     onback: () => void;
   } = $props();
+
+  const catalogLosses = $derived(
+    summary.lostSubscriptions.length + summary.lostAdminKeys.length + summary.lostPublications.length > 0,
+  );
 </script>
+
+{#snippet losses()}
+  {#if summary.lostSubscriptions.length > 0}
+    <span class="caption lost-catalogs">{tr('Team catalog subscriptions removed: %@', summary.lostSubscriptions.join(', '))}</span>
+  {/if}
+  {#if summary.lostAdminKeys.length > 0}
+    <span class="caption lost-admin-keys">{tr('Admin keys replaced by the backup’s: %lld', summary.lostAdminKeys.length)}</span>
+  {/if}
+  {#if summary.lostPublications.length > 0}
+    <span class="caption lost-publications">{tr('Publications replaced by the backup’s: %@', summary.lostPublications.join(', '))}</span>
+  {/if}
+  {#if catalogLosses}
+    <span class="caption">{tr('Admin keys and publications the backup does not have stay on this Mac.')}</span>
+  {/if}
+{/snippet}
 
 <div class="restore-plan">
   <p class="caption made">{tr('Made on %@ by MacVPN %@', backupDate(summary.created), summary.appVersion)}</p>
@@ -70,7 +89,9 @@
         <input type="radio" name="restore-mode" value="merge" disabled={busy} bind:group={choice} />
         <span>
           {tr('Merge')}
-          <span class="caption">{tr('Adds what is missing here: %lld new items. Already here: %lld.', summary.added, summary.conflicts)}</span>
+          <span class="caption">{summary.added === 1
+              ? tr('Adds what is missing here: 1 new item. Already here: %lld.', summary.conflicts)
+              : tr('Adds what is missing here: %lld new items. Already here: %lld.', summary.added, summary.conflicts)}</span>
         </span>
       </label>
       {#if choice === 'merge' && summary.conflicts > 0}
@@ -94,7 +115,10 @@
         <input type="radio" name="restore-mode" value="replace" disabled={busy} bind:group={choice} />
         <span>
           {tr('Replace everything')}
-          <span class="caption">{tr('Clears the vault first. Not in the backup, deleted: %lld items. Paired apps stay.', summary.lostOnReplace)}</span>
+          <span class="caption">{summary.lostOnReplace === 1
+              ? tr('Clears the vault first. Not in the backup, deleted: 1 item. Paired apps stay.')
+              : tr('Clears the vault first. Not in the backup, deleted: %lld items. Paired apps stay.', summary.lostOnReplace)}</span>
+          {@render losses()}
         </span>
       </label>
     </div>
@@ -116,8 +140,11 @@
       <div class="alert-card" role="alertdialog" aria-labelledby="replace-title">
         <h2 id="replace-title">{tr('Replace everything?')}</h2>
         <p class="caption lost">
-          {tr('Connections, folders and shared credentials here that are not in the backup are deleted: %lld items. This cannot be undone.', summary.lostOnReplace)}
+          {summary.lostOnReplace === 1
+            ? tr('Connections, folders and shared credentials here that are not in the backup are deleted: 1 item. This cannot be undone.')
+            : tr('Connections, folders and shared credentials here that are not in the backup are deleted: %lld items. This cannot be undone.', summary.lostOnReplace)}
         </p>
+        <p class="lost-list">{@render losses()}</p>
         <button type="button" class="link backup-first" onclick={onbackupfirst}>{tr('Back Up the Current State First…')}</button>
         <div class="buttons">
           <button type="button" class="cancel-replace" onclick={oncancelconfirm}>{tr('Cancel')}</button>

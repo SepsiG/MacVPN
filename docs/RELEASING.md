@@ -38,7 +38,7 @@ Goal: even if the maintainer's GitHub account (or CI) is compromised, no update 
 The flow is: **tag → CI builds a draft → `scripts/sign-release.sh vX.Y.Z` on the maintainer's Mac → published.**
 
 1. Merge everything for the release into `main`. CI (`.github/workflows/ci.yml`) must be green.
-2. If the root layer (`crates/mvpn`) changed, bump `crates/mvpn/VERSION` (MacVPN 1.2.0 ships root layer **8**: the config goes to `mvpn` on stdin; 1.1 had 7). A new root version makes every user re-run **Authorize** with the admin password: say so in the release notes. Set the version (`X.Y.Z`) in `app/src-tauri/tauri.conf.json`, in `[workspace.package]` of `Cargo.toml` (then `cargo check` to update `Cargo.lock`) and in `app/ui/package.json` (`npm install --package-lock-only` updates the lock file). The three must agree (`scripts/build-dmg.sh` fails otherwise) and equal the tag (the workflow fails otherwise; it no longer rewrites the version). Before tagging, run the local-only checks: the smoke test in both languages (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`, see `app/README.md`) and `docs/manual-test-checklist.md`.
+2. If the root layer (`crates/mvpn`) changed, bump `crates/mvpn/VERSION` (MacVPN 1.2.0 and 1.3.0 ship root layer **8**: the config goes to `mvpn` on stdin; 1.1 had 7). A new root version makes every user re-run **Authorize** with the admin password: say so in the release notes. Set the version (`X.Y.Z`) in `app/src-tauri/tauri.conf.json`, in `[workspace.package]` of `Cargo.toml` (then `cargo check` to update `Cargo.lock`) and in `app/ui/package.json` (`npm install --package-lock-only` updates the lock file). The three must agree (`scripts/build-dmg.sh` fails otherwise) and equal the tag (the workflow fails otherwise; it no longer rewrites the version). Before tagging, run the local-only checks: the smoke test in both languages (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`, see `app/README.md`) and `docs/manual-test-checklist.md`.
 3. Tag the commit on `main` and push the tag:
    ```
    git checkout main && git pull
@@ -79,6 +79,25 @@ The flow is: **tag → CI builds a draft → `scripts/sign-release.sh vX.Y.Z` on
 7. If a release turns out to be broken or suspicious, delete it (or mark a newer fixed one as latest) quickly; users with the 24-hour delay will not have been offered it yet. A draft that should not be released can simply be deleted.
 
 All actions are pinned to full commit SHAs with a `# vX.Y.Z` comment. Dependabot (`.github/dependabot.yml`) proposes updates weekly; review the upstream diff before merging such a PR.
+
+## Team catalog formats (from 1.3.0)
+
+Team catalogs add file formats that other MacVPN installations read, so a release that changes one of them must say so in the release notes and keep the older readers in mind. The formats are versioned independently of the app version:
+
+| What | Where | Version in 1.3.0 | Rule |
+|---|---|---|---|
+| Catalog file `<name>.macvpncatalog` | `crates/core/src/catalog/format.rs` | magic `MVPNCAT1`, header `format` 1 | A higher `format` is refused by older apps ("made by a newer MacVPN"). The signature domain is `macvpn-catalog-v1\n`, distinct from the update domain `macvpn-update-v1\n`, so the two signatures can never be swapped. Max 8 MB. |
+| Catalog payload (inside the encrypted part) | `crates/core/src/catalog/payload.rs` | `version` 1 | Unknown keys are refused, so a new field needs a new payload version, and subscribers on the old version stop applying until they update. |
+| Subscription string `macvpn-sub:` | `crates/core/src/catalog/subscription.rs` | `v` 1 | A higher `v` is refused. |
+| Admin key file `.macvpnadminkey` | `crates/core/src/catalog/admin_file.rs` | magic `MVPNAKEY`, format 1 | Password-sealed like a backup. |
+| Vault schema | `crates/core/src/vault/schema.rs` | 2 | Migrations are append-only; the first 1.3 launch copies the old database to `vault.db.bak-v1`. 1.2 opens a v2 vault read-only. |
+| Full backup payload | `crates/core/src/vault/backup.rs` | 2 | v1 backups are migrated on restore; a 1.2 app refuses a v2 backup ("made by a newer MacVPN"). |
+
+Release checks for 1.3.0 and later:
+- The root layer does not change for team catalogs (`crates/mvpn/VERSION` stays 8). The `scripts/build-dmg.sh` release gate fails if the `mvpn` binary contains `MVPNCAT1` or `macvpn-catalog-v1` (catalog code must never reach the root binary).
+- No document types are registered for `.macvpncatalog` or `.macvpnadminkey`: a catalog is only added through **Add team catalog…**, which keeps the fingerprint step mandatory. `Info.plist` does not change for them.
+- The 1.3.0 release notes say: every team member needs 1.3.0 to subscribe or publish; the vault moves to schema v2 on the first launch (a backup copy is made; 1.2 can still read the vault, read-only, but cannot edit it or restore a backup into it, so there is no way back to editing in 1.2); MacVPN never uploads a catalog; HTTPS catalogs are fetched without a proxy.
+- Run the 1.3.0 section of `docs/manual-test-checklist.md` on the DMG: two Macs, a file share and an HTTPS host.
 
 ## Licences and third-party notices
 

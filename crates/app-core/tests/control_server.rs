@@ -1214,3 +1214,39 @@ fn a_peer_path_with_control_or_format_characters_cannot_pair_or_hello() {
     }
     assert_eq!(h.server().clients().len(), 1);
 }
+
+#[test]
+fn forget_keys_prunes_the_allowlists_and_saves_them() {
+    let h = Harness::new();
+    let (key, item) = managed("Office");
+    let (other, other_item) = managed("Other");
+    h.host.add(item);
+    h.host.add(other_item);
+    let _c = h.authed(&[&key, &other]);
+    h.server().forget_keys(std::slice::from_ref(&key)).unwrap();
+    assert_eq!(h.server().clients()[0].allowed, std::slice::from_ref(&other));
+    let saved = Registry::load(&h.dir.0).unwrap();
+    assert_eq!(saved.clients()[0].allowed, std::slice::from_ref(&other));
+    // While the server is off: the file itself.
+    macvpn_app_core::control::forget_keys_in_registry(&h.dir.0, &[other]).unwrap();
+    let saved = Registry::load(&h.dir.0).unwrap();
+    assert!(saved.clients()[0].allowed.is_empty());
+    // A missing registry is nothing to do.
+    let empty = std::env::temp_dir().join(format!("macvpn-no-registry-{}", uuid::Uuid::new_v4()));
+    macvpn_app_core::control::forget_keys_in_registry(&empty, &[key]).unwrap();
+    assert!(!empty.exists());
+}
+
+#[test]
+fn forget_keys_keeps_the_pruned_allowlist_even_when_saving_fails() {
+    use std::os::unix::fs::PermissionsExt;
+    let h = Harness::new();
+    let (key, item) = managed("Office");
+    h.host.add(item);
+    let _c = h.authed(&[&key]);
+    std::fs::set_permissions(&h.dir.0, std::fs::Permissions::from_mode(0o500)).unwrap();
+    let result = h.server().forget_keys(std::slice::from_ref(&key));
+    std::fs::set_permissions(&h.dir.0, std::fs::Permissions::from_mode(0o700)).unwrap();
+    assert!(result.is_err(), "the failed save is reported");
+    assert!(h.server().clients()[0].allowed.is_empty(), "fails closed: the key is gone from memory");
+}

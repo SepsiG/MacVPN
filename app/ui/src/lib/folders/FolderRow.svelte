@@ -6,9 +6,21 @@
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
   import FolderIcon from './FolderIcon.svelte';
+  import TeamBadge from '../catalog/TeamBadge.svelte';
   import { folderBadge } from './tree';
 
-  let { folder, collapsed, ontoggle }: { folder: FolderTreeRow; collapsed: boolean; ontoggle: () => void } = $props();
+  let {
+    folder,
+    collapsed,
+    team = false,
+    ontoggle,
+  }: {
+    folder: FolderTreeRow;
+    collapsed: boolean;
+    /// A team catalog's root folder: the "Team" badge.
+    team?: boolean;
+    ontoggle: () => void;
+  } = $props();
 
   const badge = $derived(folderBadge(folder));
 </script>
@@ -17,6 +29,7 @@
   <Icon name="chevron" class="chevron" />
   <FolderIcon color={folder.color} open={!collapsed} size={17} />
   <span class="name">{folder.name}</span>
+  {#if team}<TeamBadge name={folder.name} />{/if}
   {#if badge.count !== null || badge.dot}
     <span class="badge {badge.dot ?? ''}" role="img" aria-label={tr('%lld active', badge.count ?? 0)}>
       {#if badge.dot}<span class="dot"></span>{/if}

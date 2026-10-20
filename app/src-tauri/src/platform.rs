@@ -221,16 +221,6 @@ pub fn copy_to_pasteboard(text: &str) -> Result<(), String> {
     if result.exit_code == 0 { Ok(()) } else { Err(result.stderr.trim().to_string()) }
 }
 
-/// The general pasteboard's text (`/usr/bin/pbpaste`, UTF-8); `None` when it cannot be read.
-pub fn pasteboard_text() -> Option<String> {
-    let environment = BTreeMap::from([("LANG".to_string(), "en_US.UTF-8".to_string())]);
-    let result = ProcessCommandRunner::new(RunnerTimeouts::QUICK)
-        .with_environment(environment)
-        .run("/usr/bin/pbpaste", &[], None)
-        .ok()?;
-    (result.exit_code == 0).then_some(result.stdout)
-}
-
 /// `log stream --style compact --predicate …` for the native debug log.
 pub struct LogStreams;
 

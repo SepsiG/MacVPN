@@ -5,6 +5,8 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "vault")]
+pub mod catalog;
 pub mod collation;
 pub mod control;
 pub mod credentials;

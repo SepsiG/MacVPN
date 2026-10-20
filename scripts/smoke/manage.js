@@ -23,12 +23,26 @@
   const save = () => document.querySelector('.footer button.primary').click();
   const shown = (title) => waitFor(() => document.querySelector('.detail h1')?.textContent === title);
   // A popover or context menu lies inside the window, 8 pt from its edges (after its opening animation).
-  const inside = async (selector) => {
+  // The window's real content size (the layout viewport), measured at each use: the window may have been resized
+  // since the script started.
+  const viewport = () => ({
+    width: document.documentElement.clientWidth || innerWidth,
+    height: document.documentElement.clientHeight || innerHeight,
+  });
+  // Where a failed placement check found its popover (for the result: `name[left,top,right,bottom in WxH]`).
+  const geometry = [];
+  const inside = async (selector, name = selector) => {
     const el = await waitFor(() => document.querySelector(selector));
-    if (!el) return false;
+    if (!el) {
+      geometry.push(`${name}[none]`);
+      return false;
+    }
     await sleep(300);
     const r = el.getBoundingClientRect();
-    return r.width > 0 && r.left >= 7.5 && r.top >= 7.5 && r.right <= innerWidth - 7.5 && r.bottom <= innerHeight - 7.5;
+    const { width, height } = viewport();
+    const ok = r.width > 0 && r.left >= 7.5 && r.top >= 7.5 && r.right <= width - 7.5 && r.bottom <= height - 7.5;
+    if (!ok) geometry.push(`${name}[${[r.left, r.top, r.right, r.bottom].map(Math.round).join(',')} in ${width}x${height}]`);
+    return ok;
   };
   const escape = () => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
   const contextAt = (target, x, y) =>
@@ -116,22 +130,23 @@
 
     // The New menu (its longest item in the run's language) inside the window, not cut at the left edge.
     document.querySelector('.sidebar .toolbar button').click();
-    checks.newMenuInside = await inside('.sidebar .menu');
+    checks.newMenuInside = await inside('.sidebar .menu', 'newMenuInside');
     checks.newMenuNoOverflow = [...document.querySelectorAll('.sidebar .menu button')].every((b) => b.scrollWidth <= b.clientWidth);
     escape();
     await waitFor(() => !document.querySelector('.sidebar .menu'));
     // A connection's context menu at the window's corners, and its colour picker at the bottom right.
-    for (const [x, y, name] of [
-      [innerWidth - 2, innerHeight - 2, 'contextBottomRight'],
-      [innerWidth - 2, 2, 'contextTopRight'],
-      [1, innerHeight - 1, 'contextBottomLeft'],
+    for (const [corner, name] of [
+      [({ width, height }) => [width - 2, height - 2], 'contextBottomRight'],
+      [({ width }) => [width - 2, 2], 'contextTopRight'],
+      [({ height }) => [1, height - 1], 'contextBottomLeft'],
     ]) {
+      const [x, y] = corner(viewport());
       contextAt(row('Seeded B'), x, y);
-      checks[name] = await inside('.menu[role=menu]');
+      checks[name] = await inside('.menu[role=menu]', name);
       if (name === 'contextBottomRight') {
         const colour = document.querySelector('.menu [data-action="colour"]');
         colour?.click();
-        checks.pickerInside = !!colour && (await inside('.picker'));
+        checks.pickerInside = !!colour && (await inside('.picker', 'pickerInside'));
       }
       escape();
       await waitFor(() => !document.querySelector('.menu[role=menu], .picker'));
@@ -154,7 +169,7 @@
     await shown('Smoke A');
     await waitFor(() => document.querySelector('input.wide')?.value === 'Smoke A');
     const failed = Object.entries(checks).filter(([, ok]) => !ok).map(([k]) => k);
-    setValue(document.querySelector('input.wide'), failed.length === 0 ? 'SMOKE OK' : `SMOKE FAILED ${failed.join(',')}`);
+    setValue(document.querySelector('input.wide'), failed.length === 0 ? 'SMOKE OK' : `SMOKE FAILED ${failed.join(',')} ${geometry.join(' ')}`.trim());
   } catch (e) {
     const input = document.querySelector('input.wide');
     if (input) setValue(input, `SMOKE ERROR ${String(e).slice(0, 80)}`);

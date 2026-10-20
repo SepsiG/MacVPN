@@ -299,6 +299,48 @@ impl ControlApp {
         let clients = self.registry.load().map(|r| r.clients().to_vec()).unwrap_or_default();
         self.slot().offline = clients;
     }
+
+    /// Removes `keys` from every paired client's allowlist and saves once: through the running server
+    /// (`ControlServer::forget_keys`, which keeps the pruned lists in effect even if saving fails), or, while it is
+    /// not running, in the stored registry (the vault; `forget_keys_in_registry`'s counterpart for the
+    /// `RegistryStore`). Removed team catalog connections and unsubscribing call it (`CatalogService::set_forget_keys`),
+    /// so a re-subscribe with the same deterministic ids never re-grants access silently.
+    pub fn forget_keys(&self, keys: &[String]) -> Result<(), String> {
+        if keys.is_empty() {
+            return Ok(());
+        }
+        let _ops = self.ops();
+        // The server's save runs without the slot's lock (the view model reads the slot meanwhile).
+        let server = self.slot().server.clone();
+        let result = match server.as_deref() {
+            Some(server) => server.forget_keys(keys).map_err(|e| e.to_string()),
+            None => {
+                let pruned = self.registry.load().and_then(|mut registry| {
+                    if registry.forget_keys(keys) { self.registry.save(&registry) } else { Ok(()) }
+                });
+                self.refresh_offline();
+                pruned.map_err(|e| e.to_string())
+            }
+        };
+        drop(server);
+        match &result {
+            Ok(()) => self.record(&format!("removed {} team catalog connection(s) from the allowlists", keys.len())),
+            Err(e) => self.record(&format!("could not remove team catalog connections from the allowlists: {e}")),
+        }
+        result
+    }
+
+    /// Puts a started server into the slot (tests of the paths that depend on a running server).
+    #[cfg(test)]
+    fn set_server_for_test(&self, server: ControlServer) {
+        self.slot().server = Some(Arc::new(server));
+    }
+
+    #[cfg(test)]
+    fn take_server_for_test(&self) -> Option<ControlServer> {
+        let server = self.slot().server.take()?;
+        unwrap_server(server)
+    }
 }
 
 // MARK: - Host
@@ -806,6 +848,112 @@ mod tests {
         std::os::unix::fs::symlink(&dir, &linked).unwrap();
         assert!(append_audit(&linked, "line", AUDIT_CAP).is_err());
         fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// The paired clients in memory (the vault's `VaultRegistry` in the app), counting the saves.
+    #[derive(Default)]
+    struct MemoryRegistry {
+        registry: Mutex<Registry>,
+        saves: AtomicUsize,
+    }
+
+    impl RegistryStore for MemoryRegistry {
+        fn load(&self) -> io::Result<Registry> {
+            Ok(self.registry.lock().unwrap().clone())
+        }
+        fn save(&self, registry: &Registry) -> io::Result<()> {
+            self.saves.fetch_add(1, Ordering::SeqCst);
+            *self.registry.lock().unwrap() = registry.clone();
+            Ok(())
+        }
+    }
+
+    fn paired(allowed: &[&str]) -> Arc<MemoryRegistry> {
+        let store = Arc::new(MemoryRegistry::default());
+        let mut registry = Registry::default();
+        registry.add(PairedClient::new(
+            Uuid::from_u128(7),
+            "Raycast".into(),
+            "token",
+            "/Applications/Raycast.app/Contents/MacOS/Raycast".into(),
+            allowed.iter().map(|k| k.to_string()).collect(),
+            Date::now(),
+        ));
+        *store.registry.lock().unwrap() = registry;
+        store
+    }
+
+    fn allowed(store: &MemoryRegistry) -> Vec<String> {
+        store.registry.lock().unwrap().clients()[0].allowed.clone()
+    }
+
+    /// A server host that is never asked anything in these tests.
+    struct IdleHost;
+    impl ControlHost for IdleHost {
+        fn items(&self) -> Vec<ConnectionItem> {
+            Vec::new()
+        }
+        fn state(&self, _: &str) -> ConnectionState {
+            ConnectionState::Disconnected
+        }
+        fn connect(&self, _: &str) -> Result<(), ErrorCode> {
+            Err(ErrorCode::UnknownConnection)
+        }
+        fn disconnect(&self, _: &str) {}
+        fn setup_ready_for(&self, _: &str) -> bool {
+            false
+        }
+        fn ask_pairing(&self, _: PairingRequest) -> PairingAnswer {
+            PairingAnswer::Denied
+        }
+        fn log(&self, _: String) {}
+        fn credentials_cancelled(&self, _: &str) -> bool {
+            false
+        }
+    }
+
+    /// The catalog's pruning while the control API is off: the stored registry loses the keys, saved once; an
+    /// unknown key changes (and saves) nothing.
+    #[test]
+    fn forgetting_keys_prunes_the_stored_registry_while_the_server_is_off() {
+        let root = scratch("forget-off");
+        let store = paired(&[A, B]);
+        let control = ControlApp::new(&root, store.clone(), root.join("vault"));
+        assert!(!control.is_running());
+        control.forget_keys(&[A.to_string()]).unwrap();
+        assert_eq!(allowed(&store), [B]);
+        assert_eq!(store.saves.load(Ordering::SeqCst), 1);
+        control.forget_keys(&["66666666-7777-4888-9999-AAAAAAAAAAAA".to_string()]).unwrap();
+        control.forget_keys(&[]).unwrap();
+        assert_eq!(store.saves.load(Ordering::SeqCst), 1, "nothing changed, nothing saved");
+        // The Paired apps list shown while the server is off follows.
+        assert_eq!(control.slot().offline[0].allowed, [B]);
+        let _ = fs::remove_dir_all(&root);
+    }
+
+    /// The catalog's pruning while the control API runs: the server's live registry loses the keys (so a client
+    /// cannot use them any more) and saves them.
+    #[test]
+    fn forgetting_keys_goes_through_the_running_server() {
+        // A short directory: the socket path must fit `sun_path`.
+        let root = PathBuf::from(format!("/tmp/mvfk-{}", &Uuid::new_v4().simple().to_string()[..8]));
+        let store = paired(&[A, B]);
+        let control = ControlApp::new(&root, store.clone(), root.join("vault"));
+        let server = ControlServer::start(
+            ControlOptions::with_registry(control.control_dir().to_path_buf(), store.clone()),
+            Arc::new(IdleHost),
+            Arc::new(Transport),
+        )
+        .unwrap();
+        control.set_server_for_test(server);
+        assert!(control.is_running());
+        control.forget_keys(&[B.to_string()]).unwrap();
+        let server = control.take_server_for_test().unwrap();
+        assert_eq!(server.clients()[0].allowed, [A], "the live allowlist");
+        assert_eq!(allowed(&store), [A], "and the stored one");
+        let mut server = server;
+        server.stop(StopMode::EndLeases);
+        let _ = fs::remove_dir_all(&root);
     }
 
     #[test]

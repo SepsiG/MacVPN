@@ -76,6 +76,12 @@ pub enum VaultError {
     LinkedToCredential,
     /// A backup payload a restore refuses (which part, never its value).
     InvalidBackup(InvalidBackup),
+    /// A write to a row a team catalog owns (its config, name, folder, colour, its folders, or a secret the catalog
+    /// provides) through a generic write path: only the catalog executor changes them (spec 6, read-only).
+    CatalogManaged,
+    /// A write based on what the user saw of a catalog connection (its config) after the team catalog changed it
+    /// meanwhile: the user reviews it again (spec 6, the risky-directive acknowledgement).
+    CatalogChanged,
     Io(io::Error),
     Sql(String),
     /// The 1.1 data waits for its migration (the app's legacy read-only mode): the new vault takes no write but the
@@ -103,6 +109,10 @@ impl fmt::Display for VaultError {
                 f.write_str("the user name and password of this item come from a shared credential")
             }
             VaultError::InvalidBackup(e) => e.fmt(f),
+            VaultError::CatalogManaged => {
+                f.write_str("this item is managed by a team catalog and cannot be changed here")
+            }
+            VaultError::CatalogChanged => f.write_str("the team catalog changed this connection; review it again"),
             VaultError::Io(e) => write!(f, "vault file error: {e}"),
             VaultError::Sql(detail) => write!(f, "vault database error ({detail})"),
             VaultError::ReadOnly => f.write_str("the vault is read-only until the migration of the old data finishes"),
@@ -171,8 +181,14 @@ impl fmt::Debug for Vault {
 }
 
 impl Vault {
-    /// Creates `<dir>/vault.db` (the directory 0700 if missing) with schema v1. Fails if the file exists.
+    /// Creates `<dir>/vault.db` (the directory 0700 if missing) with the current schema. Fails if the file exists.
     pub fn create(dir: &Path, dek: &Dek) -> Result<Vault, VaultError> {
+        Self::create_with_migrations(dir, dek, MIGRATIONS)
+    }
+
+    /// [`Vault::create`] with another migration list (tests that need a database of an older schema).
+    #[doc(hidden)]
+    pub fn create_with_migrations(dir: &Path, dek: &Dek, migrations: &[Migration]) -> Result<Vault, VaultError> {
         let dir_uid = prepare_dir(dir)?;
         let path = dir.join(VAULT_FILE);
         let file = OpenOptions::new()
@@ -190,8 +206,8 @@ impl Vault {
                 return Err(not_ours(dir));
             }
             let mut conn = connect(&path, dek, Access::ReadWrite)?;
-            migrate(&mut conn, MIGRATIONS, 0)?;
-            Ok(Vault { conn, schema: latest(MIGRATIONS), read_only_for: None })
+            migrate(&mut conn, migrations, 0)?;
+            Ok(Vault { conn, schema: latest(migrations), read_only_for: None })
         })();
         if result.is_err() {
             for suffix in ["", "-wal", "-shm", "-journal"] {
@@ -437,8 +453,10 @@ fn migrate(conn: &mut Connection, migrations: &[Migration], current: u32) -> Res
     }
     let set = "INSERT INTO meta(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value";
     tx.execute(set, ["schema_version", &target.to_string()]).map_err(failed)?;
-    // An older build must never write to this database: the lowest app schema that may write it is this one.
-    tx.execute(set, ["min_app_schema", &target.to_string()]).map_err(failed)?;
+    // The lowest app schema that may write this database: the highest requirement of every step up to the target
+    // (an additive step that older builds cannot break keeps the earlier value).
+    let min_app = migrations.iter().filter(|m| m.version <= target).map(|m| m.min_app_schema).max().unwrap_or(target);
+    tx.execute(set, ["min_app_schema", &min_app.to_string()]).map_err(failed)?;
     if current == 0 {
         tx.execute("INSERT OR IGNORE INTO meta(key, value) VALUES ('created', ?1)", [Date::now().iso8601()])
             .map_err(failed)?;

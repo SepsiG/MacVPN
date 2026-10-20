@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-unsubscribe"
+description = "Enables the catalog_unsubscribe command without any pre-configured scope."
+commands.allow = ["catalog_unsubscribe"]
+
+[[permission]]
+identifier = "deny-catalog-unsubscribe"
+description = "Denies the catalog_unsubscribe command without any pre-configured scope."
+commands.deny = ["catalog_unsubscribe"]

@@ -45,7 +45,7 @@
 
 {#if step === 'confirm'}
   <Modal
-    title={tr('Delete %lld connections?', folder.connectionCount)}
+    title={folder.connectionCount === 1 ? tr('Delete 1 connection?') : tr('Delete %lld connections?', folder.connectionCount)}
     message={tr('The connections in %@ and its subfolders are deleted with their saved passwords. This cannot be undone.', folder.name)}
     {buttons}
   />

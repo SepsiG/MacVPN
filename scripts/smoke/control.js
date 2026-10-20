@@ -21,7 +21,7 @@
   const target = '91111111-2222-4333-8444-555555555555';
   const checks = {};
   try {
-    (await waitFor(() => document.querySelector('.sidebar .footer .paired'))).click();
+    (await waitFor(() => document.querySelector('.sidebar .footer .link-paired'))).click();
     const toggle = await waitFor(() => document.querySelector('.paired .control-switch'));
     checks.section = !!toggle;
     checks.offByDefault = !!toggle && !toggle.checked && (await vm()).control.enabled === false;

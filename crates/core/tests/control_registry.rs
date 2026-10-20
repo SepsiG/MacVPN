@@ -333,3 +333,12 @@ fn existing_bad_file_is_replaced() {
     assert_eq!(fs::read(&bad).unwrap(), b"newer");
     assert!(!Registry::path(tmp.path()).exists());
 }
+
+#[test]
+fn forget_keys_prunes_every_allowlist() {
+    let (mut r, id_a, _, id_b, _) = registry();
+    assert!(r.forget_keys(&[KEY_A.to_string(), "00000000-0000-0000-0000-00000000000F".into()]));
+    assert!(r.get(id_a).unwrap().allowed.is_empty());
+    assert_eq!(r.get(id_b).unwrap().allowed, [KEY_B]);
+    assert!(!r.forget_keys(&[KEY_A.to_string()]), "nothing left to forget");
+}

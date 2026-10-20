@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-catalog-preview"
+description = "Enables the catalog_preview command without any pre-configured scope."
+commands.allow = ["catalog_preview"]
+
+[[permission]]
+identifier = "deny-catalog-preview"
+description = "Denies the catalog_preview command without any pre-configured scope."
+commands.deny = ["catalog_preview"]

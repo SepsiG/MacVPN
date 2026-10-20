@@ -391,7 +391,7 @@ fn every_write_is_refused_on_a_newer_database() {
     assert_eq!(vault.secret(&key, SecretField::Password).unwrap().as_deref().map(|s| s.as_str()), Some("pw"));
 
     let newer =
-        |r: Result<(), VaultError>| assert!(matches!(r, Err(VaultError::NewerSchema { db: 99, app: 1 })), "{r:?}");
+        |r: Result<(), VaultError>| assert!(matches!(r, Err(VaultError::NewerSchema { db: 99, app: 2 })), "{r:?}");
     newer(vault.save_connection(&c, Some("changed")));
     newer(vault.save_connection(&connection("new"), None));
     newer(vault.delete_connection(&c.id));

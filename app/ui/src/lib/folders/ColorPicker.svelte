@@ -18,6 +18,7 @@
     value,
     target,
     inherited = null,
+    team = false,
     x = 0,
     y = 0,
     onpick,
@@ -29,6 +30,8 @@
     target: 'folder' | 'item';
     /// An item's folder colour (shown on "Use folder colour").
     inherited?: FolderColor | null;
+    /// A team catalog's connection: the option goes back to the publisher's colour ("Use team colour").
+    team?: boolean;
     x?: number;
     y?: number;
     onpick: (choice: ColorChoice) => void;
@@ -95,7 +98,7 @@
   {:else if value !== null}
     <button class="option" onclick={() => onpick('inherit')}>
       <span class="inherit" style:--sw={colorToken(inherited) ?? 'transparent'} class:empty={!inherited} aria-hidden="true"></span>
-      {tr('Use folder colour')}
+      {team ? tr('Use team colour') : tr('Use folder colour')}
     </button>
   {/if}
 </div>

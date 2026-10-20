@@ -21,6 +21,7 @@
 //! username, a password or any other secret.
 
 use super::db::{Tx, Vault, VaultError};
+use super::repo_catalog::guard_provided;
 use super::repo_connections::wiped_bytes_opt;
 use crate::collation;
 use crate::date::Date;
@@ -367,9 +368,12 @@ impl Vault {
         })
     }
 
-    /// Forgets everything stored for one item: its own secrets and its link (the credential itself stays).
+    /// Forgets everything stored for one item: its own secrets and its link (the credential itself stays). A team
+    /// catalog's item is [`VaultError::CatalogManaged`]: its provided secrets and its slot link are the catalog's,
+    /// and only the catalog removes it.
     pub fn forget_item(&mut self, item: &str) -> Result<(), VaultError> {
         self.transaction(|tx| {
+            super::repo_catalog::guard_owned(tx, item)?;
             tx.execute("DELETE FROM secrets WHERE connection_id = ?1", [item])?;
             tx.execute("DELETE FROM credential_links WHERE item_id = ?1", [item])?;
             Ok(())
@@ -430,6 +434,7 @@ impl Vault {
     /// the same credential. They use [`Self::set_item_secret`].
     pub fn save_prompted_secret(&mut self, item: &str, field: SecretField, value: &str) -> Result<(), VaultError> {
         self.transaction(|tx| {
+            guard_provided(tx, item, field)?;
             if covered(field)
                 && let Some(credential) = credential_of(tx, item)?
             {
@@ -460,9 +465,11 @@ impl Vault {
     /// value deletes). For an item linked to a shared credential, a non-empty username or password is refused with
     /// [`VaultError::LinkedToCredential`] and nothing changes (a linked editor sends no value for those fields; an
     /// empty one is accepted as a no-op, since a linked item has no own username or password to clear). The
-    /// other fields (PSK, key password) are always the item's own.
+    /// other fields (PSK, key password) are always the item's own. A field a team catalog provides for the item is
+    /// [`VaultError::CatalogManaged`].
     pub fn set_item_secret(&mut self, item: &str, field: SecretField, value: &str) -> Result<(), VaultError> {
         self.transaction(|tx| {
+            guard_provided(tx, item, field)?;
             if covered(field) && credential_of(tx, item)?.is_some() {
                 return if value.is_empty() { Ok(()) } else { Err(VaultError::LinkedToCredential) };
             }

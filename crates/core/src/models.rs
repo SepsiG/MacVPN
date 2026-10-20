@@ -148,16 +148,24 @@ impl OTPSetting {
 ///
 /// Defined here (the vault and the secret readers use it without the credential prompt); `credentials.rs`
 /// re-exports it next to `CredentialPrompt`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CredentialRef {
     pub name: String,
     /// How many items (managed connections and system VPNs) are linked to it.
     pub used_by: usize,
+    /// The team catalog whose credential slot this is (its name; team catalog spec 6): the prompt reads "Office AD
+    /// (team catalog “Acme VPN”) — enter your user name and password". `None`: a personal shared credential.
+    pub team: Option<String>,
+    /// A team slot only: where the catalog comes from, so a catalog named like another cannot pass for it: the
+    /// HTTPS source's host, or the short form of the pinned publisher fingerprint (`ABCD-1234`) for a file source.
+    pub team_source: Option<String>,
+    /// A team slot only: the server the connection sends the slot's password to (display only).
+    pub server: Option<String>,
 }
 
 /// The secret fields of a connection (or a system VPN): the Keychain account suffix today (`<key>.<raw value>`),
-/// the `secrets.field` column in the vault.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+/// the `secrets.field` column in the vault. Ordered as declared (the same order as [`SecretField::ALL`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum SecretField {
     Username,
     Password,

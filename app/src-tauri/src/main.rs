@@ -7,6 +7,8 @@
 //! because the platform calls are synchronous.
 
 mod backup;
+mod catalog;
+mod clipboard;
 mod commands;
 mod control;
 mod credentials;
@@ -31,6 +33,9 @@ mod vault;
 
 use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, MemoryPreferences, POLL_TICK, Poller, PreferenceStore};
 use macvpn_app_core::backup::BackupService;
+use macvpn_app_core::catalog::{CatalogDeps, CatalogService};
+use macvpn_app_core::catalog_file::FileCatalogFetcher;
+use macvpn_app_core::catalog_publish::{Publisher as CatalogPublisher, PublisherDeps};
 use macvpn_app_core::connections::ConnectionsModel;
 use macvpn_app_core::control::FileRegistryStore;
 use macvpn_app_core::credential_prompt::CredentialBroker;
@@ -205,7 +210,25 @@ fn build_state(env: Environment, storage: Storage) -> Arc<AppState> {
         KdfParams::DEFAULT,
         macvpn_core::VERSION,
     )));
+    // Team catalogs (spec 5–7): the HTTPS source through curl (refused in the sandbox), the file source with its
+    // read timeout, the publishing side on the same vault.
+    let https = catalog::https_fetcher(env.sandbox);
+    let catalog_service = CatalogService::new(CatalogDeps {
+        vault: storage.vault.clone(),
+        https,
+        file: Arc::new(FileCatalogFetcher::new()),
+        manager: manager.clone(),
+        clock: Arc::new(SystemClock),
+    });
+    let catalog_publisher = Arc::new(CatalogPublisher::new(PublisherDeps {
+        vault: storage.vault.clone(),
+        entropy: storage.entropy.clone(),
+        kdf: KdfParams::DEFAULT,
+        clock: Arc::new(SystemClock),
+    }));
+    let catalog = catalog::CatalogApp::new(catalog_service, catalog_publisher, storage.vault.clone(), env.sandbox);
     Arc::new(AppState {
+        catalog,
         updates,
         login_item: RwLock::new(None),
         connections,
@@ -264,6 +287,8 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
     state.control.pairing.set_on_change(move || publisher.mark());
     // The control API's manager listeners, once (a started server plugs its notifier into the relay).
     state.control.attach(&state.manager);
+    // The team catalogs: notifications, the log, the allowlist pruning, the pending removals' listener.
+    catalog::connect_hooks(state);
     // A staged native profile is deleted once its service is listed (the Swift `stagedProfiles.servicesSeen`).
     let staged = state.staged_profiles.clone();
     state.manager.set_on_native_services_seen(move |ids| {
@@ -291,6 +316,7 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
 /// The steps after the Swift `AppModel.init` part (reload, setup check, …, polling), off the main thread.
 fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep) {
     match step {
+        LaunchStep::OpenVault => vault::launch(app, state),
         LaunchStep::ReloadConnections => {
             state.manager.reload();
             start_live_list(state);
@@ -340,7 +366,10 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                 })
                 .expect("poller thread");
         }
-        LaunchStep::OpenVault => vault::launch(app, state),
+        // The team catalog scheduler: a launch round, then every 30 s it checks what is due; the wake hook and
+        // `vault::after_unlock` ask it for a round, and it skips its rounds while the vault is locked. The handle is
+        // kept and joined at quit (`AppState::stop_polling`).
+        LaunchStep::StartCatalogRefresh => state.catalog.start_scheduler(),
         LaunchStep::MigrateKeychain | LaunchStep::SweepStagedProfiles | LaunchStep::RemoveLegacyProfiles => {}
     }
 }
@@ -538,7 +567,7 @@ fn main() {
             vault::vault_lock_now,
             vault::vault_auto_unlock_off,
             vault::vault_set_show_lock_now,
-            vault::vault_key_copied,
+            vault::vault_copy_recovery_key,
             folders::folder_create,
             folders::folder_rename,
             folders::folder_set_color,
@@ -565,6 +594,31 @@ fn main() {
             backup::restore_apply_preferences,
             backup::restore_reinstall_profile,
             backup::restore_discard,
+            catalog::catalog_parse_subscription,
+            catalog::catalog_choose_file_source,
+            catalog::catalog_preview,
+            catalog::catalog_confirm,
+            catalog::catalog_discard,
+            catalog::catalog_refresh,
+            catalog::catalog_refresh_all,
+            catalog::catalog_update_source,
+            catalog::catalog_update_team_key,
+            catalog::catalog_update_bearer,
+            catalog::catalog_unsubscribe,
+            catalog::catalog_duplicate,
+            catalog::catalog_install_profile,
+            catalog::catalog_profile_installed,
+            catalog::admin_key_generate,
+            catalog::admin_key_export,
+            catalog::admin_key_choose_file,
+            catalog::admin_key_import,
+            catalog::admin_key_promote,
+            catalog::publish_preview,
+            catalog::publish_catalog,
+            catalog::publication_rotate_team_key,
+            catalog::publication_copy_subscription,
+            catalog::publication_forget,
+            catalog::catalog_copy_team_key,
         ])
         .on_window_event(|window, event| {
             if let WindowEvent::Destroyed = event {
@@ -634,9 +688,13 @@ fn main() {
             if !app_hooks::install_terminate_handler(move || system_terminate_request(&terminating)) {
                 eprintln!("MacVPN: applicationShouldTerminate could not be installed");
             }
-            // A woken Mac refreshes at once (the Swift `didWakeNotification`).
+            // A woken Mac refreshes at once (the Swift `didWakeNotification`), the team catalogs too.
             let poller = state.poller.clone();
-            app_hooks::observe_wake(move || poller.wake());
+            let catalogs = state.catalog.service.clone();
+            app_hooks::observe_wake(move || {
+                poller.wake();
+                catalogs.wake();
+            });
             install_menu(&handle)?;
             tray::create_menu_window(&handle)?;
             tray::create(&handle)?;
