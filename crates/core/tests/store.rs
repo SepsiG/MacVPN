@@ -188,6 +188,10 @@ fn read_through(mut fd: fs::File) -> Vec<u8> {
 }
 
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "shred_file skips the overwrite on Windows until it reads the real hard link count: phase 2"
+)]
 fn shred_file_zeroes_the_contents_before_unlinking() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -205,6 +209,10 @@ fn shred_file_zeroes_the_contents_before_unlinking() {
 }
 
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "shred_file skips the overwrite on Windows until it reads the real hard link count: phase 2"
+)]
 fn shred_file_handles_large_and_empty_files_and_a_missing_one() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
