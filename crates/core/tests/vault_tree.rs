@@ -291,6 +291,7 @@ fn child_names(vault: &Vault, parent: Option<Uuid>) -> Vec<String> {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_rename_colour_collapse_round_trip() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -337,6 +338,7 @@ fn create_rename_colour_collapse_round_trip() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn invalid_names_and_unknown_folders_are_refused() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -359,6 +361,7 @@ fn invalid_names_and_unknown_folders_are_refused() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn move_folder_checks_cycles_and_renumbers_siblings() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -394,6 +397,7 @@ fn move_folder_checks_cycles_and_renumbers_siblings() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_move_contents_up_lands_at_the_end_of_the_parent() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -429,6 +433,7 @@ fn delete_move_contents_up_lands_at_the_end_of_the_parent() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_contents_cascades_and_returns_nested_connections() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -459,6 +464,7 @@ fn delete_contents_cascades_and_returns_nested_connections() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_connection_whose_folder_vanished_lands_at_the_root() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -475,6 +481,7 @@ fn a_connection_whose_folder_vanished_lands_at_the_root() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn item_folder_and_colour_for_managed_and_system_keys() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -517,6 +524,7 @@ fn item_folder_and_colour_for_managed_and_system_keys() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn folder_tree_from_the_vault_orders_like_the_pure_tree() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -535,6 +543,7 @@ fn folder_tree_from_the_vault_orders_like_the_pure_tree() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn folders_persist_across_reopen() {
     let tmp = TempDir::new();
     let dir = tmp.path().join("MacVPN");

@@ -1,6 +1,6 @@
 //! The control server test harness, shared by `control_server.rs` and `control_example_client.rs`: a real Unix
-//! socket in a short temp directory, a fake host whose connections follow a script, and a fake transport (the
-//! peer identity is set by the test).
+//! socket in a short temp directory (or TCP on the loopback address, which runs on every OS), a fake host whose
+//! connections follow a script, and a fake transport (the peer identity is set by the test).
 //!
 //! Waits poll a condition with a deadline (never a fixed sleep), and the server's timings are shortened through
 //! `ControlLimits`, so the tests are deterministic.
@@ -8,14 +8,16 @@
 
 use macvpn_app_core::ConnectionItem;
 use macvpn_app_core::control::{
-    BoundSocket, ControlHost, ControlLimits, ControlNotifier, ControlOptions, ControlServer, ControlTransport,
-    PairingAnswer, PairingRequest, PeerIdentity,
+    Accepted, BoundEndpoint, ControlHost, ControlLimits, ControlListener, ControlNotifier, ControlOptions,
+    ControlServer, ControlStream, ControlTransport, PairingAnswer, PairingRequest, PeerIdentity, PeerUser,
 };
 use macvpn_core::control::protocol::ErrorCode;
 use macvpn_core::models::{AuthWait, AuthWaitKind, Connection, ConnectionState, VPNKind, uuid_string};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::io::{self, BufRead, BufReader, ErrorKind, Read, Write};
+use std::net::{Shutdown, SocketAddr, TcpListener, TcpStream};
+#[cfg(unix)]
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -58,46 +60,240 @@ pub fn wait_until(what: &str, mut f: impl FnMut() -> bool) {
     }
 }
 
-// MARK: - Fake transport
+// MARK: - Fake transports
 
-pub struct FakeTransport {
+/// Which test transport a harness runs over. The server suite runs over both.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Kind {
+    /// A real Unix socket at `control/macvpn.sock` (Unix only).
+    Unix,
+    /// TCP on `127.0.0.1` (every OS). The peer is always `uid 0`; its address is written to
+    /// `control/macvpn.sock`, a plain file, which is the endpoint's `socket_file`.
+    Loopback,
+}
+
+/// The peer identity the test sets (shared with the bound listener, so a change applies to the next accept).
+pub struct FakePeer {
     pub executable: Mutex<Option<String>>,
     pub same_user: AtomicBool,
 }
 
-impl FakeTransport {
-    pub fn new() -> Arc<FakeTransport> {
-        Arc::new(FakeTransport { executable: Mutex::new(Some(EXE.into())), same_user: AtomicBool::new(true) })
-    }
-
-    pub fn set_executable(&self, exe: Option<&str>) {
-        *self.executable.lock().unwrap() = exe.map(str::to_string);
-    }
-}
-
-impl ControlTransport for FakeTransport {
-    fn bind(&self, dir: &Path) -> std::io::Result<BoundSocket> {
-        std::fs::create_dir_all(dir)?;
-        let path = dir.join("macvpn.sock");
-        let _ = std::fs::remove_file(&path);
-        let listener = UnixListener::bind(&path)?;
-        Ok(BoundSocket { listener, path, guard: Box::new(()) })
-    }
-
-    fn peer(&self, _stream: &UnixStream) -> std::io::Result<PeerIdentity> {
-        Ok(PeerIdentity {
-            uid: 501,
+impl FakePeer {
+    fn identity(&self, uid: u32) -> PeerIdentity {
+        PeerIdentity {
+            user: PeerUser::Uid(uid),
             same_user: self.same_user.load(Ordering::SeqCst),
             pid: 4242,
             executable: self.executable.lock().unwrap().clone(),
+        }
+    }
+}
+
+/// The test transport: a real stream of `kind`; the peer identity is set by the test.
+pub struct FakeTransport {
+    pub kind: Kind,
+    pub peer: Arc<FakePeer>,
+    /// Loopback: report the address file as the endpoint's `socket_file` (otherwise `None`).
+    pub socket_file: AtomicBool,
+    /// Loopback: the address of the last bind.
+    pub addr: Mutex<Option<SocketAddr>>,
+}
+
+impl FakeTransport {
+    #[cfg(unix)]
+    pub fn new() -> Arc<FakeTransport> {
+        FakeTransport::over(Kind::Unix)
+    }
+
+    pub fn over(kind: Kind) -> Arc<FakeTransport> {
+        Arc::new(FakeTransport {
+            kind,
+            peer: Arc::new(FakePeer { executable: Mutex::new(Some(EXE.into())), same_user: AtomicBool::new(true) }),
+            socket_file: AtomicBool::new(true),
+            addr: Mutex::new(None),
         })
     }
 
-    fn random_32(&self) -> std::io::Result<[u8; 32]> {
+    pub fn set_executable(&self, exe: Option<&str>) {
+        *self.peer.executable.lock().unwrap() = exe.map(str::to_string);
+    }
+
+    fn uid(&self) -> u32 {
+        if self.kind == Kind::Unix { 501 } else { 0 }
+    }
+}
+
+/// The log line's user part for this transport's peer.
+pub fn peer_user(kind: Kind) -> &'static str {
+    if kind == Kind::Unix { "uid 501" } else { "uid 0" }
+}
+
+impl ControlTransport for FakeTransport {
+    fn bind(&self, dir: &Path) -> io::Result<BoundEndpoint> {
+        std::fs::create_dir_all(dir)?;
+        let path = dir.join("macvpn.sock");
+        let _ = std::fs::remove_file(&path);
+        let (peer, uid) = (self.peer.clone(), self.uid());
+        match self.kind {
+            #[cfg(unix)]
+            Kind::Unix => {
+                let listener = UnixListener::bind(&path)?;
+                listener.set_nonblocking(true)?;
+                Ok(BoundEndpoint {
+                    listener: Box::new(UnixTestListener { listener, peer, uid }),
+                    display: path.display().to_string(),
+                    socket_file: Some(path),
+                    guard: Box::new(()),
+                })
+            }
+            #[cfg(not(unix))]
+            Kind::Unix => Err(io::Error::from(ErrorKind::Unsupported)),
+            Kind::Loopback => {
+                let listener = TcpListener::bind("127.0.0.1:0")?;
+                listener.set_nonblocking(true)?;
+                let addr = listener.local_addr()?;
+                *self.addr.lock().unwrap() = Some(addr);
+                let socket_file = if self.socket_file.load(Ordering::SeqCst) {
+                    std::fs::write(&path, addr.to_string())?;
+                    Some(path)
+                } else {
+                    None
+                };
+                Ok(BoundEndpoint {
+                    listener: Box::new(LoopbackListener { listener, peer, uid }),
+                    display: addr.to_string(),
+                    socket_file,
+                    guard: Box::new(()),
+                })
+            }
+        }
+    }
+
+    fn random_32(&self) -> io::Result<[u8; 32]> {
         let mut bytes = [0u8; 32];
         bytes[..16].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
         bytes[16..].copy_from_slice(uuid::Uuid::new_v4().as_bytes());
         Ok(bytes)
+    }
+
+    /// EINVAL / ENOTCONN / ECONNRESET, as the macOS transport.
+    fn is_already_closed(&self, e: &io::Error) -> bool {
+        matches!(e.kind(), ErrorKind::InvalidInput | ErrorKind::NotConnected | ErrorKind::ConnectionReset)
+    }
+
+    /// Deliberately core's `fsx::ensure_private_dir` alone (no owner check): the test directories are this user's
+    /// own temp folders, and the platforms' owner checks have their own tests.
+    fn prepare_dir(&self, dir: &Path) -> io::Result<()> {
+        macvpn_core::fsx::ensure_private_dir(dir).map(|_| ())
+    }
+}
+
+/// The non-blocking accept of both listeners, as the macOS transport does it.
+macro_rules! accept_with {
+    ($self:ident, $poll:ident, $wrap:ident) => {{
+        let stream = match $self.listener.accept() {
+            Ok((stream, _)) => stream,
+            Err(e) if e.kind() == ErrorKind::WouldBlock => {
+                std::thread::sleep($poll);
+                return Ok(Accepted::Idle);
+            }
+            Err(e) => return Err(e),
+        };
+        if stream.set_nonblocking(false).is_err() {
+            return Ok(Accepted::Idle);
+        }
+        Ok(Accepted::Client { stream: Box::new($wrap(stream)), peer: Ok($self.peer.identity($self.uid)) })
+    }};
+}
+
+/// The one-byte peek of the macOS transport, for both test streams.
+macro_rules! peek_connected {
+    ($stream:expr) => {{
+        let stream = $stream;
+        if stream.set_nonblocking(true).is_err() {
+            return false;
+        }
+        let mut byte = [0u8; 1];
+        let alive = match (&*stream).read(&mut byte) {
+            Ok(0) => false,
+            Ok(_) => true,
+            Err(e) => e.kind() == ErrorKind::WouldBlock,
+        };
+        stream.set_nonblocking(false).is_ok() && alive
+    }};
+}
+
+macro_rules! control_stream {
+    ($wrap:ident, $inner:ty) => {
+        pub struct $wrap(pub $inner);
+
+        impl Read for $wrap {
+            fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+                self.0.read(buf)
+            }
+        }
+
+        impl Write for $wrap {
+            fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+                self.0.write(buf)
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                self.0.flush()
+            }
+        }
+
+        impl ControlStream for $wrap {
+            fn try_clone(&self) -> io::Result<Box<dyn ControlStream>> {
+                Ok(Box::new($wrap(self.0.try_clone()?)))
+            }
+
+            fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+                self.0.shutdown(how)
+            }
+
+            fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+                self.0.set_read_timeout(timeout)
+            }
+
+            fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+                self.0.set_write_timeout(timeout)
+            }
+
+            fn peer_connected(&self) -> bool {
+                peek_connected!(&self.0)
+            }
+        }
+    };
+}
+
+#[cfg(unix)]
+control_stream!(UnixTestStream, UnixStream);
+control_stream!(LoopbackStream, TcpStream);
+
+#[cfg(unix)]
+pub struct UnixTestListener {
+    listener: UnixListener,
+    peer: Arc<FakePeer>,
+    uid: u32,
+}
+
+#[cfg(unix)]
+impl ControlListener for UnixTestListener {
+    fn accept(&self, poll: Duration) -> io::Result<Accepted> {
+        accept_with!(self, poll, UnixTestStream)
+    }
+}
+
+pub struct LoopbackListener {
+    listener: TcpListener,
+    peer: Arc<FakePeer>,
+    uid: u32,
+}
+
+impl ControlListener for LoopbackListener {
+    fn accept(&self, poll: Duration) -> io::Result<Accepted> {
+        accept_with!(self, poll, LoopbackStream)
     }
 }
 
@@ -335,14 +531,25 @@ pub fn fast_limits() -> ControlLimits {
 }
 
 impl Harness {
+    /// Over the Unix socket.
+    #[cfg(unix)]
     pub fn new() -> Harness {
-        Harness::with_limits(fast_limits())
+        Harness::over(Kind::Unix)
     }
 
+    #[cfg(unix)]
     pub fn with_limits(limits: ControlLimits) -> Harness {
+        Harness::over_with_limits(Kind::Unix, limits)
+    }
+
+    pub fn over(kind: Kind) -> Harness {
+        Harness::over_with_limits(kind, fast_limits())
+    }
+
+    pub fn over_with_limits(kind: Kind, limits: ControlLimits) -> Harness {
         let dir = Scratch::new();
         let host = Arc::new(FakeHost::default());
-        let transport = FakeTransport::new();
+        let transport = FakeTransport::over(kind);
         let mut h = Harness { dir, host, transport, server: None };
         h.start(limits);
         h
@@ -364,12 +571,27 @@ impl Harness {
         self.server.as_ref().unwrap()
     }
 
+    /// The endpoint's `socket_file` (Unix: the socket; loopback: the address file).
     pub fn socket(&self) -> PathBuf {
         self.dir.0.join("control/macvpn.sock")
     }
 
+    /// A raw connection to the current endpoint.
+    pub fn try_connect(&self) -> io::Result<TestStream> {
+        match self.transport.kind {
+            #[cfg(unix)]
+            Kind::Unix => UnixStream::connect(self.socket()).map(TestStream::Unix),
+            #[cfg(not(unix))]
+            Kind::Unix => Err(io::Error::from(ErrorKind::Unsupported)),
+            Kind::Loopback => {
+                let addr = self.transport.addr.lock().unwrap().expect("bound");
+                TcpStream::connect(addr).map(TestStream::Tcp)
+            }
+        }
+    }
+
     pub fn connect(&self) -> TestClient {
-        TestClient::connect(&self.socket())
+        TestClient::over(self.try_connect().unwrap())
     }
 
     /// Pairs a client allowed to use `keys`; returns its token.
@@ -402,18 +624,83 @@ impl Harness {
     }
 }
 
+/// The test client's end of either transport.
+pub enum TestStream {
+    #[cfg(unix)]
+    Unix(UnixStream),
+    Tcp(TcpStream),
+}
+
+impl TestStream {
+    pub fn try_clone(&self) -> io::Result<TestStream> {
+        match self {
+            #[cfg(unix)]
+            TestStream::Unix(s) => s.try_clone().map(TestStream::Unix),
+            TestStream::Tcp(s) => s.try_clone().map(TestStream::Tcp),
+        }
+    }
+
+    pub fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            TestStream::Unix(s) => s.shutdown(how),
+            TestStream::Tcp(s) => s.shutdown(how),
+        }
+    }
+
+    pub fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            TestStream::Unix(s) => s.set_read_timeout(timeout),
+            TestStream::Tcp(s) => s.set_read_timeout(timeout),
+        }
+    }
+}
+
+impl Read for TestStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self {
+            #[cfg(unix)]
+            TestStream::Unix(s) => s.read(buf),
+            TestStream::Tcp(s) => s.read(buf),
+        }
+    }
+}
+
+impl Write for TestStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match self {
+            #[cfg(unix)]
+            TestStream::Unix(s) => s.write(buf),
+            TestStream::Tcp(s) => s.write(buf),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match self {
+            #[cfg(unix)]
+            TestStream::Unix(s) => s.flush(),
+            TestStream::Tcp(s) => s.flush(),
+        }
+    }
+}
+
 pub struct TestClient {
-    pub stream: UnixStream,
-    pub reader: BufReader<UnixStream>,
+    pub stream: TestStream,
+    pub reader: BufReader<TestStream>,
 }
 
 impl TestClient {
+    #[cfg(unix)]
     pub fn connect(path: &Path) -> TestClient {
-        let stream = UnixStream::connect(path).unwrap();
+        TestClient::over(TestStream::Unix(UnixStream::connect(path).unwrap()))
+    }
+
+    pub fn over(stream: TestStream) -> TestClient {
         // macOS refuses socket options (EINVAL) once the server has closed the connection (a refused client):
         // reads then end at once anyway.
         if let Err(e) = stream.set_read_timeout(Some(WAIT)) {
-            assert_eq!(e.raw_os_error(), Some(22), "{e}");
+            assert_eq!(e.kind(), ErrorKind::InvalidInput, "{e}");
         }
         let reader = BufReader::new(stream.try_clone().unwrap());
         TestClient { stream, reader }
@@ -450,13 +737,14 @@ impl TestClient {
         let mut line = String::new();
         match self.reader.read_line(&mut line) {
             Ok(0) => {}
-            Err(e) if e.kind() == ErrorKind::ConnectionReset => {}
+            // A close with unread data resets the connection; Windows reports it as aborted (WSAECONNABORTED).
+            Err(e) if matches!(e.kind(), ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted) => {}
             other => panic!("expected the connection to close, got {other:?} {line:?}"),
         }
     }
 
     pub fn close(self) {
-        let _ = self.stream.shutdown(std::net::Shutdown::Both);
+        let _ = self.stream.shutdown(Shutdown::Both);
     }
 }
 

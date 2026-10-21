@@ -7,6 +7,7 @@ use macvpn_core::catalog::format::{CatalogError, MAX_CATALOG_BYTES};
 use macvpn_core::catalog::source::{CatalogSource, HttpsUrl, SourceError, parse_file_source, read_catalog_file};
 use std::fs;
 use std::path::PathBuf;
+#[cfg(unix)]
 use std::time::{Duration, Instant};
 
 fn url(s: &str) -> HttpsUrl {
@@ -140,6 +141,7 @@ fn read_catalog_file_reads_a_regular_file() {
     assert_eq!(read_catalog_file(&file).unwrap(), b"MVPNCAT1 contents");
 }
 
+#[cfg(unix)]
 #[test]
 fn read_catalog_file_refuses_symlinks_directories_and_fifos() {
     let tmp = TempDir::new();

@@ -1,5 +1,5 @@
 //! User notifications (the Swift `AppModel`'s `notify`, `notifyAuthNeeded` and notification delegate), over
-//! `macvpn_platform_mac::notifications`. Only from a real app bundle (outside the sandbox), as in the Swift app;
+//! the platform's [`Notifier`](macvpn_platform_api::Notifier). Only from a real app bundle (outside the sandbox), as in the Swift app;
 //! otherwise every function here does nothing. The texts are generic (`macvpn_app_core::notify`): the details
 //! stay in the app.
 
@@ -9,11 +9,11 @@ use macvpn_app_core::credential_prompt::CredentialPromptView;
 use macvpn_app_core::notify::{self, ClickAction, NotificationContent};
 use macvpn_app_core::prompt::PromptView;
 use macvpn_core::models::uuid_string;
-use macvpn_platform_mac::notifications;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager};
 
+use crate::platform;
 use crate::state::AppState;
 
 /// The delegate (foreground banners, clicks) and the permission request (the launch step).
@@ -22,15 +22,20 @@ pub fn start(app: &AppHandle, state: &AppState) {
         return;
     }
     let app = app.clone();
-    notifications::start(move |info| {
+    platform::get().notifier().start(Box::new(move |info| {
         // The delegate runs on the main thread: the routing goes to a worker.
         let app = app.clone();
         std::thread::spawn(move || clicked(&app, &info));
-    });
+    }));
 }
 
 fn post(content: &NotificationContent) {
-    notifications::post(&content.id, &content.title, &content.body, (content.user_info.0, &content.user_info.1));
+    platform::get().notifier().post(
+        &content.id,
+        &content.title,
+        &content.body,
+        (content.user_info.0, &content.user_info.1),
+    );
 }
 
 /// A failure or a drop.
@@ -58,7 +63,7 @@ pub fn prompt_opened(state: &AppState, prompt: &PromptView) {
 /// The prompt closed: its notification goes too.
 pub fn prompt_closed(state: &AppState, connection_id: &str) {
     if state.notifications_enabled() {
-        notifications::remove_delivered(&notify::auth_notification_id(connection_id));
+        platform::get().notifier().remove_delivered(&notify::auth_notification_id(connection_id));
     }
 }
 
@@ -72,7 +77,7 @@ pub fn credentials_opened(state: &AppState, prompt: &CredentialPromptView) {
 /// The credential prompt closed: its notification goes too.
 pub fn credentials_closed(state: &AppState, connection_id: &str) {
     if state.notifications_enabled() {
-        notifications::remove_delivered(&notify::credential_notification_id(connection_id));
+        platform::get().notifier().remove_delivered(&notify::credential_notification_id(connection_id));
     }
 }
 

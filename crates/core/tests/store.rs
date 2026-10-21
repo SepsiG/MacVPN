@@ -2,10 +2,17 @@
 
 mod common;
 
-use common::{TempDir, mode};
-use macvpn_core::models::{Connection, VPNKind, uuid_string};
-use macvpn_core::store::{self, ConnectionStore, LEGACY_PROFILE_NAME};
+use common::TempDir;
+#[cfg(unix)]
+use common::mode;
+#[cfg(unix)]
+use macvpn_core::models::uuid_string;
+use macvpn_core::models::{Connection, VPNKind};
+#[cfg(unix)]
+use macvpn_core::store::LEGACY_PROFILE_NAME;
+use macvpn_core::store::{self, ConnectionStore};
 use std::fs;
+#[cfg(unix)]
 use std::os::unix::fs::DirBuilderExt;
 use std::path::Path;
 
@@ -13,6 +20,7 @@ fn names(store: &ConnectionStore) -> Vec<String> {
     store.list().unwrap().into_iter().map(|c| c.name).collect()
 }
 
+#[cfg(unix)]
 #[test]
 fn save_list_load_delete() {
     let tmp = TempDir::new();
@@ -30,6 +38,7 @@ fn save_list_load_delete() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn save_without_config_keeps_existing() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -47,6 +56,7 @@ fn list_on_missing_dir_is_empty() {
     assert!(ConnectionStore::new(tmp.path()).list().unwrap().is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn files_are_private_and_directory_is_tightened() {
     let tmp = TempDir::new();
@@ -67,6 +77,7 @@ fn files_are_private_and_directory_is_tightened() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn list_skips_corrupt_meta() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -78,6 +89,7 @@ fn list_skips_corrupt_meta() {
     assert_eq!(names(&store), ["A"]);
 }
 
+#[cfg(unix)]
 #[test]
 fn write_private_refuses_to_follow_or_clobber_the_temp_name() {
     let tmp = TempDir::new();
@@ -90,6 +102,7 @@ fn write_private_refuses_to_follow_or_clobber_the_temp_name() {
     assert!(store::write_private(b"x", &tmp.path().join("missing-dir/file")).is_err());
 }
 
+#[cfg(unix)]
 #[test]
 fn remove_legacy_profiles() {
     let tmp = TempDir::new();
@@ -112,15 +125,16 @@ fn remove_legacy_profiles() {
 }
 
 #[test]
-fn default_application_support_directory() {
-    let home = Path::new("/Users/someone");
+fn default_base_dir_is_connections_below_the_data_dir() {
+    // The 1.4.0 `default_base_dir(home)`, now from the data directory (`Product::data_dir`) the caller passes.
+    let data_dir = Path::new("/Users/someone/Library/Application Support/MacVPN");
     assert_eq!(
-        store::application_support_directory(home),
-        Path::new("/Users/someone/Library/Application Support/MacVPN")
+        ConnectionStore::default_base_dir(data_dir),
+        Path::new("/Users/someone/Library/Application Support/MacVPN/connections")
     );
-    assert_eq!(store::default_base_dir(home).parent().unwrap(), store::application_support_directory(home));
 }
 
+#[cfg(unix)]
 #[test]
 fn removes_only_directory_named_macvpn() {
     let tmp = TempDir::new();
@@ -130,26 +144,35 @@ fn removes_only_directory_named_macvpn() {
     fs::create_dir_all(&good).unwrap();
     fs::create_dir_all(&other).unwrap();
 
-    assert!(store::remove_application_support_directory(&other).is_err());
+    assert!(store::remove_user_data(&other, "MacVPN").is_err());
     assert!(other.exists());
     // Does not follow a symlink either.
     let link = root.join("link/MacVPN");
     fs::create_dir_all(link.parent().unwrap()).unwrap();
     std::os::unix::fs::symlink(&other, &link).unwrap();
-    assert!(store::remove_application_support_directory(&link).is_err());
+    assert!(store::remove_user_data(&link, "MacVPN").is_err());
     assert!(other.exists());
 
-    store::remove_application_support_directory(&root.join("MacVPN")).unwrap();
+    store::remove_user_data(&root.join("MacVPN"), "MacVPN").unwrap();
     assert!(!root.join("MacVPN").exists());
     // A missing directory: no error.
-    assert!(store::remove_application_support_directory(&root.join("MacVPN")).is_ok());
+    assert!(store::remove_user_data(&root.join("MacVPN"), "MacVPN").is_ok());
+
+    // The expected name is the product's: `WinVPN` refuses a `MacVPN` directory and removes its own.
+    let win = root.join("WinVPN");
+    fs::create_dir_all(root.join("MacVPN")).unwrap();
+    fs::create_dir_all(&win).unwrap();
+    assert!(store::remove_user_data(&root.join("MacVPN"), "WinVPN").is_err());
+    assert!(root.join("MacVPN").exists());
+    store::remove_user_data(&win, "WinVPN").unwrap();
+    assert!(!win.exists());
 }
 
 #[test]
 fn removal_errors_are_localized() {
     use macvpn_core::l10n::{AppLanguage, with_language};
-    let err = with_language(AppLanguage::Hu, || store::remove_application_support_directory(Path::new("/tmp/Other")))
-        .unwrap_err();
+    let err =
+        with_language(AppLanguage::Hu, || store::remove_user_data(Path::new("/tmp/Other"), "MacVPN")).unwrap_err();
     assert_eq!(err.to_string(), "Nem törölhető: /tmp/Other");
 }
 
@@ -203,6 +226,7 @@ fn shred_file_handles_large_and_empty_files_and_a_missing_one() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn shred_file_only_unlinks_a_file_with_other_hard_links() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -215,6 +239,7 @@ fn shred_file_only_unlinks_a_file_with_other_hard_links() {
     assert_eq!(fs::read(&other).unwrap(), b"shared inode", "the other link is not overwritten");
 }
 
+#[cfg(unix)]
 #[test]
 fn shred_file_removes_a_symlink_without_touching_its_target() {
     let tmp = TempDir::new();
@@ -228,6 +253,8 @@ fn shred_file_removes_a_symlink_without_touching_its_target() {
     assert_eq!(fs::read(&target).unwrap(), b"keep me");
 }
 
+// Unix only: the FIFO comes from /usr/bin/mkfifo.
+#[cfg(unix)]
 #[test]
 fn shred_file_refuses_a_directory_and_a_fifo() {
     let tmp = TempDir::new();

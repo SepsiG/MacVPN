@@ -1,0 +1,150 @@
+{
+  "adminKeys": [],
+  "appVersion": "1.4.0",
+  "connections": [
+    {
+      "color": "red",
+      "config": "",
+      "folderId": null,
+      "meta": {
+        "acknowledgedRiskyDirectives": [],
+        "createdAt": "2026-09-21T14:13:20Z",
+        "id": "C0DE0000-0000-4000-8000-000000000003",
+        "kind": "l2tp",
+        "name": "Branch L2TP",
+        "native": {
+          "account": "alice",
+          "groupName": "",
+          "sendAllTraffic": true,
+          "server": "vpn.example.com"
+        },
+        "nativeServiceName": "Branch L2TP",
+        "otp": {
+          "enabled": false,
+          "separator": "none"
+        }
+      },
+      "position": 0,
+      "secrets": {
+        "password": "Zml4dHVyZS1zZWNyZXQ=",
+        "psk": "Zml4dHVyZS1zZWNyZXQ="
+      }
+    },
+    {
+      "color": null,
+      "config": "W0ludGVyZmFjZV0KUHJpdmF0ZUtleSA9IEFRSURCQVVHQndnSkNnc01EUTRQRUJFU0V4UVZGaGNZR1JvYkhCMGVIeUE9CkFkZHJlc3MgPSAxMC4wLjAuMi8zMgoKW1BlZXJdClB1YmxpY0tleSA9IElTSWpKQ1VtSnlncEtpc3NMUzR2TURFeU16UTFOamM0T1RvN1BEMCtQMEE9CkVuZHBvaW50ID0gdnBuLmV4YW1wbGUuY29tOjUxODIwCkFsbG93ZWRJUHMgPSAwLjAuMC4wLzAK",
+      "folderId": "C0DE0000-0000-4000-8000-000000000010",
+      "meta": {
+        "acknowledgedRiskyDirectives": [],
+        "createdAt": "2026-09-21T14:13:20Z",
+        "id": "C0DE0000-0000-4000-8000-000000000002",
+        "kind": "wireguard",
+        "name": "Home WireGuard",
+        "otp": {
+          "enabled": false,
+          "separator": "none"
+        }
+      },
+      "position": 0,
+      "secrets": {}
+    },
+    {
+      "color": null,
+      "config": "Y2xpZW50CmRldiB0dW4KcHJvdG8gdWRwCnJlbW90ZSB2cG4uZXhhbXBsZS5jb20gMTE5NApub2JpbmQKYXV0aC11c2VyLXBhc3MKdmVyYiAzCg==",
+      "folderId": "C0DE0000-0000-4000-8000-000000000011",
+      "meta": {
+        "acknowledgedRiskyDirectives": [],
+        "createdAt": "2026-09-21T14:13:20Z",
+        "id": "C0DE0000-0000-4000-8000-000000000001",
+        "kind": "openvpn",
+        "name": "Office OpenVPN",
+        "otp": {
+          "enabled": true,
+          "separator": "colon"
+        }
+      },
+      "position": 0,
+      "secrets": {}
+    }
+  ],
+  "created": "2026-09-21T14:13:20Z",
+  "credentialLinks": [
+    {
+      "credential": "C0DE0000-0000-4000-8000-000000000020",
+      "item": "C0DE0000-0000-4000-8000-000000000001"
+    }
+  ],
+  "credentials": [
+    {
+      "created": "2026-09-21T14:13:20Z",
+      "id": "C0DE0000-0000-4000-8000-000000000020",
+      "name": "Office Login",
+      "password": "Zml4dHVyZS1zZWNyZXQ=",
+      "updated": "2026-09-21T14:13:20Z",
+      "username": "YWxpY2U="
+    }
+  ],
+  "folders": [
+    {
+      "collapsed": false,
+      "color": "blue",
+      "id": "C0DE0000-0000-4000-8000-000000000010",
+      "name": "Work",
+      "parentId": null,
+      "position": 0
+    },
+    {
+      "collapsed": true,
+      "color": "green",
+      "id": "C0DE0000-0000-4000-8000-000000000011",
+      "name": "Remote",
+      "parentId": "C0DE0000-0000-4000-8000-000000000010",
+      "position": 0
+    }
+  ],
+  "preferences": {
+    "autoCheck": true,
+    "autoUnlock": false,
+    "controlApiEnabled": true,
+    "delay24h": false,
+    "launchAtLogin": false
+  },
+  "publications": [],
+  "ranking": {
+    "pinned": [
+      "C0DE0000-0000-4000-8000-000000000002"
+    ],
+    "usage": {
+      "8F1C2D3E-0000-4000-8000-000000000001": {
+        "lastUpdated": "2026-09-21T14:13:20Z",
+        "score": 1.0
+      },
+      "C0DE0000-0000-4000-8000-000000000001": {
+        "lastUpdated": "2026-09-21T14:13:20Z",
+        "score": 2.5
+      }
+    }
+  },
+  "subscriptions": [],
+  "systemItems": [
+    {
+      "color": "orange",
+      "folderId": "C0DE0000-0000-4000-8000-000000000010",
+      "missingSince": null,
+      "position": 1,
+      "serviceId": "8F1C2D3E-0000-4000-8000-000000000001"
+    }
+  ],
+  "systemOtp": {
+    "8F1C2D3E-0000-4000-8000-000000000001": {
+      "enabled": true,
+      "separator": "comma"
+    }
+  },
+  "systemSecrets": {
+    "8F1C2D3E-0000-4000-8000-000000000001": {
+      "psk": "Zml4dHVyZS1zZWNyZXQ="
+    }
+  },
+  "version": 2
+}

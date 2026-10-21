@@ -235,17 +235,8 @@ impl TreeRowView {
     }
 }
 
-/// "Launch at Login" (the platform layer's `LoginItemState`, mapped by the app).
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct LoginItemView {
-    pub is_on: bool,
-    pub can_toggle: bool,
-    /// The note under the switch (already translated).
-    pub note: Option<String>,
-    /// The "Open Login Items Settings…" button.
-    pub shows_open_settings: bool,
-}
+/// "Launch at Login": defined in `macvpn-platform-api` and re-exported here (its old home).
+pub use macvpn_platform_api::LoginItemView;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]

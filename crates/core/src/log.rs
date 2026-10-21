@@ -1,10 +1,10 @@
 //! Log lines and the log tailer (port of `LogLine.swift` and `LogTailer.swift`).
 
+use crate::fsx::{self, FileId};
 use crate::l10n;
 use crate::swift_str;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
-use std::os::unix::fs::MetadataExt;
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -96,7 +96,7 @@ pub struct LogTailer {
     offset: u64,
     partial: Vec<u8>,
     started: bool,
-    inode: Option<u64>,
+    inode: Option<FileId>,
     /// Starting in the middle of the window, the first (truncated) line is dropped.
     discard_leading: bool,
 }
@@ -124,7 +124,7 @@ impl LogTailer {
 
     pub fn read_new(&mut self) -> Vec<String> {
         let Ok(mut file) = File::open(&self.path) else { return Vec::new() };
-        let ino = file.metadata().ok().map(|m| m.ino());
+        let ino = file.metadata().ok().and_then(|m| fsx::file_id(&m));
         if let (Some(old), Some(new)) = (self.inode, ino)
             && old != new
         {

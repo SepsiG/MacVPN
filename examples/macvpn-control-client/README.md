@@ -8,6 +8,8 @@ A minimal Rust client for MacVPN's local control API. It needs only `std` and `s
   - `State`, `ErrorCode`: an unknown state counts as "in progress", an unknown error code as `failed`.
 - [`src/main.rs`](src/main.rs): a small command line tool built on it, for trying the API out.
 
+The transport is a Unix domain socket (macOS). The crate compiles for Windows too, but there `Client::connect` returns `io::ErrorKind::Unsupported`: the named pipe client comes with WinVPN.
+
 ## Before you start
 
 In MacVPN, open the Connections window (**Manage Connections…** in the menu), select **Paired apps** in the sidebar, and turn on **Allow other apps to control VPNs**. While the setting is off, the socket does not exist.

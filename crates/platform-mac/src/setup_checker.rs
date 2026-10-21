@@ -8,45 +8,9 @@ use macvpn_core::models::VPNKind;
 use macvpn_core::swift_str;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct SetupReport {
-    pub brew_prefix: Option<String>,
-    /// In the order of [`SetupChecker::REQUIRED_TOOLS`].
-    pub missing_tools: Vec<String>,
-    pub installed_root_version: Option<String>,
-    pub bundled_root_version: Option<String>,
-    pub sudo_works: bool,
-    /// Missing executables of the installed root layer (an interrupted install): a reinstall is needed.
-    pub missing_root_files: Vec<String>,
-}
-
-impl SetupReport {
-    pub fn unknown() -> Self {
-        Self::default()
-    }
-
-    pub fn root_ok(&self) -> bool {
-        self.sudo_works
-            && self.installed_root_version.is_some()
-            && self.installed_root_version == self.bundled_root_version
-            && self.missing_root_files.is_empty()
-    }
-
-    pub fn is_complete(&self) -> bool {
-        self.brew_prefix.is_some() && self.missing_tools.is_empty() && self.root_ok()
-    }
-
-    pub fn is_available(&self, kind: VPNKind) -> bool {
-        if kind.is_native() {
-            return true;
-        }
-        if !self.root_ok() || self.brew_prefix.is_none() {
-            return false;
-        }
-        let needed = SetupChecker::REQUIRED_TOOLS.iter().find(|(k, _)| *k == kind).map(|(_, t)| *t).unwrap_or(&[]);
-        needed.iter().all(|t| !self.missing_tools.iter().any(|m| m == t))
-    }
-}
+/// The report is platform-api's: `package_manager` is the Homebrew prefix, `required_tools` is
+/// [`SetupChecker::REQUIRED_TOOLS`].
+pub use macvpn_platform_api::SetupReport;
 
 type ReadFile<'a> = Box<dyn Fn(&str) -> Option<String> + 'a>;
 
@@ -136,7 +100,8 @@ impl<'a> SetupChecker<'a> {
                 .collect()
         };
         SetupReport {
-            brew_prefix: prefix,
+            package_manager: prefix,
+            required_tools: &Self::REQUIRED_TOOLS,
             missing_tools: missing,
             installed_root_version: installed,
             bundled_root_version: bundled,

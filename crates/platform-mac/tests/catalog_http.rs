@@ -2,6 +2,7 @@
 //! and writes the header dump, the body and the `--write-out` trailer as curl would), and a local HTTPS server on
 //! 127.0.0.1 with a throwaway CA passed through `--cacert` (the `test-support` hook only), as in the spike. No
 //! external host is contacted; the one live test is `#[ignore]` and needs `MACVPN_CATALOG_TEST_URL`.
+#![cfg(target_os = "macos")]
 
 mod common;
 

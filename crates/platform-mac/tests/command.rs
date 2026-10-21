@@ -1,4 +1,5 @@
 //! Port of `CommandRunnerTests.swift`.
+#![cfg(target_os = "macos")]
 
 use macvpn_platform_mac::command::{CancelToken, CommandError, CommandRunner, ProcessCommandRunner, RunnerTimeouts};
 use std::time::{Duration, Instant};

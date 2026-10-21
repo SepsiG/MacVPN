@@ -1,7 +1,7 @@
 {
   "productName": "MacVPN",
   "mainBinaryName": "MacVPN",
-  "version": "1.4.1",
+  "version": "1.5.0",
   "identifier": "local.macvpn",
   "build": {
     "devUrl": "http://127.0.0.1:1420",
@@ -11,7 +11,6 @@
   },
   "app": {
     "withGlobalTauri": false,
-    "macOSPrivateApi": false,
     "windows": [
       {
         "label": "menu",
@@ -54,12 +53,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app"],
     "category": "Utility",
-    "copyright": "MacVPN",
-    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.png"],
-    "macOS": {
-      "minimumSystemVersion": "14.0"
-    }
+    "copyright": "MacVPN"
   }
 }

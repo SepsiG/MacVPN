@@ -1,0 +1,27 @@
+Release {
+    tag: "v1.4.0",
+    version: "1.4.0",
+    notes: "## What's new\n- The team catalog file has its own slot.",
+    page_url: Some(
+        "https://github.com/SepsiG/MacVPN/releases/tag/v1.4.0",
+    ),
+    published_at: Some(
+        Date {
+            since_reference: 811719200.0,
+        },
+    ),
+    package: ReleaseAsset {
+        name: "MacVPN-1.4.0.dmg",
+        url: "https://github.com/SepsiG/MacVPN/releases/download/v1.4.0/MacVPN-1.4.0.dmg",
+    },
+    checksum: ReleaseAsset {
+        name: "MacVPN-1.4.0.dmg.sha256",
+        url: "https://github.com/SepsiG/MacVPN/releases/download/v1.4.0/MacVPN-1.4.0.dmg.sha256",
+    },
+    signature: Some(
+        ReleaseAsset {
+            name: "MacVPN-1.4.0.dmg.sig",
+            url: "https://github.com/SepsiG/MacVPN/releases/download/v1.4.0/MacVPN-1.4.0.dmg.sig",
+        },
+    ),
+}

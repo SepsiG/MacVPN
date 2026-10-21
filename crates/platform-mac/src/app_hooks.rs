@@ -27,13 +27,17 @@ use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::sync::OnceLock;
 
-/// `NSApplicationTerminateReply`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TerminateReply {
-    Cancel = 0,
-    Now = 1,
-    /// The app answers later with [`reply_to_terminate`].
-    Later = 2,
+/// The handler's answer (platform-api's), mapped to `NSApplicationTerminateReply` when AppKit asks.
+pub use macvpn_platform_api::TerminateReply;
+
+/// `NSApplicationTerminateReply`: `NSTerminateCancel` 0, `NSTerminateNow` 1, `NSTerminateLater` 2 (answered later
+/// with [`reply_to_terminate`]).
+fn ns_reply(reply: TerminateReply) -> usize {
+    match reply {
+        TerminateReply::Cancel => 0,
+        TerminateReply::Now => 1,
+        TerminateReply::Later => 2,
+    }
 }
 
 type TerminateHandler = Box<dyn Fn() -> TerminateReply + Send + Sync>;
@@ -43,7 +47,7 @@ static ON_TERMINATE: OnceLock<TerminateHandler> = OnceLock::new();
 extern "C-unwind" fn should_terminate(_this: &AnyObject, _cmd: Sel, _sender: *mut AnyObject) -> usize {
     // A panic must not unwind into AppKit: then the app just terminates, as without the handler.
     let reply = std::panic::catch_unwind(|| ON_TERMINATE.get().map_or(TerminateReply::Now, |handler| handler()));
-    reply.unwrap_or(TerminateReply::Now) as usize
+    ns_reply(reply.unwrap_or(TerminateReply::Now))
 }
 
 /// Routes `applicationShouldTerminate:` to `handler` (called on the main thread). Call on the main thread after

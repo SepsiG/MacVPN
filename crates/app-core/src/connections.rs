@@ -13,7 +13,6 @@ use macvpn_core::importer;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
 use macvpn_core::models::{Connection, NativeSettings, VPNKind, ValidationIssue, uuid_string};
-use macvpn_core::{exporter, mobileconfig};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -876,11 +875,11 @@ impl ConnectionsModel {
             native.account.clear();
         }
         let psk = Zeroizing::new(self.deps.secrets.get(&c.id, SecretField::Psk).unwrap_or_default());
-        let data = Zeroizing::new(mobileconfig::generate(&profile, &psk).map_err(|e| e.message())?);
+        let built = self.deps.profiles.build(&profile, &psk)?;
         drop(psk);
         let baseline = self.deps.manager.native_service_for(&c).flatten();
         let existed = self.deps.manager.installed_native_ids().contains(&c.id);
-        self.deps.profiles.install(&c.id, &data, &exporter::file_name(&c), existed)?;
+        self.deps.profiles.install(&c.id, &built.data, &built.file_name, existed)?;
         self.lock().pending_installs.insert(c.id, PendingInstall { built_from, baseline, gone: false, checked: None });
         self.changed();
         Ok(())

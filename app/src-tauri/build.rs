@@ -3,6 +3,7 @@
 
 const COMMANDS: &[&str] = &[
     "get_view_model",
+    "get_platform",
     "connect",
     "disconnect",
     "pin",

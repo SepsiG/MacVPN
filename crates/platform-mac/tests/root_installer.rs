@@ -1,6 +1,7 @@
 //! Port of `RootInstallerTests.swift` (`RootInstallerTests`, `RootUninstallerTests`, `RootInstallerTempTests`).
 //! Root layer 7 (and 8, the config-on-stdin layer) installs the single `mvpn` + `VERSION` and removes the earlier
 //! layers' files.
+#![cfg(target_os = "macos")]
 
 mod common;
 

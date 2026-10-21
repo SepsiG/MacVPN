@@ -55,16 +55,9 @@ pub fn round_corners(window: *mut c_void, radius: f64) -> bool {
     true
 }
 
-/// What [`round_corners`] set, read back from the window (for the smoke test).
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct WindowShape {
-    pub radius: f64,
-    pub masks: bool,
-    pub opaque: bool,
-    pub shadow: bool,
-    /// The window server's number (`screencapture -l`).
-    pub number: isize,
-}
+/// What [`round_corners`] set, read back from the window (for the smoke test; platform-api's, debug builds only).
+#[cfg(debug_assertions)]
+pub use macvpn_platform_api::WindowShape;
 
 /// `window`'s number in the window server (`screencapture -l`). Main thread only; `None` elsewhere or for null.
 pub fn number(window: *mut c_void) -> Option<isize> {
@@ -72,6 +65,8 @@ pub fn number(window: *mut c_void) -> Option<isize> {
 }
 
 /// Reads `window`'s shape. Main thread only; `None` elsewhere, for a null pointer or without a content layer.
+/// Debug builds only (the smoke test).
+#[cfg(debug_assertions)]
 pub fn shape(window: *mut c_void) -> Option<WindowShape> {
     let window = window_ref(window)?;
     let layer = window.contentView()?.layer()?;
@@ -106,6 +101,7 @@ mod tests {
     fn off_the_main_thread_or_without_a_window_nothing_happens() {
         // The test harness runs tests off the main thread; a null window does nothing on any thread.
         assert!(!round_corners(std::ptr::null_mut(), POPOVER_CORNER_RADIUS));
+        #[cfg(debug_assertions)]
         assert!(shape(std::ptr::null_mut()).is_none());
         assert!(number(std::ptr::null_mut()).is_none());
     }

@@ -1,6 +1,7 @@
 //! Children never inherit the app's open descriptors (Foundation `Process` uses `POSIX_SPAWN_CLOEXEC_DEFAULT`;
 //! here every spawn site marks fds ≥ 3 close-on-exec). The reviewer's probe: an fd without close-on-exec at 7.
 //! One test only, in its own binary (process), so no parallel test can own fd 7 meanwhile.
+#![cfg(target_os = "macos")]
 #![allow(unsafe_code)]
 
 mod common;

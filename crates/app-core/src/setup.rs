@@ -188,15 +188,17 @@ impl BrewRun {
 /// The system steps of the uninstall (the app implements them over the platform layer; the sandbox fakes the
 /// root and login item steps).
 pub trait UninstallSystem {
-    /// The root layer with one administrator prompt (its own script takes the root connections down first).
-    fn uninstall_root(&self) -> Result<(), String>;
+    /// The privileged helper (on macOS the root layer, with one administrator prompt; its own script takes the
+    /// root connections down first).
+    fn uninstall_helper(&self) -> Result<(), String>;
     /// The status poller stops (nothing is left to poll).
     fn stop_polling(&self);
     /// `SMAppService` / LaunchAgent: unregistered if registered.
     fn unregister_login_item(&self) -> Result<(), String>;
-    /// A LaunchAgent with our label but stale content is removed too (a foreign plist is left alone).
-    fn remove_launch_agent(&self) -> Result<(), String>;
-    /// `~/Library/Application Support/MacVPN`, the update cache and the app's preferences.
+    /// Stale login entries of the app are removed too (on macOS a LaunchAgent with our label but stale content; a
+    /// foreign plist is left alone).
+    fn remove_stale_login_entries(&self) -> Result<(), String>;
+    /// The app's data directory (`Product::data_dir`), the update cache and the app's preferences.
     fn remove_user_files(&self);
 }
 
@@ -228,7 +230,7 @@ pub fn uninstall(
     stores: UserDataStores<'_>,
     choice: UninstallChoice,
 ) -> Result<Notice, Notice> {
-    if let Err(message) = system.uninstall_root() {
+    if let Err(message) = system.uninstall_helper() {
         return Err(Notice { title: l10n::tr("Uninstall failed", &[]), message });
     }
     let all = manager.connections();
@@ -241,7 +243,7 @@ pub fn uninstall(
     let had_native = all.iter().any(|c| c.kind.is_native());
     // No orphaned login item.
     let mut login_item_left = system.unregister_login_item().is_err();
-    login_item_left |= system.remove_launch_agent().is_err();
+    login_item_left |= system.remove_stale_login_entries().is_err();
     if choice.remove_user_data {
         for c in &all {
             manager.forget_saves(&c.id);

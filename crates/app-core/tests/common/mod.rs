@@ -2,12 +2,12 @@
 //! `InMemorySecretStore` as the connection manager sees them) and a fixture with a throwaway store directory.
 #![allow(dead_code)]
 
-use macvpn_app_core::deps::{ManualClock, NativeController, RootClient, SecretField, SecretReader, SystemService};
+use macvpn_app_core::deps::{HelperClient, ManualClock, NativeController, SecretField, SecretReader, SystemVpn};
 use macvpn_app_core::{ConnectionEvent, ConnectionManager, Dependencies};
 use macvpn_core::date::Date;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::mfa::AuthResponseKind;
-use macvpn_core::models::{Secrets, VPNKind, uuid_string};
+use macvpn_core::models::{Connection, Secrets, VPNKind, uuid_string};
 use macvpn_core::native::{NativeKind, NativeStartOptions, start_options};
 use macvpn_core::status::{RootStatus, parse_status};
 use macvpn_core::store::ConnectionStore;
@@ -48,7 +48,7 @@ pub struct Call {
 
 /// The root helper: a response per command line (default: success with empty output), optional delays.
 #[derive(Default)]
-pub struct MockRoot {
+pub struct MockHelper {
     responses: Mutex<HashMap<String, Result<String, String>>>,
     /// One-shot responses, used before `responses` (first in, first out).
     once: Mutex<HashMap<String, std::collections::VecDeque<Result<String, String>>>>,
@@ -56,7 +56,7 @@ pub struct MockRoot {
     calls: Mutex<Vec<Call>>,
 }
 
-impl MockRoot {
+impl MockHelper {
     pub fn respond(&self, line: &str, result: Result<&str, &str>) {
         self.responses.lock().unwrap().insert(line.to_string(), result.map(str::to_string).map_err(str::to_string));
     }
@@ -127,7 +127,7 @@ pub fn respond_line(id: &Uuid) -> String {
     format!("respond openvpn {}", uuid_string(id))
 }
 
-impl RootClient for MockRoot {
+impl HelperClient for MockHelper {
     fn status(&self) -> Result<Vec<RootStatus>, String> {
         let out = self.run("status".into(), None)?;
         parse_status(&out).map_err(|e| e.to_string())
@@ -172,7 +172,7 @@ pub struct Start {
 
 /// `scutil --nc list` / `--nc show` and the in-process start/stop driver.
 pub struct MockNative {
-    list: Mutex<Result<Vec<SystemService>, String>>,
+    list: Mutex<Result<Vec<SystemVpn>, String>>,
     addresses: Mutex<HashMap<String, Option<String>>>,
     shows: Mutex<Vec<String>>,
     starts: Mutex<Vec<Start>>,
@@ -194,7 +194,7 @@ impl Default for MockNative {
 }
 
 impl MockNative {
-    pub fn set_list(&self, list: Result<Vec<SystemService>, &str>) {
+    pub fn set_list(&self, list: Result<Vec<SystemVpn>, &str>) {
         *self.list.lock().unwrap() = list.map_err(str::to_string);
     }
 
@@ -220,7 +220,7 @@ impl MockNative {
 }
 
 impl NativeController for MockNative {
-    fn list(&self) -> Result<Vec<SystemService>, String> {
+    fn list(&self) -> Result<Vec<SystemVpn>, String> {
         self.list.lock().unwrap().clone()
     }
 
@@ -285,14 +285,21 @@ impl MemorySecrets {
     }
 }
 
-/// The native profile installs (instead of staging and opening a file).
+/// The native profiles as the macOS app makes them (`mobileconfig::generate` under the export's file name); the
+/// installs are recorded instead of staging and opening a file.
 #[derive(Default)]
-pub struct MockProfiles {
+pub struct MobileconfigProfiles {
     pub installs: Mutex<Vec<(Uuid, String, String, bool)>>,
     pub fail: Mutex<Option<String>>,
 }
 
-impl macvpn_app_core::deps::ProfileInstaller for MockProfiles {
+impl macvpn_app_core::deps::NativeProfiles for MobileconfigProfiles {
+    fn build(&self, connection: &Connection, psk: &str) -> Result<macvpn_app_core::deps::NativeProfile, String> {
+        let data =
+            zeroize::Zeroizing::new(macvpn_core::mobileconfig::generate(connection, psk).map_err(|e| e.message())?);
+        Ok(macvpn_app_core::deps::NativeProfile { data, file_name: macvpn_core::exporter::file_name(connection) })
+    }
+
     fn install(&self, id: &Uuid, profile: &[u8], file_name: &str, service_existed: bool) -> Result<(), String> {
         if let Some(e) = self.fail.lock().unwrap().clone() {
             return Err(e);
@@ -316,7 +323,7 @@ impl SecretReader for MemorySecrets {
 pub struct Fixture {
     pub dir: TempDir,
     pub store: Arc<ConnectionStore>,
-    pub root: Arc<MockRoot>,
+    pub helper: Arc<MockHelper>,
     pub native: Arc<MockNative>,
     pub secrets: Arc<MemorySecrets>,
 }
@@ -330,14 +337,14 @@ impl Fixture {
         Fixture {
             dir,
             store,
-            root: Arc::new(MockRoot::default()),
+            helper: Arc::new(MockHelper::default()),
             native: Arc::new(MockNative::default()),
             secrets: Arc::new(MemorySecrets::default()),
         }
     }
 
     pub fn deps(&self) -> Dependencies {
-        Dependencies::new(self.store.clone(), self.secrets.clone(), self.root.clone(), self.native.clone())
+        Dependencies::new(self.store.clone(), self.secrets.clone(), self.helper.clone(), self.native.clone())
     }
 
     /// A manager after `reload()`.

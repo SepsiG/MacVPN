@@ -1,4 +1,5 @@
 //! Port of `SecretStoreTests.swift`.
+#![cfg(target_os = "macos")]
 
 use macvpn_core::models::{Secrets, uuid_string};
 use macvpn_platform_mac::secrets::{

@@ -10,6 +10,8 @@ use std::collections::BTreeSet;
 use std::sync::{Mutex, PoisonError};
 use tauri::WebviewWindow;
 
+use crate::platform;
+
 /// A prompt window's fixed width and its height bounds (points, the page's viewport: below the title bar).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct FitBounds {
@@ -61,7 +63,7 @@ pub fn forget(label: &str) {
 }
 
 /// The calling prompt window's content height (points, as the page measured it): its own window only. The
-/// window's page then gets exactly that height (the title bar is added on top: see `window_fit`).
+/// window's page then gets exactly that height (the title bar is added on top: see platform-mac's `window_fit`).
 #[tauri::command]
 pub async fn fit_window(window: WebviewWindow, height: f64) -> Result<(), String> {
     let bounds = bounds_of(window.label()).ok_or("not a fitted window")?;
@@ -70,8 +72,8 @@ pub async fn fit_window(window: WebviewWindow, height: f64) -> Result<(), String
     let target = window.clone();
     window
         .run_on_main_thread(move || {
-            if let Ok(ns_window) = target.ns_window() {
-                macvpn_platform_mac::window_fit::fit_viewport(ns_window, width, height, center);
+            if let Some(native) = platform::native_window(&target) {
+                platform::get().windows().fit_viewport(native, width, height, center);
             }
         })
         .map_err(|e| e.to_string())

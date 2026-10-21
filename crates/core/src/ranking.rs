@@ -188,7 +188,8 @@ impl ConnectionRanking {
     }
 }
 
-/// `~/Library/Application Support/MacVPN/connection-order.json` (0600, atomic write). Not secret, not exported.
+/// `connection-order.json` in the app's data directory (`Product::data_dir`); 0600, atomic write. Not secret, not
+/// exported.
 #[derive(Debug, Clone)]
 pub struct ConnectionRankingStore {
     pub path: PathBuf,

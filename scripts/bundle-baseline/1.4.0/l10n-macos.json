@@ -1,0 +1,4458 @@
+{
+  " – delete the line or comment it out (#)": {
+    "en": " – delete the line or comment it out (#)",
+    "hu": " – töröld vagy tedd megjegyzésbe (#) a sort"
+  },
+  "%@ (personal)": {
+    "en": "%@ (personal)",
+    "hu": "%@ (saját)"
+  },
+  "%@ (team catalog “%@”) — enter your password": {
+    "en": "%@ (team catalog “%@”) — enter your password",
+    "hu": "%@ („%@” csapatkatalógus) — add meg a jelszavad"
+  },
+  "%@ (team catalog “%@”) — enter your user name and password": {
+    "en": "%@ (team catalog “%@”) — enter your user name and password",
+    "hu": "%@ („%@” csapatkatalógus) — add meg a felhasználóneved és a jelszavad"
+  },
+  "%@ and %@ were moved and checked. The old copies are deleted when you continue.": {
+    "en": "%@ and %@ were moved and checked. The old copies are deleted when you continue.",
+    "hu": "%@ és %@ átkerült és ellenőrizve lett. A régi másolatok a folytatáskor törlődnek."
+  },
+  "%@ not found": {
+    "en": "%@ not found",
+    "hu": "%@ nem található"
+  },
+  "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the vault for this connection. The files are never copied into the config.": {
+    "en": "%@ refers to these files. If you choose Use, their user name, password or private key password is stored in the vault for this connection. The files are never copied into the config.",
+    "hu": "A(z) %@ ezekre a fájlokra hivatkozik. A Használat választásakor a bennük lévő felhasználónév, jelszó vagy privát kulcs jelszó a széfbe kerül ehhez a kapcsolathoz. A fájlok sosem kerülnek a configba."
+  },
+  "%@ was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor.": {
+    "en": "%@ was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor.",
+    "hu": "A(z) %@ nincs beolvasva (hiányzik, a config mappáján kívül van, nagyobb 1 KB-nál, vagy nem a várt formájú). Add meg a hitelesítő adatokat a szerkesztőben."
+  },
+  "%@ · Missing tool": {
+    "en": "%@ · Missing tool",
+    "hu": "%@ · Hiányzó eszköz"
+  },
+  "%@ · System VPN": {
+    "en": "%@ · System VPN",
+    "hu": "%@ · Rendszer-VPN"
+  },
+  "%@ · Waiting for authentication": {
+    "en": "%@ · Waiting for authentication",
+    "hu": "%@ · Hitelesítésre vár"
+  },
+  "%@ · system VPN (not created by MacVPN)": {
+    "en": "%@ · system VPN (not created by MacVPN)",
+    "hu": "%@ · rendszer VPN (nem a MacVPN hozta létre)"
+  },
+  "%@-log.txt": {
+    "en": "%@-log.txt",
+    "hu": "%@-naplo.txt"
+  },
+  "%@: authentication needed": {
+    "en": "%@: authentication needed",
+    "hu": "%@: hitelesítés szükséges"
+  },
+  "%@: connection failed": {
+    "en": "%@: connection failed",
+    "hu": "%@: sikertelen csatlakozás"
+  },
+  "%@: credentials needed": {
+    "en": "%@: credentials needed",
+    "hu": "%@: hitelesítő adatok szükségesek"
+  },
+  "%@: the connection dropped": {
+    "en": "%@: the connection dropped",
+    "hu": "%@: a kapcsolat megszakadt"
+  },
+  "%d added": {
+    "en": "%d added",
+    "hu": "%d hozzáadva"
+  },
+  "%d changed": {
+    "en": "%d changed",
+    "hu": "%d módosítva"
+  },
+  "%d connections cannot be published.": {
+    "en": "%d connections cannot be published.",
+    "hu": "%d kapcsolat nem tehető közzé."
+  },
+  "%d removed": {
+    "en": "%d removed",
+    "hu": "%d eltávolítva"
+  },
+  "%lld active": {
+    "en": "%lld active",
+    "hu": "%lld aktív"
+  },
+  "%lld added": {
+    "en": "%lld added",
+    "hu": "%lld hozzáadva"
+  },
+  "%lld changed": {
+    "en": "%lld changed",
+    "hu": "%lld módosítva"
+  },
+  "%lld changed since the last publish": {
+    "en": "%lld changed since the last publish",
+    "hu": "%lld módosult a legutóbbi közzététel óta"
+  },
+  "%lld connections": {
+    "en": "%lld connections",
+    "hu": "%lld kapcsolat"
+  },
+  "%lld connections active": {
+    "en": "%lld connections active",
+    "hu": "%lld kapcsolat aktív"
+  },
+  "%lld connections selected": {
+    "en": "%lld connections selected",
+    "hu": "%lld kapcsolat kiválasztva"
+  },
+  "%lld credential slots": {
+    "en": "%lld credential slots",
+    "hu": "%lld közös belépési adat helye"
+  },
+  "%lld folders": {
+    "en": "%lld folders",
+    "hu": "%lld mappa"
+  },
+  "%lld items could not be read and were left where they were.": {
+    "en": "%lld items could not be read and were left where they were.",
+    "hu": "%lld elem nem olvasható, ezek a helyükön maradtak."
+  },
+  "%lld more files were not opened.": {
+    "en": "%lld more files were not opened.",
+    "hu": "További %lld fájl nem lett megnyitva."
+  },
+  "%lld removed": {
+    "en": "%lld removed",
+    "hu": "%lld eltávolítva"
+  },
+  "%lld saved secrets": {
+    "en": "%lld saved secrets",
+    "hu": "%lld mentett titok"
+  },
+  "%lld team secrets": {
+    "en": "%lld team secrets",
+    "hu": "%lld csapattitok"
+  },
+  "1 changed since the last publish": {
+    "en": "1 changed since the last publish",
+    "hu": "1 módosult a legutóbbi közzététel óta"
+  },
+  "1 connection": {
+    "en": "1 connection",
+    "hu": "1 kapcsolat"
+  },
+  "1 connection active": {
+    "en": "1 connection active",
+    "hu": "1 kapcsolat aktív"
+  },
+  "1 connection selected": {
+    "en": "1 connection selected",
+    "hu": "1 kapcsolat kiválasztva"
+  },
+  "1 credential slot": {
+    "en": "1 credential slot",
+    "hu": "1 közös belépési adat helye"
+  },
+  "1 folder": {
+    "en": "1 folder",
+    "hu": "1 mappa"
+  },
+  "1 item could not be read and was left where it was.": {
+    "en": "1 item could not be read and was left where it was.",
+    "hu": "1 elem nem olvasható, ez a helyén maradt."
+  },
+  "1 saved secret": {
+    "en": "1 saved secret",
+    "hu": "1 mentett titok"
+  },
+  "1 team secret": {
+    "en": "1 team secret",
+    "hu": "1 csapattitok"
+  },
+  "<angol>": {
+    "en": "<angol>",
+    "hu": "<magyar>"
+  },
+  "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).": {
+    "en": "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).",
+    "hu": "A .mobileconfig profil nem importálható a MacVPN-be. Kattints rá duplán a Finderben: a macOS profilként telepíti, utána a Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt hagyd jóvá."
+  },
+  "A VPN connection dropped": {
+    "en": "A VPN connection dropped",
+    "hu": "Egy VPN-kapcsolat megszakadt"
+  },
+  "A VPN connection failed": {
+    "en": "A VPN connection failed",
+    "hu": "Egy VPN-kapcsolat sikertelen"
+  },
+  "A VPN connection needs authentication": {
+    "en": "A VPN connection needs authentication",
+    "hu": "Egy VPN-kapcsolat hitelesítést kér"
+  },
+  "A catalog name must have 1 to 64 characters and no control characters.": {
+    "en": "A catalog name must have 1 to 64 characters and no control characters.",
+    "hu": "A katalógus neve 1–64 karakter lehet, vezérlőkarakter nélkül."
+  },
+  "A connection could not be disconnected, installation cancelled.\n\n%@": {
+    "en": "A connection could not be disconnected, installation cancelled.\n\n%@",
+    "hu": "Egy kapcsolat nem bontható, a telepítés megszakítva.\n\n%@"
+  },
+  "A connection could not be disconnected, uninstall cancelled.\n\n%@": {
+    "en": "A connection could not be disconnected, uninstall cancelled.\n\n%@",
+    "hu": "Egy kapcsolat nem bontható, az eltávolítás megszakítva.\n\n%@"
+  },
+  "A connection or child name must not start with \"-\"": {
+    "en": "A connection or child name must not start with \"-\"",
+    "hu": "A kapcsolat és a child neve nem kezdődhet „-” jellel"
+  },
+  "A credential name must have 1 to 64 characters and no control characters.": {
+    "en": "A credential name must have 1 to 64 characters and no control characters.",
+    "hu": "A hitelesítő adat neve 1–64 karakter lehet, vezérlőkarakter nélkül."
+  },
+  "A credential named %@ already exists.": {
+    "en": "A credential named %@ already exists.",
+    "hu": "Már van %@ nevű hitelesítő adat."
+  },
+  "A folder cannot be moved into itself or one of its subfolders": {
+    "en": "A folder cannot be moved into itself or one of its subfolders",
+    "hu": "Egy mappa nem helyezhető önmagába vagy a saját almappájába"
+  },
+  "A folder name needs 1 to 64 characters and no control characters": {
+    "en": "A folder name needs 1 to 64 characters and no control characters",
+    "hu": "A mappa neve 1–64 karakter lehet, vezérlőkarakter nélkül"
+  },
+  "A missing tool or root helper shows in System Status, as usual.": {
+    "en": "A missing tool or root helper shows in System Status, as usual.",
+    "hu": "A hiányzó eszköz vagy root segéd a szokásos módon a Rendszerállapotban látszik."
+  },
+  "A personal setting": {
+    "en": "A personal setting",
+    "hu": "Személyes beállítás"
+  },
+  "A profile can only be generated for L2TP and Cisco IPsec connections": {
+    "en": "A profile can only be generated for L2TP and Cisco IPsec connections",
+    "hu": "Csak L2TP és Cisco IPsec kapcsolathoz generálható profil"
+  },
+  "A restore from the first-run window needs a new, empty vault.": {
+    "en": "A restore from the first-run window needs a new, empty vault.",
+    "hu": "Az első indításkori visszaállításhoz új, üres széf kell."
+  },
+  "A team catalog manages this folder: it cannot be changed here.": {
+    "en": "A team catalog manages this folder: it cannot be changed here.",
+    "hu": "Ezt a mappát egy csapatkatalógus kezeli: itt nem módosítható."
+  },
+  "A team catalog manages this item: it cannot be changed here.": {
+    "en": "A team catalog manages this item: it cannot be changed here.",
+    "hu": "Ezt az elemet egy csapatkatalógus kezeli: itt nem módosítható."
+  },
+  "A team catalog provides these, so the backup’s copies were not restored: %@": {
+    "en": "A team catalog provides these, so the backup’s copies were not restored: %@",
+    "hu": "Ezeket egy csapatkatalógus adja, ezért a mentésben lévő példányuk nem lett visszaállítva: %@"
+  },
+  "A user name and password that several connections share. Change it here once, and every connection that uses it signs in with the new one. Passwords are stored in the vault and never shown.": {
+    "en": "A user name and password that several connections share. Change it here once, and every connection that uses it signs in with the new one. Passwords are stored in the vault and never shown.",
+    "hu": "Több kapcsolat által közösen használt felhasználónév és jelszó. Elég itt egyszer módosítani, és minden kapcsolat, amely használja, az újjal jelentkezik be. A jelszavak a széfben vannak, és sosem jelennek meg."
+  },
+  "Access token": {
+    "en": "Access token",
+    "hu": "Hozzáférési token"
+  },
+  "Account name": {
+    "en": "Account name",
+    "hu": "Fióknév"
+  },
+  "Account name: never published; each member enters their own": {
+    "en": "Account name: never published; each member enters their own",
+    "hu": "Fióknév: sosem kerül közzétételre; minden tag a sajátját adja meg"
+  },
+  "Acknowledge the risky settings (tick the checkbox) before saving: %@": {
+    "en": "Acknowledge the risky settings (tick the checkbox) before saving: %@",
+    "hu": "Mentés előtt vedd tudomásul a kockázatos beállításokat (jelöld be a négyzetet): %@"
+  },
+  "Activity": {
+    "en": "Activity",
+    "hu": "Tevékenység"
+  },
+  "Add Credential…": {
+    "en": "Add Credential…",
+    "hu": "Hitelesítő adat hozzáadása…"
+  },
+  "Add Team Catalog": {
+    "en": "Add Team Catalog",
+    "hu": "Csapatkatalógus hozzáadása"
+  },
+  "Add team catalog…": {
+    "en": "Add team catalog…",
+    "hu": "Csapatkatalógus hozzáadása…"
+  },
+  "Address": {
+    "en": "Address",
+    "hu": "Cím"
+  },
+  "Adds what is missing here: %lld new items. Already here: %lld.": {
+    "en": "Adds what is missing here: %lld new items. Already here: %lld.",
+    "hu": "Hozzáadja, ami itt hiányzik: %lld új elem. Már itt van: %lld."
+  },
+  "Adds what is missing here: 1 new item. Already here: %lld.": {
+    "en": "Adds what is missing here: 1 new item. Already here: %lld.",
+    "hu": "Hozzáadja, ami itt hiányzik: 1 új elem. Már itt van: %lld."
+  },
+  "Admin Key": {
+    "en": "Admin Key",
+    "hu": "Adminisztrátori aláírókulcs"
+  },
+  "Admin keys and publications the backup does not have stay on this Mac.": {
+    "en": "Admin keys and publications the backup does not have stay on this Mac.",
+    "hu": "Azok az aláírókulcsok és közzétételek, amelyek nincsenek a mentésben, ezen a Macen maradnak."
+  },
+  "Admin keys replaced by the backup’s: %lld": {
+    "en": "Admin keys replaced by the backup’s: %lld",
+    "hu": "A mentésben lévőre cserélt aláírókulcsok: %lld"
+  },
+  "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.": {
+    "en": "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.",
+    "hu": "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn, /var/run/macvpn-ui (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak."
+  },
+  "All": {
+    "en": "All",
+    "hu": "Minden"
+  },
+  "All tools are installed": {
+    "en": "All tools are installed",
+    "hu": "Minden eszköz megvan"
+  },
+  "Allow": {
+    "en": "Allow",
+    "hu": "Engedélyezés"
+  },
+  "Allow an App to Control VPNs?": {
+    "en": "Allow an App to Control VPNs?",
+    "hu": "Engedélyezed, hogy egy app vezérelje a VPN-eket?"
+  },
+  "Allow other apps to control VPNs": {
+    "en": "Allow other apps to control VPNs",
+    "hu": "Más appok vezérelhetik a VPN-eket"
+  },
+  "Allowed connections": {
+    "en": "Allowed connections",
+    "hu": "Engedélyezett kapcsolatok"
+  },
+  "Allows routing that can bypass or loop the tunnel": {
+    "en": "Allows routing that can bypass or loop the tunnel",
+    "hu": "Olyan útválasztást enged, amely megkerülheti vagy hurokba viheti a tunnelt"
+  },
+  "Already the same: %@": {
+    "en": "Already the same: %@",
+    "hu": "Már ugyanez: %@"
+  },
+  "Also delete user data (connections, the vault and its key)": {
+    "en": "Also delete user data (connections, the vault and its key)",
+    "hu": "A felhasználói adatok törlése is (kapcsolatok, a széf és a kulcsa)"
+  },
+  "Amber": {
+    "en": "Amber",
+    "hu": "Borostyán"
+  },
+  "An Ed25519 signing key in your vault. Its fingerprint is what your team compares when subscribing.": {
+    "en": "An Ed25519 signing key in your vault. Its fingerprint is what your team compares when subscribing.",
+    "hu": "Egy Ed25519 aláírókulcs a széfedben. Az ujjlenyomatát veti össze a csapat feliratkozáskor."
+  },
+  "An admin key with this role already exists.": {
+    "en": "An admin key with this role already exists.",
+    "hu": "Már létezik ilyen szerepű adminkulcs."
+  },
+  "An app on this Mac asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.": {
+    "en": "An app on this Mac asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.",
+    "hu": "Egy app ezen a Macen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne."
+  },
+  "Another backup or restore is running.": {
+    "en": "Another backup or restore is running.",
+    "hu": "Egy másik biztonsági mentés vagy visszaállítás fut."
+  },
+  "Another copy of MacVPN already lets other apps control VPNs.": {
+    "en": "Another copy of MacVPN already lets other apps control VPNs.",
+    "hu": "A MacVPN egy másik példánya már engedi, hogy más appok vezéreljék a VPN-eket."
+  },
+  "Another operation is already running on this connection (lock: %@)": {
+    "en": "Another operation is already running on this connection (lock: %@)",
+    "hu": "A kapcsolaton már fut egy művelet (zár: %@)"
+  },
+  "Anyone with this file and its password can read all your VPN credentials.": {
+    "en": "Anyone with this file and its password can read all your VPN credentials.",
+    "hu": "Aki birtokolja ezt a fájlt és a jelszavát, az összes VPN-hitelesítő adatodat elolvashatja."
+  },
+  "Anyone with this file and its password can sign your team catalogs.": {
+    "en": "Anyone with this file and its password can sign your team catalogs.",
+    "hu": "Aki birtokolja ezt a fájlt és a jelszavát, aláírhatja a csapatkatalógusaidat."
+  },
+  "Apply Selected Preferences": {
+    "en": "Apply Selected Preferences",
+    "hu": "A kijelölt beállítások alkalmazása"
+  },
+  "Approve MacVPN in System Settings → General → Login Items.": {
+    "en": "Approve MacVPN in System Settings → General → Login Items.",
+    "hu": "Engedélyezd a MacVPN-t a Rendszerbeállítások → Általános → Bejelentkezési elemek alatt."
+  },
+  "Ask for a one-time code at connect and append it to the password": {
+    "en": "Ask for a one-time code at connect and append it to the password",
+    "hu": "Egyszer használatos kód kérése csatlakozáskor, a jelszó végére fűzve"
+  },
+  "Asks for the admin password once: installs the scripts in /usr/local/libexec/macvpn and the /etc/sudoers.d/macvpn rule.": {
+    "en": "Asks for the admin password once: installs the scripts in /usr/local/libexec/macvpn and the /etc/sudoers.d/macvpn rule.",
+    "hu": "Egyszer kéri az admin jelszót: telepíti a /usr/local/libexec/macvpn scripteket és a /etc/sudoers.d/macvpn szabályt."
+  },
+  "At least %d characters.": {
+    "en": "At least %d characters.",
+    "hu": "Legalább %d karakter."
+  },
+  "At least %d characters. MacVPN does not store it: without it the backup cannot be opened.": {
+    "en": "At least %d characters. MacVPN does not store it: without it the backup cannot be opened.",
+    "hu": "Legalább %d karakter. A MacVPN nem tárolja: nélküle a mentés nem nyitható meg."
+  },
+  "At least %d characters. Without it the file cannot be opened.": {
+    "en": "At least %d characters. Without it the file cannot be opened.",
+    "hu": "Legalább %d karakter. Nélküle a fájl nem nyitható meg."
+  },
+  "At least %lld characters. A long phrase is easier to remember and harder to guess.": {
+    "en": "At least %lld characters. A long phrase is easier to remember and harder to guess.",
+    "hu": "Legalább %lld karakter. Egy hosszú kifejezést könnyebb megjegyezni és nehezebb kitalálni."
+  },
+  "At least one [Peer] with a PublicKey is required": {
+    "en": "At least one [Peer] with a PublicKey is required",
+    "hu": "Legalább egy [Peer] kell PublicKey-jel"
+  },
+  "Authentication (stored in the vault)": {
+    "en": "Authentication (stored in the vault)",
+    "hu": "Hitelesítés (a széfben tárolva)"
+  },
+  "Authentication cancelled": {
+    "en": "Authentication cancelled",
+    "hu": "A hitelesítés megszakítva"
+  },
+  "Authentication failed": {
+    "en": "Authentication failed",
+    "hu": "Hitelesítési hiba"
+  },
+  "Authentication failed (AUTH_FAILED)": {
+    "en": "Authentication failed (AUTH_FAILED)",
+    "hu": "Hitelesítési hiba (AUTH_FAILED)"
+  },
+  "Authentication failed (EAP)": {
+    "en": "Authentication failed (EAP)",
+    "hu": "Hitelesítési hiba (EAP)"
+  },
+  "Authentication failed (wrong user name or password)": {
+    "en": "Authentication failed (wrong user name or password)",
+    "hu": "Hitelesítési hiba (rossz felhasználónév vagy jelszó)"
+  },
+  "Authentication was not completed in time": {
+    "en": "Authentication was not completed in time",
+    "hu": "A hitelesítés nem fejeződött be időben"
+  },
+  "Authorize": {
+    "en": "Authorize",
+    "hu": "Engedélyezés"
+  },
+  "Automatic unlock could not be turned off: %@": {
+    "en": "Automatic unlock could not be turned off: %@",
+    "hu": "Az automatikus feloldás nem kapcsolható ki: %@"
+  },
+  "Automatic unlock could not be turned on: %@": {
+    "en": "Automatic unlock could not be turned on: %@",
+    "hu": "Az automatikus feloldás nem kapcsolható be: %@"
+  },
+  "Automatic unlocking could not be changed.": {
+    "en": "Automatic unlocking could not be changed.",
+    "hu": "Az automatikus feloldást nem sikerült módosítani."
+  },
+  "Back": {
+    "en": "Back",
+    "hu": "Vissza"
+  },
+  "Back Up Everything": {
+    "en": "Back Up Everything",
+    "hu": "Teljes biztonsági mentés"
+  },
+  "Back Up Everything…": {
+    "en": "Back Up Everything…",
+    "hu": "Teljes biztonsági mentés…"
+  },
+  "Back Up the Current State First…": {
+    "en": "Back Up the Current State First…",
+    "hu": "Előbb a jelenlegi állapot mentése…"
+  },
+  "Back Up…": {
+    "en": "Back Up…",
+    "hu": "Mentés…"
+  },
+  "Backup Admin Key": {
+    "en": "Backup Admin Key",
+    "hu": "Tartalék aláírókulcs"
+  },
+  "Backup is available once the vault is set up.": {
+    "en": "Backup is available once the vault is set up.",
+    "hu": "A biztonsági mentés a széf létrehozása után érhető el."
+  },
+  "Backup password": {
+    "en": "Backup password",
+    "hu": "A mentés jelszava"
+  },
+  "Backup: %@ · This Mac: %@": {
+    "en": "Backup: %@ · This Mac: %@",
+    "hu": "Mentés: %@ · Ez a Mac: %@"
+  },
+  "Blue": {
+    "en": "Blue",
+    "hu": "Kék"
+  },
+  "CA certificate written: %@/ca.pem": {
+    "en": "CA certificate written: %@/ca.pem",
+    "hu": "CA tanúsítvány kiírva: %@/ca.pem"
+  },
+  "Cancel": {
+    "en": "Cancel",
+    "hu": "Mégse"
+  },
+  "Cannot close the previous connection": {
+    "en": "Cannot close the previous connection",
+    "hu": "A korábbi kapcsolat nem bontható le"
+  },
+  "Cannot create %@": {
+    "en": "Cannot create %@",
+    "hu": "Nem hozható létre: %@"
+  },
+  "Cannot create a temporary directory": {
+    "en": "Cannot create a temporary directory",
+    "hu": "Nem hozható létre ideiglenes könyvtár"
+  },
+  "Cannot create the dry-run directory": {
+    "en": "Cannot create the dry-run directory",
+    "hu": "Nem hozható létre dry-run könyvtár"
+  },
+  "Cannot create: %@": {
+    "en": "Cannot create: %@",
+    "hu": "Nem hozható létre: %@"
+  },
+  "Cannot delete: %@": {
+    "en": "Cannot delete: %@",
+    "hu": "Nem törölhető: %@"
+  },
+  "Cannot detect the config type": {
+    "en": "Cannot detect the config type",
+    "hu": "Nem ismerhető fel a config típusa"
+  },
+  "Cannot enter the run directory": {
+    "en": "Cannot enter the run directory",
+    "hu": "A futási könyvtár nem érhető el"
+  },
+  "Cannot mount the disk image: %@": {
+    "en": "Cannot mount the disk image: %@",
+    "hu": "A lemezkép nem csatolható: %@"
+  },
+  "Cannot open the VPN service: %@": {
+    "en": "Cannot open the VPN service: %@",
+    "hu": "A VPN szolgáltatás nem nyitható meg: %@"
+  },
+  "Cannot pass the response": {
+    "en": "Cannot pass the response",
+    "hu": "A válasz nem adható át"
+  },
+  "Cannot query the status: %@": {
+    "en": "Cannot query the status: %@",
+    "hu": "Az állapot nem kérdezhető le: %@"
+  },
+  "Cannot read the config": {
+    "en": "Cannot read the config",
+    "hu": "A config nem olvasható"
+  },
+  "Cannot read the file": {
+    "en": "Cannot read the file",
+    "hu": "A fájl nem olvasható"
+  },
+  "Cannot read the file: %@": {
+    "en": "Cannot read the file: %@",
+    "hu": "A fájl nem olvasható: %@"
+  },
+  "Cannot set the permissions of the script": {
+    "en": "Cannot set the permissions of the script",
+    "hu": "Nem állítható be a script jogosultsága"
+  },
+  "Cannot set the permissions of the temporary directory": {
+    "en": "Cannot set the permissions of the temporary directory",
+    "hu": "Nem állítható be az ideiglenes könyvtár jogosultsága"
+  },
+  "Cannot set the permissions: %@": {
+    "en": "Cannot set the permissions: %@",
+    "hu": "Nem állítható be a jogosultság: %@"
+  },
+  "Cannot start the VPN service: %@": {
+    "en": "Cannot start the VPN service: %@",
+    "hu": "A VPN szolgáltatás nem indítható: %@"
+  },
+  "Cannot start the installer helper script: %@": {
+    "en": "Cannot start the installer helper script: %@",
+    "hu": "A telepítő segédscript nem indítható: %@"
+  },
+  "Cannot stop the VPN service: %@": {
+    "en": "Cannot stop the VPN service: %@",
+    "hu": "A VPN szolgáltatás nem állítható le: %@"
+  },
+  "Cannot write the config": {
+    "en": "Cannot write the config",
+    "hu": "A config nem írható"
+  },
+  "Cannot write the installer script": {
+    "en": "Cannot write the installer script",
+    "hu": "Nem írható a telepítő script"
+  },
+  "Cannot write: %@": {
+    "en": "Cannot write: %@",
+    "hu": "Nem írható: %@"
+  },
+  "Catalog file": {
+    "en": "Catalog file",
+    "hu": "Katalógusfájl"
+  },
+  "Catalog name": {
+    "en": "Catalog name",
+    "hu": "Katalógus neve"
+  },
+  "Catalog source: %@": {
+    "en": "Catalog source: %@",
+    "hu": "Katalógus forrása: %@"
+  },
+  "Certificates loaded: %lld": {
+    "en": "Certificates loaded: %lld",
+    "hu": "Betöltött tanúsítványok: %lld"
+  },
+  "Change Access Token of %@": {
+    "en": "Change Access Token of %@",
+    "hu": "A(z) %@ hozzáférési tokenjének cseréje"
+  },
+  "Change Master Password…": {
+    "en": "Change Master Password…",
+    "hu": "Mesterjelszó módosítása…"
+  },
+  "Change Password": {
+    "en": "Change Password",
+    "hu": "Jelszó módosítása"
+  },
+  "Change Team Key of %@": {
+    "en": "Change Team Key of %@",
+    "hu": "A(z) %@ csapatkulcsának cseréje"
+  },
+  "Change access token…": {
+    "en": "Change access token…",
+    "hu": "Hozzáférési token cseréje…"
+  },
+  "Change team key…": {
+    "en": "Change team key…",
+    "hu": "Csapatkulcs cseréje…"
+  },
+  "Change the master password": {
+    "en": "Change the master password",
+    "hu": "A mesterjelszó módosítása"
+  },
+  "Changes when MacVPN's DNS hooks run": {
+    "en": "Changes when MacVPN's DNS hooks run",
+    "hu": "Megváltoztatja, mikor futnak a MacVPN DNS-hookjai"
+  },
+  "Character not allowed: \\": {
+    "en": "Character not allowed: \\",
+    "hu": "Nem engedélyezett karakter: \\"
+  },
+  "Check": {
+    "en": "Check",
+    "hu": "Ellenőrzés"
+  },
+  "Check Again": {
+    "en": "Check Again",
+    "hu": "Újraellenőrzés"
+  },
+  "Check for Updates Automatically": {
+    "en": "Check for Updates Automatically",
+    "hu": "Frissítések automatikus keresése"
+  },
+  "Check for Updates Now": {
+    "en": "Check for Updates Now",
+    "hu": "Frissítések keresése most"
+  },
+  "Check your recovery key": {
+    "en": "Check your recovery key",
+    "hu": "A helyreállítási kulcs ellenőrzése"
+  },
+  "Checking for Updates…": {
+    "en": "Checking for Updates…",
+    "hu": "Frissítések keresése…"
+  },
+  "Checking the install location…": {
+    "en": "Checking the install location…",
+    "hu": "Célhely ellenőrzése…"
+  },
+  "Checking the selection…": {
+    "en": "Checking the selection…",
+    "hu": "A kiválasztás ellenőrzése…"
+  },
+  "Checking…": {
+    "en": "Checking…",
+    "hu": "Ellenőrzés…"
+  },
+  "Choose File…": {
+    "en": "Choose File…",
+    "hu": "Fájl kiválasztása…"
+  },
+  "Choose PEM File…": {
+    "en": "Choose PEM File…",
+    "hu": "PEM fájl kiválasztása…"
+  },
+  "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new Mac.": {
+    "en": "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new Mac.",
+    "hu": "Válassz egy .macvpnadminkey fájlt, és add meg a jelszavát. A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, nem a kulcsfájlban: új Macen előbb állíts vissza egy teljes biztonsági mentést."
+  },
+  "Choose a backup made with Back Up Everything. Nothing changes before you confirm what to restore.": {
+    "en": "Choose a backup made with Back Up Everything. Nothing changes before you confirm what to restore.",
+    "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Semmi sem változik, amíg jóvá nem hagyod, mit állítson vissza."
+  },
+  "Choose a backup made with Back Up Everything. You set a new master password for this Mac next.": {
+    "en": "Choose a backup made with Back Up Everything. You set a new master password for this Mac next.",
+    "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Utána új mesterjelszót adsz meg ehhez a Machez."
+  },
+  "Choose a master password": {
+    "en": "Choose a master password",
+    "hu": "Válassz mesterjelszót"
+  },
+  "Choose the admin key file first.": {
+    "en": "Choose the admin key file first.",
+    "hu": "Előbb válaszd ki az adminkulcs-fájlt."
+  },
+  "Choose the catalog file first.": {
+    "en": "Choose the catalog file first.",
+    "hu": "Előbb válaszd ki a katalógusfájlt."
+  },
+  "Choose the file at the path the members’ Macs use, for example on the mounted share.": {
+    "en": "Choose the file at the path the members’ Macs use, for example on the mounted share.",
+    "hu": "A fájlt azon az útvonalon válaszd ki, amelyet a tagok Macjei használnak, például a csatolt megosztáson."
+  },
+  "Cisco IPsec requires a group name": {
+    "en": "Cisco IPsec requires a group name",
+    "hu": "Cisco IPsec-hez csoportnév szükséges"
+  },
+  "Clear Search": {
+    "en": "Clear Search",
+    "hu": "Keresés törlése"
+  },
+  "Clears the vault first. Not in the backup, deleted: %lld items. Paired apps stay.": {
+    "en": "Clears the vault first. Not in the backup, deleted: %lld items. Paired apps stay.",
+    "hu": "Előbb kiüríti a széfet. A mentésben nem szereplő, törlődő elemek: %lld. A párosított appok maradnak."
+  },
+  "Clears the vault first. Not in the backup, deleted: 1 item. Paired apps stay.": {
+    "en": "Clears the vault first. Not in the backup, deleted: 1 item. Paired apps stay.",
+    "hu": "Előbb kiüríti a széfet. A mentésben nem szereplő, törlődő elemek: 1. A párosított appok maradnak."
+  },
+  "Click to enter the code or to sign in.": {
+    "en": "Click to enter the code or to sign in.",
+    "hu": "Kattints a kód megadásához vagy a bejelentkezéshez."
+  },
+  "Click to enter the user name or password.": {
+    "en": "Click to enter the user name or password.",
+    "hu": "Kattints a felhasználónév vagy a jelszó megadásához."
+  },
+  "Click to see the log.": {
+    "en": "Click to see the log.",
+    "hu": "Kattints a naplóért."
+  },
+  "Close": {
+    "en": "Close",
+    "hu": "Bezárás"
+  },
+  "Code": {
+    "en": "Code",
+    "hu": "Kód"
+  },
+  "Codes and web sign-in requested by the server during the connection (challenge/response, SAML, push) are asked for automatically.": {
+    "en": "Codes and web sign-in requested by the server during the connection (challenge/response, SAML, push) are asked for automatically.",
+    "hu": "A szerver által csatlakozás közben kért kódot és webes bejelentkezést (challenge/response, SAML, push) a MacVPN automatikusan bekéri."
+  },
+  "Colour": {
+    "en": "Colour",
+    "hu": "Szín"
+  },
+  "Colour…": {
+    "en": "Colour…",
+    "hu": "Szín…"
+  },
+  "Commands": {
+    "en": "Commands",
+    "hu": "Parancsok"
+  },
+  "Compare it with what your administrator sent you. If it differs, do not subscribe.": {
+    "en": "Compare it with what your administrator sent you. If it differs, do not subscribe.",
+    "hu": "Hasonlítsd össze azzal, amit a rendszergazda küldött. Ha eltér, ne iratkozz fel."
+  },
+  "Config not found": {
+    "en": "Config not found",
+    "hu": "A config nem található"
+  },
+  "Config not provided": {
+    "en": "Config not provided",
+    "hu": "Nincs megadva config"
+  },
+  "Confirm": {
+    "en": "Confirm",
+    "hu": "Megerősítés"
+  },
+  "Confirm every key that is published inside a configuration.": {
+    "en": "Confirm every key that is published inside a configuration.",
+    "hu": "Erősíts meg minden kulcsot, amely egy konfiguráción belül kerül közzétételre."
+  },
+  "Confirm only after you clicked “Install profile” and approved the new profile in System Settings → General → Device Management. MacVPN cannot always see the change. If the old profile is still installed, the connection uses settings the team catalog has replaced.": {
+    "en": "Confirm only after you clicked “Install profile” and approved the new profile in System Settings → General → Device Management. MacVPN cannot always see the change. If the old profile is still installed, the connection uses settings the team catalog has replaced.",
+    "hu": "Csak akkor erősítsd meg, ha a „Profil telepítése” után jóváhagytad az új profilt a Rendszerbeállítások → Általános → Eszközkezelés alatt. A MacVPN nem mindig látja a változást. Ha még a régi profil van telepítve, a kapcsolat olyan beállításokat használ, amelyeket a csapatkatalógus már lecserélt."
+  },
+  "Connect": {
+    "en": "Connect",
+    "hu": "Csatlakozás"
+  },
+  "Connect in Debug Mode": {
+    "en": "Connect in Debug Mode",
+    "hu": "Csatlakozás debug módban"
+  },
+  "Connecting…": {
+    "en": "Connecting…",
+    "hu": "Csatlakozás…"
+  },
+  "Connection": {
+    "en": "Connection",
+    "hu": "Kapcsolat"
+  },
+  "Connections": {
+    "en": "Connections",
+    "hu": "Kapcsolatok"
+  },
+  "Connections it may use": {
+    "en": "Connections it may use",
+    "hu": "Használható kapcsolatok"
+  },
+  "Connections that are up stay until you disconnect them.": {
+    "en": "Connections that are up stay until you disconnect them.",
+    "hu": "A fennálló kapcsolatok a bontásukig megmaradnak."
+  },
+  "Connections with risky settings: %lld. You acknowledge them yourself in each editor.": {
+    "en": "Connections with risky settings: %lld. You acknowledge them yourself in each editor.",
+    "hu": "Kockázatos beállítású kapcsolatok: %lld. Ezeket te hagyod jóvá az egyes szerkesztőkben."
+  },
+  "Connections, folders and shared credentials here that are not in the backup are deleted: %lld items. This cannot be undone.": {
+    "en": "Connections, folders and shared credentials here that are not in the backup are deleted: %lld items. This cannot be undone.",
+    "hu": "Az itteni kapcsolatok, mappák és közös hitelesítő adatok közül a mentésben nem szereplők törlődnek: %lld elem. Ez nem vonható vissza."
+  },
+  "Connections, folders and shared credentials here that are not in the backup are deleted: 1 item. This cannot be undone.": {
+    "en": "Connections, folders and shared credentials here that are not in the backup are deleted: 1 item. This cannot be undone.",
+    "hu": "Az itteni kapcsolatok, mappák és közös hitelesítő adatok közül a mentésben nem szereplők törlődnek: 1 elem. Ez nem vonható vissza."
+  },
+  "Continue": {
+    "en": "Continue",
+    "hu": "Tovább"
+  },
+  "Control character not allowed": {
+    "en": "Control character not allowed",
+    "hu": "Nem engedélyezett vezérlőkarakter"
+  },
+  "Copied": {
+    "en": "Copied",
+    "hu": "Kimásolva"
+  },
+  "Copy": {
+    "en": "Copy",
+    "hu": "Másolás"
+  },
+  "Copy Subscription String of “%@”": {
+    "en": "Copy Subscription String of “%@”",
+    "hu": "A(z) „%@” feliratkozási kódjának másolása"
+  },
+  "Copy Subscription String…": {
+    "en": "Copy Subscription String…",
+    "hu": "Feliratkozási kód másolása…"
+  },
+  "Copy into Each Connection": {
+    "en": "Copy into Each Connection",
+    "hu": "Másolás minden kapcsolatba"
+  },
+  "Copy to Clipboard": {
+    "en": "Copy to Clipboard",
+    "hu": "Másolás a vágólapra"
+  },
+  "Copying the config failed": {
+    "en": "Copying the config failed",
+    "hu": "A config másolása sikertelen"
+  },
+  "Could not change the allowed connections: %@": {
+    "en": "Could not change the allowed connections: %@",
+    "hu": "Nem sikerült módosítani az engedélyezett kapcsolatokat: %@"
+  },
+  "Could not change the folders": {
+    "en": "Could not change the folders",
+    "hu": "Nem sikerült módosítani a mappákat"
+  },
+  "Could not disconnect:": {
+    "en": "Could not disconnect:",
+    "hu": "Nem bontható kapcsolat:"
+  },
+  "Could not download the Homebrew installer. Check the internet connection, then try again.": {
+    "en": "Could not download the Homebrew installer. Check the internet connection, then try again.",
+    "hu": "Nem sikerült letölteni a Homebrew telepítőt. Ellenőrizd az internetkapcsolatot, majd próbáld újra."
+  },
+  "Could not remove %@: %@": {
+    "en": "Could not remove %@: %@",
+    "hu": "A(z) %@ nem törölhető: %@"
+  },
+  "Could not revoke %@: %@": {
+    "en": "Could not revoke %@: %@",
+    "hu": "Nem sikerült visszavonni: %@ (%@)"
+  },
+  "Could not save the audit log": {
+    "en": "Could not save the audit log",
+    "hu": "Nem sikerült menteni a naplót"
+  },
+  "Could not save the log": {
+    "en": "Could not save the log",
+    "hu": "A napló nem menthető"
+  },
+  "Could not start the Homebrew installer": {
+    "en": "Could not start the Homebrew installer",
+    "hu": "Nem indítható a Homebrew telepítő"
+  },
+  "Could not turn off launch at login": {
+    "en": "Could not turn off launch at login",
+    "hu": "Nem sikerült kikapcsolni az indítást bejelentkezéskor"
+  },
+  "Could not turn on launch at login": {
+    "en": "Could not turn on launch at login",
+    "hu": "Nem sikerült bekapcsolni az indítást bejelentkezéskor"
+  },
+  "Could not write %@: %@": {
+    "en": "Could not write %@: %@",
+    "hu": "A(z) %@ nem írható: %@"
+  },
+  "Create Vault": {
+    "en": "Create Vault",
+    "hu": "Széf létrehozása"
+  },
+  "Create and Link": {
+    "en": "Create and Link",
+    "hu": "Létrehozás és összekapcsolás"
+  },
+  "Create from Connection": {
+    "en": "Create from Connection",
+    "hu": "Létrehozás kapcsolatból"
+  },
+  "Create from Connection…": {
+    "en": "Create from Connection…",
+    "hu": "Létrehozás kapcsolatból…"
+  },
+  "Created %@": {
+    "en": "Created %@",
+    "hu": "Létrehozva: %@"
+  },
+  "Creating…": {
+    "en": "Creating…",
+    "hu": "Létrehozás…"
+  },
+  "Credential slots": {
+    "en": "Credential slots",
+    "hu": "Közös belépési adatok helyei"
+  },
+  "Credential slots you filled in are kept as shared credentials in Credentials. To keep a connection, duplicate it as a personal connection first.": {
+    "en": "Credential slots you filled in are kept as shared credentials in Credentials. To keep a connection, duplicate it as a personal connection first.",
+    "hu": "A kitöltött közös belépési adatok helyei közös hitelesítő adatként megmaradnak a Hitelesítő adatok részben. Ha egy kapcsolatot meg akarsz tartani, előbb készíts róla saját másolatot."
+  },
+  "Credential slots: %@": {
+    "en": "Credential slots: %@",
+    "hu": "Közös belépési adatok helyei: %@"
+  },
+  "Credentials": {
+    "en": "Credentials",
+    "hu": "Hitelesítő adatok"
+  },
+  "Credentials needed": {
+    "en": "Credentials needed",
+    "hu": "Hitelesítő adatok szükségesek"
+  },
+  "Current master password": {
+    "en": "Current master password",
+    "hu": "Jelenlegi mesterjelszó"
+  },
+  "Custom CA file": {
+    "en": "Custom CA file",
+    "hu": "Saját CA fájl"
+  },
+  "Cyan": {
+    "en": "Cyan",
+    "hu": "Ciánkék"
+  },
+  "Debugging option that deliberately disrupts the connection": {
+    "en": "Debugging option that deliberately disrupts the connection",
+    "hu": "Hibakereső beállítás, amely szándékosan zavarja a kapcsolatot"
+  },
+  "Delete": {
+    "en": "Delete",
+    "hu": "Törlés"
+  },
+  "Delete %@?": {
+    "en": "Delete %@?",
+    "hu": "Törlöd: %@?"
+  },
+  "Delete %lld connections?": {
+    "en": "Delete %lld connections?",
+    "hu": "Törlöd a(z) %lld kapcsolatot?"
+  },
+  "Delete 1 connection?": {
+    "en": "Delete 1 connection?",
+    "hu": "Törlöd az 1 kapcsolatot?"
+  },
+  "Delete Connections": {
+    "en": "Delete Connections",
+    "hu": "Kapcsolatok törlése"
+  },
+  "Delete the connections too": {
+    "en": "Delete the connections too",
+    "hu": "A kapcsolatok is törlődjenek"
+  },
+  "Delete…": {
+    "en": "Delete…",
+    "hu": "Törlés…"
+  },
+  "Deny": {
+    "en": "Deny",
+    "hu": "Elutasítás"
+  },
+  "Directive not allowed in a <connection> block: %@": {
+    "en": "Directive not allowed in a <connection> block: %@",
+    "hu": "Nem engedélyezett direktíva <connection> blokkban: %@"
+  },
+  "Directive not supported for import: %@": {
+    "en": "Directive not supported for import: %@",
+    "hu": "Nem támogatott direktíva importnál: %@"
+  },
+  "Discard": {
+    "en": "Discard",
+    "hu": "Elvetés"
+  },
+  "Disconnect": {
+    "en": "Disconnect",
+    "hu": "Bontás"
+  },
+  "Disconnect and Quit": {
+    "en": "Disconnect and Quit",
+    "hu": "Leállítás és kilépés"
+  },
+  "Disconnect failed, the connection is still running (the run directory is kept)": {
+    "en": "Disconnect failed, the connection is still running (the run directory is kept)",
+    "hu": "A bontás sikertelen, a kapcsolat még fut (a futási könyvtár megmarad)"
+  },
+  "Disconnect the connections in this folder before deleting them": {
+    "en": "Disconnect the connections in this folder before deleting them",
+    "hu": "Előbb bontsd a mappában lévő kapcsolatokat, aztán töröld őket"
+  },
+  "Disconnect the team catalog's connections first.": {
+    "en": "Disconnect the team catalog's connections first.",
+    "hu": "Előbb bontsd a csapatkatalógus kapcsolatait."
+  },
+  "Disconnect them before quitting?": {
+    "en": "Disconnect them before quitting?",
+    "hu": "Leállítsam őket kilépés előtt?"
+  },
+  "Disconnected in MacVPN": {
+    "en": "Disconnected in MacVPN",
+    "hu": "Bontva a MacVPN-ben"
+  },
+  "Disconnecting…": {
+    "en": "Disconnecting…",
+    "hu": "Bontás…"
+  },
+  "Done": {
+    "en": "Done",
+    "hu": "Kész"
+  },
+  "Done.": {
+    "en": "Done.",
+    "hu": "Kész."
+  },
+  "Done. Go back to MacVPN and click Check Again.": {
+    "en": "Done. Go back to MacVPN and click Check Again.",
+    "hu": "Kész. Térj vissza a MacVPN-hez és nyomd meg az Újraellenőrzés gombot."
+  },
+  "Download address not allowed: %@": {
+    "en": "Download address not allowed: %@",
+    "hu": "Nem megengedett letöltési cím: %@"
+  },
+  "Download and Install": {
+    "en": "Download and Install",
+    "hu": "Letöltés és telepítés"
+  },
+  "Downloading…": {
+    "en": "Downloading…",
+    "hu": "Letöltés…"
+  },
+  "Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects": {
+    "en": "Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects",
+    "hu": "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat, és a DNS-t csak a MacVPN bontása állítja vissza"
+  },
+  "Duplicate": {
+    "en": "Duplicate",
+    "hu": "Másolat készítése"
+  },
+  "Duplicate as Personal Connection": {
+    "en": "Duplicate as Personal Connection",
+    "hu": "Másolat saját kapcsolatként"
+  },
+  "Duplicate as personal connection…": {
+    "en": "Duplicate as personal connection…",
+    "hu": "Másolat saját kapcsolatként…"
+  },
+  "Duplicate key: %@": {
+    "en": "Duplicate key: %@",
+    "hu": "Ismétlődő kulcs: %@"
+  },
+  "Each connection and saved password is copied, checked, and only then deleted from the old place.": {
+    "en": "Each connection and saved password is copied, checked, and only then deleted from the old place.",
+    "hu": "Minden kapcsolat és mentett jelszó átmásolódik, ellenőrzésre kerül, és csak ezután törlődik a régi helyéről."
+  },
+  "Edit %@": {
+    "en": "Edit %@",
+    "hu": "%@ szerkesztése"
+  },
+  "Edit Source of %@": {
+    "en": "Edit Source of %@",
+    "hu": "A(z) %@ forrásának szerkesztése"
+  },
+  "Edit in Credentials": {
+    "en": "Edit in Credentials",
+    "hu": "Szerkesztés a Hitelesítő adatok részben"
+  },
+  "Edit source…": {
+    "en": "Edit source…",
+    "hu": "Forrás szerkesztése…"
+  },
+  "Edit…": {
+    "en": "Edit…",
+    "hu": "Szerkesztés…"
+  },
+  "Enabled via a login LaunchAgent (applies at next login).": {
+    "en": "Enabled via a login LaunchAgent (applies at next login).",
+    "hu": "Bejelentkezési LaunchAgenttel bekapcsolva (a következő bejelentkezéstől érvényes)."
+  },
+  "Encrypting and saving the backup…": {
+    "en": "Encrypting and saving the backup…",
+    "hu": "A mentés titkosítása és mentése…"
+  },
+  "Enter an https:// address or choose a catalog file.": {
+    "en": "Enter an https:// address or choose a catalog file.",
+    "hu": "Adj meg egy https:// címet, vagy válassz egy katalógusfájlt."
+  },
+  "Enter the current master password, then the new one twice.": {
+    "en": "Enter the current master password, then the new one twice.",
+    "hu": "Add meg a jelenlegi mesterjelszót, aztán kétszer az újat."
+  },
+  "Enter the fields instead": {
+    "en": "Enter the fields instead",
+    "hu": "Inkább kitöltöm a mezőket"
+  },
+  "Enter the master password to open the vault.": {
+    "en": "Enter the master password to open the vault.",
+    "hu": "A széf megnyitásához add meg a mesterjelszót."
+  },
+  "Enter the master password. Its key is then kept in the macOS Keychain, and MacVPN opens without asking.": {
+    "en": "Enter the master password. Its key is then kept in the macOS Keychain, and MacVPN opens without asking.",
+    "hu": "Add meg a mesterjelszót. A széf kulcsa ezután a macOS Keychainjében marad, és a MacVPN kérdés nélkül megnyílik."
+  },
+  "Enter the new team key your administrator sent you through a secure channel.": {
+    "en": "Enter the new team key your administrator sent you through a secure channel.",
+    "hu": "Add meg az új csapatkulcsot, amelyet a rendszergazda biztonságos csatornán küldött."
+  },
+  "Enter the one-time code. MacVPN appends it to the password for this connection.": {
+    "en": "Enter the one-time code. MacVPN appends it to the password for this connection.",
+    "hu": "Add meg az egyszer használatos kódot. A MacVPN ennél a kapcsolatnál a jelszó végére fűzi."
+  },
+  "Enter your master password in the window that opened to turn on automatic unlock.": {
+    "en": "Enter your master password in the window that opened to turn on automatic unlock.",
+    "hu": "Az automatikus feloldás bekapcsolásához add meg a mesterjelszót a megnyílt ablakban."
+  },
+  "Enter your recovery key and choose a new master password. Your connections stay as they are.": {
+    "en": "Enter your recovery key and choose a new master password. Your connections stay as they are.",
+    "hu": "Add meg a helyreállítási kulcsot, és válassz új mesterjelszót. A kapcsolataid változatlanok maradnak."
+  },
+  "Errors": {
+    "en": "Errors",
+    "hu": "Hibák"
+  },
+  "Establishing the connection failed": {
+    "en": "Establishing the connection failed",
+    "hu": "A kapcsolat felépítése sikertelen"
+  },
+  "Every catalog you publish announces it as the successor of the admin key, so you can switch to it without every member subscribing again.": {
+    "en": "Every catalog you publish announces it as the successor of the admin key, so you can switch to it without every member subscribing again.",
+    "hu": "Minden közzétett katalógus bejelenti az aláírókulcs utódjaként, így átválthatsz rá anélkül, hogy minden tagnak újra fel kellene iratkoznia."
+  },
+  "Every member gets these keys as they are. Tick each one to publish it.": {
+    "en": "Every member gets these keys as they are. Tick each one to publish it.",
+    "hu": "Minden tag változatlanul megkapja ezeket a kulcsokat. Mindegyiket jelöld be egyenként, hogy közzétedd."
+  },
+  "Everyone with the team key can read this secret": {
+    "en": "Everyone with the team key can read this secret",
+    "hu": "Mindenki, akinél megvan a csapatkulcs, elolvashatja ezt a titkot"
+  },
+  "Everyone with this catalog uses the same WireGuard key": {
+    "en": "Everyone with this catalog uses the same WireGuard key",
+    "hu": "A katalógus minden felhasználója ugyanazt a WireGuard kulcsot használja"
+  },
+  "Exactly one [Interface] section is required": {
+    "en": "Exactly one [Interface] section is required",
+    "hu": "Pontosan egy [Interface] szakasz kell"
+  },
+  "Executable": {
+    "en": "Executable",
+    "hu": "Futtatható fájl"
+  },
+  "Expires in %@": {
+    "en": "Expires in %@",
+    "hu": "Lejár: %@"
+  },
+  "Export Backup Key": {
+    "en": "Export Backup Key",
+    "hu": "Tartalék kulcs exportálása"
+  },
+  "Export Backup Key…": {
+    "en": "Export Backup Key…",
+    "hu": "Tartalék kulcs exportálása…"
+  },
+  "Export With Keys": {
+    "en": "Export With Keys",
+    "hu": "Exportálás kulcsokkal"
+  },
+  "Export Without Keys": {
+    "en": "Export Without Keys",
+    "hu": "Exportálás kulcsok nélkül"
+  },
+  "Export it to a password-protected file and remove it from this Mac: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.": {
+    "en": "Export it to a password-protected file and remove it from this Mac: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.",
+    "hu": "Exportáld jelszóval védett fájlba, és töröld erről a Macről: a fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol."
+  },
+  "Export…": {
+    "en": "Export…",
+    "hu": "Exportálás…"
+  },
+  "Export… (passwords are never included)": {
+    "en": "Export… (passwords are never included)",
+    "hu": "Exportálás… (jelszavak sosem kerülnek bele)"
+  },
+  "External file reference, use an inline block: %@": {
+    "en": "External file reference, use an inline block: %@",
+    "hu": "Külső fájl hivatkozás, inline blokk kell: %@"
+  },
+  "Fair": {
+    "en": "Fair",
+    "hu": "Közepes"
+  },
+  "File": {
+    "en": "File",
+    "hu": "Fájl"
+  },
+  "File: %@": {
+    "en": "File: %@",
+    "hu": "Fájl: %@"
+  },
+  "Filled in": {
+    "en": "Filled in",
+    "hu": "Kitöltve"
+  },
+  "Finish setting up the vault…": {
+    "en": "Finish setting up the vault…",
+    "hu": "A széf beállításának befejezése…"
+  },
+  "Folder name": {
+    "en": "Folder name",
+    "hu": "Mappa neve"
+  },
+  "Folders": {
+    "en": "Folders",
+    "hu": "Mappák"
+  },
+  "Folders are not available": {
+    "en": "Folders are not available",
+    "hu": "A mappák nem érhetők el"
+  },
+  "Folders can be made once your data is in the vault.": {
+    "en": "Folders can be made once your data is in the vault.",
+    "hu": "Mappákat akkor hozhatsz létre, ha az adataid már a széfben vannak."
+  },
+  "Folders cannot be changed while the vault is locked": {
+    "en": "Folders cannot be changed while the vault is locked",
+    "hu": "A mappák nem módosíthatók, amíg a széf zárolva van"
+  },
+  "Follow": {
+    "en": "Follow",
+    "hu": "Követés"
+  },
+  "Forbidden directive: %@": {
+    "en": "Forbidden directive: %@",
+    "hu": "Tiltott direktíva: %@"
+  },
+  "Forbidden key: %@": {
+    "en": "Forbidden key: %@",
+    "hu": "Tiltott kulcs: %@"
+  },
+  "Forbidden: file: URI": {
+    "en": "Forbidden: file: URI",
+    "hu": "Tiltott: file: URI"
+  },
+  "Forbidden: include": {
+    "en": "Forbidden: include",
+    "hu": "Tiltott: include"
+  },
+  "Forget": {
+    "en": "Forget",
+    "hu": "Elfelejtés"
+  },
+  "Forget saved secrets": {
+    "en": "Forget saved secrets",
+    "hu": "Mentett titkok törlése"
+  },
+  "Forget “%@”?": {
+    "en": "Forget “%@”?",
+    "hu": "Elfelejted ezt: „%@”?"
+  },
+  "Forget…": {
+    "en": "Forget…",
+    "hu": "Elfelejtés…"
+  },
+  "Full backups made before the export still contain the backup key: keep them as safe as the key file.": {
+    "en": "Full backups made before the export still contain the backup key: keep them as safe as the key file.",
+    "hu": "Az export előtt készült teljes biztonsági mentések még tartalmazzák a tartalék kulcsot: ezeket is úgy védd, mint a kulcsfájlt."
+  },
+  "Generate Admin Key": {
+    "en": "Generate Admin Key",
+    "hu": "Adminisztrátori aláírókulcs létrehozása"
+  },
+  "Generate Backup Admin Key": {
+    "en": "Generate Backup Admin Key",
+    "hu": "Tartalék aláírókulcs létrehozása"
+  },
+  "Generate an admin key before publishing.": {
+    "en": "Generate an admin key before publishing.",
+    "hu": "Közzététel előtt hozz létre egy adminkulcsot."
+  },
+  "Generate an admin key first.": {
+    "en": "Generate an admin key first.",
+    "hu": "Előbb hozz létre egy adminisztrátori aláírókulcsot."
+  },
+  "GitHub is temporarily limiting requests (HTTP 403). Try again later.": {
+    "en": "GitHub is temporarily limiting requests (HTTP 403). Try again later.",
+    "hu": "A GitHub átmenetileg korlátozza a lekérdezéseket (HTTP 403). Próbáld később."
+  },
+  "Green": {
+    "en": "Green",
+    "hu": "Zöld"
+  },
+  "Group %lld": {
+    "en": "Group %lld",
+    "hu": "%lld. csoport"
+  },
+  "Group name": {
+    "en": "Group name",
+    "hu": "Csoportnév (group name)"
+  },
+  "HTTPS address": {
+    "en": "HTTPS address",
+    "hu": "HTTPS-cím"
+  },
+  "HTTPS sources are not available in the sandbox": {
+    "en": "HTTPS sources are not available in the sandbox",
+    "hu": "A homokozóban HTTPS-forrás nem használható"
+  },
+  "Held by %@": {
+    "en": "Held by %@",
+    "hu": "Használja: %@"
+  },
+  "Help": {
+    "en": "Help",
+    "hu": "Súgó"
+  },
+  "Homebrew": {
+    "en": "Homebrew",
+    "hu": "Homebrew"
+  },
+  "I Saved It": {
+    "en": "I Saved It",
+    "hu": "Elmentettem"
+  },
+  "I acknowledge these settings and the security risks": {
+    "en": "I acknowledge these settings and the security risks",
+    "hu": "Tudomásul veszem a beállításokat és a biztonsági kockázatokat"
+  },
+  "I installed it": {
+    "en": "I installed it",
+    "hu": "Telepítettem"
+  },
+  "IKE negotiation failed (details in the log)": {
+    "en": "IKE negotiation failed (details in the log)",
+    "hu": "Az IKE egyeztetés sikertelen (részletek a naplóban)"
+  },
+  "If macOS asks for access to the Keychain, choose Always Allow.": {
+    "en": "If macOS asks for access to the Keychain, choose Always Allow.",
+    "hu": "Ha a macOS hozzáférést kér a Keychainhez, válaszd a Mindig engedélyez gombot."
+  },
+  "If the admin key may have leaked: generate a new admin key on a Mac you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.": {
+    "en": "If the admin key may have leaked: generate a new admin key on a Mac you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.",
+    "hu": "Ha az aláírókulcs kiszivároghatott: hozz létre új adminisztrátori aláírókulcsot egy megbízható Macen, tedd közzé a kapcsolatokat új katalógusként, töröld a régi katalógusfájlt a szerverről vagy a megosztásról, és küldd el minden tagnak az új feliratkozási kódot és ujjlenyomatot megbízható csatornán. A régi katalógus csapattitkait is változtasd meg."
+  },
+  "If the new source is on another host or port, or is a file, the stored access token is dropped: it is never sent to a new address.": {
+    "en": "If the new source is on another host or port, or is a file, the stored access token is dropped: it is never sent to a new address.",
+    "hu": "Ha az új forrás másik hoston vagy porton van, vagy fájl, a tárolt hozzáférési token törlődik: a token sosem megy új címre."
+  },
+  "If you forget the master password, this key is the only way back into the vault. Write it down or keep it in a password manager. It is shown only now.": {
+    "en": "If you forget the master password, this key is the only way back into the vault. Write it down or keep it in a password manager. It is shown only now.",
+    "hu": "Ha elfelejted a mesterjelszót, csak ezzel a kulccsal juthatsz vissza a széfbe. Írd fel, vagy tárold egy jelszókezelőben. Csak most látható."
+  },
+  "Ignore": {
+    "en": "Ignore",
+    "hu": "Mellőzés"
+  },
+  "Import": {
+    "en": "Import",
+    "hu": "Importálás"
+  },
+  "Import %lld downloaded files?": {
+    "en": "Import %lld downloaded files?",
+    "hu": "Importálod a(z) %lld letöltött fájlt?"
+  },
+  "Import Admin Key": {
+    "en": "Import Admin Key",
+    "hu": "Aláírókulcs importálása"
+  },
+  "Import Admin Key…": {
+    "en": "Import Admin Key…",
+    "hu": "Aláírókulcs importálása…"
+  },
+  "Import Error": {
+    "en": "Import Error",
+    "hu": "Import hiba"
+  },
+  "Import from File…": {
+    "en": "Import from File…",
+    "hu": "Import fájlból…"
+  },
+  "Import the downloaded file?": {
+    "en": "Import the downloaded file?",
+    "hu": "Importálod a letöltött fájlt?"
+  },
+  "Imported to the top level: the folder could not be created (%@)": {
+    "en": "Imported to the top level: the folder could not be created (%@)",
+    "hu": "A legfelső szintre importálva: a mappát nem sikerült létrehozni (%@)"
+  },
+  "Imported, but the config has problems. Fix them in the editor (red list).": {
+    "en": "Imported, but the config has problems. Fix them in the editor (red list).",
+    "hu": "Importálva, de a config hibás. Javítsd a szerkesztőben (piros lista)."
+  },
+  "Imported, inlined: %@": {
+    "en": "Imported, inlined: %@",
+    "hu": "Importálva, beemelt fájlok: %@"
+  },
+  "Imported. It contains risky settings (%@): review them in the editor’s yellow panel and tick the checkbox before connecting.": {
+    "en": "Imported. It contains risky settings (%@): review them in the editor’s yellow panel and tick the checkbox before connecting.",
+    "hu": "Importálva. Kockázatos beállításokat tartalmaz (%@): nézd át őket a szerkesztő sárga paneljén, és csatlakozás előtt jelöld be a négyzetet."
+  },
+  "Incomplete installation (missing: %@). Reinstall: asks for the admin password once.": {
+    "en": "Incomplete installation (missing: %@). Reinstall: asks for the admin password once.",
+    "hu": "Hiányos telepítés (hiányzik: %@). Újratelepítés: egyszer kéri az admin jelszót."
+  },
+  "Indigo": {
+    "en": "Indigo",
+    "hu": "Indigó"
+  },
+  "Inline block not allowed: %@": {
+    "en": "Inline block not allowed: %@",
+    "hu": "Nem engedélyezett inline blokk: %@"
+  },
+  "Install": {
+    "en": "Install",
+    "hu": "Telepítés"
+  },
+  "Install profile": {
+    "en": "Install profile",
+    "hu": "Profil telepítése"
+  },
+  "Install the profile first.": {
+    "en": "Install the profile first.",
+    "hu": "Előbb telepítsd a profilt."
+  },
+  "Installation cancelled": {
+    "en": "Installation cancelled",
+    "hu": "A telepítés megszakítva"
+  },
+  "Installation cancelled: %@ is not owned by root or is writable by other users, so anything running as that user could replace the MacVPN root scripts. Fix it in Terminal, then try again: sudo chown root:wheel %@ && sudo chmod go-w %@ (on Intel Macs this may affect Homebrew).": {
+    "en": "Installation cancelled: %@ is not owned by root or is writable by other users, so anything running as that user could replace the MacVPN root scripts. Fix it in Terminal, then try again: sudo chown root:wheel %@ && sudo chmod go-w %@ (on Intel Macs this may affect Homebrew).",
+    "hu": "A telepítés megszakítva: a(z) %@ nem a root tulajdona, vagy más felhasználó is írhatja, így bármi, ami ennek a felhasználónak a nevében fut, kicserélhetné a MacVPN root scriptjeit. Javítsd a Terminálban, majd próbáld újra: sudo chown root:wheel %@ && sudo chmod go-w %@ (Intel Macen ez érintheti a Homebrew-t)."
+  },
+  "Installation error": {
+    "en": "Installation error",
+    "hu": "Telepítési hiba"
+  },
+  "Installed (version %@)": {
+    "en": "Installed (version %@)",
+    "hu": "Telepítve (verzió %@)"
+  },
+  "Installed version: %@": {
+    "en": "Installed version: %@",
+    "hu": "Telepített verzió: %@"
+  },
+  "Installing Homebrew (with the official installer)…": {
+    "en": "Installing Homebrew (with the official installer)…",
+    "hu": "Homebrew telepítése (a hivatalos telepítővel)…"
+  },
+  "Installing…": {
+    "en": "Installing…",
+    "hu": "Telepítés…"
+  },
+  "Install…": {
+    "en": "Install…",
+    "hu": "Telepítés…"
+  },
+  "Integrity check failed, installation cancelled:": {
+    "en": "Integrity check failed, installation cancelled:",
+    "hu": "A sértetlenség-ellenőrzés sikertelen, a telepítés megszakítva:"
+  },
+  "Invalid --accept-risky value": {
+    "en": "Invalid --accept-risky value",
+    "hu": "Érvénytelen --accept-risky érték"
+  },
+  "Invalid ID": {
+    "en": "Invalid ID",
+    "hu": "Érvénytelen azonosító"
+  },
+  "Invalid SSTP parameters": {
+    "en": "Invalid SSTP parameters",
+    "hu": "Érvénytelen SSTP paraméterek"
+  },
+  "Invalid argument: %@": {
+    "en": "Invalid argument: %@",
+    "hu": "Érvénytelen argumentum: %@"
+  },
+  "Invalid checksum file (.sha256)": {
+    "en": "Invalid checksum file (.sha256)",
+    "hu": "Hibás ellenőrzőösszeg-fájl (.sha256)"
+  },
+  "Invalid closing tag": {
+    "en": "Invalid closing tag",
+    "hu": "Hibás záró tag"
+  },
+  "Invalid config:": {
+    "en": "Invalid config:",
+    "hu": "Érvénytelen config:"
+  },
+  "Invalid directive": {
+    "en": "Invalid directive",
+    "hu": "Érvénytelen direktíva"
+  },
+  "Invalid input": {
+    "en": "Invalid input",
+    "hu": "Érvénytelen bemenet"
+  },
+  "Invalid line": {
+    "en": "Invalid line",
+    "hu": "Érvénytelen sor"
+  },
+  "Invalid line in the CA certificate block": {
+    "en": "Invalid line in the CA certificate block",
+    "hu": "Érvénytelen sor a CA tanúsítvány blokkban"
+  },
+  "Invalid port: 1–65535": {
+    "en": "Invalid port: 1–65535",
+    "hu": "Érvénytelen port: 1–65535"
+  },
+  "Invalid response": {
+    "en": "Invalid response",
+    "hu": "Érvénytelen válasz"
+  },
+  "Invalid response kind": {
+    "en": "Invalid response kind",
+    "hu": "Érvénytelen választípus"
+  },
+  "Invalid server: use a host name or an IPv4/IPv6 address, without a port": {
+    "en": "Invalid server: use a host name or an IPv4/IPv6 address, without a port",
+    "hu": "Érvénytelen szerver: hosztnév vagy IPv4/IPv6 cím kell, port nélkül"
+  },
+  "Invalid update source: %@": {
+    "en": "Invalid update source: %@",
+    "hu": "Érvénytelen frissítési forrás: %@"
+  },
+  "Invalid user": {
+    "en": "Invalid user",
+    "hu": "Érvénytelen felhasználó"
+  },
+  "Invalid user name: %@": {
+    "en": "Invalid user name: %@",
+    "hu": "Érvénytelen felhasználónév: %@"
+  },
+  "Invalid user name: letters, digits and . _ @ + - only (use user@domain instead of DOMAIN\\user)": {
+    "en": "Invalid user name: letters, digits and . _ @ + - only (use user@domain instead of DOMAIN\\user)",
+    "hu": "Érvénytelen felhasználónév: csak betű, számjegy és . _ @ + - lehet (DOMAIN\\user helyett user@domain)"
+  },
+  "Invalid value for %@: allowed: %@": {
+    "en": "Invalid value for %@: allowed: %@",
+    "hu": "Érvénytelen érték (%@), megengedett: %@"
+  },
+  "Invalid value: %@": {
+    "en": "Invalid value: %@",
+    "hu": "Érvénytelen érték: %@"
+  },
+  "Is the New Profile Installed?": {
+    "en": "Is the New Profile Installed?",
+    "hu": "Telepítetted az új profilt?"
+  },
+  "It contains the team key: send it only through a secure channel (a shared vault of your password manager, an end-to-end encrypted messenger), never by plain e-mail. Tell members the fingerprint separately, ideally by voice.": {
+    "en": "It contains the team key: send it only through a secure channel (a shared vault of your password manager, an end-to-end encrypted messenger), never by plain e-mail. Tell members the fingerprint separately, ideally by voice.",
+    "hu": "Tartalmazza a csapatkulcsot: csak biztonságos csatornán küldd el (jelszókezelő megosztott tárolója, végponttól végpontig titkosított üzenetküldő), sima e-mailben soha. Az ujjlenyomatot külön mondd meg a tagoknak, lehetőleg szóban."
+  },
+  "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.": {
+    "en": "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.",
+    "hu": "Tartalmazza: %@. Aki ezeket a kulcsokat birtokolja, a te nevedben csatlakozhat. Csak akkor exportáld őket, ha a címzettnek szüksége van rájuk, és a fájlt megbízható helyen tartsd."
+  },
+  "Its %lld connections and folders are removed from this Mac, and paired apps lose access to them.": {
+    "en": "Its %lld connections and folders are removed from this Mac, and paired apps lose access to them.",
+    "hu": "A(z) %lld kapcsolata és a mappái törlődnek erről a Macről, és a párosított appok elveszítik hozzájuk a hozzáférést."
+  },
+  "Its connection and folders are removed from this Mac, and paired apps lose access to it.": {
+    "en": "Its connection and folders are removed from this Mac, and paired apps lose access to it.",
+    "hu": "A kapcsolata és a mappái törlődnek erről a Macről, és a párosított appok elveszítik hozzá a hozzáférést."
+  },
+  "Keep both (the backup’s copy is named “(backup)”)": {
+    "en": "Keep both (the backup’s copy is named “(backup)”)",
+    "hu": "Mindkettő megtartása (a mentésből származó másolat neve „(backup)” végződést kap)"
+  },
+  "Keep the file and its password apart. To restore it, choose Restore from Backup… in the settings, or in the first-run window on a new Mac.": {
+    "en": "Keep the file and its password apart. To restore it, choose Restore from Backup… in the settings, or in the first-run window on a new Mac.",
+    "hu": "A fájlt és a jelszavát tartsd külön. A visszaállításhoz válaszd a Visszaállítás biztonsági mentésből… pontot a beállításokban, vagy új Macen az első indításkori ablakban."
+  },
+  "Keep the item that is here": {
+    "en": "Keep the item that is here",
+    "hu": "Az itt lévő elem megtartása"
+  },
+  "Keep your recovery key safe. You can change the master password and make a new recovery key in the menu’s settings.": {
+    "en": "Keep your recovery key safe. You can change the master password and make a new recovery key in the menu’s settings.",
+    "hu": "Őrizd biztonságban a helyreállítási kulcsot. A mesterjelszót és a helyreállítási kulcsot a menü beállításaiban módosíthatod."
+  },
+  "Kept encrypted in the MacVPN vault, used from the next connect on": {
+    "en": "Kept encrypted in the MacVPN vault, used from the next connect on",
+    "hu": "Titkosítva a MacVPN széfjében marad, a következő kapcsolódástól ezt használja"
+  },
+  "Key not allowed": {
+    "en": "Key not allowed",
+    "hu": "Nem engedélyezett kulcs"
+  },
+  "Key not allowed: %@": {
+    "en": "Key not allowed: %@",
+    "hu": "Nem engedélyezett kulcs: %@"
+  },
+  "Keys inside the configs": {
+    "en": "Keys inside the configs",
+    "hu": "A configokba írt kulcsok"
+  },
+  "L2TP and Cisco IPsec connections need their profile on this Mac. macOS asks you to approve each one.": {
+    "en": "L2TP and Cisco IPsec connections need their profile on this Mac. macOS asks you to approve each one.",
+    "hu": "Az L2TP és Cisco IPsec kapcsolatoknak profil kell ezen a Macen. A macOS mindegyik jóváhagyását kéri."
+  },
+  "L2TP and Cisco IPsec work without these.": {
+    "en": "L2TP and Cisco IPsec work without these.",
+    "hu": "L2TP és Cisco IPsec ezek nélkül is működik."
+  },
+  "Last published %@": {
+    "en": "Last published %@",
+    "hu": "Legutóbb közzétéve: %@"
+  },
+  "Last refresh": {
+    "en": "Last refresh",
+    "hu": "Legutóbbi frissítés"
+  },
+  "Last refresh: %@": {
+    "en": "Last refresh: %@",
+    "hu": "Legutóbbi frissítés: %@"
+  },
+  "Last successful refresh": {
+    "en": "Last successful refresh",
+    "hu": "Legutóbbi sikeres frissítés"
+  },
+  "Last used: %@": {
+    "en": "Last used: %@",
+    "hu": "Utoljára használva: %@"
+  },
+  "Later": {
+    "en": "Later",
+    "hu": "Később"
+  },
+  "Launch at Login": {
+    "en": "Launch at Login",
+    "hu": "Indítás bejelentkezéskor"
+  },
+  "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.": {
+    "en": "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.",
+    "hu": "Az indítás bejelentkezéskor csak akkor érhető el, ha a MacVPN az Alkalmazások mappából fut. Előbb húzd oda az appot."
+  },
+  "Lime": {
+    "en": "Lime",
+    "hu": "Citromzöld"
+  },
+  "Line %ld: %@": {
+    "en": "Line %ld: %@",
+    "hu": "%ld. sor: %@"
+  },
+  "Link the Same Sign-in?": {
+    "en": "Link the Same Sign-in?",
+    "hu": "Összekapcsolod az azonos bejelentkezéseket?"
+  },
+  "Lock Now": {
+    "en": "Lock Now",
+    "hu": "Széf zárolása most"
+  },
+  "Log": {
+    "en": "Log",
+    "hu": "Napló"
+  },
+  "MacVPN asks for your master password, then puts the string on the clipboard without showing it. The access token is not in it.": {
+    "en": "MacVPN asks for your master password, then puts the string on the clipboard without showing it. The access token is not in it.",
+    "hu": "A MacVPN kéri a mesterjelszavadat, majd a kódot megjelenítés nélkül a vágólapra teszi. A hozzáférési token nincs benne."
+  },
+  "MacVPN backup admin key": {
+    "en": "MacVPN backup admin key",
+    "hu": "MacVPN tartalék adminkulcs"
+  },
+  "MacVPN checks your master password before every backup.": {
+    "en": "MacVPN checks your master password before every backup.",
+    "hu": "A MacVPN minden mentés előtt ellenőrzi a mesterjelszót."
+  },
+  "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items.": {
+    "en": "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items.",
+    "hu": "A MacVPN-t nem sikerült eltávolítani a bejelentkezési elemek közül. A Rendszerbeállítások → Általános → Bejelentkezési elemek alatt távolíthatod el."
+  },
+  "MacVPN did not accept these values. Check them and try again.": {
+    "en": "MacVPN did not accept these values. Check them and try again.",
+    "hu": "A MacVPN nem fogadta el ezeket az adatokat. Ellenőrizd őket, és próbáld újra."
+  },
+  "MacVPN does not upload anything: put the file on your web server or share.": {
+    "en": "MacVPN does not upload anything: put the file on your web server or share.",
+    "hu": "A MacVPN semmit nem tölt fel: a fájlt te tedd a webszerveredre vagy a megosztásra."
+  },
+  "MacVPN forgets this publication and its team key. The published file stays where it is, and members keep their subscription, but you cannot publish new versions of this catalog any more.": {
+    "en": "MacVPN forgets this publication and its team key. The published file stays where it is, and members keep their subscription, but you cannot publish new versions of this catalog any more.",
+    "hu": "A MacVPN elfelejti ezt a közzétételt és a csapatkulcsát. A közzétett fájl a helyén marad, a tagok feliratkozása megmarad, de ennek a katalógusnak többé nem tudsz új verziót közzétenni."
+  },
+  "MacVPN has been uninstalled": {
+    "en": "MacVPN has been uninstalled",
+    "hu": "A MacVPN eltávolítva"
+  },
+  "MacVPN is locked": {
+    "en": "MacVPN is locked",
+    "hu": "A MacVPN zárolva van"
+  },
+  "MacVPN is up to date": {
+    "en": "MacVPN is up to date",
+    "hu": "A MacVPN naprakész"
+  },
+  "MacVPN is using the old storage in read-only mode until the migration succeeds": {
+    "en": "MacVPN is using the old storage in read-only mode until the migration succeeds",
+    "hu": "A MacVPN a régi tárolót írásvédetten használja, amíg az átköltöztetés nem sikerül"
+  },
+  "MacVPN keeps your connections and their passwords in an encrypted vault. A master password protects it; a recovery key gets you back in if you forget the password.": {
+    "en": "MacVPN keeps your connections and their passwords in an encrypted vault. A master password protects it; a recovery key gets you back in if you forget the password.",
+    "hu": "A MacVPN a kapcsolataidat és jelszavaikat egy titkosított széfben tárolja. Egy mesterjelszó védi; ha elfelejted, a helyreállítási kulccsal juthatsz vissza."
+  },
+  "MacVPN keeps your connections in an encrypted vault.": {
+    "en": "MacVPN keeps your connections in an encrypted vault.",
+    "hu": "A MacVPN a kapcsolataidat egy titkosított széfben tárolja."
+  },
+  "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.": {
+    "en": "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.",
+    "hu": "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, sstp-client, bash). A hiányzókat innen telepítheted."
+  },
+  "MacVPN will ask for the master password at every launch.": {
+    "en": "MacVPN will ask for the master password at every launch.",
+    "hu": "A MacVPN minden indításkor elkéri a mesterjelszót."
+  },
+  "Made on %@ by MacVPN %@": {
+    "en": "Made on %@ by MacVPN %@",
+    "hu": "Készült: %@, MacVPN %@"
+  },
+  "Make New Key": {
+    "en": "Make New Key",
+    "hu": "Új kulcs készítése"
+  },
+  "Make a new recovery key": {
+    "en": "Make a new recovery key",
+    "hu": "Új helyreállítási kulcs készítése"
+  },
+  "Makes this Mac accept incoming VPN connections (listens on the network as root)": {
+    "en": "Makes this Mac accept incoming VPN connections (listens on the network as root)",
+    "hu": "Ez a Mac bejövő VPN-kapcsolatokat fogadna (rootként figyel a hálózaton)"
+  },
+  "Manage Connections…": {
+    "en": "Manage Connections…",
+    "hu": "Kapcsolatok kezelése…"
+  },
+  "Managed by the team catalog “%@”": {
+    "en": "Managed by the team catalog “%@”",
+    "hu": "A(z) „%@” csapatkatalógus kezeli"
+  },
+  "Master Password": {
+    "en": "Master Password",
+    "hu": "Mesterjelszó"
+  },
+  "Master password": {
+    "en": "Master password",
+    "hu": "Mesterjelszó"
+  },
+  "Members need it to subscribe: send it, or the subscription string, only through a secure channel, never by plain e-mail.": {
+    "en": "Members need it to subscribe: send it, or the subscription string, only through a secure channel, never by plain e-mail.",
+    "hu": "A tagoknak a feliratkozáshoz kell: csak biztonságos csatornán küldd el (vagy a feliratkozási kódot), sima e-mailben soha."
+  },
+  "Members see it as the name of the catalog’s folder. The file is saved as <name>.macvpncatalog.": {
+    "en": "Members see it as the name of the catalog’s folder. The file is saved as <name>.macvpncatalog.",
+    "hu": "A tagok ezt látják a katalógus mappájának neveként. A fájl neve <név>.macvpncatalog lesz."
+  },
+  "Merge": {
+    "en": "Merge",
+    "hu": "Összefésülés"
+  },
+  "Missing PrivateKey": {
+    "en": "Missing PrivateKey",
+    "hu": "Hiányzik a PrivateKey"
+  },
+  "Missing children block": {
+    "en": "Missing children block",
+    "hu": "Hiányzik a children blokk"
+  },
+  "Missing connections block": {
+    "en": "Missing connections block",
+    "hu": "Hiányzik a connections blokk"
+  },
+  "Missing from the release: %@": {
+    "en": "Missing from the release: %@",
+    "hu": "A kiadásból hiányzik: %@"
+  },
+  "Missing key: %@": {
+    "en": "Missing key: %@",
+    "hu": "Hiányzó kulcs: %@"
+  },
+  "Missing remote directive": {
+    "en": "Missing remote directive",
+    "hu": "Hiányzik a remote direktíva"
+  },
+  "Missing: %@": {
+    "en": "Missing: %@",
+    "hu": "Hiányzik: %@"
+  },
+  "More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.": {
+    "en": "More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.",
+    "hu": "Több „%@” nevű VPN szolgáltatás van. A MacVPN nem adja át a jelszót, amíg nem egyértelmű, melyik az övé: nevezd át vagy töröld a másikat a Rendszerbeállítások → Hálózat alatt."
+  },
+  "Mounting the disk image…": {
+    "en": "Mounting the disk image…",
+    "hu": "Lemezkép csatolása…"
+  },
+  "Move its contents to the parent folder": {
+    "en": "Move its contents to the parent folder",
+    "hu": "A tartalma kerüljön a szülőmappába"
+  },
+  "Move its contents to the top level": {
+    "en": "Move its contents to the top level",
+    "hu": "A tartalma kerüljön a legfelső szintre"
+  },
+  "Move to Top Level": {
+    "en": "Move to Top Level",
+    "hu": "Áthelyezés a legfelső szintre"
+  },
+  "Moving your data into the vault…": {
+    "en": "Moving your data into the vault…",
+    "hu": "Az adatok átköltöztetése a széfbe…"
+  },
+  "Name": {
+    "en": "Name",
+    "hu": "Név"
+  },
+  "Name (self-reported)": {
+    "en": "Name (self-reported)",
+    "hu": "Név (a program saját megnevezése)"
+  },
+  "Name and File": {
+    "en": "Name and File",
+    "hu": "Név és fájl"
+  },
+  "Native connections only have a log when connected in debug mode.": {
+    "en": "Native connections only have a log when connected in debug mode.",
+    "hu": "Natív kapcsolatnál csak debug csatlakozáskor van napló."
+  },
+  "Native profiles": {
+    "en": "Native profiles",
+    "hu": "Natív profilok"
+  },
+  "Never": {
+    "en": "Never",
+    "hu": "Még soha"
+  },
+  "Never used": {
+    "en": "Never used",
+    "hu": "Még nem használta"
+  },
+  "New": {
+    "en": "New",
+    "hu": "Új"
+  },
+  "New %@": {
+    "en": "New %@",
+    "hu": "Új %@"
+  },
+  "New Connection / Import…": {
+    "en": "New Connection / Import…",
+    "hu": "Új kapcsolat / Import…"
+  },
+  "New Folder": {
+    "en": "New Folder",
+    "hu": "Új mappa"
+  },
+  "New Recovery Key": {
+    "en": "New Recovery Key",
+    "hu": "Új helyreállítási kulcs"
+  },
+  "New Recovery Key…": {
+    "en": "New Recovery Key…",
+    "hu": "Új helyreállítási kulcs…"
+  },
+  "New Shared Credential": {
+    "en": "New Shared Credential",
+    "hu": "Új közös hitelesítő adat"
+  },
+  "New master password": {
+    "en": "New master password",
+    "hu": "Új mesterjelszó"
+  },
+  "Next": {
+    "en": "Next",
+    "hu": "Tovább"
+  },
+  "No CA certificate loaded": {
+    "en": "No CA certificate loaded",
+    "hu": "Nincs betöltött CA tanúsítvány"
+  },
+  "No activity yet.": {
+    "en": "No activity yet.",
+    "hu": "Még nincs tevékenység."
+  },
+  "No backup admin key yet.": {
+    "en": "No backup admin key yet.",
+    "hu": "Még nincs tartalék aláírókulcs."
+  },
+  "No child name found": {
+    "en": "No child name found",
+    "hu": "Nem található child név"
+  },
+  "No connection is waiting for authentication": {
+    "en": "No connection is waiting for authentication",
+    "hu": "Nincs hitelesítésre váró kapcsolat"
+  },
+  "No connection name found": {
+    "en": "No connection name found",
+    "hu": "Nem található connection név"
+  },
+  "No connections match “%@”": {
+    "en": "No connections match “%@”",
+    "hu": "Egy kapcsolat sem felel meg ennek: „%@”"
+  },
+  "No connections yet": {
+    "en": "No connections yet",
+    "hu": "Még nincs kapcsolat"
+  },
+  "No file chosen": {
+    "en": "No file chosen",
+    "hu": "Nincs kiválasztott fájl"
+  },
+  "No new version.": {
+    "en": "No new version.",
+    "hu": "Nincs új verzió."
+  },
+  "No other connection has the same user name and password.": {
+    "en": "No other connection has the same user name and password.",
+    "hu": "Más kapcsolatnak nincs ugyanez a felhasználóneve és jelszava."
+  },
+  "No paired apps yet. An app asks for pairing while this is on.": {
+    "en": "No paired apps yet. An app asks for pairing while this is on.",
+    "hu": "Még nincs párosított app. Amíg ez be van kapcsolva, egy app párosítást kérhet."
+  },
+  "No password saved: asked when connecting": {
+    "en": "No password saved: asked when connecting",
+    "hu": "Nincs mentett jelszó: kapcsolódáskor kérdezi"
+  },
+  "No release available (HTTP 404)": {
+    "en": "No release available (HTTP 404)",
+    "hu": "Nincs elérhető kiadás (HTTP 404)"
+  },
+  "No shared credentials yet. Add one, or create one from a connection that already has a user name and password.": {
+    "en": "No shared credentials yet. Add one, or create one from a connection that already has a user name and password.",
+    "hu": "Még nincs közös hitelesítő adat. Adj hozzá egyet, vagy hozz létre egyet egy olyan kapcsolatból, amelynek már van felhasználóneve és jelszava."
+  },
+  "No team catalogs yet. Add one with the subscription string or the details your administrator sent you.": {
+    "en": "No team catalogs yet. Add one with the subscription string or the details your administrator sent you.",
+    "hu": "Még nincs csapatkatalógus. Add hozzá a rendszergazdától kapott feliratkozási kóddal vagy adatokkal."
+  },
+  "No update available": {
+    "en": "No update available",
+    "hu": "Nincs elérhető frissítés"
+  },
+  "No user name": {
+    "en": "No user name",
+    "hu": "Nincs felhasználónév"
+  },
+  "No verification": {
+    "en": "No verification",
+    "hu": "Nincs ellenőrzés"
+  },
+  "None": {
+    "en": "None",
+    "hu": "Nincs"
+  },
+  "None is published unless you tick it. Tick only the secrets everyone in the team may know, such as a shared PSK.": {
+    "en": "None is published unless you tick it. Tick only the secrets everyone in the team may know, such as a shared PSK.",
+    "hu": "Egyik sem kerül közzétételre, amíg be nem jelölöd. Csak azokat a titkokat jelöld be, amelyeket a csapatban mindenki ismerhet, például egy közös PSK-t."
+  },
+  "Normally sent by the server or used internally by OpenVPN, not set in a client config": {
+    "en": "Normally sent by the server or used internally by OpenVPN, not set in a client config",
+    "hu": "Ezt általában a szerver küldi, vagy az OpenVPN belsőleg használja, kliens configba nem való"
+  },
+  "Not Now": {
+    "en": "Not Now",
+    "hu": "Most nem"
+  },
+  "Not a directory: %@": {
+    "en": "Not a directory: %@",
+    "hu": "Nem könyvtár: %@"
+  },
+  "Not checked yet": {
+    "en": "Not checked yet",
+    "hu": "Még nincs ellenőrizve"
+  },
+  "Not installed. The installer runs in Terminal and asks for an administrator password.": {
+    "en": "Not installed. The installer runs in Terminal and asks for an administrator password.",
+    "hu": "Nincs telepítve. A telepítő Terminálban fut és rendszergazdai jelszót kér."
+  },
+  "Not ready yet. Wait a moment, then click Connect again.": {
+    "en": "Not ready yet. Wait a moment, then click Connect again.",
+    "hu": "Még nem kész. Várj egy pillanatot, majd kattints újra a Csatlakozás gombra."
+  },
+  "Not ready yet. Wait a moment, then try again.": {
+    "en": "Not ready yet. Wait a moment, then try again.",
+    "hu": "Még nem kész. Várj egy pillanatot, aztán próbáld újra."
+  },
+  "Not supported on macOS (Windows or Linux only)": {
+    "en": "Not supported on macOS (Windows or Linux only)",
+    "hu": "macOS-en nem támogatott (csak Windows vagy Linux)"
+  },
+  "Nothing can be moved into a team catalog.": {
+    "en": "Nothing can be moved into a team catalog.",
+    "hu": "Csapatkatalógusba semmi nem helyezhető át."
+  },
+  "Nothing published yet. Publish Catalog… writes the first version of a catalog.": {
+    "en": "Nothing published yet. Publish Catalog… writes the first version of a catalog.",
+    "hu": "Még nincs közzététel. A Katalógus közzététele… elkészíti egy katalógus első verzióját."
+  },
+  "Nothing was deleted. MacVPN keeps using your old data, read-only, until the migration succeeds. The new vault was removed: try again with a new master password.": {
+    "en": "Nothing was deleted. MacVPN keeps using your old data, read-only, until the migration succeeds. The new vault was removed: try again with a new master password.",
+    "hu": "Semmi sem törlődött. A MacVPN írásvédetten tovább használja a régi adataidat, amíg az átköltöztetés nem sikerül. Az új széf törlődött: próbáld újra egy új mesterjelszóval."
+  },
+  "OK": {
+    "en": "OK",
+    "hu": "OK"
+  },
+  "Off": {
+    "en": "Off",
+    "hu": "Ki"
+  },
+  "Offline: only in the exported file": {
+    "en": "Offline: only in the exported file",
+    "hu": "Offline: csak az exportált fájlban"
+  },
+  "Older version refused": {
+    "en": "Older version refused",
+    "hu": "Régebbi verzió elutasítva"
+  },
+  "On": {
+    "en": "On",
+    "hu": "Be"
+  },
+  "On this Mac": {
+    "en": "On this Mac",
+    "hu": "Ezen a Macen"
+  },
+  "One encrypted file with every connection and its secrets, the folders, the shared credentials, the order and the app preferences. Paired apps are not included: they pair again after a restore.": {
+    "en": "One encrypted file with every connection and its secrets, the folders, the shared credentials, the order and the app preferences. Paired apps are not included: they pair again after a restore.",
+    "hu": "Egyetlen titkosított fájl az összes kapcsolattal és titkaikkal, a mappákkal, a közös hitelesítő adatokkal, a sorrenddel és az app beállításaival. A párosított appok nincsenek benne: visszaállítás után újra párosodnak."
+  },
+  "One-time code": {
+    "en": "One-time code",
+    "hu": "Egyszer használatos kód"
+  },
+  "One-time code (MFA)": {
+    "en": "One-time code (MFA)",
+    "hu": "Egyszer használatos kód (MFA)"
+  },
+  "Only Offer Updates Published at Least 24 Hours Ago": {
+    "en": "Only Offer Updates Published at Least 24 Hours Ago",
+    "hu": "Csak a legalább 24 órája megjelent frissítések felajánlása"
+  },
+  "Only a file name is allowed, no path: %@": {
+    "en": "Only a file name is allowed, no path: %@",
+    "hu": "Csak fájlnév adható meg, útvonal nem: %@"
+  },
+  "Only import files you trust.": {
+    "en": "Only import files you trust.",
+    "hu": "Csak olyan fájlt importálj, amelyben megbízol."
+  },
+  "Only one <ca> block is allowed": {
+    "en": "Only one <ca> block is allowed",
+    "hu": "Csak egy <ca> blokk lehet"
+  },
+  "Only one team catalog file can be added at a time.": {
+    "en": "Only one team catalog file can be added at a time.",
+    "hu": "Egyszerre csak egy csapatkatalógus-fájl adható hozzá."
+  },
+  "Open Backup": {
+    "en": "Open Backup",
+    "hu": "Mentés megnyitása"
+  },
+  "Open Login Items Settings…": {
+    "en": "Open Login Items Settings…",
+    "hu": "Bejelentkezési elemek beállításai…"
+  },
+  "Open MacVPN for details": {
+    "en": "Open MacVPN for details",
+    "hu": "Részletek a MacVPN-ben"
+  },
+  "Open System Status": {
+    "en": "Open System Status",
+    "hu": "Rendszerállapot megnyitása"
+  },
+  "Open in Browser": {
+    "en": "Open in Browser",
+    "hu": "Megnyitás a böngészőben"
+  },
+  "Open the Release on GitHub": {
+    "en": "Open the Release on GitHub",
+    "hu": "Kiadás megnyitása a GitHubon"
+  },
+  "OpenVPN inline <key> or <pkcs12>: everyone uses the same client key": {
+    "en": "OpenVPN inline <key> or <pkcs12>: everyone uses the same client key",
+    "hu": "OpenVPN inline <key> vagy <pkcs12>: mindenki ugyanazt a kliens kulcsot használja"
+  },
+  "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic": {
+    "en": "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic",
+    "hu": "Az OpenVPN nem állítja be az interfészt vagy az útvonalakat: a tunnel lehet, hogy nem visz forgalmat"
+  },
+  "Opened for approval": {
+    "en": "Opened for approval",
+    "hu": "Jóváhagyásra megnyitva"
+  },
+  "Opening the backup…": {
+    "en": "Opening the backup…",
+    "hu": "A mentés megnyitása…"
+  },
+  "Option-click a switch: debug mode": {
+    "en": "Option-click a switch: debug mode",
+    "hu": "Option+kattintás a kapcsolón: debug mód"
+  },
+  "Optional, HTTPS only": {
+    "en": "Optional, HTTPS only",
+    "hu": "Nem kötelező, csak HTTPS-nél"
+  },
+  "Or drop an .ovpn / .conf / .sstp file here.": {
+    "en": "Or drop an .ovpn / .conf / .sstp file here.",
+    "hu": "Vagy húzz ide egy .ovpn / .conf / .sstp fájlt."
+  },
+  "Orange": {
+    "en": "Orange",
+    "hu": "Narancs"
+  },
+  "Other apps cannot control VPNs: %@ is not a folder that MacVPN can use.": {
+    "en": "Other apps cannot control VPNs: %@ is not a folder that MacVPN can use.",
+    "hu": "Más appok nem vezérelhetik a VPN-eket: a(z) %@ nem olyan mappa, amelyet a MacVPN használhat."
+  },
+  "Other apps cannot control VPNs: MacVPN has no access to %@.": {
+    "en": "Other apps cannot control VPNs: MacVPN has no access to %@.",
+    "hu": "Más appok nem vezérelhetik a VPN-eket: a MacVPN nem fér hozzá ehhez: %@."
+  },
+  "Other apps cannot control VPNs: the folder %@ cannot be used.": {
+    "en": "Other apps cannot control VPNs: the folder %@ cannot be used.",
+    "hu": "Más appok nem vezérelhetik a VPN-eket: a(z) %@ mappa nem használható."
+  },
+  "Other apps cannot control VPNs: the list of paired apps (%@) cannot be read.": {
+    "en": "Other apps cannot control VPNs: the list of paired apps (%@) cannot be read.",
+    "hu": "Más appok nem vezérelhetik a VPN-eket: a párosított appok listája (%@) nem olvasható."
+  },
+  "Overwrite it with the backup’s copy": {
+    "en": "Overwrite it with the backup’s copy",
+    "hu": "Felülírás a mentésben lévő példánnyal"
+  },
+  "Own colour": {
+    "en": "Own colour",
+    "hu": "Saját szín"
+  },
+  "Own username and password": {
+    "en": "Own username and password",
+    "hu": "Saját felhasználónév és jelszó"
+  },
+  "Paired apps": {
+    "en": "Paired apps",
+    "hu": "Párosított appok"
+  },
+  "Paired: %@": {
+    "en": "Paired: %@",
+    "hu": "Párosítva: %@"
+  },
+  "Password": {
+    "en": "Password",
+    "hu": "Jelszó"
+  },
+  "Password (optional, if not saved in macOS)": {
+    "en": "Password (optional, if not saved in macOS)",
+    "hu": "Jelszó (nem kötelező, ha nincs elmentve a macOS-ben)"
+  },
+  "Password for %@ — used by %lld connections": {
+    "en": "Password for %@ — used by %lld connections",
+    "hu": "A(z) %@ jelszava — %lld kapcsolat használja"
+  },
+  "Password for %@ — used by 1 connection": {
+    "en": "Password for %@ — used by 1 connection",
+    "hu": "A(z) %@ jelszava — 1 kapcsolat használja"
+  },
+  "Password from": {
+    "en": "Password from",
+    "hu": "Jelszó forrása"
+  },
+  "Password saved": {
+    "en": "Password saved",
+    "hu": "Jelszó mentve"
+  },
+  "Passwords and the PSK are not included in the export.": {
+    "en": "Passwords and the PSK are not included in the export.",
+    "hu": "A jelszavak és a PSK nem kerülnek az exportba."
+  },
+  "Paste the subscription string your administrator sent you, or enter the source, the team key and the publisher fingerprint.": {
+    "en": "Paste the subscription string your administrator sent you, or enter the source, the team key and the publisher fingerprint.",
+    "hu": "Illeszd be a rendszergazdától kapott feliratkozási kódot, vagy add meg a forrást, a csapatkulcsot és a közzétevő ujjlenyomatát."
+  },
+  "Path changed": {
+    "en": "Path changed",
+    "hu": "Megváltozott az útvonal"
+  },
+  "Permissions (root scripts + sudoers)": {
+    "en": "Permissions (root scripts + sudoers)",
+    "hu": "Jogosultság (root scriptek + sudoers)"
+  },
+  "Personal fields": {
+    "en": "Personal fields",
+    "hu": "Személyes mezők"
+  },
+  "Pin to Top": {
+    "en": "Pin to Top",
+    "hu": "Kitűzés"
+  },
+  "Pink": {
+    "en": "Pink",
+    "hu": "Rózsaszín"
+  },
+  "Pinned": {
+    "en": "Pinned",
+    "hu": "Kitűzött"
+  },
+  "Port": {
+    "en": "Port",
+    "hu": "Port"
+  },
+  "Pre-shared key (PSK)": {
+    "en": "Pre-shared key (PSK)",
+    "hu": "Pre-shared key (PSK)"
+  },
+  "Preferences": {
+    "en": "Preferences",
+    "hu": "Beállítások"
+  },
+  "Preparing the installation…": {
+    "en": "Preparing the installation…",
+    "hu": "Telepítés előkészítése…"
+  },
+  "Private key password": {
+    "en": "Private key password",
+    "hu": "Privát kulcs jelszava"
+  },
+  "Profile opened, approve it in System Settings.": {
+    "en": "Profile opened, approve it in System Settings.",
+    "hu": "Profil megnyitva, hagyd jóvá a Rendszerbeállításokban."
+  },
+  "Programs on this Mac that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.": {
+    "en": "Programs on this Mac that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.",
+    "hu": "Az ezen a Macen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak."
+  },
+  "Publications replaced by the backup’s: %@": {
+    "en": "Publications replaced by the backup’s: %@",
+    "hu": "A mentésben lévőre cserélt közzétételek: %@"
+  },
+  "Publish Catalog": {
+    "en": "Publish Catalog",
+    "hu": "Katalógus közzététele"
+  },
+  "Publish Catalog…": {
+    "en": "Publish Catalog…",
+    "hu": "Katalógus közzététele…"
+  },
+  "Publish New Version…": {
+    "en": "Publish New Version…",
+    "hu": "Új verzió közzététele…"
+  },
+  "Publish a New Version of “%@”": {
+    "en": "Publish a New Version of “%@”",
+    "hu": "A(z) „%@” új verziójának közzététele"
+  },
+  "Publish the <tls-auth> key": {
+    "en": "Publish the <tls-auth> key",
+    "hu": "A <tls-auth> kulcs közzététele"
+  },
+  "Publish the <tls-crypt-v2> key": {
+    "en": "Publish the <tls-crypt-v2> key",
+    "hu": "A <tls-crypt-v2> kulcs közzététele"
+  },
+  "Publish the <tls-crypt> key": {
+    "en": "Publish the <tls-crypt> key",
+    "hu": "A <tls-crypt> kulcs közzététele"
+  },
+  "Publish the WireGuard PresharedKey": {
+    "en": "Publish the WireGuard PresharedKey",
+    "hu": "A WireGuard PresharedKey közzététele"
+  },
+  "Publish the inline <key> / <pkcs12>: everyone uses the same client key": {
+    "en": "Publish the inline <key> / <pkcs12>: everyone uses the same client key",
+    "hu": "Az inline <key> / <pkcs12> közzététele: mindenki ugyanazt a kliens kulcsot használja"
+  },
+  "Publish the static <secret> key": {
+    "en": "Publish the static <secret> key",
+    "hu": "A statikus <secret> kulcs közzététele"
+  },
+  "Publish this SSTP user name: no credential slot is ticked, so everyone signs in with it": {
+    "en": "Publish this SSTP user name: no credential slot is ticked, so everyone signs in with it",
+    "hu": "Az SSTP felhasználónév közzététele: nincs bejelölt közös belépési adat helye, így mindenki ezzel jelentkezik be"
+  },
+  "Publish this key": {
+    "en": "Publish this key",
+    "hu": "A kulcs közzététele"
+  },
+  "Published in “%@” (v%d)": {
+    "en": "Published in “%@” (v%d)",
+    "hu": "Közzétéve: „%@” (v%d)"
+  },
+  "Publisher fingerprint": {
+    "en": "Publisher fingerprint",
+    "hu": "A közzétevő ujjlenyomata"
+  },
+  "Publishing": {
+    "en": "Publishing",
+    "hu": "Közzététel"
+  },
+  "Publishing needs an admin key. Generate one, or import the key file of the Mac you published from.": {
+    "en": "Publishing needs an admin key. Generate one, or import the key file of the Mac you published from.",
+    "hu": "A közzétételhez adminisztrátori aláírókulcs kell. Hozz létre egyet, vagy importáld annak a Macnek a kulcsfájlját, amelyről eddig közzétettél."
+  },
+  "Publish…": {
+    "en": "Publish…",
+    "hu": "Közzététel…"
+  },
+  "Purple": {
+    "en": "Purple",
+    "hu": "Lila"
+  },
+  "Quit MacVPN": {
+    "en": "Quit MacVPN",
+    "hu": "Kilépés"
+  },
+  "Quit, Keep Them Running": {
+    "en": "Quit, Keep Them Running",
+    "hu": "Kilépés, fussanak tovább"
+  },
+  "Quitting and restarting…": {
+    "en": "Quitting and restarting…",
+    "hu": "Kilépés és újraindítás…"
+  },
+  "Recovery key": {
+    "en": "Recovery key",
+    "hu": "Helyreállítási kulcs"
+  },
+  "Red": {
+    "en": "Red",
+    "hu": "Piros"
+  },
+  "Referenced file not found: %@": {
+    "en": "Referenced file not found: %@",
+    "hu": "A hivatkozott fájl nem található: %@"
+  },
+  "Refresh all": {
+    "en": "Refresh all",
+    "hu": "Összes frissítése"
+  },
+  "Refresh failed": {
+    "en": "Refresh failed",
+    "hu": "A frissítés nem sikerült"
+  },
+  "Refresh now": {
+    "en": "Refresh now",
+    "hu": "Frissítés most"
+  },
+  "Refreshing…": {
+    "en": "Refreshing…",
+    "hu": "Frissítés…"
+  },
+  "Refusing to write %@: it is a symbolic link or not a regular file.": {
+    "en": "Refusing to write %@: it is a symbolic link or not a regular file.",
+    "hu": "A(z) %@ nem írható: szimbolikus link vagy nem szabályos fájl."
+  },
+  "Reinstall %lld Native Profiles": {
+    "en": "Reinstall %lld Native Profiles",
+    "hu": "%lld natív profil újratelepítése"
+  },
+  "Reinstall 1 Native Profile": {
+    "en": "Reinstall 1 Native Profile",
+    "hu": "1 natív profil újratelepítése"
+  },
+  "Remove saved password": {
+    "en": "Remove saved password",
+    "hu": "Mentett jelszó törlése"
+  },
+  "Remove the backup key from this Mac after export": {
+    "en": "Remove the backup key from this Mac after export",
+    "hu": "A tartalék kulcs törlése erről a Macről az export után"
+  },
+  "Remove the stored access token": {
+    "en": "Remove the stored access token",
+    "hu": "A tárolt hozzáférési token törlése"
+  },
+  "Removed from OpenVPN: the connection will fail to start": {
+    "en": "Removed from OpenVPN: the connection will fail to start",
+    "hu": "Az OpenVPN-ből eltávolították: a kapcsolat nem fog elindulni"
+  },
+  "Removed from the team catalog — disappears after you disconnect": {
+    "en": "Removed from the team catalog — disappears after you disconnect",
+    "hu": "Törölve a csapatkatalógusból — a bontás után eltűnik"
+  },
+  "Removes the root scripts, the sudoers rule and the logs; optionally your connections too.": {
+    "en": "Removes the root scripts, the sudoers rule and the logs; optionally your connections too.",
+    "hu": "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is."
+  },
+  "Rename": {
+    "en": "Rename",
+    "hu": "Átnevezés"
+  },
+  "Rename %@": {
+    "en": "Rename %@",
+    "hu": "%@ átnevezése"
+  },
+  "Rename…": {
+    "en": "Rename…",
+    "hu": "Átnevezés…"
+  },
+  "Repeat the backup password": {
+    "en": "Repeat the backup password",
+    "hu": "A mentés jelszava még egyszer"
+  },
+  "Repeat the master password": {
+    "en": "Repeat the master password",
+    "hu": "A mesterjelszó még egyszer"
+  },
+  "Repeat the new master password": {
+    "en": "Repeat the new master password",
+    "hu": "Az új mesterjelszó még egyszer"
+  },
+  "Repeat the password": {
+    "en": "Repeat the password",
+    "hu": "A jelszó még egyszer"
+  },
+  "Replace Everything": {
+    "en": "Replace Everything",
+    "hu": "Minden cseréje"
+  },
+  "Replace Everything…": {
+    "en": "Replace Everything…",
+    "hu": "Minden cseréje…"
+  },
+  "Replace everything": {
+    "en": "Replace everything",
+    "hu": "Minden cseréje"
+  },
+  "Replace everything keeps these acknowledgements. A merge drops them unless the same connection with the same config is already here; its editor then asks again.": {
+    "en": "Replace everything keeps these acknowledgements. A merge drops them unless the same connection with the same config is already here; its editor then asks again.",
+    "hu": "A Minden cseréje megtartja ezeket a jóváhagyásokat. Az összefésülés elveti őket, hacsak ugyanez a kapcsolat ugyanezzel a configgal már nincs itt; ilyenkor a szerkesztő újra rákérdez."
+  },
+  "Replace everything?": {
+    "en": "Replace everything?",
+    "hu": "Minden cseréje?"
+  },
+  "Reset and Unlock": {
+    "en": "Reset and Unlock",
+    "hu": "Visszaállítás és feloldás"
+  },
+  "Reset the master password": {
+    "en": "Reset the master password",
+    "hu": "A mesterjelszó visszaállítása"
+  },
+  "Restore from Backup": {
+    "en": "Restore from Backup",
+    "hu": "Visszaállítás biztonsági mentésből"
+  },
+  "Restore from Backup…": {
+    "en": "Restore from Backup…",
+    "hu": "Visszaállítás biztonsági mentésből…"
+  },
+  "Restore from backup…": {
+    "en": "Restore from backup…",
+    "hu": "Visszaállítás biztonsági mentésből…"
+  },
+  "Restoring…": {
+    "en": "Restoring…",
+    "hu": "Visszaállítás…"
+  },
+  "Review": {
+    "en": "Review",
+    "hu": "Áttekintés"
+  },
+  "Review…": {
+    "en": "Review…",
+    "hu": "Áttekintés…"
+  },
+  "Revoke": {
+    "en": "Revoke",
+    "hu": "Visszavonás"
+  },
+  "Revoke %@?": {
+    "en": "Revoke %@?",
+    "hu": "Visszavonod: %@?"
+  },
+  "Risky directive, acknowledgement required: %@": {
+    "en": "Risky directive, acknowledgement required: %@",
+    "hu": "Kockázatos direktíva, tudomásulvétel szükséges: %@"
+  },
+  "Risky settings": {
+    "en": "Risky settings",
+    "hu": "Kockázatos beállítások"
+  },
+  "Risky settings are not acknowledged: %@. Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.": {
+    "en": "Risky settings are not acknowledged: %@. Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.",
+    "hu": "A kockázatos beállítások nincsenek tudomásul véve: %@. Nyisd meg a kapcsolatot a MacVPN → Kapcsolatok alatt, és jelöld be a négyzetet a Kockázatos beállítások résznél."
+  },
+  "Root privileges required (or --dry-run)": {
+    "en": "Root privileges required (or --dry-run)",
+    "hu": "Root jog szükséges (vagy --dry-run)"
+  },
+  "Rotate Team Key…": {
+    "en": "Rotate Team Key…",
+    "hu": "Csapatkulcs cseréje…"
+  },
+  "Rotate and Save…": {
+    "en": "Rotate and Save…",
+    "hu": "Csere és mentés…"
+  },
+  "Rotate the Team Key of “%@”": {
+    "en": "Rotate the Team Key of “%@”",
+    "hu": "A(z) „%@” csapatkulcsának cseréje"
+  },
+  "Rotate the Team Key of “%@”?": {
+    "en": "Rotate the Team Key of “%@”?",
+    "hu": "Lecseréled a(z) „%@” csapatkulcsát?"
+  },
+  "Rotating the team key is the only way to revoke access to a catalog someone already has. A new team key is made and published at once as the next version; members who stay need the new key or a new subscription string. Whoever left keeps what they already downloaded, including its team secrets: change those secrets and their server account too.": {
+    "en": "Rotating the team key is the only way to revoke access to a catalog someone already has. A new team key is made and published at once as the next version; members who stay need the new key or a new subscription string. Whoever left keeps what they already downloaded, including its team secrets: change those secrets and their server account too.",
+    "hu": "A csapatkulcs cseréje az egyetlen módja annak, hogy valakitől visszavond a hozzáférést egy olyan katalógushoz, amely már nála van. Új csapatkulcs készül, és azonnal közzétételre kerül a következő verzióként; a maradó tagoknak kell az új kulcs vagy egy új feliratkozási kód. Aki távozott, megtartja, amit már letöltött, a benne lévő csapattitkokkal együtt: ezeket a titkokat és a szerveroldali fiókját is változtasd meg."
+  },
+  "Rotating the team key is the only way to revoke access to a catalog someone already has. Check what this version publishes; the new key is shown once after the file is saved.": {
+    "en": "Rotating the team key is the only way to revoke access to a catalog someone already has. Check what this version publishes; the new key is shown once after the file is saved.",
+    "hu": "A csapatkulcs cseréje az egyetlen módja annak, hogy valakitől visszavond a hozzáférést egy olyan katalógushoz, amely már nála van. Ellenőrizd, mit tesz közzé ez a verzió; az új kulcs a fájl mentése után egyszer jelenik meg."
+  },
+  "SSTP needs a password (set it in the connection settings)": {
+    "en": "SSTP needs a password (set it in the connection settings)",
+    "hu": "Az SSTP-hez jelszó kell (a kapcsolat beállításainál add meg)"
+  },
+  "SSTP user name (user=): with a ticked credential slot the config is published with user=slot-user and each member’s own user name goes in at connect; without a slot the user name is published only with its tick below.": {
+    "en": "SSTP user name (user=): with a ticked credential slot the config is published with user=slot-user and each member’s own user name goes in at connect; without a slot the user name is published only with its tick below.",
+    "hu": "SSTP felhasználónév (user=): bejelölt közös belépési adat hellyel a config user=slot-user sorral kerül közzétételre, és csatlakozáskor minden tag saját felhasználóneve kerül a helyére; hely nélkül a felhasználónév csak a lenti külön jelöléssel kerül közzétételre."
+  },
+  "Save": {
+    "en": "Save",
+    "hu": "Mentés"
+  },
+  "Save and Install Profile": {
+    "en": "Save and Install Profile",
+    "hu": "Mentés és profil telepítése"
+  },
+  "Save in vault": {
+    "en": "Save in vault",
+    "hu": "Mentés a széfbe"
+  },
+  "Saved": {
+    "en": "Saved",
+    "hu": "Mentve"
+  },
+  "Saved — type to replace": {
+    "en": "Saved — type to replace",
+    "hu": "Mentve – írj be újat a cseréhez"
+  },
+  "Saved: %@": {
+    "en": "Saved: %@",
+    "hu": "Mentve: %@"
+  },
+  "Save…": {
+    "en": "Save…",
+    "hu": "Mentés…"
+  },
+  "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).": {
+    "en": "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).",
+    "hu": "Mentéskor egy konfigurációs profil készül és megnyílik. A Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt kell jóváhagyni. Módosítás után ismét jóvá kell hagyni. A jelszó nincs a profilban: a MacVPN csatlakozáskor adja át (a Rendszerbeállításokból indítva a macOS rákérdez)."
+  },
+  "Saving failed": {
+    "en": "Saving failed",
+    "hu": "A mentés nem sikerült"
+  },
+  "Search": {
+    "en": "Search",
+    "hu": "Keresés"
+  },
+  "Search connections": {
+    "en": "Search connections",
+    "hu": "Kapcsolatok keresése"
+  },
+  "Secret": {
+    "en": "Secret",
+    "hu": "Titok"
+  },
+  "Section not allowed": {
+    "en": "Section not allowed",
+    "hu": "Nem engedélyezett szakasz"
+  },
+  "Section not allowed: %@": {
+    "en": "Section not allowed: %@",
+    "hu": "Nem engedélyezett szakasz: %@"
+  },
+  "Select a Connection": {
+    "en": "Select a Connection",
+    "hu": "Válassz kapcsolatot"
+  },
+  "Select at least one folder or connection to publish.": {
+    "en": "Select at least one folder or connection to publish.",
+    "hu": "Válassz ki legalább egy mappát vagy kapcsolatot a közzétételhez."
+  },
+  "Send all traffic over VPN": {
+    "en": "Send all traffic over VPN",
+    "hu": "Minden forgalom a VPN-en keresztül"
+  },
+  "Separator": {
+    "en": "Separator",
+    "hu": "Elválasztó"
+  },
+  "Server": {
+    "en": "Server",
+    "hu": "Szerver"
+  },
+  "Server and account name are required": {
+    "en": "Server and account name are required",
+    "hu": "A szerver és a fióknév kötelező"
+  },
+  "Server certificate": {
+    "en": "Server certificate",
+    "hu": "Szervertanúsítvány"
+  },
+  "Server certificate error (see the log; check the certificate mode or the CA file)": {
+    "en": "Server certificate error (see the log; check the certificate mode or the CA file)",
+    "hu": "Szervertanúsítvány-hiba (lásd a naplót; ellenőrizd a tanúsítvány-módot vagy a CA fájlt)"
+  },
+  "Server changed: %@": {
+    "en": "Server changed: %@",
+    "hu": "Megváltozott a szerver: %@"
+  },
+  "Server-side option, not meant for a client connection": {
+    "en": "Server-side option, not meant for a client connection",
+    "hu": "Szerveroldali beállítás, nem kliens kapcsolatba való"
+  },
+  "Server: %@": {
+    "en": "Server: %@",
+    "hu": "Szerver: %@"
+  },
+  "Set Up the Vault": {
+    "en": "Set Up the Vault",
+    "hu": "Széf beállítása"
+  },
+  "Set Up the Vault…": {
+    "en": "Set Up the Vault…",
+    "hu": "Széf beállítása…"
+  },
+  "Set up the vault": {
+    "en": "Set up the vault",
+    "hu": "A széf beállítása"
+  },
+  "Setting the routes failed": {
+    "en": "Setting the routes failed",
+    "hu": "Az útvonalak beállítása sikertelen"
+  },
+  "Settings": {
+    "en": "Settings",
+    "hu": "Beállítások"
+  },
+  "Share connections with your team as a signed and encrypted team catalog file. Each member keeps their own user names and passwords.": {
+    "en": "Share connections with your team as a signed and encrypted team catalog file. Each member keeps their own user names and passwords.",
+    "hu": "Oszd meg a kapcsolatokat a csapatoddal egy aláírt és titkosított csapatkatalógus-fájlban. Minden tag megtartja a saját felhasználónevét és jelszavát."
+  },
+  "Shared credentials": {
+    "en": "Shared credentials",
+    "hu": "Közös hitelesítő adatok"
+  },
+  "Shared secret (PSK)": {
+    "en": "Shared secret (PSK)",
+    "hu": "Közös kulcs (PSK)"
+  },
+  "Show “Lock Now”": {
+    "en": "Show “Lock Now”",
+    "hu": "„Széf zárolása most” megjelenítése"
+  },
+  "Sign in in the browser": {
+    "en": "Sign in in the browser",
+    "hu": "Bejelentkezés a böngészőben"
+  },
+  "Sign-in failed — check the username and password": {
+    "en": "Sign-in failed — check the username and password",
+    "hu": "Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót"
+  },
+  "Signed by the admin key with this fingerprint:": {
+    "en": "Signed by the admin key with this fingerprint:",
+    "hu": "Ezzel az ujjlenyomatú adminisztrátori aláírókulccsal aláírva:"
+  },
+  "Source": {
+    "en": "Source",
+    "hu": "Forrás"
+  },
+  "Source for the team": {
+    "en": "Source for the team",
+    "hu": "A csapat forrása"
+  },
+  "Source unavailable": {
+    "en": "Source unavailable",
+    "hu": "A forrás nem érhető el"
+  },
+  "Standalone mode: OpenVPN prints information or exits instead of connecting": {
+    "en": "Standalone mode: OpenVPN prints information or exits instead of connecting",
+    "hu": "Önálló mód: az OpenVPN kapcsolódás helyett információt ír ki vagy kilép"
+  },
+  "Starting openvpn failed": {
+    "en": "Starting openvpn failed",
+    "hu": "Az openvpn indítása sikertelen"
+  },
+  "Step %lld of %lld: %@": {
+    "en": "Step %lld of %lld: %@",
+    "hu": "%lld. lépés / %lld: %@"
+  },
+  "Stored in the MacVPN vault and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").": {
+    "en": "Stored in the MacVPN vault and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").",
+    "hu": "A MacVPN széfjében tárolódik, és csatlakozáskor a macOS megkapja. Akkor kell, ha a macOS magától nem tudja kiolvasni a közös kulcsot („incorrect user shared secret”)."
+  },
+  "Stored in the vault": {
+    "en": "Stored in the vault",
+    "hu": "A széfben tárolva"
+  },
+  "Strong": {
+    "en": "Strong",
+    "hu": "Erős"
+  },
+  "Subscribe": {
+    "en": "Subscribe",
+    "hu": "Feliratkozás"
+  },
+  "Subscribed.": {
+    "en": "Subscribed.",
+    "hu": "Feliratkoztál."
+  },
+  "Subscribed: %@": {
+    "en": "Subscribed: %@",
+    "hu": "Feliratkoztál: %@"
+  },
+  "Subscription string": {
+    "en": "Subscription string",
+    "hu": "Feliratkozási kód"
+  },
+  "Subscription string read": {
+    "en": "Subscription string read",
+    "hu": "Feliratkozási kód beolvasva"
+  },
+  "Switch": {
+    "en": "Switch",
+    "hu": "Váltás"
+  },
+  "Switch to the Backup Key?": {
+    "en": "Switch to the Backup Key?",
+    "hu": "Átváltasz a tartalék kulcsra?"
+  },
+  "Switch to the Backup Key…": {
+    "en": "Switch to the Backup Key…",
+    "hu": "Váltás a tartalék kulcsra…"
+  },
+  "Switching to the backup key is a planned key change, not recovery from a compromise: whoever holds a leaked admin key can announce their own successor and sign versions your members accept.": {
+    "en": "Switching to the backup key is a planned key change, not recovery from a compromise: whoever holds a leaked admin key can announce their own successor and sign versions your members accept.",
+    "hu": "A váltás a tartalék kulcsra tervezett kulcscsere, nem helyreállítás kompromittálódás után: akinek kiszivárgott aláírókulcs van a kezében, a saját utódkulcsát is bejelentheti, és olyan verziókat írhat alá, amelyeket a tagjaid elfogadnak."
+  },
+  "System CA": {
+    "en": "System CA",
+    "hu": "Rendszer CA"
+  },
+  "System Status": {
+    "en": "System Status",
+    "hu": "Rendszerállapot"
+  },
+  "System VPNs and connections of team catalogs cannot be published.": {
+    "en": "System VPNs and connections of team catalogs cannot be published.",
+    "hu": "Rendszer-VPN-ek és csapatkatalógusok kapcsolatai nem tehetők közzé."
+  },
+  "System VPNs are moved to the top level.": {
+    "en": "System VPNs are moved to the top level.",
+    "hu": "A rendszer-VPN-ek a legfelső szintre kerülnek."
+  },
+  "Teal": {
+    "en": "Teal",
+    "hu": "Kékeszöld"
+  },
+  "Team": {
+    "en": "Team",
+    "hu": "Csapat"
+  },
+  "Team Catalogs You Publish": {
+    "en": "Team Catalogs You Publish",
+    "hu": "Általad közzétett csapatkatalógusok"
+  },
+  "Team Key": {
+    "en": "Team Key",
+    "hu": "Csapatkulcs"
+  },
+  "Team catalog": {
+    "en": "Team catalog",
+    "hu": "Csapatkatalógus"
+  },
+  "Team catalog items cannot be moved.": {
+    "en": "Team catalog items cannot be moved.",
+    "hu": "A csapatkatalógus elemei nem helyezhetők át."
+  },
+  "Team catalog subscriptions removed: %@": {
+    "en": "Team catalog subscriptions removed: %@",
+    "hu": "Törölt csapatkatalógus-feliratkozások: %@"
+  },
+  "Team catalog “%@” could not be updated: %@": {
+    "en": "Team catalog “%@” could not be updated: %@",
+    "hu": "A(z) „%@” csapatkatalógus nem frissíthető: %@"
+  },
+  "Team catalog “%@” offered an older version (v%d after v%d) and was not applied.": {
+    "en": "Team catalog “%@” offered an older version (v%d after v%d) and was not applied.",
+    "hu": "A(z) „%@” csapatkatalógus régebbi verziót kínált (v%d a v%d után), ezért nem lett alkalmazva."
+  },
+  "Team catalog “%@” updated: %@": {
+    "en": "Team catalog “%@” updated: %@",
+    "hu": "A(z) „%@” csapatkatalógus frissült: %@"
+  },
+  "Team catalogs": {
+    "en": "Team catalogs",
+    "hu": "Csapatkatalógusok"
+  },
+  "Team key": {
+    "en": "Team key",
+    "hu": "Csapatkulcs"
+  },
+  "Team key changed": {
+    "en": "Team key changed",
+    "hu": "A csapatkulcs megváltozott"
+  },
+  "Team secrets": {
+    "en": "Team secrets",
+    "hu": "Csapattitkok"
+  },
+  "Team secrets included: %lld": {
+    "en": "Team secrets included: %lld",
+    "hu": "Benne lévő csapattitkok: %lld"
+  },
+  "Test mode only": {
+    "en": "Test mode only",
+    "hu": "Csak tesztmódban"
+  },
+  "The CA certificate block is missing or invalid": {
+    "en": "The CA certificate block is missing or invalid",
+    "hu": "A CA tanúsítvány blokk hiányzik vagy érvénytelen"
+  },
+  "The SHA-256 checksum of the downloaded disk image is checked against the release's .sha256 file. The app restarts after the installation.": {
+    "en": "The SHA-256 checksum of the downloaded disk image is checked against the release's .sha256 file. The app restarts after the installation.",
+    "hu": "A letöltött lemezkép SHA-256 ellenőrzőösszege a kiadás .sha256 fájljával egyezik meg. Telepítés után az app újraindul."
+  },
+  "The SSTP password must not contain quotation marks, backslashes or control characters": {
+    "en": "The SSTP password must not contain quotation marks, backslashes or control characters",
+    "hu": "Az SSTP jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter"
+  },
+  "The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:": {
+    "en": "The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:",
+    "hu": "A VPN szerver weboldalon kér bejelentkezést. Csak akkor nyisd meg, ha te indítottad ezt a kapcsolatot, és megbízol ebben a címben:"
+  },
+  "The VPN server says:": {
+    "en": "The VPN server says:",
+    "hu": "A VPN-szerver üzenete:"
+  },
+  "The access token is not sent to a new address. Enter the token for it, if it needs one.": {
+    "en": "The access token is not sent to a new address. Enter the token for it, if it needs one.",
+    "hu": "A hozzáférési token nem megy új címre. Ha az új cím tokent kér, add meg."
+  },
+  "The access token is not valid.": {
+    "en": "The access token is not valid.",
+    "hu": "A hozzáférési token érvénytelen."
+  },
+  "The access token was removed.": {
+    "en": "The access token was removed.",
+    "hu": "A hozzáférési token törölve."
+  },
+  "The access token was saved.": {
+    "en": "The access token was saved.",
+    "hu": "A hozzáférési token elmentve."
+  },
+  "The account name is only written into the profile. MacVPN signs in with the shared credential.": {
+    "en": "The account name is only written into the profile. MacVPN signs in with the shared credential.",
+    "hu": "A fióknév csak a profilba kerül. A MacVPN a közös hitelesítő adattal jelentkezik be."
+  },
+  "The address is not valid. Use an https:// address without a user name or a # part.": {
+    "en": "The address is not valid. Use an https:// address without a user name or a # part.",
+    "hu": "A cím érvénytelen. Felhasználónév és # rész nélküli https:// címet adj meg."
+  },
+  "The admin key %@ was imported.": {
+    "en": "The admin key %@ was imported.",
+    "hu": "Az aláírókulcs importálva: %@."
+  },
+  "The admin key file cannot be opened: the password is wrong or the file is damaged.": {
+    "en": "The admin key file cannot be opened: the password is wrong or the file is damaged.",
+    "hu": "Az adminkulcs-fájl nem nyitható meg: a jelszó hibás, vagy a fájl sérült."
+  },
+  "The admin key file could not be read back. The key was kept on this Mac.": {
+    "en": "The admin key file could not be read back. The key was kept on this Mac.",
+    "hu": "Az adminkulcs-fájlt nem sikerült visszaolvasni. A kulcs ezen a Macen maradt."
+  },
+  "The admin key file password must be at least %d characters long": {
+    "en": "The admin key file password must be at least %d characters long",
+    "hu": "Az adminkulcs-fájl jelszavának legalább %d karakter hosszúnak kell lennie"
+  },
+  "The admin key file was made by a newer MacVPN.": {
+    "en": "The admin key file was made by a newer MacVPN.",
+    "hu": "Az adminkulcs-fájlt egy újabb MacVPN készítette."
+  },
+  "The app can no longer control VPNs, and its open sessions end now. Connections that only it brought up are disconnected.": {
+    "en": "The app can no longer control VPNs, and its open sessions end now. Connections that only it brought up are disconnected.",
+    "hu": "Az app többé nem vezérelheti a VPN-eket, és a nyitott munkamenetei most véget érnek. Azok a kapcsolatok, amelyeket csak ő épített fel, bontásra kerülnek."
+  },
+  "The app on the disk image is not accepted: %@": {
+    "en": "The app on the disk image is not accepted: %@",
+    "hu": "A lemezképen lévő alkalmazás nem fogadható el: %@"
+  },
+  "The app's location is not writable: %@. Drag the app to the Applications folder, or update manually from the DMG.": {
+    "en": "The app's location is not writable: %@. Drag the app to the Applications folder, or update manually from the DMG.",
+    "hu": "Az alkalmazás helye nem írható: %@. Húzd az appot az Alkalmazások mappába, vagy frissíts kézzel a DMG-ből."
+  },
+  "The backup cannot be opened. The password is wrong, or the file is damaged.": {
+    "en": "The backup cannot be opened. The password is wrong, or the file is damaged.",
+    "hu": "A mentés nem nyitható meg. Hibás a jelszó, vagy sérült a fájl."
+  },
+  "The backup could not be made.": {
+    "en": "The backup could not be made.",
+    "hu": "A biztonsági mentés nem készült el."
+  },
+  "The backup is protected with your master password. MacVPN checks it and does not keep a copy.": {
+    "en": "The backup is protected with your master password. MacVPN checks it and does not keep a copy.",
+    "hu": "A mentést a mesterjelszavad védi. A MacVPN ellenőrzi, és nem tart meg belőle másolatot."
+  },
+  "The backup key becomes the admin key, and the old admin key is deleted from this Mac. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.": {
+    "en": "The backup key becomes the admin key, and the old admin key is deleted from this Mac. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.",
+    "hu": "A tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a Macről. Utána tedd közzé minden katalógus új verzióját: azok a tagok, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást, a többieknek az új ujjlenyomattal újra fel kell iratkozniuk."
+  },
+  "The backup key is now the admin key. Publish a new version of each catalog, then generate and export a new backup key.": {
+    "en": "The backup key is now the admin key. Publish a new version of each catalog, then generate and export a new backup key.",
+    "hu": "A tartalék kulcs lett az aláírókulcs. Tedd közzé minden katalógus új verzióját, majd hozz létre és exportálj egy új tartalék kulcsot."
+  },
+  "The backup key is then only in that file. Its public half stays, so every catalog still announces it.": {
+    "en": "The backup key is then only in that file. Its public half stays, so every catalog still announces it.",
+    "hu": "A tartalék kulcs így csak abban a fájlban lesz meg. A nyilvános fele itt marad, így minden katalógus továbbra is bejelenti."
+  },
+  "The backup key was saved as %@ and removed from this Mac. Keep the file offline and its password somewhere else.": {
+    "en": "The backup key was saved as %@ and removed from this Mac. Keep the file offline and its password somewhere else.",
+    "hu": "A tartalék kulcs mentve: %@, és törlődött erről a Macről. A fájlt offline tartsd, a jelszavát máshol."
+  },
+  "The backup key was saved as %@. Keep the file offline and its password somewhere else.": {
+    "en": "The backup key was saved as %@. Keep the file offline and its password somewhere else.",
+    "hu": "A tartalék kulcs mentve: %@. A fájlt offline tartsd, a jelszavát máshol."
+  },
+  "The backup password must be at least %d characters long": {
+    "en": "The backup password must be at least %d characters long",
+    "hu": "A mentés jelszavának legalább %d karakter hosszúnak kell lennie"
+  },
+  "The backup was restored.": {
+    "en": "The backup was restored.",
+    "hu": "A mentés visszaállítva."
+  },
+  "The backup was saved as %@.": {
+    "en": "The backup was saved as %@.",
+    "hu": "A mentés elkészült: %@."
+  },
+  "The backup's folders would form a loop with the folders here. Nothing was changed.": {
+    "en": "The backup's folders would form a loop with the folders here. Nothing was changed.",
+    "hu": "A mentés mappái kört alkotnának az itteni mappákkal. Semmi sem változott."
+  },
+  "The backup’s preferences are not applied by themselves. Tick the ones to use on this Mac.": {
+    "en": "The backup’s preferences are not applied by themselves. Tick the ones to use on this Mac.",
+    "hu": "A mentés beállításai maguktól nem lépnek életbe. Jelöld be azokat, amelyeket ezen a Macen használnál."
+  },
+  "The bearer token the web server asks for. It is stored in the vault and sent only to the source’s own address.": {
+    "en": "The bearer token the web server asks for. It is stored in the vault and sent only to the source’s own address.",
+    "hu": "A webszerver által kért bearer token. A széfben tárolódik, és csak a forrás saját címére megy."
+  },
+  "The catalog is signed by a different key than the fingerprint you entered.": {
+    "en": "The catalog is signed by a different key than the fingerprint you entered.",
+    "hu": "A katalógust más kulcs írta alá, mint amelynek az ujjlenyomatát megadtad."
+  },
+  "The catalog preview expired. Add the catalog again.": {
+    "en": "The catalog preview expired. Add the catalog again.",
+    "hu": "A katalógus előnézete lejárt. Add hozzá újra a katalógust."
+  },
+  "The checksum (SHA-256) of the downloaded file does not match. Update cancelled.": {
+    "en": "The checksum (SHA-256) of the downloaded file does not match. Update cancelled.",
+    "hu": "A letöltött fájl ellenőrzőösszege (SHA-256) nem egyezik. A frissítés megszakítva."
+  },
+  "The code is never stored. If no password is saved here, the code alone is sent as the password.": {
+    "en": "The code is never stored. If no password is saved here, the code alone is sent as the password.",
+    "hu": "A kód soha nem tárolódik. Ha itt nincs mentett jelszó, jelszóként csak a kód megy át."
+  },
+  "The code must not be empty or contain line breaks or control characters (256 characters at most)": {
+    "en": "The code must not be empty or contain line breaks or control characters (256 characters at most)",
+    "hu": "A kód nem lehet üres, és nem lehet benne sortörés vagy vezérlőkarakter (legfeljebb 256 karakter)"
+  },
+  "The command was stopped after a timeout: %@": {
+    "en": "The command was stopped after a timeout: %@",
+    "hu": "A parancs időtúllépés miatt megszakadt: %@"
+  },
+  "The config and the saved passwords will be deleted.": {
+    "en": "The config and the saved passwords will be deleted.",
+    "hu": "A config és a mentett jelszavak törlődnek."
+  },
+  "The config contains private keys or credentials": {
+    "en": "The config contains private keys or credentials",
+    "hu": "A config privát kulcsokat vagy hitelesítő adatokat tartalmaz"
+  },
+  "The config has errors. Open the connection and fix them.": {
+    "en": "The config has errors. Open the connection and fix them.",
+    "hu": "A config hibás. Nyisd meg a kapcsolatot, és javítsd ki."
+  },
+  "The config holds a user name or password (an inline <auth-user-pass> / <http-proxy-user-pass> block or a strongSwan secrets section). Remove it and use a credential slot.": {
+    "en": "The config holds a user name or password (an inline <auth-user-pass> / <http-proxy-user-pass> block or a strongSwan secrets section). Remove it and use a credential slot.",
+    "hu": "A config felhasználónevet vagy jelszót tartalmaz (inline <auth-user-pass> / <http-proxy-user-pass> blokk vagy strongSwan secrets rész). Töröld, és használj helyette közös belépési adat helyet."
+  },
+  "The config is incomplete": {
+    "en": "The config is incomplete",
+    "hu": "A config hiányos"
+  },
+  "The config is not a regular file": {
+    "en": "The config is not a regular file",
+    "hu": "A config nem szabályos fájl"
+  },
+  "The config is too large (1 MB at most)": {
+    "en": "The config is too large (1 MB at most)",
+    "hu": "A config túl nagy (legfeljebb 1 MB)"
+  },
+  "The config is too large to publish.": {
+    "en": "The config is too large to publish.",
+    "hu": "A config túl nagy a közzétételhez."
+  },
+  "The config must not be a symlink": {
+    "en": "The config must not be a symlink",
+    "hu": "A config nem lehet symlink"
+  },
+  "The config must not contain NUL bytes": {
+    "en": "The config must not contain NUL bytes",
+    "hu": "A config nem tartalmazhat NUL bájtot"
+  },
+  "The connection could not be established – for details, connect in debug mode": {
+    "en": "The connection could not be established – for details, connect in debug mode",
+    "hu": "A kapcsolat nem jött létre – részletek: debug csatlakozás"
+  },
+  "The connection did not come up.": {
+    "en": "The connection did not come up.",
+    "hu": "A kapcsolat nem jött létre."
+  },
+  "The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → %@.": {
+    "en": "The connection did not come up. If this is an L2TP/IPsec VPN, enter its shared secret (PSK) in MacVPN → Connections → %@.",
+    "hu": "A kapcsolat nem jött létre. Ha ez egy L2TP/IPsec VPN, add meg a közös kulcsát (PSK) itt: MacVPN → Kapcsolatok → %@."
+  },
+  "The connection directory must not be a symlink": {
+    "en": "The connection directory must not be a symlink",
+    "hu": "A kapcsolat könyvtára nem lehet symlink"
+  },
+  "The connection dropped": {
+    "en": "The connection dropped",
+    "hu": "A kapcsolat megszakadt"
+  },
+  "The connection is no longer in the vault.": {
+    "en": "The connection is no longer in the vault.",
+    "hu": "A kapcsolat már nincs a széfben."
+  },
+  "The connection's stored user name and password become a shared credential that it then uses. The values are not shown.": {
+    "en": "The connection's stored user name and password become a shared credential that it then uses. The values are not shown.",
+    "hu": "A kapcsolat tárolt felhasználónevéből és jelszavából közös hitelesítő adat lesz, amelyet ezután használ. Az értékek nem jelennek meg."
+  },
+  "The connections in %@ and its subfolders are deleted with their saved passwords. This cannot be undone.": {
+    "en": "The connections in %@ and its subfolders are deleted with their saved passwords. This cannot be undone.",
+    "hu": "A(z) %@ mappa és almappái kapcsolatai a mentett jelszavaikkal együtt törlődnek. Ez nem vonható vissza."
+  },
+  "The connections of a team catalog are read-only. After a compromise of the admin key, your administrator publishes a new catalog and everyone subscribes again with its new fingerprint.": {
+    "en": "The connections of a team catalog are read-only. After a compromise of the admin key, your administrator publishes a new catalog and everyone subscribes again with its new fingerprint.",
+    "hu": "A csapatkatalógus kapcsolatai csak olvashatók. Ha az aláírókulcs kompromittálódik, a rendszergazda új katalógust tesz közzé, és mindenki újra feliratkozik az új ujjlenyomattal."
+  },
+  "The connection’s name cannot be published. Rename it.": {
+    "en": "The connection’s name cannot be published. Rename it.",
+    "hu": "A kapcsolat neve nem tehető közzé. Nevezd át."
+  },
+  "The connection’s settings are not valid.": {
+    "en": "The connection’s settings are not valid.",
+    "hu": "A kapcsolat beállításai érvénytelenek."
+  },
+  "The copy is yours: you can edit it, and later catalog versions do not change it. It keeps the config, the secrets and the shared credential; acknowledge its risky settings again.": {
+    "en": "The copy is yours: you can edit it, and later catalog versions do not change it. It keeps the config, the secrets and the shared credential; acknowledge its risky settings again.",
+    "hu": "A másolat a tiéd: szerkesztheted, és a későbbi katalógusverziók nem módosítják. Megtartja a configot, a titkokat és a közös hitelesítő adatot; a kockázatos beállításait újra jóvá kell hagynod."
+  },
+  "The credentials in %@ were not used. Enter them in the editor if needed.": {
+    "en": "The credentials in %@ were not used. Enter them in the editor if needed.",
+    "hu": "A(z) %@ hitelesítő adatai nincsenek felhasználva. Ha kell, add meg őket a szerkesztőben."
+  },
+  "The edited settings have not been saved yet.": {
+    "en": "The edited settings have not been saved yet.",
+    "hu": "A szerkesztett beállítások még nincsenek mentve."
+  },
+  "The editor is no longer available": {
+    "en": "The editor is no longer available",
+    "hu": "A szerkesztő már nem elérhető"
+  },
+  "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the vault are not included.": {
+    "en": "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the vault are not included.",
+    "hu": "Az export TARTALMAZZA a config privát kulcsait és hitelesítő adatait (%@). A széfben tárolt jelszavak és a PSK nem kerülnek bele."
+  },
+  "The file contains no PEM certificate (-----BEGIN CERTIFICATE-----). Convert a binary (DER) .cer file to PEM first.": {
+    "en": "The file contains no PEM certificate (-----BEGIN CERTIFICATE-----). Convert a binary (DER) .cer file to PEM first.",
+    "hu": "A fájlban nincs PEM tanúsítvány (-----BEGIN CERTIFICATE-----). Bináris (DER) .cer fájlt előbb alakíts PEM-re."
+  },
+  "The file for the %@ directive (%@) does not have the expected format": {
+    "en": "The file for the %@ directive (%@) does not have the expected format",
+    "hu": "A(z) %@ direktíva fájlja (%@) nem a várt formátumú"
+  },
+  "The file is not a MacVPN team catalog.": {
+    "en": "The file is not a MacVPN team catalog.",
+    "hu": "A fájl nem MacVPN csapatkatalógus."
+  },
+  "The file is too large for a MacVPN backup.": {
+    "en": "The file is too large for a MacVPN backup.",
+    "hu": "A fájl túl nagy egy MacVPN-mentéshez."
+  },
+  "The file is too large to be an admin key file.": {
+    "en": "The file is too large to be an admin key file.",
+    "hu": "A fájl túl nagy ahhoz, hogy adminkulcs-fájl legyen."
+  },
+  "The file path contains an invalid character.": {
+    "en": "The file path contains an invalid character.",
+    "hu": "A fájl útvonala érvénytelen karaktert tartalmaz."
+  },
+  "The fingerprint is required: MacVPN never trusts a first download without it.": {
+    "en": "The fingerprint is required: MacVPN never trusts a first download without it.",
+    "hu": "Az ujjlenyomat kötelező: a MacVPN nélküle sosem bízik meg az első letöltésben."
+  },
+  "The fingerprint matches what my administrator sent me": {
+    "en": "The fingerprint matches what my administrator sent me",
+    "hu": "Az ujjlenyomat egyezik azzal, amit a rendszergazda küldött"
+  },
+  "The folder change failed: %@": {
+    "en": "The folder change failed: %@",
+    "hu": "A mappa módosítása nem sikerült: %@"
+  },
+  "The imported file was exported with this shared credential. Its user name and password are sent to the server named in the file. Choose Use Shared Credential only if you trust the file; otherwise the connection uses its own user name and password.": {
+    "en": "The imported file was exported with this shared credential. Its user name and password are sent to the server named in the file. Choose Use Shared Credential only if you trust the file; otherwise the connection uses its own user name and password.",
+    "hu": "Az importált fájlt ezzel a közös hitelesítő adattal exportálták. A felhasználónév és a jelszó a fájlban megnevezett szerverre kerül. Csak akkor válaszd a Közös hitelesítő adat használatát, ha megbízol a fájlban; különben a kapcsolat a saját felhasználónevét és jelszavát használja."
+  },
+  "The imported file was exported with this shared credential. The user name and password you choose are sent to %@, the server named in the file. Choose a shared credential only if you trust the file; otherwise the connection uses its own user name and password.": {
+    "en": "The imported file was exported with this shared credential. The user name and password you choose are sent to %@, the server named in the file. Choose a shared credential only if you trust the file; otherwise the connection uses its own user name and password.",
+    "hu": "Az importált fájlt ezzel a közös hitelesítő adattal exportálták. A választott felhasználónév és jelszó a(z) %@ címre, a fájlban megadott szerverre kerül. Csak akkor válassz közös hitelesítő adatot, ha megbízol a fájlban; különben a kapcsolat a saját felhasználónevét és jelszavát használja."
+  },
+  "The imported file was exported with this shared credential. The user name and password you choose are sent to the server named in the file. Choose a shared credential only if you trust the file; otherwise the connection uses its own user name and password.": {
+    "en": "The imported file was exported with this shared credential. The user name and password you choose are sent to the server named in the file. Choose a shared credential only if you trust the file; otherwise the connection uses its own user name and password.",
+    "hu": "Az importált fájlt ezzel a közös hitelesítő adattal exportálták. A választott felhasználónév és jelszó a fájlban megadott szerverre kerül. Csak akkor válassz közös hitelesítő adatot, ha megbízol a fájlban; különben a kapcsolat a saját felhasználónevét és jelszavát használja."
+  },
+  "The installed mvpn is not a protected root file, so running connections were not disconnected:": {
+    "en": "The installed mvpn is not a protected root file, so running connections were not disconnected:",
+    "hu": "A telepített mvpn nem védett root fájl, ezért a futó kapcsolatok nem lettek bontva:"
+  },
+  "The installed version (%@) is the latest.": {
+    "en": "The installed version (%@) is the latest.",
+    "hu": "A telepített verzió (%@) a legfrissebb."
+  },
+  "The last version announced a backup admin key as the successor; the next version would not, so members could not follow a switch to it.": {
+    "en": "The last version announced a backup admin key as the successor; the next version would not, so members could not follow a switch to it.",
+    "hu": "A legutóbbi verzió utódként bejelentett egy tartalék aláírókulcsot, a következő verzió nem jelentené be, így a tagok nem tudnák követni az arra való váltást."
+  },
+  "The last version of %@ announced a backup admin key as the successor; the next version would not. Members then cannot follow a switch to that key. Import or generate the backup key first if you still plan to switch to it.": {
+    "en": "The last version of %@ announced a backup admin key as the successor; the next version would not. Members then cannot follow a switch to that key. Import or generate the backup key first if you still plan to switch to it.",
+    "hu": "A(z) %@ legutóbbi verziója utódként bejelentett egy tartalék aláírókulcsot, a következő verzió nem jelentené be. A tagok így nem tudják követni az arra a kulcsra való váltást. Ha még át akarsz váltani rá, előbb importáld vagy hozd létre a tartalék kulcsot."
+  },
+  "The management bridge stopped (details in the log)": {
+    "en": "The management bridge stopped (details in the log)",
+    "hu": "A management közvetítő leállt (részletek a naplóban)"
+  },
+  "The master password is not correct.": {
+    "en": "The master password is not correct.",
+    "hu": "A mesterjelszó nem helyes."
+  },
+  "The master password is wrong.": {
+    "en": "The master password is wrong.",
+    "hu": "A mesterjelszó hibás."
+  },
+  "The master password must be at least %d characters long": {
+    "en": "The master password must be at least %d characters long",
+    "hu": "A mesterjelszónak legalább %d karakter hosszúnak kell lennie"
+  },
+  "The master password was changed": {
+    "en": "The master password was changed",
+    "hu": "A mesterjelszó megváltozott"
+  },
+  "The migration did not finish": {
+    "en": "The migration did not finish",
+    "hu": "Az átköltöztetés nem fejeződött be"
+  },
+  "The migration did not finish: %@": {
+    "en": "The migration did not finish: %@",
+    "hu": "Az átköltöztetés nem fejeződött be: %@"
+  },
+  "The move into the vault did not finish. Try again…": {
+    "en": "The move into the vault did not finish. Try again…",
+    "hu": "Az átköltöztetés a széfbe nem fejeződött be. Újrapróbálás…"
+  },
+  "The new key replaces the old one: the old key stops working at once. Enter the master password to go on.": {
+    "en": "The new key replaces the old one: the old key stops working at once. Enter the master password to go on.",
+    "hu": "Az új kulcs a régi helyébe lép: a régi azonnal érvényét veszti. A folytatáshoz add meg a mesterjelszót."
+  },
+  "The new recovery key is ready": {
+    "en": "The new recovery key is ready",
+    "hu": "Az új helyreállítási kulcs elkészült"
+  },
+  "The old recovery key no longer works. Keep the new one safe.": {
+    "en": "The old recovery key no longer works. Keep the new one safe.",
+    "hu": "A régi helyreállítási kulcs már nem működik. Őrizd biztonságban az újat."
+  },
+  "The owner or link count of the config is wrong": {
+    "en": "The owner or link count of the config is wrong",
+    "hu": "A config tulajdonosa vagy linkszáma nem megfelelő"
+  },
+  "The password and the code together are too long": {
+    "en": "The password and the code together are too long",
+    "hu": "A jelszó és a kód együtt túl hosszú"
+  },
+  "The password comes from the shared credential %@. Change it in the Credentials section.": {
+    "en": "The password comes from the shared credential %@. Change it in the Credentials section.",
+    "hu": "A jelszó a(z) %@ közös hitelesítő adatból származik. A Hitelesítő adatok részben módosíthatod."
+  },
+  "The password is stored in the vault. Use user@domain instead of DOMAIN\\user.": {
+    "en": "The password is stored in the vault. Use user@domain instead of DOMAIN\\user.",
+    "hu": "A jelszó a széfbe kerül. DOMAIN\\user helyett user@domain formát használj."
+  },
+  "The password must have at most 1024 bytes and no control characters.": {
+    "en": "The password must have at most 1024 bytes and no control characters.",
+    "hu": "A jelszó legfeljebb 1024 bájt lehet, vezérlőkarakter nélkül."
+  },
+  "The password with the code must not contain quotation marks, backslashes or control characters (SSTP)": {
+    "en": "The password with the code must not contain quotation marks, backslashes or control characters (SSTP)",
+    "hu": "A kóddal együtt a jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter (SSTP)"
+  },
+  "The previous update did not complete": {
+    "en": "The previous update did not complete",
+    "hu": "Az előző frissítés nem fejeződött be"
+  },
+  "The private key is encrypted: enter its password in the Private key password field before connecting.": {
+    "en": "The private key is encrypted: enter its password in the Private key password field before connecting.",
+    "hu": "A privát kulcs titkosított: csatlakozás előtt add meg a jelszavát a Privát kulcs jelszava mezőben."
+  },
+  "The private key password from %@ is stored in the vault.": {
+    "en": "The private key password from %@ is stored in the vault.",
+    "hu": "A(z) %@ fájlban lévő privát kulcs jelszó a széfbe került."
+  },
+  "The profile is not installed: %@": {
+    "en": "The profile is not installed: %@",
+    "hu": "A profil nincs telepítve: %@"
+  },
+  "The published connections changed since the last publish. Publish the catalog and review the changes first, then rotate the team key.": {
+    "en": "The published connections changed since the last publish. Publish the catalog and review the changes first, then rotate the team key.",
+    "hu": "A közzétett kapcsolatok megváltoztak a legutóbbi közzététel óta. Előbb tedd közzé a katalógust és nézd át a változásokat, utána cseréld le a csapatkulcsot."
+  },
+  "The publisher fingerprint is not valid: it has 8 groups of 4 characters.": {
+    "en": "The publisher fingerprint is not valid: it has 8 groups of 4 characters.",
+    "hu": "A közzétevő ujjlenyomata érvénytelen: 8 darab 4 karakteres csoportból áll."
+  },
+  "The referenced file is larger than 1 MB: %@": {
+    "en": "The referenced file is larger than 1 MB: %@",
+    "hu": "A hivatkozott fájl nagyobb 1 MB-nál: %@"
+  },
+  "The referenced file is outside the config's folder: %@": {
+    "en": "The referenced file is outside the config's folder: %@",
+    "hu": "A hivatkozott fájl a config mappáján kívül van: %@"
+  },
+  "The response is too long (256 bytes at most)": {
+    "en": "The response is too long (256 bytes at most)",
+    "hu": "A válasz túl hosszú (legfeljebb 256 bájt)"
+  },
+  "The response must not contain control characters": {
+    "en": "The response must not contain control characters",
+    "hu": "A válaszban nem lehet vezérlőkarakter"
+  },
+  "The restore failed. Nothing was changed.": {
+    "en": "The restore failed. Nothing was changed.",
+    "hu": "A visszaállítás nem sikerült. Semmi sem változott."
+  },
+  "The restore keeps these acknowledgements. Restore only a backup you made yourself.": {
+    "en": "The restore keeps these acknowledgements. Restore only a backup you made yourself.",
+    "hu": "A visszaállítás megtartja ezeket a jóváhagyásokat. Csak saját készítésű mentést állíts vissza."
+  },
+  "The root scripts were not found in the app": {
+    "en": "The root scripts were not found in the app",
+    "hu": "A root scriptek nem találhatók az alkalmazásban"
+  },
+  "The selected preferences were applied.": {
+    "en": "The selected preferences were applied.",
+    "hu": "A kijelölt beállítások életbe léptek."
+  },
+  "The server address of the VPN service named “%@” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.": {
+    "en": "The server address of the VPN service named “%@” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.",
+    "hu": "A(z) „%@” nevű VPN szolgáltatás szervercíme nem egyezik a kapcsolat szerverével. A MacVPN nem adja át neki a jelszót és a PSK-t: telepítsd újra a profilt a MacVPN → Kapcsolatok alatt, vagy töröld a másik szolgáltatást a Rendszerbeállítások → Hálózat alatt."
+  },
+  "The server asks for a code.": {
+    "en": "The server asks for a code.",
+    "hu": "A szerver kódot kér."
+  },
+  "The server returned an error (HTTP %ld)": {
+    "en": "The server returned an error (HTTP %ld)",
+    "hu": "A szerver hibát adott (HTTP %ld)"
+  },
+  "The server's certificate is not verified. Anyone between you and the server can impersonate it and capture your login. Use this only for testing.": {
+    "en": "The server's certificate is not verified. Anyone between you and the server can impersonate it and capture your login. Use this only for testing.",
+    "hu": "A szerver tanúsítványát semmi nem ellenőrzi. Bárki, aki közted és a szerver között van, kiadhatja magát a szervernek, és megszerezheti a bejelentkezési adataidat. Csak tesztelésre használd."
+  },
+  "The shared credential '%@' was not checked: %@": {
+    "en": "The shared credential '%@' was not checked: %@",
+    "hu": "A(z) „%@” közös hitelesítő adat nincs ellenőrizve: %@"
+  },
+  "The shared credential could not be changed: %@": {
+    "en": "The shared credential could not be changed: %@",
+    "hu": "A közös hitelesítő adat nem módosítható: %@"
+  },
+  "The shared credentials the selected connections use, without user names or passwords: only the name and an id go into the catalog. Without a slot, each member is asked for that connection’s sign-in separately.": {
+    "en": "The shared credentials the selected connections use, without user names or passwords: only the name and an id go into the catalog. Without a slot, each member is asked for that connection’s sign-in separately.",
+    "hu": "A kiválasztott kapcsolatok által használt közös hitelesítő adatok, felhasználónév és jelszó nélkül: csak a név és egy azonosító kerül a katalógusba. Hely nélkül minden tagtól az adott kapcsolat bejelentkezését külön kérdezi."
+  },
+  "The source holds another team catalog.": {
+    "en": "The source holds another team catalog.",
+    "hu": "A forrás egy másik csapatkatalógust tartalmaz."
+  },
+  "The source was changed.": {
+    "en": "The source was changed.",
+    "hu": "A forrás megváltozott."
+  },
+  "The subscription string is on the clipboard. It is removed from the clipboard in a minute.": {
+    "en": "The subscription string is on the clipboard. It is removed from the clipboard in a minute.",
+    "hu": "A feliratkozási kód a vágólapon van. Egy perc múlva lekerül a vágólapról."
+  },
+  "The subscription string was made by a newer MacVPN.": {
+    "en": "The subscription string was made by a newer MacVPN.",
+    "hu": "A feliratkozási kód egy újabb MacVPN-nel készült."
+  },
+  "The team catalog changed this connection: reinstall its profile": {
+    "en": "The team catalog changed this connection: reinstall its profile",
+    "hu": "A csapatkatalógus megváltoztatta ezt a kapcsolatot: telepítsd újra a profilját"
+  },
+  "The team catalog changed this connection; review it again": {
+    "en": "The team catalog changed this connection; review it again",
+    "hu": "A csapatkatalógus megváltoztatta ezt a kapcsolatot; nézd át újra"
+  },
+  "The team catalog contains a connection MacVPN cannot use.": {
+    "en": "The team catalog contains a connection MacVPN cannot use.",
+    "hu": "A csapatkatalógus olyan kapcsolatot tartalmaz, amelyet a MacVPN nem tud használni."
+  },
+  "The team catalog could not be read.": {
+    "en": "The team catalog could not be read.",
+    "hu": "A csapatkatalógus nem olvasható."
+  },
+  "The team catalog could not be read: %@": {
+    "en": "The team catalog could not be read: %@",
+    "hu": "A csapatkatalógus nem olvasható: %@"
+  },
+  "The team catalog could not be written.": {
+    "en": "The team catalog could not be written.",
+    "hu": "A csapatkatalógus nem írható ki."
+  },
+  "The team catalog file is damaged.": {
+    "en": "The team catalog file is damaged.",
+    "hu": "A csapatkatalógus fájl sérült."
+  },
+  "The team catalog file is incomplete.": {
+    "en": "The team catalog file is incomplete.",
+    "hu": "A csapatkatalógus fájl hiányos."
+  },
+  "The team catalog file is too large.": {
+    "en": "The team catalog file is too large.",
+    "hu": "A csapatkatalógus fájl túl nagy."
+  },
+  "The team catalog has not changed.": {
+    "en": "The team catalog has not changed.",
+    "hu": "A csapatkatalógus nem változott."
+  },
+  "The team catalog offers version %d, older than the applied version %d: refused.": {
+    "en": "The team catalog offers version %d, older than the applied version %d: refused.",
+    "hu": "A csapatkatalógus a(z) %d. verziót kínálja, amely régebbi az alkalmazott %d. verziónál: elutasítva."
+  },
+  "The team catalog source is unavailable (%@).": {
+    "en": "The team catalog source is unavailable (%@).",
+    "hu": "A csapatkatalógus forrása nem érhető el (%@)."
+  },
+  "The team catalog source is unavailable.": {
+    "en": "The team catalog source is unavailable.",
+    "hu": "A csapatkatalógus forrása nem érhető el."
+  },
+  "The team catalog was made by a newer MacVPN.": {
+    "en": "The team catalog was made by a newer MacVPN.",
+    "hu": "A csapatkatalógust újabb MacVPN készítette."
+  },
+  "The team catalog was signed by another publisher than the one you trust.": {
+    "en": "The team catalog was signed by another publisher than the one you trust.",
+    "hu": "A csapatkatalógust más közzétevő írta alá, mint akiben megbízol."
+  },
+  "The team catalog's signature is not valid: it was changed.": {
+    "en": "The team catalog's signature is not valid: it was changed.",
+    "hu": "A csapatkatalógus aláírása érvénytelen: módosították."
+  },
+  "The team key does not open this catalog (it is wrong or was rotated).": {
+    "en": "The team key does not open this catalog (it is wrong or was rotated).",
+    "hu": "A csapatkulcs nem nyitja meg ezt a katalógust (hibás, vagy lecserélték)."
+  },
+  "The team key is not valid. Check it for typos.": {
+    "en": "The team key is not valid. Check it for typos.",
+    "hu": "A csapatkulcs érvénytelen. Ellenőrizd, nincs-e benne elírás."
+  },
+  "The team key is shown only now. MacVPN keeps it in your vault to publish later versions, but never shows it again. Copy it and keep it safe.": {
+    "en": "The team key is shown only now. MacVPN keeps it in your vault to publish later versions, but never shows it again. Copy it and keep it safe.",
+    "hu": "A csapatkulcs csak most jelenik meg. A MacVPN a széfedben tartja a későbbi verziók közzétételéhez, de többé nem mutatja. Másold ki, és tartsd biztonságban."
+  },
+  "The team key of “%@” has changed. Ask your administrator for the new key.": {
+    "en": "The team key of “%@” has changed. Ask your administrator for the new key.",
+    "hu": "A(z) „%@” csapatkulcsa megváltozott. Kérd el a rendszergazdától az új kulcsot."
+  },
+  "The team key was changed. Refresh now to apply the catalog.": {
+    "en": "The team key was changed. Refresh now to apply the catalog.",
+    "hu": "A csapatkulcs megváltozott. A katalógus alkalmazásához kattints a Frissítés most gombra."
+  },
+  "The team key was checked and stays hidden.": {
+    "en": "The team key was checked and stays hidden.",
+    "hu": "A csapatkulcs ellenőrizve, és rejtve marad."
+  },
+  "The two passwords are not the same": {
+    "en": "The two passwords are not the same",
+    "hu": "A két jelszó nem egyezik"
+  },
+  "The two passwords are not the same.": {
+    "en": "The two passwords are not the same.",
+    "hu": "A két jelszó nem egyezik."
+  },
+  "The update check failed": {
+    "en": "The update check failed",
+    "hu": "A frissítés-ellenőrzés nem sikerült"
+  },
+  "The update is not signed by the MacVPN maintainer": {
+    "en": "The update is not signed by the MacVPN maintainer",
+    "hu": "A frissítést nem a MacVPN fejlesztője írta alá"
+  },
+  "The update stopped with an error (%@). The installed version was kept. Details: %@": {
+    "en": "The update stopped with an error (%@). The installed version was kept. Details: %@",
+    "hu": "A frissítés hibával leállt (%@). A telepített verzió megmaradt. Részletek: %@"
+  },
+  "The update was cancelled because MacVPN did not quit within 30 seconds. The installed version was not changed; you can try again from the menu.": {
+    "en": "The update was cancelled because MacVPN did not quit within 30 seconds. The installed version was not changed; you can try again from the menu.",
+    "hu": "A frissítés megszakadt, mert a MacVPN 30 másodpercen belül nem lépett ki. A telepített verzió nem változott; a menüből újra megpróbálhatod."
+  },
+  "The user name and password come from the shared credential %@. Change them in the Credentials section.": {
+    "en": "The user name and password come from the shared credential %@. Change them in the Credentials section.",
+    "hu": "A felhasználónév és a jelszó a(z) %@ közös hitelesítő adatból származik. A Hitelesítő adatok részben módosíthatod őket."
+  },
+  "The user name and password stored for this connection are deleted. It then signs in with the shared credential's.": {
+    "en": "The user name and password stored for this connection are deleted. It then signs in with the shared credential's.",
+    "hu": "A kapcsolathoz tárolt felhasználónév és jelszó törlődik. Ezután a közös hitelesítő adattal jelentkezik be."
+  },
+  "The user name must have at most 256 bytes and no control characters.": {
+    "en": "The user name must have at most 256 bytes and no control characters.",
+    "hu": "A felhasználónév legfeljebb 256 bájt lehet, vezérlőkarakter nélkül."
+  },
+  "The user name, password and PSK must not contain line breaks or control characters": {
+    "en": "The user name, password and PSK must not contain line breaks or control characters",
+    "hu": "A felhasználónév, a jelszó és a PSK nem tartalmazhat sortörést vagy vezérlőkaraktert"
+  },
+  "The user's home directory was not found": {
+    "en": "The user's home directory was not found",
+    "hu": "Nem található a felhasználó home könyvtára"
+  },
+  "The username and password from %@ are stored in the vault; the file is not copied into the config.": {
+    "en": "The username and password from %@ are stored in the vault; the file is not copied into the config.",
+    "hu": "A(z) %@ fájlban lévő felhasználónév és jelszó a széfbe került; a fájl nem kerül a configba."
+  },
+  "The vault changed since the summary. Review the restore again.": {
+    "en": "The vault changed since the summary. Review the restore again.",
+    "hu": "Az összesítés óta változott a széf. Nézd át újra a visszaállítást."
+  },
+  "The vault could not be created: %@": {
+    "en": "The vault could not be created: %@",
+    "hu": "A széf nem hozható létre: %@"
+  },
+  "The vault could not save the change.": {
+    "en": "The vault could not save the change.",
+    "hu": "A széf nem tudta menteni a módosítást."
+  },
+  "The vault is damaged and cannot be opened": {
+    "en": "The vault is damaged and cannot be opened",
+    "hu": "A széf sérült, nem nyitható meg"
+  },
+  "The vault is locked. Unlock it and try again.": {
+    "en": "The vault is locked. Unlock it and try again.",
+    "hu": "A széf zárolva van. Oldd fel, és próbáld újra."
+  },
+  "The vault is locked. Unlock it first.": {
+    "en": "The vault is locked. Unlock it first.",
+    "hu": "A széf zárolva van. Előbb oldd fel."
+  },
+  "The vault is ready": {
+    "en": "The vault is ready",
+    "hu": "A széf elkészült"
+  },
+  "The vault key is kept in the macOS Keychain, so MacVPN opens without asking. Turn it off to type the master password at every launch.": {
+    "en": "The vault key is kept in the macOS Keychain, so MacVPN opens without asking. Turn it off to type the master password at every launch.",
+    "hu": "A széf kulcsa a macOS Keychainjében marad, így a MacVPN kérdés nélkül megnyílik. Kapcsold ki, ha minden indításkor a mesterjelszót szeretnéd megadni."
+  },
+  "Then anyone who learns your master password can also open this file, wherever it is kept. A separate backup password keeps the two apart.": {
+    "en": "Then anyone who learns your master password can also open this file, wherever it is kept. A separate backup password keeps the two apart.",
+    "hu": "Akkor bárki, aki megtudja a mesterjelszavadat, ezt a fájlt is megnyithatja, bárhol is tárolod. Egy külön mentési jelszó elválasztja a kettőt."
+  },
+  "There are active VPN connections": {
+    "en": "There are active VPN connections",
+    "hu": "Aktív VPN kapcsolatok vannak"
+  },
+  "There are no connections to allow.": {
+    "en": "There are no connections to allow.",
+    "hu": "Nincs engedélyezhető kapcsolat."
+  },
+  "There are no connections to publish.": {
+    "en": "There are no connections to publish.",
+    "hu": "Nincs közzétehető kapcsolat."
+  },
+  "There is no backup admin key on this Mac.": {
+    "en": "There is no backup admin key on this Mac.",
+    "hu": "Ezen a Macen nincs tartalék adminkulcs."
+  },
+  "There is no shared credential named '%@'": {
+    "en": "There is no shared credential named '%@'",
+    "hu": "Nincs „%@” nevű közös hitelesítő adat"
+  },
+  "There is no shared credential named '%@'. The connection uses its own user name and password.": {
+    "en": "There is no shared credential named '%@'. The connection uses its own user name and password.",
+    "hu": "Nincs „%@” nevű közös hitelesítő adat. A kapcsolat a saját felhasználónevét és jelszavát használja."
+  },
+  "These connections are up and are disconnected first:": {
+    "en": "These connections are up and are disconnected first:",
+    "hu": "Ezek a kapcsolatok fennállnak, és előbb bontásra kerülnek:"
+  },
+  "These connections cannot be published. Fix them first, or untick them.": {
+    "en": "These connections cannot be published. Fix them first, or untick them.",
+    "hu": "Ezeket a kapcsolatokat nem lehet közzétenni. Előbb javítsd ki őket, vagy vedd ki a jelölésüket."
+  },
+  "These connections have acknowledged risky OpenVPN settings, such as scripts that run as root:": {
+    "en": "These connections have acknowledged risky OpenVPN settings, such as scripts that run as root:",
+    "hu": "Ezeknél a kapcsolatoknál jóvá vannak hagyva kockázatos OpenVPN-beállítások, például rootként futó szkriptek:"
+  },
+  "These connections have the same user name and password. The ticked ones will use the new shared credential too.": {
+    "en": "These connections have the same user name and password. The ticked ones will use the new shared credential too.",
+    "hu": "Ezeknek a kapcsolatoknak ugyanez a felhasználóneve és jelszava. A bejelöltek is az új közös hitelesítő adatot használják majd."
+  },
+  "These connections use this shared credential. Copy its user name and password into each of them, then delete it?": {
+    "en": "These connections use this shared credential. Copy its user name and password into each of them, then delete it?",
+    "hu": "Ezek a kapcsolatok használják ezt a közös hitelesítő adatot. Átmásolod a felhasználónevét és jelszavát mindegyikbe, majd törlöd?"
+  },
+  "This VPN was removed from macOS": {
+    "en": "This VPN was removed from macOS",
+    "hu": "Ezt a VPN-t eltávolították a macOS-ből"
+  },
+  "This app was started from another location: %@. Revoke it and pair it again to use the new copy.": {
+    "en": "This app was started from another location: %@. Revoke it and pair it again to use the new copy.",
+    "hu": "Ezt az appot más helyről indították: %@. Az új példány használatához vond vissza, és párosítsd újra."
+  },
+  "This backup cannot be restored: it holds data MacVPN does not accept.": {
+    "en": "This backup cannot be restored: it holds data MacVPN does not accept.",
+    "hu": "Ez a mentés nem állítható vissza: olyan adatot tartalmaz, amelyet a MacVPN nem fogad el."
+  },
+  "This backup was made by a newer MacVPN. Update MacVPN to restore it.": {
+    "en": "This backup was made by a newer MacVPN. Update MacVPN to restore it.",
+    "hu": "Ezt a mentést egy újabb MacVPN készítette. A visszaállításhoz frissítsd a MacVPN-t."
+  },
+  "This catalog uses no credential slots.": {
+    "en": "This catalog uses no credential slots.",
+    "hu": "Ez a katalógus nem használ közös belépési adatokat."
+  },
+  "This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1).": {
+    "en": "This config uses static-challenge: MacVPN asks for the code when connecting and sends it with the password (SCRV1).",
+    "hu": "Ez a config static-challenge-et használ: a MacVPN csatlakozáskor bekéri a kódot, és a jelszóval együtt küldi (SCRV1)."
+  },
+  "This connection already uses a shared credential.": {
+    "en": "This connection already uses a shared credential.",
+    "hu": "Ez a kapcsolat már közös hitelesítő adatot használ."
+  },
+  "This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.": {
+    "en": "This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.",
+    "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Rendszerbeállításokban vagy a saját alkalmazásában vannak."
+  },
+  "This connection cannot be published.": {
+    "en": "This connection cannot be published.",
+    "hu": "Ez a kapcsolat nem tehető közzé."
+  },
+  "This connection has no stored user name to share.": {
+    "en": "This connection has no stored user name to share.",
+    "hu": "Ennek a kapcsolatnak nincs megosztható tárolt felhasználóneve."
+  },
+  "This connection no longer exists": {
+    "en": "This connection no longer exists",
+    "hu": "Ez a kapcsolat már nem létezik"
+  },
+  "This connection uses the shared credential %@. Change its user name and password in the Credentials section.": {
+    "en": "This connection uses the shared credential %@. Change its user name and password in the Credentials section.",
+    "hu": "Ez a kapcsolat a(z) %@ közös hitelesítő adatot használja. A felhasználónevet és a jelszót a Hitelesítő adatok részben módosíthatod."
+  },
+  "This data was saved by a newer MacVPN. Update the app to make changes.": {
+    "en": "This data was saved by a newer MacVPN. Update the app to make changes.",
+    "hu": "Ezeket az adatokat egy újabb MacVPN mentette. A módosításhoz frissítsd az alkalmazást."
+  },
+  "This file is opened from its own panel in MacVPN, not from Finder.": {
+    "en": "This file is opened from its own panel in MacVPN, not from Finder.",
+    "hu": "Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Finderből."
+  },
+  "This folder no longer exists": {
+    "en": "This folder no longer exists",
+    "hu": "Ez a mappa már nem létezik"
+  },
+  "This is not a subscription string.": {
+    "en": "This is not a subscription string.",
+    "hu": "Ez nem feliratkozási kód."
+  },
+  "This is not a valid MacVPN subscription string.": {
+    "en": "This is not a valid MacVPN subscription string.",
+    "hu": "Ez nem érvényes MacVPN feliratkozási kód."
+  },
+  "This is not a valid recovery key": {
+    "en": "This is not a valid recovery key",
+    "hu": "Ez nem érvényes helyreállítási kulcs"
+  },
+  "This is not group %d of the team key.": {
+    "en": "This is not group %d of the team key.",
+    "hu": "Ez nem a csapatkulcs %d. csoportja."
+  },
+  "This is not group %lld of your recovery key": {
+    "en": "This is not group %lld of your recovery key",
+    "hu": "Ez nem a helyreállítási kulcs %lld. csoportja"
+  },
+  "This publication no longer exists.": {
+    "en": "This publication no longer exists.",
+    "hu": "Ez a közzététel már nem létezik."
+  },
+  "This team catalog no longer exists.": {
+    "en": "This team catalog no longer exists.",
+    "hu": "Ez a csapatkatalógus már nem létezik."
+  },
+  "This vault was saved by a newer MacVPN. Update MacVPN to open it.": {
+    "en": "This vault was saved by a newer MacVPN. Update MacVPN to open it.",
+    "hu": "Ezt a széfet egy újabb MacVPN mentette. Frissítsd a MacVPN-t a megnyitásához."
+  },
+  "Tick every key inside the configs to go on, or leave those connections out.": {
+    "en": "Tick every key inside the configs to go on, or leave those connections out.",
+    "hu": "A továbblépéshez jelölj be minden configba írt kulcsot, vagy hagyd ki azokat a kapcsolatokat."
+  },
+  "Tick folders and connections. A ticked folder brings everything inside it; a connection whose folder is not ticked goes to the catalog’s top level. System VPNs and connections from team catalogs cannot be published.": {
+    "en": "Tick folders and connections. A ticked folder brings everything inside it; a connection whose folder is not ticked goes to the catalog’s top level. System VPNs and connections from team catalogs cannot be published.",
+    "hu": "Jelöld be a mappákat és a kapcsolatokat. A bejelölt mappa a teljes tartalmát viszi; az a kapcsolat, amelynek a mappája nincs bejelölve, a katalógus legfelső szintjére kerül. Rendszer VPN-t és csapatkatalógusból származó kapcsolatot nem lehet közzétenni."
+  },
+  "Tick it only if you use paired apps on this Mac. They pair again after a restore.": {
+    "en": "Tick it only if you use paired apps on this Mac. They pair again after a restore.",
+    "hu": "Csak akkor jelöld be, ha ezen a Macen párosított appokat használsz. Visszaállítás után újra párosodnak."
+  },
+  "Timed out": {
+    "en": "Timed out",
+    "hu": "Időtúllépés"
+  },
+  "Timed out waiting for authentication": {
+    "en": "Timed out waiting for authentication",
+    "hu": "Időtúllépés: a hitelesítés nem fejeződött be időben"
+  },
+  "Timed out: the connection was not established within %@ s": {
+    "en": "Timed out: the connection was not established within %@ s",
+    "hu": "Időtúllépés: %@ mp alatt nem épült fel a kapcsolat"
+  },
+  "To switch to it, import the backup key file first (Import Admin Key…).": {
+    "en": "To switch to it, import the backup key file first (Import Admin Key…).",
+    "hu": "Az átváltáshoz előbb importáld a tartalék kulcs fájlját (Aláírókulcs importálása…)."
+  },
+  "Too short": {
+    "en": "Too short",
+    "hu": "Túl rövid"
+  },
+  "Top level": {
+    "en": "Top level",
+    "hu": "Legfelső szint"
+  },
+  "Try Again": {
+    "en": "Try Again",
+    "hu": "Újra"
+  },
+  "Try again in %lld s": {
+    "en": "Try again in %lld s",
+    "hu": "Újrapróbálás %lld mp múlva"
+  },
+  "Turn Off": {
+    "en": "Turn Off",
+    "hu": "Kikapcsolás"
+  },
+  "Turn On": {
+    "en": "Turn On",
+    "hu": "Bekapcsolás"
+  },
+  "Turn off automatic unlock?": {
+    "en": "Turn off automatic unlock?",
+    "hu": "Kikapcsolod az automatikus feloldást?"
+  },
+  "Turn on automatic unlock": {
+    "en": "Turn on automatic unlock",
+    "hu": "Az automatikus feloldás bekapcsolása"
+  },
+  "Type group %d of the team key": {
+    "en": "Type group %d of the team key",
+    "hu": "Írd be a csapatkulcs %d. csoportját"
+  },
+  "Type group %lld of your recovery key, counting from the left.": {
+    "en": "Type group %lld of your recovery key, counting from the left.",
+    "hu": "Írd be a helyreállítási kulcs %lld. csoportját, balról számolva."
+  },
+  "Unbalanced quote (multi-line strings are not allowed)": {
+    "en": "Unbalanced quote (multi-line strings are not allowed)",
+    "hu": "Páratlan idézőjel (többsoros string nem engedélyezett)"
+  },
+  "Unclosed inline block: %@": {
+    "en": "Unclosed inline block: %@",
+    "hu": "Lezáratlan inline blokk: %@"
+  },
+  "Unclosed section": {
+    "en": "Unclosed section",
+    "hu": "Lezáratlan szakasz"
+  },
+  "Unexpected closing brace": {
+    "en": "Unexpected closing brace",
+    "hu": "Váratlan záró kapcsos zárójel"
+  },
+  "Unexpected response from GitHub": {
+    "en": "Unexpected response from GitHub",
+    "hu": "Értelmezhetetlen válasz a GitHubtól"
+  },
+  "Uninstall": {
+    "en": "Uninstall",
+    "hu": "Eltávolítás"
+  },
+  "Uninstall MacVPN": {
+    "en": "Uninstall MacVPN",
+    "hu": "MacVPN eltávolítása"
+  },
+  "Uninstall MacVPN…": {
+    "en": "Uninstall MacVPN…",
+    "hu": "MacVPN eltávolítása…"
+  },
+  "Uninstall cancelled": {
+    "en": "Uninstall cancelled",
+    "hu": "Az eltávolítás megszakítva"
+  },
+  "Uninstall error": {
+    "en": "Uninstall error",
+    "hu": "Eltávolítási hiba"
+  },
+  "Uninstall failed": {
+    "en": "Uninstall failed",
+    "hu": "Az eltávolítás nem sikerült"
+  },
+  "Unknown colour": {
+    "en": "Unknown colour",
+    "hu": "Ismeretlen szín"
+  },
+  "Unknown delete option": {
+    "en": "Unknown delete option",
+    "hu": "Ismeretlen törlési mód"
+  },
+  "Unknown error": {
+    "en": "Unknown error",
+    "hu": "Ismeretlen hiba"
+  },
+  "Unknown section": {
+    "en": "Unknown section",
+    "hu": "Ismeretlen szakasz"
+  },
+  "Unknown to MacVPN: its effect cannot be checked": {
+    "en": "Unknown to MacVPN: its effect cannot be checked",
+    "hu": "A MacVPN nem ismeri: a hatása nem ellenőrizhető"
+  },
+  "Unknown type: %@": {
+    "en": "Unknown type: %@",
+    "hu": "Ismeretlen típus: %@"
+  },
+  "Unknown user": {
+    "en": "Unknown user",
+    "hu": "Ismeretlen felhasználó"
+  },
+  "Unlock": {
+    "en": "Unlock",
+    "hu": "Feloldás"
+  },
+  "Unlock MacVPN": {
+    "en": "Unlock MacVPN",
+    "hu": "A MacVPN feloldása"
+  },
+  "Unlock automatically": {
+    "en": "Unlock automatically",
+    "hu": "Automatikus feloldás"
+  },
+  "Unlocking…": {
+    "en": "Unlocking…",
+    "hu": "Feloldás…"
+  },
+  "Unlock…": {
+    "en": "Unlock…",
+    "hu": "Széf feloldása…"
+  },
+  "Unpin": {
+    "en": "Unpin",
+    "hu": "Kitűzés megszüntetése"
+  },
+  "Unsafe directory, installation cancelled:": {
+    "en": "Unsafe directory, installation cancelled:",
+    "hu": "Nem biztonságos könyvtár, a telepítés megszakítva:"
+  },
+  "Unsaved Changes": {
+    "en": "Unsaved Changes",
+    "hu": "Nem mentett változások"
+  },
+  "Unsaved changes": {
+    "en": "Unsaved changes",
+    "hu": "Nem mentett változások"
+  },
+  "Unsubscribe": {
+    "en": "Unsubscribe",
+    "hu": "Leiratkozás"
+  },
+  "Unsubscribe from %@?": {
+    "en": "Unsubscribe from %@?",
+    "hu": "Leiratkozol a(z) %@ katalógusról?"
+  },
+  "Unsubscribed.": {
+    "en": "Unsubscribed.",
+    "hu": "Leiratkoztál."
+  },
+  "Unsubscribed. These filled-in credentials are kept in Credentials: %@": {
+    "en": "Unsubscribed. These filled-in credentials are kept in Credentials: %@",
+    "hu": "Leiratkoztál. Ezek a kitöltött hitelesítő adatok megmaradnak a Hitelesítő adatok részben: %@"
+  },
+  "Unsubscribe…": {
+    "en": "Unsubscribe…",
+    "hu": "Leiratkozás…"
+  },
+  "Up to date": {
+    "en": "Up to date",
+    "hu": "Naprakész"
+  },
+  "Update": {
+    "en": "Update",
+    "hu": "Frissítés"
+  },
+  "Update available: %@": {
+    "en": "Update available: %@",
+    "hu": "Frissítés elérhető: %@"
+  },
+  "Update required (%@ → %@). Asks for the admin password once.": {
+    "en": "Update required (%@ → %@). Asks for the admin password once.",
+    "hu": "Frissítés szükséges (%1$@ → %2$@). Egyszer kéri az admin jelszót."
+  },
+  "Update waiting for signature": {
+    "en": "Update waiting for signature",
+    "hu": "A frissítés aláírásra vár"
+  },
+  "Updated to the new version.": {
+    "en": "Updated to the new version.",
+    "hu": "Frissítve az új verzióra."
+  },
+  "Updated: %@": {
+    "en": "Updated: %@",
+    "hu": "Frissítve: %@"
+  },
+  "Updating the system component will disconnect active VPN connections.": {
+    "en": "Updating the system component will disconnect active VPN connections.",
+    "hu": "A rendszerkomponens frissítése bontja az aktív VPN-kapcsolatokat."
+  },
+  "Usage: mvpn respond openvpn <id>": {
+    "en": "Usage: mvpn respond openvpn <id>",
+    "hu": "Használat: mvpn respond openvpn <id>"
+  },
+  "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version": {
+    "en": "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version",
+    "hu": "Használat: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> [--debug] [--dry-run] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version"
+  },
+  "Usage: mvpn validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> [--accept-risky names] | --swan-names | --sstp-params | --sstp-ca (the config on stdin: config <length>, a newline, the config)": {
+    "en": "Usage: mvpn validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> [--accept-risky names] | --swan-names | --sstp-params | --sstp-ca (the config on stdin: config <length>, a newline, the config)",
+    "hu": "Használat: mvpn validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> [--accept-risky nevek] | --swan-names | --sstp-params | --sstp-ca (a config a standard bemeneten: config <hossz>, sortörés, a config)"
+  },
+  "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>": {
+    "en": "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>",
+    "hu": "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>"
+  },
+  "Use": {
+    "en": "Use",
+    "hu": "Használat"
+  },
+  "Use Credential": {
+    "en": "Use Credential",
+    "hu": "Használat"
+  },
+  "Use Master Password": {
+    "en": "Use Master Password",
+    "hu": "Mesterjelszó használata"
+  },
+  "Use Own Fields": {
+    "en": "Use Own Fields",
+    "hu": "Saját adatok használata"
+  },
+  "Use Shared Credential": {
+    "en": "Use Shared Credential",
+    "hu": "Közös hitelesítő adat használata"
+  },
+  "Use a separate backup password": {
+    "en": "Use a separate backup password",
+    "hu": "Külön mentési jelszó használata"
+  },
+  "Use credential: %@": {
+    "en": "Use credential: %@",
+    "hu": "Hitelesítő adat: %@"
+  },
+  "Use folder colour": {
+    "en": "Use folder colour",
+    "hu": "A mappa színe"
+  },
+  "Use my master password…": {
+    "en": "Use my master password…",
+    "hu": "A mesterjelszavam használata…"
+  },
+  "Use recovery key": {
+    "en": "Use recovery key",
+    "hu": "Helyreállítási kulcs használata"
+  },
+  "Use team colour": {
+    "en": "Use team colour",
+    "hu": "A csapat színének használata"
+  },
+  "Use the credentials from %@ for this connection?": {
+    "en": "Use the credentials from %@ for this connection?",
+    "hu": "Használod a(z) %@ fájlban lévő hitelesítő adatokat ehhez a kapcsolathoz?"
+  },
+  "Use the master password": {
+    "en": "Use the master password",
+    "hu": "A mesterjelszó használata"
+  },
+  "Use the new master password from now on. Your recovery key stays the same.": {
+    "en": "Use the new master password from now on. Your recovery key stays the same.",
+    "hu": "Mostantól az új mesterjelszót használd. A helyreállítási kulcsod változatlan."
+  },
+  "Use the server's DNS": {
+    "en": "Use the server's DNS",
+    "hu": "A szerver DNS-ének használata"
+  },
+  "Use the shared credential %@?": {
+    "en": "Use the shared credential %@?",
+    "hu": "Használod a(z) %@ közös hitelesítő adatot?"
+  },
+  "Use the shared credential '%@' for this connection to %@?": {
+    "en": "Use the shared credential '%@' for this connection to %@?",
+    "hu": "Használod a(z) „%@” közös hitelesítő adatot ehhez a(z) %@ szerverre csatlakozó kapcsolathoz?"
+  },
+  "Use the shared credential '%@' for this connection?": {
+    "en": "Use the shared credential '%@' for this connection?",
+    "hu": "Használod a(z) „%@” közös hitelesítő adatot ehhez a kapcsolathoz?"
+  },
+  "Use your master password for this backup?": {
+    "en": "Use your master password for this backup?",
+    "hu": "A mesterjelszavadat használod ehhez a mentéshez?"
+  },
+  "Used by %lld connections": {
+    "en": "Used by %lld connections",
+    "hu": "%lld kapcsolat használja"
+  },
+  "Used by 1 connection": {
+    "en": "Used by 1 connection",
+    "hu": "1 kapcsolat használja"
+  },
+  "Used by other apps through MacVPN: %@. Quitting ends their sessions.": {
+    "en": "Used by other apps through MacVPN: %@. Quitting ends their sessions.",
+    "hu": "Más appok is használják a MacVPN-en keresztül: %@. A kilépés megszakítja a munkamenetüket."
+  },
+  "User name and password": {
+    "en": "User name and password",
+    "hu": "Felhasználónév és jelszó"
+  },
+  "Username": {
+    "en": "Username",
+    "hu": "Felhasználónév"
+  },
+  "Uses the CA certificates of Homebrew's OpenSSL, not the macOS Keychain. For a company CA, choose a custom CA file.": {
+    "en": "Uses the CA certificates of Homebrew's OpenSSL, not the macOS Keychain. For a company CA, choose a custom CA file.",
+    "hu": "A Homebrew OpenSSL CA-tanúsítványait használja, nem a macOS kulcskarikát. Céges CA-hoz válaszd a saját CA fájlt."
+  },
+  "VPN connections your administrator shares with the team. They update by themselves and are read-only here; you sign in with your own user name and password.": {
+    "en": "VPN connections your administrator shares with the team. They update by themselves and are read-only here; you sign in with your own user name and password.",
+    "hu": "A rendszergazda által a csapattal megosztott VPN-kapcsolatok. Maguktól frissülnek, és itt csak olvashatók; a saját felhasználóneveddel és jelszavaddal jelentkezel be."
+  },
+  "VPN tools": {
+    "en": "VPN tools",
+    "hu": "VPN eszközök"
+  },
+  "Validator not found: %@": {
+    "en": "Validator not found: %@",
+    "hu": "A validátor nem található: %@"
+  },
+  "Verifying the app…": {
+    "en": "Verifying the app…",
+    "hu": "Az alkalmazás ellenőrzése…"
+  },
+  "Version": {
+    "en": "Version",
+    "hu": "Verzió"
+  },
+  "Version %@ has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed.": {
+    "en": "Version %@ has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed.",
+    "hu": "A(z) %@ verzió megjelent, de a MacVPN fejlesztője még nem írta alá. Az aláírás után kerül felajánlásra."
+  },
+  "Version %@ was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.": {
+    "en": "Version %@ was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.",
+    "hu": "A(z) %@ verzió kevesebb mint 24 órája jelent meg. Később kerül felajánlásra, mert be van kapcsolva a „Csak a legalább 24 órája megjelent frissítések felajánlása” beállítás."
+  },
+  "Version %lld": {
+    "en": "Version %lld",
+    "hu": "%lld. verzió"
+  },
+  "Version %lld was written to %@.": {
+    "en": "Version %lld was written to %@.",
+    "hu": "A(z) %lld. verzió elkészült: %@."
+  },
+  "WARNING: server certificate verification is off (--cert-warn)": {
+    "en": "WARNING: server certificate verification is off (--cert-warn)",
+    "hu": "FIGYELEM: a szervertanúsítvány ellenőrzése ki van kapcsolva (--cert-warn)"
+  },
+  "Wait %d seconds before trying again.": {
+    "en": "Wait %d seconds before trying again.",
+    "hu": "Várj %d másodpercet, mielőtt újra próbálod."
+  },
+  "Wait a moment before the next attempt": {
+    "en": "Wait a moment before the next attempt",
+    "hu": "Várj egy kicsit a következő próbálkozás előtt"
+  },
+  "Waiting for authentication": {
+    "en": "Waiting for authentication",
+    "hu": "Hitelesítésre vár"
+  },
+  "Weak": {
+    "en": "Weak",
+    "hu": "Gyenge"
+  },
+  "Weak — easy to guess": {
+    "en": "Weak — easy to guess",
+    "hu": "Gyenge – könnyű kitalálni"
+  },
+  "Weakens the security of the tunnel (deprecated or insecure mode)": {
+    "en": "Weakens the security of the tunnel (deprecated or insecure mode)",
+    "hu": "Gyengíti a tunnel biztonságát (elavult vagy nem biztonságos mód)"
+  },
+  "Web Address": {
+    "en": "Web Address",
+    "hu": "Webcím"
+  },
+  "What should happen to its contents?": {
+    "en": "What should happen to its contents?",
+    "hu": "Mi legyen a tartalmával?"
+  },
+  "What the catalog contains": {
+    "en": "What the catalog contains",
+    "hu": "A katalógus tartalma"
+  },
+  "When an item already exists:": {
+    "en": "When an item already exists:",
+    "hu": "Ha egy elem már létezik:"
+  },
+  "WireGuard private key: everyone appears to the server as the same peer": {
+    "en": "WireGuard private key: everyone appears to the server as the same peer",
+    "hu": "WireGuard privát kulcs: a szerver mindenkit ugyanannak a peernek lát"
+  },
+  "Without a password, MacVPN asks for it when connecting and can save it here.": {
+    "en": "Without a password, MacVPN asks for it when connecting and can save it here.",
+    "hu": "Jelszó nélkül a MacVPN kapcsolódáskor kéri, és ide mentheti."
+  },
+  "Wrong number of arguments: %@": {
+    "en": "Wrong number of arguments: %@",
+    "hu": "Hibás argumentumszám: %@"
+  },
+  "Wrong password or recovery key": {
+    "en": "Wrong password or recovery key",
+    "hu": "Hibás jelszó vagy helyreállítási kulcs"
+  },
+  "Yellow": {
+    "en": "Yellow",
+    "hu": "Sárga"
+  },
+  "You are already subscribed to this catalog.": {
+    "en": "You are already subscribed to this catalog.",
+    "hu": "Erre a katalógusra már feliratkoztál."
+  },
+  "You can back up the whole vault into one encrypted file at any time from the menu’s settings.": {
+    "en": "You can back up the whole vault into one encrypted file at any time from the menu’s settings.",
+    "hu": "A teljes széfről bármikor készíthetsz egy titkosított biztonsági mentést a menü beállításaiban."
+  },
+  "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).": {
+    "en": "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).",
+    "hu": "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan sstp-client)."
+  },
+  "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.": {
+    "en": "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.",
+    "hu": "Az L2TP / Cisco profilokat a Rendszerbeállítások → Általános → Eszközkezelés alatt távolíthatod el."
+  },
+  "You enter your own user name and password for them when you first connect.": {
+    "en": "You enter your own user name and password for them when you first connect.",
+    "hu": "Az első csatlakozáskor a saját felhasználónevedet és jelszavadat adod meg hozzájuk."
+  },
+  "You have to remove the installed profile yourself in the Profiles pane that opens.": {
+    "en": "You have to remove the installed profile yourself in the Profiles pane that opens.",
+    "hu": "A telepített profilt a megnyíló Profilok panelen neked kell eltávolítanod."
+  },
+  "You will be asked when you connect": {
+    "en": "You will be asked when you connect",
+    "hu": "Csatlakozáskor rákérdez"
+  },
+  "Your MacVPN 1.1 data will not be imported. It will be deleted after the backup is restored.": {
+    "en": "Your MacVPN 1.1 data will not be imported. It will be deleted after the backup is restored.",
+    "hu": "A MacVPN 1.1 adataid nem kerülnek át. A mentés visszaállítása után törlődnek."
+  },
+  "Your data is in the vault": {
+    "en": "Your data is in the vault",
+    "hu": "Az adataid a széfben vannak"
+  },
+  "Your existing connections and saved passwords move into the vault, and the old copies are deleted after they were checked.": {
+    "en": "Your existing connections and saved passwords move into the vault, and the old copies are deleted after they were checked.",
+    "hu": "A meglévő kapcsolataid és mentett jelszavaid a széfbe kerülnek, a régi másolatok pedig ellenőrzés után törlődnek."
+  },
+  "Your recovery key": {
+    "en": "Your recovery key",
+    "hu": "A helyreállítási kulcsod"
+  },
+  "Your vault and its data were kept. MacVPN tries to finish the move of the old data again at the next launch, or now with Try Again.": {
+    "en": "Your vault and its data were kept. MacVPN tries to finish the move of the old data again at the next launch, or now with Try Again.",
+    "hu": "A széf és a benne lévő adatok megmaradtak. A MacVPN a következő indításkor újra megpróbálja befejezni a régi adatok áthelyezését, vagy most az Újra gombbal."
+  },
+  "access denied (check the access token)": {
+    "en": "access denied (check the access token)",
+    "hu": "hozzáférés megtagadva (ellenőrizd a hozzáférési tokent)"
+  },
+  "acknowledged risky directives:": {
+    "en": "acknowledged risky directives:",
+    "hu": "tudomásul vett kockázatos direktívák:"
+  },
+  "after": {
+    "en": "after",
+    "hu": "utána"
+  },
+  "and %lld more": {
+    "en": "and %lld more",
+    "hu": "és még %lld"
+  },
+  "authentication response passed to the management bridge (kind: %@)": {
+    "en": "authentication response passed to the management bridge (kind: %@)",
+    "hu": "hitelesítési válasz átadva a management közvetítőnek (típus: %@)"
+  },
+  "bash 4+ not found": {
+    "en": "bash 4+ not found",
+    "hu": "A bash 4+ nem található"
+  },
+  "bash 4+ not found (brew install bash)": {
+    "en": "bash 4+ not found (brew install bash)",
+    "hu": "A bash 4+ nem található (brew install bash)"
+  },
+  "before": {
+    "en": "before",
+    "hu": "előtte"
+  },
+  "brew error (%d)": {
+    "en": "brew error (%d)",
+    "hu": "brew hiba (%d)"
+  },
+  "bundle identifier %@, expected: %@": {
+    "en": "bundle identifier %@, expected: %@",
+    "hu": "a bundle azonosító %@, várt: %@"
+  },
+  "cannot read Info.plist": {
+    "en": "cannot read Info.plist",
+    "hu": "az Info.plist nem olvasható"
+  },
+  "cert=ca requires a <ca> block with a PEM certificate": {
+    "en": "cert=ca requires a <ca> block with a PEM certificate",
+    "hu": "A cert=ca mellé PEM tanúsítványt tartalmazó <ca> blokk kell"
+  },
+  "certificate not trusted": {
+    "en": "certificate not trusted",
+    "hu": "a tanúsítvány nem megbízható"
+  },
+  "changed since the last publish": {
+    "en": "changed since the last publish",
+    "hu": "módosult a legutóbbi közzététel óta"
+  },
+  "charon not found (brew install strongswan)": {
+    "en": "charon not found (brew install strongswan)",
+    "hu": "A charon nem található (brew install strongswan)"
+  },
+  "cleaning up after the failed connection attempt": {
+    "en": "cleaning up after the failed connection attempt",
+    "hu": "takarítás a sikertelen kapcsolódás után"
+  },
+  "closing the previous run": {
+    "en": "closing the previous run",
+    "hu": "korábbi futás lebontása"
+  },
+  "config copied: %@/config": {
+    "en": "config copied: %@/config",
+    "hu": "config másolva: %@/config"
+  },
+  "config is valid": {
+    "en": "config is valid",
+    "hu": "config érvényes"
+  },
+  "config written: %@/config": {
+    "en": "config written: %@/config",
+    "hu": "config kiírva: %@/config"
+  },
+  "connection closed": {
+    "en": "connection closed",
+    "hu": "kapcsolat bontva"
+  },
+  "connection established": {
+    "en": "connection established",
+    "hu": "kapcsolat felépült"
+  },
+  "creating %@ (required by sstpc/pppd)": {
+    "en": "creating %@ (required by sstpc/pppd)",
+    "hu": "%@ létrehozása (a sstpc/pppd igényli)"
+  },
+  "diagnostics": {
+    "en": "diagnostics",
+    "hu": "diagnosztika"
+  },
+  "exit code: %d": {
+    "en": "exit code: %d",
+    "hu": "kilépési kód: %d"
+  },
+  "interrupted (SIGTERM)": {
+    "en": "interrupted (SIGTERM)",
+    "hu": "megszakítva (SIGTERM)"
+  },
+  "kind mismatch: command line %@, running connection %@ – closing the running kind": {
+    "en": "kind mismatch: command line %@, running connection %@ – closing the running kind",
+    "hu": "típuseltérés: a parancssor %@, a futó kapcsolat %@ – a futó típust bontjuk"
+  },
+  "link pointing outside the bundle: %@": {
+    "en": "link pointing outside the bundle: %@",
+    "hu": "a bundle-ön kívülre mutató link: %@"
+  },
+  "log collection stopped": {
+    "en": "log collection stopped",
+    "hu": "naplógyűjtés leállítva"
+  },
+  "log stream did not start: %@": {
+    "en": "log stream did not start: %@",
+    "hu": "log stream nem indult: %@"
+  },
+  "log stream stopped": {
+    "en": "log stream stopped",
+    "hu": "log stream leállt"
+  },
+  "macOS is running MacVPN from a temporary location. Move the app to the Applications folder and open it from there.": {
+    "en": "macOS is running MacVPN from a temporary location. Move the app to the Applications folder and open it from there.",
+    "hu": "A macOS egy ideiglenes helyről futtatja a MacVPN-t. Helyezd az appot az Alkalmazások mappába, és onnan nyisd meg."
+  },
+  "macOS may ask once for access to the Keychain — choose Always Allow. This happens only once.": {
+    "en": "macOS may ask once for access to the Keychain — choose Always Allow. This happens only once.",
+    "hu": "A macOS egyszer hozzáférést kérhet a Keychainhez – válaszd a Mindig engedélyez gombot. Ez csak egyszer történik meg."
+  },
+  "macOS may ask up to %lld times for access to the Keychain — choose Always Allow each time. This happens only once.": {
+    "en": "macOS may ask up to %lld times for access to the Keychain — choose Always Allow each time. This happens only once.",
+    "hu": "A macOS legfeljebb %lld alkalommal kérhet hozzáférést a Keychainhez – minden alkalommal válaszd a Mindig engedélyez gombot. Ez csak egyszer történik meg."
+  },
+  "mvpn error (exit code: %d)": {
+    "en": "mvpn error (exit code: %d)",
+    "hu": "mvpn hiba (kilépési kód: %d)"
+  },
+  "mvpn-mgmt not found: %@ (reinstall the root layer in System Status)": {
+    "en": "mvpn-mgmt not found: %@ (reinstall the root layer in System Status)",
+    "hu": "A mvpn-mgmt nem található: %@ (telepítsd újra a root réteget a Rendszerállapotban)"
+  },
+  "native debug": {
+    "en": "native debug",
+    "hu": "natív debug"
+  },
+  "no mount point": {
+    "en": "no mount point",
+    "hu": "nincs csatolási pont"
+  },
+  "no running connection": {
+    "en": "no running connection",
+    "hu": "nincs futó kapcsolat"
+  },
+  "no valid type in the run directory, cleanup only": {
+    "en": "no valid type in the run directory, cleanup only",
+    "hu": "a futási könyvtárban nincs érvényes típus, csak takarítás"
+  },
+  "openvpn exited:": {
+    "en": "openvpn exited:",
+    "hu": "Az openvpn kilépett:"
+  },
+  "openvpn not found (brew install openvpn)": {
+    "en": "openvpn not found (brew install openvpn)",
+    "hu": "Az openvpn nem található (brew install openvpn)"
+  },
+  "or": {
+    "en": "or",
+    "hu": "vagy"
+  },
+  "pppd not found: %@": {
+    "en": "pppd not found: %@",
+    "hu": "A pppd nem található: %@"
+  },
+  "redirect to a non-HTTPS address": {
+    "en": "redirect to a non-HTTPS address",
+    "hu": "átirányítás nem HTTPS-címre"
+  },
+  "scutil error (exit code: %d)": {
+    "en": "scutil error (exit code: %d)",
+    "hu": "scutil hiba (kilépési kód: %d)"
+  },
+  "secrets block added (masked)": {
+    "en": "secrets block added (masked)",
+    "hu": "secrets blokk hozzáadva (maszkolva)"
+  },
+  "setenv not allowed": {
+    "en": "setenv not allowed",
+    "hu": "Nem engedélyezett setenv"
+  },
+  "setenv not allowed: %@": {
+    "en": "setenv not allowed: %@",
+    "hu": "Nem engedélyezett setenv: %@"
+  },
+  "setenv opt: missing directive": {
+    "en": "setenv opt: missing directive",
+    "hu": "setenv opt: hiányzó direktíva"
+  },
+  "setenv: missing argument": {
+    "en": "setenv: missing argument",
+    "hu": "setenv: hiányzó argumentum"
+  },
+  "signature verification failed: %@": {
+    "en": "signature verification failed: %@",
+    "hu": "az aláírás ellenőrzése sikertelen: %@"
+  },
+  "sstpc exited:": {
+    "en": "sstpc exited:",
+    "hu": "Az sstpc kilépett:"
+  },
+  "sstpc not found (brew install sstp-client)": {
+    "en": "sstpc not found (brew install sstp-client)",
+    "hu": "Az sstpc nem található (brew install sstp-client)"
+  },
+  "stale lock removed": {
+    "en": "stale lock removed",
+    "hu": "elárvult zár eltávolítva"
+  },
+  "swanctl --load-all failed": {
+    "en": "swanctl --load-all failed",
+    "hu": "A swanctl --load-all sikertelen"
+  },
+  "swanctl not found": {
+    "en": "swanctl not found",
+    "hu": "A swanctl nem található"
+  },
+  "swanctl not found (brew install strongswan)": {
+    "en": "swanctl not found (brew install strongswan)",
+    "hu": "A swanctl nem található (brew install strongswan)"
+  },
+  "the mounted disk image is not the downloaded and verified file": {
+    "en": "the mounted disk image is not the downloaded and verified file",
+    "hu": "a csatolt lemezkép nem a letöltött és ellenőrzött fájl"
+  },
+  "the server sent no DNS": {
+    "en": "the server sent no DNS",
+    "hu": "a szerver nem küldött DNS-t"
+  },
+  "unexpected hdiutil output": {
+    "en": "unexpected hdiutil output",
+    "hu": "értelmezhetetlen hdiutil kimenet"
+  },
+  "unexpected interface name, not recorded": {
+    "en": "unexpected interface name, not recorded",
+    "hu": "váratlan interfésznév, nem rögzítjük"
+  },
+  "version %@, expected: %@": {
+    "en": "version %@, expected: %@",
+    "hu": "a verzió %@, várt: %@"
+  },
+  "wg-quick not found": {
+    "en": "wg-quick not found",
+    "hu": "A wg-quick nem található"
+  },
+  "wg-quick not found (brew install wireguard-tools)": {
+    "en": "wg-quick not found (brew install wireguard-tools)",
+    "hu": "A wg-quick nem található (brew install wireguard-tools)"
+  },
+  "wg-quick up failed (details in the log)": {
+    "en": "wg-quick up failed (details in the log)",
+    "hu": "A wg-quick up sikertelen (részletek a naplóban)"
+  },
+  "wireguard-go not found (brew install wireguard-tools)": {
+    "en": "wireguard-go not found (brew install wireguard-tools)",
+    "hu": "A wireguard-go nem található (brew install wireguard-tools)"
+  },
+  "~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items": {
+    "en": "~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items",
+    "hu": "~/Library/Application Support/MacVPN a széffel, és a Keychainben a széf kulcsa és a régi MacVPN 1.1 bejegyzések"
+  }
+}

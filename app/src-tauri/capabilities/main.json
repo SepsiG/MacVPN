@@ -11,6 +11,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-get-view-model",
+    "allow-get-platform",
     "allow-connect",
     "allow-disconnect",
     "allow-pin",

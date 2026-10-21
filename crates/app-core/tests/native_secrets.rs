@@ -10,7 +10,7 @@
 mod common;
 
 use common::*;
-use macvpn_app_core::deps::{SecretField, SecretReader, SecretWriter, SystemService};
+use macvpn_app_core::deps::{SecretField, SecretReader, SecretWriter, SystemVpn};
 use macvpn_app_core::editor::{self, EditorDeps};
 use macvpn_app_core::vault::VaultLifecycle;
 use macvpn_app_core::{ConnectionManager, Dependencies};
@@ -72,13 +72,13 @@ impl Setup {
         let deps = Dependencies::new(
             self.fx.store.clone(),
             self.secrets.clone(),
-            self.fx.root.clone(),
+            self.fx.helper.clone(),
             self.fx.native.clone(),
         );
         self.fx.manager_with(deps)
     }
 
-    fn editor_deps(&self, manager: Arc<ConnectionManager>, profiles: Arc<MockProfiles>) -> EditorDeps {
+    fn editor_deps(&self, manager: Arc<ConnectionManager>, profiles: Arc<MobileconfigProfiles>) -> EditorDeps {
         EditorDeps {
             manager,
             store: self.fx.store.clone(),
@@ -115,6 +115,7 @@ fn option<'a>(start: &'a Start, entity: &str, key: &str) -> Option<&'a str> {
 
 /// A managed L2TP and Cisco connection start with the PSK, the account name and the password from the vault.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_native_start_passes_the_vault_secrets() {
     let s = Setup::new();
     let l2tp = s.native_connection("Office L2TP", VPNKind::L2tp, L2TP_SERVICE);
@@ -125,8 +126,8 @@ fn managed_native_start_passes_the_vault_secrets() {
         s.secrets.set(password, &c.id, SecretField::Password);
     }
     s.fx.native.set_list(Ok(vec![
-        SystemService::new(L2TP_SERVICE, "Office L2TP", "L2TP", "Disconnected"),
-        SystemService::new(CISCO_SERVICE, "Office Cisco", "Cisco IPsec", "Disconnected"),
+        SystemVpn::new(L2TP_SERVICE, "Office L2TP", "L2TP", "Disconnected"),
+        SystemVpn::new(CISCO_SERVICE, "Office Cisco", "Cisco IPsec", "Disconnected"),
     ]));
     let m = s.manager();
     m.connect(&l2tp, false);
@@ -146,9 +147,10 @@ fn managed_native_start_passes_the_vault_secrets() {
 
 /// A system VPN's PSK and password are vault rows keyed by its service ID, and are passed at start.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_vpn_start_passes_the_vault_secrets() {
     let s = Setup::new();
-    let service = SystemService::new(L2TP_SERVICE, "Office L2TP", "L2TP", "Disconnected");
+    let service = SystemVpn::new(L2TP_SERVICE, "Office L2TP", "L2TP", "Disconnected");
     let id = service.secret_id().unwrap();
     s.secrets.set("system-psk", &id, SecretField::Psk);
     s.secrets.set("system-pw", &id, SecretField::Password);
@@ -166,10 +168,11 @@ fn system_vpn_start_passes_the_vault_secrets() {
 
 /// The system-VPN editor saves into the vault and "Forget" clears the vault rows.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_vpn_editor_saves_and_forgets_in_the_vault() {
     let s = Setup::new();
-    let service = SystemService::new(CISCO_SERVICE, "Office Cisco", "Cisco IPsec", "Disconnected");
-    let profiles = Arc::new(MockProfiles::default());
+    let service = SystemVpn::new(CISCO_SERVICE, "Office Cisco", "Cisco IPsec", "Disconnected");
+    let profiles = Arc::new(MobileconfigProfiles::default());
     let deps = s.editor_deps(s.manager(), profiles);
     assert_eq!(
         editor::save_system_secrets(&deps, &service, Some("cisco-psk"), Some("cisco-pw"), OTPSetting::default()),
@@ -185,10 +188,11 @@ fn system_vpn_editor_saves_and_forgets_in_the_vault() {
 /// Saving a native connection: the profile embeds the PSK (the "PSK stays in the profile" branch) but never the
 /// password; MacVPN's copies of both go into the vault. A later save without a new PSK embeds the vault's copy.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_save_keeps_the_psk_in_the_profile_and_both_secrets_in_the_vault() {
     let s = Setup::new();
     let c = s.native_connection("Office L2TP", VPNKind::L2tp, L2TP_SERVICE);
-    let profiles = Arc::new(MockProfiles::default());
+    let profiles = Arc::new(MobileconfigProfiles::default());
     let deps = s.editor_deps(s.manager(), profiles.clone());
     let settings = c.native.clone().unwrap();
 

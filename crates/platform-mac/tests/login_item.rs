@@ -1,5 +1,6 @@
 //! Port of `LoginItemTests.swift` and `LaunchAgentLoginItemTests.swift`. Always with a temporary directory and a
 //! mock service: the real `~/Library/LaunchAgents` and the real login item are never touched.
+#![cfg(target_os = "macos")]
 
 mod common;
 

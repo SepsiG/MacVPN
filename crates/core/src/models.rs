@@ -51,7 +51,8 @@ impl VPNKind {
         }
     }
 
-    /// Native macOS VPN (scutil + mobileconfig), not run by the root layer.
+    /// A VPN the operating system runs (a system VPN with a native profile; on macOS scutil + mobileconfig), not
+    /// the helper.
     pub fn is_native(self) -> bool {
         matches!(self, VPNKind::L2tp | VPNKind::Cisco)
     }
@@ -287,10 +288,10 @@ pub struct Connection {
     pub name: String,
     pub kind: VPNKind,
     pub created_at: Date,
-    /// Native connection: the service name shown by scutil.
+    /// Native connection: the system VPN's name (on macOS the service name shown by scutil).
     pub native_service_name: Option<String>,
-    /// Native connection: the scutil ID of the installed service, once it appeared (bound by name and server
-    /// address). From then on start / stop / status use this, not the name.
+    /// Native connection: the system's ID of the installed VPN (on macOS the scutil service ID), once it appeared
+    /// (bound by name and server address). From then on start / stop / status use this, not the name.
     pub native_service_id: Option<String>,
     /// Native settings.
     pub native: Option<NativeSettings>,
@@ -465,7 +466,7 @@ pub struct Secrets {
     pub challenge_packed: bool,
 }
 
-/// Wipes every value (the connect paths call it once the root layer / `SCNetworkConnection` has them). No `Drop`:
+/// Wipes every value (the connect paths call it once the helper or the system VPN has them). No `Drop`:
 /// the struct-update syntax (`..base.clone()`) used across the workspace moves out of `Secrets`.
 impl zeroize::Zeroize for Secrets {
     fn zeroize(&mut self) {

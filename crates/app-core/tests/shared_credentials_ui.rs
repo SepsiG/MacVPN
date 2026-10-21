@@ -5,7 +5,7 @@
 
 mod common;
 
-use common::{MockNative, MockProfiles, MockRoot, TempDir, clock_at};
+use common::{MobileconfigProfiles, MockHelper, MockNative, TempDir, clock_at};
 use macvpn_app_core::connections::ConnectionsModel;
 use macvpn_app_core::deps::{FolderOp, FolderOpResult, SecretField, SecretReader, SecretWriter};
 use macvpn_app_core::editor::{EditorDeps, EditorFields};
@@ -53,7 +53,7 @@ impl Fixture {
         let mut deps = Dependencies::new(
             store.clone(),
             secrets.clone(),
-            Arc::new(MockRoot::default()),
+            Arc::new(MockHelper::default()),
             Arc::new(MockNative::default()),
         );
         deps.folders = Some(Arc::new(VaultFolders::new(vault.clone())));
@@ -63,7 +63,7 @@ impl Fixture {
             store: store.clone(),
             secrets: secrets.clone(),
             secret_writer: secrets.clone(),
-            profiles: Arc::new(MockProfiles::default()),
+            profiles: Arc::new(MobileconfigProfiles::default()),
             clock: clock_at(1_000_000.0),
         }));
         let creds = SharedCredentials::new(vault.clone());
@@ -131,6 +131,7 @@ fn pw(s: &str) -> Option<Zeroizing<String>> {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_section_lists_credentials_with_their_use_count_and_never_a_password() {
     let f = Fixture::new();
     let one = f.openvpn("One", None);
@@ -148,6 +149,7 @@ fn the_section_lists_credentials_with_their_use_count_and_never_a_password() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn add_edit_and_rename_check_the_name_and_the_values() {
     let f = Fixture::new();
     f.model.add_credential("Office AD", "alice", None).unwrap();
@@ -172,6 +174,7 @@ fn add_edit_and_rename_check_the_name_and_the_values() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_of_a_used_credential_names_the_connections_and_copies_into_each() {
     let f = Fixture::new();
     let one = f.openvpn("Office VPN", None);
@@ -198,6 +201,7 @@ fn delete_of_a_used_credential_names_the_connections_and_copies_into_each() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_linked_editor_shows_no_username_and_saves_none() {
     let f = Fixture::new();
     let one = f.openvpn("One", Some(("own-user", "own-pass")));
@@ -248,6 +252,7 @@ fn a_linked_editor_shows_no_username_and_saves_none() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_from_connection_links_the_ticked_matches_only() {
     let f = Fixture::new();
     let source = f.openvpn("Source", Some(("alice", "same")));
@@ -272,6 +277,7 @@ fn create_from_connection_links_the_ticked_matches_only() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn export_names_the_credential_and_never_a_value() {
     let f = Fixture::new();
     let one = f.openvpn("One", Some(("alice", "CanaryShared")));
@@ -284,6 +290,7 @@ fn export_names_the_credential_and_never_a_value() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn one_meta_line_carries_the_folder_and_the_credential_both_ways() {
     let f = Fixture::new();
     let one = f.openvpn("One", Some(("alice", "CanaryShared")));
@@ -318,6 +325,7 @@ fn one_meta_line_carries_the_folder_and_the_credential_both_ways() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_asks_before_using_a_credential_of_the_same_name() {
     let f = Fixture::new();
     f.model.add_credential("Office AD", "alice", pw("shared")).unwrap();
@@ -347,6 +355,7 @@ fn import_asks_before_using_a_credential_of_the_same_name() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_of_an_unknown_name_offers_the_credentials_or_the_own_fields() {
     let f = Fixture::new();
     let file = format!("# macvpn-meta: {{\"credentialName\":\"Head Office\"}}\n{CONFIG}");
@@ -373,6 +382,7 @@ fn import_of_an_unknown_name_offers_the_credentials_or_the_own_fields() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn without_a_vault_or_locked_the_section_says_so() {
     let f = Fixture::new();
     let one = f.openvpn("One", Some(("alice", "x")));

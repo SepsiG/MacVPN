@@ -16,7 +16,7 @@ jobs:
           # The exact version pinned in rust-toolchain.toml (which also makes rustup use it in the repository).
           RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
           [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
-          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t aarch64-apple-darwin,x86_64-apple-darwin
+          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
           [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
           rustc --version
           cargo --version
@@ -76,7 +76,7 @@ jobs:
           # The exact version pinned in rust-toolchain.toml (which also makes rustup use it in the repository).
           RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
           [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
-          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t aarch64-apple-darwin,x86_64-apple-darwin
+          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
           [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
           rustc --version
       - name: DMG build (universal app, signed mvpn, Info.plist checks)
@@ -91,3 +91,63 @@ jobs:
           ls -l dist/MacVPN-*.dmg
       - name: Root layer tests against the signed universal mvpn
         run: MVPN_IMPL=rust MVPN_BIN="$PWD/dist/MacVPN.app/Contents/Resources/root/mvpn" scripts/test-root.sh
+  windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      # openssl-src (SQLCipher's vendored OpenSSL) refuses Git Bash's MSYS Perl; the image's Strawberry Perl
+      # produces Windows paths (the Task 2 spike).
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      # A CRLF checkout breaks the toolchain step's sed (a trailing \r) and the byte-compared fixtures.
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Rust toolchain (both Windows targets)
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+      - name: cargo fmt
+        run: cargo fmt --all --check
+      - name: cargo clippy (x64)
+        run: cargo clippy --workspace --all-targets --locked --target x86_64-pc-windows-msvc -- -D warnings
+      - name: cargo check (ARM64, debug and release)
+        run: |
+          cargo check --workspace --all-targets --locked --target aarch64-pc-windows-msvc
+          cargo check --workspace --all-targets --locked --release --target aarch64-pc-windows-msvc
+      - name: cargo test (platform-independent crates)
+        run: CI=1 cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper --lib --tests --no-fail-fast
+      - name: Tests ignored on Windows (private files, phase 2 drives this to zero)
+        run: |
+          CI=1 cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper --lib --tests -- --list --ignored > "$RUNNER_TEMP/ignored.txt"
+          echo "ignored tests: $(grep -c ': test' "$RUNNER_TEMP/ignored.txt" || true)"
+  windows-node:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: app/ui
+    steps:
+      - name: Check out with LF line endings
+        working-directory: .
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.8.2"
+          # No automatic cache: release builds must not restore a cache written elsewhere.
+          package-manager-cache: false
+      - name: npm ci
+        run: npm ci --no-audit --no-fund
+      - name: npm test (language rule, format, l10n coverage of the UI)
+        run: npm test

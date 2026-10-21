@@ -15,17 +15,9 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-/// GitHub's `releases/latest` (the platform layer's HTTP client over the core's parser).
-pub trait ReleaseSource: Send + Sync {
-    fn latest_release(&self, repo_id: i64, repo: &str) -> Result<Release, String>;
-}
-
-/// `MacVPNUpdateRepoID` (the query) and `MacVPNUpdateRepo` (the asset checks, Help): both or no update check.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateSource {
-    pub repo_id: i64,
-    pub repo: String,
-}
+/// GitHub's `releases/latest` and the update source: defined in `macvpn-platform-api` and re-exported here (their
+/// old home).
+pub use macvpn_platform_api::{ReleaseSource, UpdateSource};
 
 /// What the menu and the Update window show about updates.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]

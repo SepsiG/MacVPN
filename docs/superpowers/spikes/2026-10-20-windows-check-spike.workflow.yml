@@ -1,0 +1,156 @@
+# Throwaway probe for the Windows check spike (docs/superpowers/spikes/2026-10-20-windows-check-spike.md).
+#
+# Not an active workflow: it lives here so the repository keeps the exact probe. To run it, copy it to
+# .github/workflows/windows-spike.yml on a throwaway branch `spike/windows-check` (or in a fork), push that branch,
+# read the run's log into the spike report's "windows-latest" section, then delete the branch. Never merge it.
+#
+# It changes nothing in the repository: the scratch Windows rusqlite line and the lock update happen in the runner's
+# checkout only.
+name: windows-spike (throwaway)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [spike/windows-check]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [x86_64-pc-windows-msvc, aarch64-pc-windows-msvc]
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      T: ${{ matrix.target }}
+    steps:
+      # The image's git may convert to CRLF on checkout; that would break the toolchain step's sed (a trailing \r in
+      # the version) and every byte-compared fixture. Record the setting, then check out with LF.
+      - name: Line endings
+        run: |
+          git config --show-origin --get core.autocrlf || echo "core.autocrlf: unset"
+          git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Rust toolchain (both Windows targets)
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustup --version
+
+      - name: Image tools (Perl, NASM, MSVC ARM64)
+        run: |
+          echo "perl on the Git Bash PATH:"; which -a perl || true
+          perl -e 'print "  $^X $^V $^O\n"' || true
+          if [ -x /c/Strawberry/perl/bin/perl.exe ]; then
+            /c/Strawberry/perl/bin/perl.exe -e 'print "Strawberry: $^X $^V $^O\n"'
+          else
+            echo "Strawberry Perl: not at C:\\Strawberry"
+          fi
+          cmd //c "where perl" || true
+          cmd //c "where nasm" || echo "nasm: not on the cmd PATH (openssl-src then configures no-asm)"
+          VSWHERE="/c/Program Files (x86)/Microsoft Visual Studio/Installer/vswhere.exe"
+          echo "VS with ARM64 tools:"
+          "$VSWHERE" -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath || true
+          df -h . | tail -1
+
+      - name: SQLCipher + vendored OpenSSL probe crate (cold, then warm registry, then no-op)
+        run: |
+          P="$RUNNER_TEMP/sqlcipher-probe"
+          mkdir -p "$P/src"
+          cp rust-toolchain.toml "$P/"
+          cat > "$P/Cargo.toml" <<'EOF'
+          [package]
+          name = "sqlcipher-probe"
+          version = "0.0.0"
+          edition = "2024"
+          publish = false
+
+          [dependencies]
+          rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"] }
+          libsqlite3-sys = "=0.38.2"
+          openssl-sys = "=0.9.117"
+          openssl-src = "=300.6.1"
+          EOF
+          cat > "$P/src/main.rs" <<'EOF'
+          use rusqlite::Connection;
+
+          fn main() -> rusqlite::Result<()> {
+              let path = std::env::temp_dir().join("sqlcipher-probe.db");
+              let _ = std::fs::remove_file(&path);
+              let db = Connection::open(&path)?;
+              db.pragma_update(None, "key", "probe-key")?;
+              let version: String = db.query_row("PRAGMA cipher_version", [], |r| r.get(0))?;
+              let provider: String = db.query_row("PRAGMA cipher_provider", [], |r| r.get(0))?;
+              let provider_version: String = db.query_row("PRAGMA cipher_provider_version", [], |r| r.get(0))?;
+              db.execute_batch("CREATE TABLE t(x INTEGER); INSERT INTO t VALUES (42);")?;
+              drop(db);
+              let db = Connection::open(&path)?;
+              db.pragma_update(None, "key", "probe-key")?;
+              let x: i64 = db.query_row("SELECT x FROM t", [], |r| r.get(0))?;
+              assert_eq!(x, 42);
+              println!("cipher_version={version} provider={provider} provider_version={provider_version} roundtrip={x}");
+              Ok(())
+          }
+          EOF
+          cd "$P"
+          build() {
+            local start=$SECONDS
+            if cargo build --target "$T" > build.log 2>&1; then
+              echo "RESULT $1: ok in $((SECONDS - start)) s"
+              return 0
+            fi
+            echo "RESULT $1: FAILED after $((SECONDS - start)) s"
+            grep -E 'warning: openssl|error|perl|nasm|nmake|cl\.exe|Windows like' build.log | head -40
+            return 1
+          }
+          if build "cold, perl from the Git Bash PATH"; then
+            PERL_CHOICE=path
+          else
+            rm -rf target
+            export OPENSSL_SRC_PERL='C:\Strawberry\perl\bin\perl.exe'
+            build "cold, OPENSSL_SRC_PERL=Strawberry" || exit 1
+            PERL_CHOICE=strawberry
+            echo "OPENSSL_SRC_PERL=$OPENSSL_SRC_PERL" >> "$GITHUB_ENV"
+          fi
+          grep -E 'Enable the assembly|no-asm' -r target/"$T"/debug/build/openssl-sys-*/output 2>/dev/null | head -3 || true
+          rm -rf target
+          build "registry warm, target cold ($PERL_CHOICE perl)"
+          build "no-op rebuild"
+          if [ "$T" = x86_64-pc-windows-msvc ]; then
+            ./target/"$T"/debug/sqlcipher-probe.exe
+          fi
+
+      - name: Scratch Windows rusqlite line in crates/core (runner checkout only)
+        run: |
+          python - <<'EOF'
+          p = 'crates/core/Cargo.toml'
+          s = open(p, encoding='utf-8').read()
+          line = ("[target.'cfg(windows)'.dependencies]\n"
+                  'rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }\n\n')
+          s = s.replace('[features]\n', line + '[features]\n', 1)
+          open(p, 'w', encoding='utf-8', newline='\n').write(s)
+          EOF
+          cargo update -w
+          git diff --stat
+          grep -A1 -E '^name = "openssl' Cargo.lock
+
+      - name: Workspace check today (expected to fail in Rust code; records the to-do list)
+        continue-on-error: true
+        run: |
+          echo "OPENSSL_SRC_PERL=${OPENSSL_SRC_PERL:-<unset: PATH perl>}"
+          start=$SECONDS
+          cargo check --workspace --all-targets --keep-going --target "$T" > ws.log 2>&1 && echo "workspace check passed" || echo "workspace check failed"
+          echo "time: $((SECONDS - start)) s"
+          echo "build scripts that failed:"; grep -E '^error: failed to run custom build' ws.log || echo "  none"
+          echo "crates that failed:"; grep -E '^error: could not compile' ws.log || echo "  none"
+          grep -E -A3 '^error(\[|:)' ws.log | grep -E -- '-->' | sed 's/:[0-9]*:[0-9]*$//' | sort | uniq -c

@@ -1,5 +1,5 @@
 //! The system VPNs' (scutil service ID) "code appended to the password" settings:
-//! `~/Library/Application Support/MacVPN/system-otp.json` (0600, atomic write). Not secret, not exported.
+//! `system-otp.json` in the app's data directory (`Product::data_dir`); 0600, atomic write. Not secret, not exported.
 //! Port of `SystemOTPStore` (`MFA.swift`).
 
 use crate::models::OTPSetting;

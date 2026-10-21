@@ -65,25 +65,16 @@ pub fn sync(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || apply(&handle));
 }
 
-#[cfg(target_os = "macos")]
 fn apply(app: &AppHandle) {
     track_shown(app);
-    // The policy last set (the app starts as `Accessory`, see `main`). Main thread only.
+    // The presence last set (the app starts without a Dock icon, see `platform::configure_app`). Main thread only.
     static SHOWN: AtomicBool = AtomicBool::new(false);
     let windows = app.webview_windows();
     let show = shows_icon(windows.keys().map(String::as_str));
     if SHOWN.swap(show, Ordering::Relaxed) == show {
         return;
     }
-    let policy = if show { tauri::ActivationPolicy::Regular } else { tauri::ActivationPolicy::Accessory };
-    if let Err(e) = app.set_activation_policy(policy) {
-        eprintln!("MacVPN: activation policy: {e}");
-    }
-}
-
-#[cfg(not(target_os = "macos"))]
-fn apply(app: &AppHandle) {
-    track_shown(app);
+    crate::platform::set_window_presence(app, show);
 }
 
 /// A click on the Dock icon (`RunEvent::Reopen`): the open real windows come forward (minimized ones too), the one

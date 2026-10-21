@@ -4,6 +4,7 @@
 //! in memory until the connection starts.
 
 use crate::date::Date;
+use crate::fsx;
 use crate::l10n;
 use crate::models::{OTPSeparator, Secrets, VPNKind, uuid_string};
 use crate::swift_json;
@@ -530,18 +531,14 @@ pub(crate) fn json_int(v: &Value) -> Option<i64> {
 }
 
 impl AuthUIState {
-    pub const DEFAULT_DIRECTORY: &'static str = "/var/run/macvpn-ui";
-
     pub fn new(seq: i64, state: AuthUIStateKind) -> Self {
         AuthUIState { v: 1, seq, state, method: None, text: None, echo: None, url: None, deadline: None }
     }
 
-    pub fn path(id: &Uuid) -> String {
-        Self::path_in(id, Self::DEFAULT_DIRECTORY)
-    }
-
-    pub fn path_in(id: &Uuid, base: &str) -> String {
-        format!("{base}/{}.json", uuid_string(id))
+    /// `<dir>/<id>.json`: `dir` is the platform's state directory (macOS: `mvpn_client::UI_STATE_DIR`, shared with
+    /// the helper's `UI_BASE`).
+    pub fn path(dir: &std::path::Path, id: &Uuid) -> std::path::PathBuf {
+        dir.join(format!("{}.json", uuid_string(id)))
     }
 
     /// Strict reading: at most 8 KB, known version, the text sanitized, the URL checked again (not https: none).
@@ -617,14 +614,11 @@ impl AuthUIState {
         self.deadline.map(Date::from_time_interval_since_1970)
     }
 
-    /// Safe reading: a regular file (no symlink followed), owned by `expected_uid`, at most 8 KB.
-    pub fn read(path: &std::path::Path, expected_uid: u32) -> Option<AuthUIState> {
+    /// Safe reading: a regular file (no symlink followed, a FIFO never blocks), owned by `expected`, at most 8 KB.
+    pub fn read(path: &std::path::Path, expected: &fsx::FileOwner) -> Option<AuthUIState> {
         use std::io::Read;
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-        let mut file =
-            std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path).ok()?;
-        let meta = file.metadata().ok()?;
-        if !meta.file_type().is_file() || meta.uid() != expected_uid || meta.len() > 8192 {
+        let (mut file, meta) = fsx::open_regular(path, fsx::OpenFor::Read, fsx::Follow::No, false).ok()?;
+        if fsx::owner(&meta).ok()? != *expected || meta.len() > 8192 {
             return None;
         }
         let mut data = Vec::with_capacity(meta.len() as usize);

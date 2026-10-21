@@ -235,6 +235,7 @@ fn lifecycle(tmp: &TempDir, store: Arc<MemoryKeyStore>) -> VaultLifecycle {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_launch_decision_for_the_three_cases() {
     // No vault, no old data: a fresh start.
     let tmp = TempDir::new();

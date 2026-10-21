@@ -14,11 +14,10 @@
 //! [`CatalogError::Unavailable`] (the errnos of spike decision B2), never an error storm.
 
 use super::format::{CatalogError, MAX_CATALOG_BYTES};
+use crate::fsx::{self, Follow, OpenFor};
 use std::fmt;
-use std::fs::OpenOptions;
 use std::io::{self, Read};
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
 /// The longest URL accepted, in bytes.
@@ -353,72 +352,32 @@ fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// The errnos that mean "the source cannot be reached right now" (spike decision B2).
-fn is_unavailable(e: &io::Error) -> bool {
-    matches!(
-        e.raw_os_error(),
-        Some(
-            libc::ENOENT
-                | libc::ENOTDIR
-                | libc::ENXIO
-                | libc::EIO
-                | libc::EHOSTDOWN
-                | libc::EHOSTUNREACH
-                | libc::ENETDOWN
-                | libc::ENETUNREACH
-                | libc::ENETRESET
-                | libc::ECONNABORTED
-                | libc::ECONNRESET
-                | libc::ECONNREFUSED
-                | libc::ENOTCONN
-                | libc::ETIMEDOUT
-                | libc::ESTALE
-                | libc::EDEADLK
-                | libc::EAGAIN
-        )
-    )
-}
-
 fn not_regular() -> CatalogError {
     CatalogError::Io("not a regular file".into())
 }
 
+/// The errors that mean "the source cannot be reached right now" (spike decision B2) are
+/// [`CatalogError::Unavailable`]; a symlink is "not a regular file".
 fn read_error(e: io::Error, path: &Path) -> CatalogError {
-    if is_unavailable(&e) {
+    if fsx::is_unavailable(&e) {
         return CatalogError::Unavailable(file_name(path));
     }
-    if e.raw_os_error() == Some(libc::ELOOP) {
+    if fsx::is_symlink_refused(&e) {
         return not_regular();
     }
     CatalogError::Io(format!("cannot read the team catalog file ({e})"))
 }
 
-/// Clears `O_NONBLOCK` (set for the open, so a FIFO never blocks it) without `unsafe`: `set_nonblocking` of the
-/// std socket type is `ioctl(FIONBIO)`, which works on any descriptor (as `import_export::clear_nonblocking`).
-fn clear_nonblocking(file: std::fs::File) -> Option<std::fs::File> {
-    use std::os::fd::OwnedFd;
-    let stream = std::os::unix::net::UnixStream::from(OwnedFd::from(file));
-    stream.set_nonblocking(false).ok()?;
-    Some(std::fs::File::from(OwnedFd::from(stream)))
-}
-
 /// Reads a catalog file source (see the module docs). The app reads catalog files only through this, on a worker
 /// thread with a timeout (Task 10).
 pub fn read_catalog_file(path: &Path) -> Result<Vec<u8>, CatalogError> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
-        .map_err(|e| read_error(e, path))?;
-    let meta = file.metadata().map_err(|e| read_error(e, path))?;
-    if !meta.file_type().is_file() {
-        return Err(not_regular());
-    }
+    // `open_regular` switches the descriptor back to blocking reads (a network share returns EAGAIN on a
+    // non-blocking read).
+    let (file, meta) = fsx::open_regular(path, OpenFor::Read, Follow::No, false)
+        .map_err(|e| if fsx::is_not_regular_file(&e) { not_regular() } else { read_error(e, path) })?;
     if meta.len() > MAX_CATALOG_BYTES as u64 {
         return Err(CatalogError::TooLarge);
     }
-    // A regular file: the read itself blocks normally (a network share returns EAGAIN on a non-blocking read).
-    let file = clear_nonblocking(file).ok_or_else(|| CatalogError::Io("cannot read the team catalog file".into()))?;
     let mut bytes = Vec::with_capacity(meta.len() as usize);
     file.take(MAX_CATALOG_BYTES as u64 + 1).read_to_end(&mut bytes).map_err(|e| read_error(e, path))?;
     if bytes.len() > MAX_CATALOG_BYTES {

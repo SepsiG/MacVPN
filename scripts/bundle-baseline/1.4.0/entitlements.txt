@@ -1,0 +1,4 @@
+Contents/MacOS/MacVPN:
+
+Contents/Resources/root/mvpn:
+

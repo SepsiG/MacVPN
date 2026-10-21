@@ -5,7 +5,11 @@ mod common;
 
 use common::*;
 use macvpn_core::l10n::{self, AppLanguage};
-use macvpn_core::validators::openvpn::{self, FORBIDDEN, REASON_LISTENS, REASON_UNKNOWN, RISKY_REASONS};
+use macvpn_core::target_os::TargetOs;
+use macvpn_core::validators::openvpn::{
+    self, FORBIDDEN, REASON_LISTENS, REASON_PLATFORM, REASON_PLATFORM_WINDOWS, REASON_SERVICE_OWNED, REASON_UNKNOWN,
+    RISKY_REASONS, platform_reasons,
+};
 use macvpn_core::validators::{OpenVPNTier, OpenVPNValidation, OpenVPNValidator, RiskyFinding};
 use std::collections::HashSet;
 
@@ -17,6 +21,10 @@ fn en() {
 
 fn check(body: &str, ack: &[&str]) -> OpenVPNValidation {
     OpenVPNValidator.validate_full(&format!("{BASE}{body}\n"), &set(ack))
+}
+
+fn check_for(os: TargetOs, body: &str, ack: &[&str]) -> OpenVPNValidation {
+    OpenVPNValidator.validate_full_for(os, &format!("{BASE}{body}\n"), &set(ack))
 }
 
 fn tier(d: &str) -> OpenVPNTier {
@@ -39,6 +47,7 @@ fn has_explicit_tier(name: &str) -> bool {
     name == "setenv"
         || OpenVPNValidator::has_argument_spec(name)
         || RISKY_REASONS.contains_key(name)
+        || platform_reasons(TargetOs::host()).contains_key(name)
         || FORBIDDEN.contains(name)
 }
 
@@ -111,11 +120,18 @@ fn documentation_lists_every_directive() {
     let doc = docs();
     let mut names: HashSet<&str> = OpenVPNValidator::allowed();
     names.extend(RISKY_REASONS.keys());
+    for os in TargetOs::ALL {
+        names.extend(platform_reasons(os).keys());
+    }
     names.extend(FORBIDDEN.iter());
     for name in names {
         assert!(doc.contains(&format!("`{name}`")), "{name}");
     }
-    for reason in RISKY_REASONS.values().collect::<HashSet<_>>() {
+    let mut reasons: HashSet<&str> = RISKY_REASONS.values().copied().collect();
+    for os in TargetOs::ALL {
+        reasons.extend(platform_reasons(os).values());
+    }
+    for reason in reasons {
         assert!(doc.contains(reason), "{reason}");
     }
 }
@@ -124,6 +140,9 @@ fn documentation_lists_every_directive() {
 fn every_reason_is_translated() {
     en();
     let mut reasons: HashSet<&str> = RISKY_REASONS.values().copied().collect();
+    for os in TargetOs::ALL {
+        reasons.extend(platform_reasons(os).values());
+    }
     reasons.insert(REASON_UNKNOWN);
     for key in reasons {
         assert!(l10n::hungarian(key).is_some(), "{key}");
@@ -675,4 +694,143 @@ fn hint_and_hungarian_reason() {
     lang(AppLanguage::Hu);
     let r = check("user nobody", &[]);
     assert_eq!(r.risky[0].reason(), l10n::hungarian(openvpn::REASON_PRIVILEGE_DROP).unwrap());
+}
+
+// MARK: The 1.4 golden
+
+/// The tier and the risky reason of every directive with an explicit tier, as 1.4 classified them
+/// (`fixtures/openvpn-tiers-1.4.0.txt`, generated once on 1.4.1, whose tiers equal 1.4.0's). One line per
+/// directive: `name<TAB>tier<TAB>reason key` (`-` when not risky), sorted by name.
+fn tier_lines() -> Vec<String> {
+    let macos = TargetOs::MacOs;
+    let mut names: Vec<&str> = OpenVPNValidator::allowed().into_iter().collect();
+    names.extend(RISKY_REASONS.keys());
+    names.extend(platform_reasons(macos).keys());
+    names.extend(FORBIDDEN.iter());
+    names.push("setenv");
+    names.sort_unstable();
+    names.dedup();
+    names
+        .into_iter()
+        .map(|d| {
+            let tier = OpenVPNValidator::tier_for(macos, d);
+            let reason = match tier {
+                OpenVPNTier::Risky => check_for(macos, d, &[]).risky.first().map_or("?", |f| f.reason_key),
+                _ => "-",
+            };
+            format!("{d}\t{}\t{reason}", tier.raw_value())
+        })
+        .collect()
+}
+
+#[test]
+fn macos_tiers_equal_the_1_4_golden() {
+    en();
+    let path = repo_root().join("crates/core/tests/fixtures/openvpn-tiers-1.4.0.txt");
+    let now = tier_lines().join("\n") + "\n";
+    assert_eq!(now, std::fs::read_to_string(&path).unwrap());
+}
+
+// MARK: The per-OS platform tier
+
+#[test]
+fn macos_platform_tier_is_the_1_4_table() {
+    en();
+    let mut names: Vec<&str> = platform_reasons(TargetOs::MacOs).keys().copied().collect();
+    names.sort_unstable();
+    let expected = [
+        "allow-nonadmin",
+        "cryptoapicert",
+        "dhcp-internal",
+        "msg-channel",
+        "rdns-internal",
+        "service",
+        "setcon",
+        "win-sys",
+    ];
+    assert_eq!(names, expected);
+    assert!(platform_reasons(TargetOs::MacOs).values().all(|r| *r == REASON_PLATFORM));
+    for d in expected {
+        assert!(!RISKY_REASONS.contains_key(d), "{d}");
+        assert_eq!(OpenVPNValidator::tier_for(TargetOs::MacOs, d), OpenVPNTier::Risky, "{d}");
+        let r = check_for(TargetOs::MacOs, &format!("{d} x"), &[]);
+        assert_eq!(r.issues, [], "{d}");
+        assert_eq!(r.risky[0].reason_key, REASON_PLATFORM, "{d}");
+    }
+    // `cryptoapicert` keeps the risky-argument rule on macOS, not the Windows argument spec.
+    assert_eq!(check_for(TargetOs::MacOs, "cryptoapicert \"THUMB:aa bb\"", &["cryptoapicert"]).all_issues(), []);
+    assert_eq!(check_for(TargetOs::MacOs, "cryptoapicert x", &["cryptoapicert"]).all_issues(), []);
+}
+
+#[test]
+fn windows_platform_tier() {
+    en();
+    let w = TargetOs::Windows;
+    let r = check_for(w, "win-sys env", &[]);
+    assert_eq!(r.issues, []);
+    assert_eq!(r.risky[0].reason_key, REASON_SERVICE_OWNED);
+    for d in ["service", "msg-channel", "win-sys", "allow-nonadmin", "rdns-internal", "dhcp-internal"] {
+        assert_eq!(OpenVPNValidator::tier_for(w, d), OpenVPNTier::Risky, "{d}");
+        assert_eq!(platform_reasons(w).get(d), Some(&REASON_SERVICE_OWNED), "{d}");
+    }
+    let r = check_for(w, "setcon x", &[]);
+    assert_eq!(r.issues, []);
+    assert_eq!(r.risky[0].reason_key, REASON_PLATFORM_WINDOWS);
+    assert_eq!(OpenVPNValidator::tier_for(w, "cryptoapicert"), OpenVPNTier::Safe);
+    assert!(!platform_reasons(w).contains_key("cryptoapicert"));
+    let r = check_for(w, "cryptoapicert \"THUMB:aa bb\"", &[]);
+    assert_eq!((r.issues.clone(), r.risky.clone()), (vec![], vec![]));
+    for good in ["\"SUBJ:Peter Runestig\"", "\"ISSUER:Sample CA\"", "\"SELECT:THUMB:aa\"", "THUMB:f649244101b4"] {
+        assert_eq!(check_for(w, &format!("cryptoapicert {good}"), &[]).all_issues(), [], "{good}");
+    }
+    for bad in ["x", "\"THUMB:\"", "\"thumb:aa\"", "\"THUMB:zz\"", "\"SUBJ:\"", "\"THUMB:aa\" extra", ""] {
+        let r = check_for(w, &format!("cryptoapicert {bad}"), &["cryptoapicert"]);
+        assert_eq!(lines(&r.issues), [4], "{bad}");
+        assert_eq!(r.risky, [], "{bad}");
+    }
+    assert_eq!(check_for(w, "cryptoapicert x", &[]).issues[0].message, "Invalid argument: cryptoapicert",);
+}
+
+#[test]
+fn linux_platform_tier() {
+    en();
+    let l = TargetOs::Linux;
+    assert!(!platform_reasons(l).contains_key("setcon"));
+    let mut mac: Vec<&str> = platform_reasons(TargetOs::MacOs).keys().copied().filter(|d| *d != "setcon").collect();
+    let mut linux: Vec<&str> = platform_reasons(l).keys().copied().collect();
+    mac.sort_unstable();
+    linux.sort_unstable();
+    assert_eq!(linux, mac);
+    assert!(platform_reasons(l).values().all(|r| *r == REASON_PLATFORM));
+    // Not in the platform tier: an unknown directive on Linux.
+    assert_eq!(check_for(l, "setcon x", &[]).risky[0].reason_key, REASON_UNKNOWN);
+    assert_eq!(OpenVPNValidator::tier_for(l, "cryptoapicert"), OpenVPNTier::Risky);
+}
+
+#[test]
+fn host_entry_points_equal_the_per_os_ones() {
+    en();
+    let host = TargetOs::host();
+    let mut corpus: Vec<String> = tier_lines().iter().map(|l| l.split('\t').next().unwrap().to_string()).collect();
+    corpus.extend(fixture_names("openvpn/openvpn-2.7.8-source-options.txt"));
+    let mut bodies = Vec::new();
+    for d in &corpus {
+        for args in ["", " x", " 1", " \"THUMB:aa bb\"", " [inline]", " /etc/x", " a b c"] {
+            bodies.push(format!("{d}{args}"));
+        }
+        bodies.push(format!("setenv opt {d} x"));
+        bodies.push(format!("<connection>\nremote b 1\n{d} x\n</connection>"));
+    }
+    for body in bodies {
+        let text = format!("{BASE}{body}\n");
+        for ack in [set(&[]), corpus.iter().cloned().collect()] {
+            assert_eq!(
+                OpenVPNValidator.validate_full(&text, &ack),
+                OpenVPNValidator.validate_full_for(host, &text, &ack)
+            );
+        }
+    }
+    for d in &corpus {
+        assert_eq!(tier(d), OpenVPNValidator::tier_for(host, d), "{d}");
+    }
 }

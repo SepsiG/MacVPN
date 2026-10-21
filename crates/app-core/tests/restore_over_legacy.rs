@@ -109,6 +109,7 @@ fn mac_with_old_data(tmp: &TempDir) -> (PathBuf, Arc<OldItems>) {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_fresh_restore_over_1_1_data_deletes_it_and_the_next_launch_is_normal() {
     AppLanguage::set_thread_override(Some(AppLanguage::En));
     let tmp = TempDir::new();
@@ -148,6 +149,7 @@ fn a_fresh_restore_over_1_1_data_deletes_it_and_the_next_launch_is_normal() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_vault_with_data_next_to_unmigrated_1_1_data_is_only_logged() {
     AppLanguage::set_thread_override(Some(AppLanguage::En));
     let tmp = TempDir::new();

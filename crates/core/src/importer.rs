@@ -1,6 +1,7 @@
 //! Config import (port of `ConfigImporter.swift`): kind detection, OpenVPN external-file inlining confined to the
 //! config's folder (after resolving symlinks), PKCS#12, credential-file candidates, and validation.
 
+use crate::fsx::{self, Follow, OpenFor};
 use crate::l10n::{self, Arg};
 use crate::models::{Secrets, VPNKind, ValidationIssue};
 use crate::swift_base64;
@@ -10,7 +11,6 @@ use crate::validators::sstp::SSTPConfig;
 use regex::{Regex, RegexBuilder};
 use std::collections::HashMap;
 use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::sync::LazyLock;
 
@@ -564,15 +564,9 @@ fn read_inline_data(path: &str, base: &str) -> Result<Vec<u8>, ConfigImportError
         return Err(ConfigImportError::OutsideBaseDirectory(path.to_string()));
     }
     let missing = || ConfigImportError::MissingFile(path.to_string());
-    let file = std::fs::OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(&resolved)
-        .map_err(|_| missing())?;
-    let meta = file.metadata().map_err(|_| missing())?;
-    if !meta.file_type().is_file() {
-        return Err(missing());
-    }
+    // Not a regular file (or unreadable): missing.
+    let (file, meta) =
+        fsx::open_regular(Path::new(&resolved), OpenFor::Read, Follow::No, false).map_err(|_| missing())?;
     if meta.len() > MAX_INLINE_FILE_SIZE as u64 {
         return Err(ConfigImportError::FileTooLarge(path.to_string()));
     }

@@ -4,6 +4,7 @@
 //! keychain file in a temporary directory with `security create-keychain`, addresses only that file
 //! (`kSecUseKeychain` / `kSecMatchSearchList`), uses a random test service name, leaves the user's search list
 //! unchanged (checked) and deletes the keychain afterwards. It never reads or writes the login keychain.
+#![cfg(target_os = "macos")]
 
 use macvpn_core::vault::{Entropy, KeyStore};
 use macvpn_platform_mac::vault_keys::{KeychainKeyStore, SystemEntropy};

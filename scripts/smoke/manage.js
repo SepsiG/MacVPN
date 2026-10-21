@@ -40,6 +40,9 @@
       return false;
     }
     await sleep(300);
+    // The opening animation (`translateY(-4px) scale(0.98)`) moves the box; a cold first run may still be in it.
+    const finite = el.getAnimations({ subtree: true }).filter((a) => a.effect?.getComputedTiming().endTime !== Infinity);
+    await Promise.all(finite.map((a) => a.finished.catch(() => {})));
     const r = el.getBoundingClientRect();
     const { width, height } = viewport();
     const ok = r.width > 0 && r.left >= 7.5 && r.top >= 7.5 && r.right <= width - 7.5 && r.bottom <= height - 7.5;

@@ -13,8 +13,9 @@
 //!    is still treated as a block and its content skipped);
 //! 6. directive = first token (space/tab separated), must match `^(--)?[A-Za-z0-9-]+$`, otherwise "Invalid
 //!    directive"; lower-cased, `--` dropped;
-//! 7. tier by [`OpenVPNValidator::tier`] (table: `argument_specs` = SAFE, `risky_reasons` = RISKY, `forbidden` =
-//!    FORBIDDEN; an unknown name matching `FORBIDDEN_PATTERN` is FORBIDDEN, otherwise RISKY):
+//! 7. tier by [`OpenVPNValidator::tier_for`] (table: `argument_specs` = SAFE, `risky_reasons` and the OS's
+//!    [`platform_reasons`] = RISKY, `forbidden` = FORBIDDEN; an unknown name matching `FORBIDDEN_PATTERN` is
+//!    FORBIDDEN, otherwise RISKY; the entry points without an OS use [`TargetOs::host`]):
 //!    - FORBIDDEN -> "Forbidden directive";
 //!    - RISKY -> error in a `<connection>` block; the arguments must pass `is_harmless_argument` (no leading `-`,
 //!      `..`, absolute path, `~`, `file:`, shell metacharacter, `/` only in a CIDR), otherwise "Invalid argument";
@@ -38,6 +39,7 @@ use super::{ConfigValidator, control_character_message, has_control_character, m
 use crate::l10n::{self, Arg};
 use crate::models::ValidationIssue;
 use crate::swift_str::{self, ascii_lowercased, trim_space_tab};
+use crate::target_os::TargetOs;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::sync::LazyLock;
 
@@ -267,10 +269,12 @@ pub const REASON_DEBUG: &str = "Debugging option that deliberately disrupts the 
 pub const REASON_WEAKENS: &str = "Weakens the security of the tunnel (deprecated or insecure mode)";
 pub const REASON_ROUTING: &str = "Allows routing that can bypass or loop the tunnel";
 pub const REASON_PLATFORM: &str = "Not supported on macOS (Windows or Linux only)";
+pub const REASON_PLATFORM_WINDOWS: &str = "Not supported on Windows (Linux only)";
+pub const REASON_SERVICE_OWNED: &str = "Set by the VPN service itself, not by a connection's config";
 pub const REASON_STANDALONE: &str = "Standalone mode: OpenVPN prints information or exits instead of connecting";
 pub const REASON_UNKNOWN: &str = "Unknown to MacVPN: its effect cannot be checked";
 
-/// Known RISKY directives -> reason (`L10n` key).
+/// Known RISKY directives -> reason (`L10n` key), on every OS. The OS-specific ones are in [`platform_reasons`].
 pub static RISKY_REASONS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     let mut t = HashMap::new();
     for d in ["user", "group"] {
@@ -333,18 +337,6 @@ pub static RISKY_REASONS: LazyLock<HashMap<&'static str, &'static str>> = LazyLo
         t.insert(d, REASON_WEAKENS);
     }
     t.insert("allow-recursive-routing", REASON_ROUTING);
-    for d in [
-        "win-sys",
-        "service",
-        "cryptoapicert",
-        "allow-nonadmin",
-        "setcon",
-        "msg-channel",
-        "rdns-internal",
-        "dhcp-internal",
-    ] {
-        t.insert(d, REASON_PLATFORM);
-    }
     let standalone = [
         "help",
         "version",
@@ -368,6 +360,48 @@ pub static RISKY_REASONS: LazyLock<HashMap<&'static str, &'static str>> = LazyLo
     }
     t
 });
+
+// MARK: The platform tier
+
+/// The directives another OS's OpenVPN owns (1.4's table: not supported on macOS).
+const NOT_ON_MACOS: [&str; 8] = [
+    "win-sys",
+    "service",
+    "cryptoapicert",
+    "allow-nonadmin",
+    "setcon",
+    "msg-channel",
+    "rdns-internal",
+    "dhcp-internal",
+];
+
+static PLATFORM_MACOS: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| NOT_ON_MACOS.into_iter().map(|d| (d, REASON_PLATFORM)).collect());
+
+/// A draft for the Windows security review (phase 2): the VPN service sets these itself; `setcon` is SELinux;
+/// `cryptoapicert` is allowed with its argument checked ([`WINDOWS_ARGUMENT_SPECS`]).
+static PLATFORM_WINDOWS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut t: HashMap<&'static str, &'static str> = HashMap::new();
+    for d in ["service", "msg-channel", "win-sys", "allow-nonadmin", "rdns-internal", "dhcp-internal"] {
+        t.insert(d, REASON_SERVICE_OWNED);
+    }
+    t.insert("setcon", REASON_PLATFORM_WINDOWS);
+    t
+});
+
+/// A draft (phase 4 revisits `setcon`): the macOS table without `setcon`.
+static PLATFORM_LINUX: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| NOT_ON_MACOS.into_iter().filter(|d| *d != "setcon").map(|d| (d, REASON_PLATFORM)).collect());
+
+/// The platform tier: directives this OS refuses or that need an acknowledgement here, with the reason (`L10n`
+/// key). Consulted after [`RISKY_REASONS`].
+pub fn platform_reasons(os: TargetOs) -> &'static HashMap<&'static str, &'static str> {
+    match os {
+        TargetOs::MacOs => &PLATFORM_MACOS,
+        TargetOs::Windows => &PLATFORM_WINDOWS,
+        TargetOs::Linux => &PLATFORM_LINUX,
+    }
+}
 
 // MARK: SAFE helpers
 
@@ -778,6 +812,38 @@ pub(crate) static ARGUMENT_SPECS: LazyLock<HashMap<&'static str, ArgSpec>> = Laz
 });
 
 /// Set membership with Swift `Set<String>` semantics (canonical equivalence).
+/// SAFE only on Windows (they are in the platform tier elsewhere): directive -> argument spec.
+static WINDOWS_ARGUMENT_SPECS: LazyLock<HashMap<&'static str, ArgSpec>> = LazyLock::new(|| {
+    let mut t: HashMap<&'static str, ArgSpec> = HashMap::new();
+    // A certificate from the Windows certificate store: `THUMB:<hex>` (bytes optionally separated by spaces), or
+    // a `SUBJ:`, `ISSUER:` or `SELECT:` selector with text.
+    t.insert(
+        "cryptoapicert",
+        ArgSpec::new(
+            1,
+            1,
+            vec![ArgRule::Pattern("^(THUMB:[0-9A-Fa-f]{2}( ?[0-9A-Fa-f]{2})*|(SUBJ|ISSUER|SELECT):.+)$")],
+        ),
+    );
+    t
+});
+
+/// The argument spec of a SAFE directive on `os`: the shared table, then the OS's own.
+fn argument_spec_for(os: TargetOs, directive: &str) -> Option<&'static ArgSpec> {
+    map_get(&ARGUMENT_SPECS, directive).or_else(|| match os {
+        TargetOs::Windows => map_get(&WINDOWS_ARGUMENT_SPECS, directive),
+        TargetOs::MacOs | TargetOs::Linux => None,
+    })
+}
+
+/// The reason key of a RISKY directive on `os` (an unknown one: [`REASON_UNKNOWN`]).
+fn risky_reason_for(os: TargetOs, directive: &str) -> &'static str {
+    map_get(&RISKY_REASONS, directive)
+        .or_else(|| map_get(platform_reasons(os), directive))
+        .copied()
+        .unwrap_or(REASON_UNKNOWN)
+}
+
 fn set_contains(set: &HashSet<&'static str>, s: &str) -> bool {
     set.contains(s) || (!s.is_ascii() && set.iter().any(|k| swift_str::eq(k, s)))
 }
@@ -792,9 +858,13 @@ fn hint() -> String {
 }
 
 impl OpenVPNValidator {
-    /// SAFE directives (the `argument_specs` keys). `setenv` is SAFE by its own rule.
+    /// SAFE directives on this OS (the `argument_specs` keys). `setenv` is SAFE by its own rule.
     pub fn allowed() -> HashSet<&'static str> {
-        ARGUMENT_SPECS.keys().copied().collect()
+        let mut names: HashSet<&'static str> = ARGUMENT_SPECS.keys().copied().collect();
+        if TargetOs::host() == TargetOs::Windows {
+            names.extend(WINDOWS_ARGUMENT_SPECS.keys());
+        }
+        names
     }
 
     /// The names that have an argument spec (SAFE).
@@ -803,18 +873,23 @@ impl OpenVPNValidator {
     }
 
     pub fn has_argument_spec(directive: &str) -> bool {
-        map_get(&ARGUMENT_SPECS, directive).is_some()
+        argument_spec_for(TargetOs::host(), directive).is_some()
     }
 
-    /// The tier of a directive: the tables; for an unknown name `FORBIDDEN_PATTERN`, otherwise RISKY.
+    /// The tier of a directive on this OS ([`OpenVPNValidator::tier_for`] with [`TargetOs::host`]).
     pub fn tier(directive: &str) -> OpenVPNTier {
+        Self::tier_for(TargetOs::host(), directive)
+    }
+
+    /// The tier of a directive on `os`: the tables; for an unknown name `FORBIDDEN_PATTERN`, otherwise RISKY.
+    pub fn tier_for(os: TargetOs, directive: &str) -> OpenVPNTier {
         if set_contains(&FORBIDDEN, directive) {
             return OpenVPNTier::Forbidden;
         }
-        if directive == "setenv" || map_get(&ARGUMENT_SPECS, directive).is_some() {
+        if directive == "setenv" || argument_spec_for(os, directive).is_some() {
             return OpenVPNTier::Safe;
         }
-        if map_get(&RISKY_REASONS, directive).is_some() {
+        if map_get(&RISKY_REASONS, directive).is_some() || map_get(platform_reasons(os), directive).is_some() {
             return OpenVPNTier::Risky;
         }
         if matches(directive, FORBIDDEN_PATTERN) { OpenVPNTier::Forbidden } else { OpenVPNTier::Risky }
@@ -860,8 +935,19 @@ impl OpenVPNValidator {
     }
 
     /// Full result: blocking issues, risky findings and the risky names not acknowledged yet. `acknowledged_risky`
-    /// can only accept RISKY names: a FORBIDDEN name in it has no effect.
+    /// can only accept RISKY names: a FORBIDDEN name in it has no effect. The tiers of this OS
+    /// ([`OpenVPNValidator::validate_full_for`] with [`TargetOs::host`]).
     pub fn validate_full(&self, text: &str, acknowledged_risky: &HashSet<String>) -> OpenVPNValidation {
+        self.validate_full_for(TargetOs::host(), text, acknowledged_risky)
+    }
+
+    /// [`OpenVPNValidator::validate_full`] with the tiers of `os`.
+    pub fn validate_full_for(
+        &self,
+        os: TargetOs,
+        text: &str,
+        acknowledged_risky: &HashSet<String>,
+    ) -> OpenVPNValidation {
         let mut issues: Vec<ValidationIssue> = Vec::new();
         let mut risky: Vec<RiskyFinding> = Vec::new();
         let mut in_block: Option<String> = None; // data block (content skipped)
@@ -911,7 +997,7 @@ impl OpenVPNValidator {
             if line.is_empty() || swift_str::has_prefix(line, "#") || swift_str::has_prefix(line, ";") {
                 continue;
             }
-            let result = Self::check_line(line, connection_line.is_some());
+            let result = Self::check_line(os, line, connection_line.is_some());
             for m in &result.messages {
                 issues.push(ValidationIssue::new(line_no, m.clone()));
             }
@@ -936,7 +1022,7 @@ impl OpenVPNValidator {
         let names: BTreeSet<&str> = risky.iter().map(|r| r.directive.as_str()).collect();
         let unacknowledged = names
             .into_iter()
-            .filter(|n| !acknowledged_risky.contains(*n) || Self::tier(n) != OpenVPNTier::Risky)
+            .filter(|n| !acknowledged_risky.contains(*n) || Self::tier_for(os, n) != OpenVPNTier::Risky)
             .map(str::to_string)
             .collect();
         OpenVPNValidation { issues, risky, unacknowledged }
@@ -953,7 +1039,7 @@ impl OpenVPNValidator {
     }
 
     /// Checks one (trimmed, non-empty, non-comment) directive line.
-    pub(crate) fn check_line(line: &str, in_connection: bool) -> LineResult {
+    pub(crate) fn check_line(os: TargetOs, line: &str, in_connection: bool) -> LineResult {
         let first = swift_str::prefix_while(line, |c| c != " " && c != "\t");
         if Self::directive_name(first).is_none() {
             return LineResult { messages: vec![l10n::tr("Invalid directive", &[])], ..Default::default() };
@@ -966,7 +1052,7 @@ impl OpenVPNValidator {
         let Some(tokens) = tokens.filter(|_| valid_head) else {
             let lower = ascii_lowercased(first);
             let directive = lower.strip_prefix("--").map(str::to_string).unwrap_or(lower);
-            if Self::tier(&directive) == OpenVPNTier::Forbidden {
+            if Self::tier_for(os, &directive) == OpenVPNTier::Forbidden {
                 let message = l10n::tr("Forbidden directive: %@", &[Arg::Str(&directive)]) + &hint();
                 return LineResult { messages: vec![message], directive: Some(directive), risky: None };
             }
@@ -974,7 +1060,7 @@ impl OpenVPNValidator {
             return LineResult { messages: vec![message], directive: Some(directive), risky: None };
         };
         let texts: Vec<String> = tokens.into_iter().map(|t| t.text).collect();
-        Self::check_directive(&texts, in_connection)
+        Self::check_directive(os, &texts, in_connection)
     }
 
     /// A mirror of OpenVPN's `parse_line`: space/tab separate tokens; `"` or `'` starts a quote only at a token
@@ -1032,7 +1118,7 @@ impl OpenVPNValidator {
     }
 
     /// Checks a directive line split into tokens; `setenv opt <directive> ...` goes through this too.
-    pub(crate) fn check_directive(tokens: &[String], in_connection: bool) -> LineResult {
+    pub(crate) fn check_directive(os: TargetOs, tokens: &[String], in_connection: bool) -> LineResult {
         let Some(directive) = Self::directive_name(&tokens[0]) else {
             return LineResult { messages: vec![l10n::tr("Invalid directive", &[])], ..Default::default() };
         };
@@ -1051,7 +1137,7 @@ impl OpenVPNValidator {
                 if tokens.len() < 3 {
                     return fail(l10n::tr("setenv opt: missing directive", &[]));
                 }
-                let mut inner = Self::check_directive(&tokens[2..], false);
+                let mut inner = Self::check_directive(os, &tokens[2..], false);
                 inner.directive = Some(directive);
                 return inner;
             }
@@ -1087,7 +1173,7 @@ impl OpenVPNValidator {
         if directive == "connection" {
             return fail(l10n::tr("Invalid directive", &[]));
         }
-        match Self::tier(&directive) {
+        match Self::tier_for(os, &directive) {
             OpenVPNTier::Forbidden => {
                 return fail(l10n::tr("Forbidden directive: %@", &[Arg::Str(&directive)]) + &hint());
             }
@@ -1101,7 +1187,7 @@ impl OpenVPNValidator {
                 if !args.iter().all(|a| Self::is_harmless_argument(a)) {
                     return fail(l10n::tr("Invalid argument: %@", &[Arg::Str(&directive)]));
                 }
-                let reason = map_get(&RISKY_REASONS, &directive).copied().unwrap_or(REASON_UNKNOWN);
+                let reason = risky_reason_for(os, &directive);
                 return LineResult {
                     messages: vec![],
                     directive: Some(directive.clone()),
@@ -1110,7 +1196,7 @@ impl OpenVPNValidator {
             }
             OpenVPNTier::Safe => {}
         }
-        let Some(spec) = map_get(&ARGUMENT_SPECS, &directive) else {
+        let Some(spec) = argument_spec_for(os, &directive) else {
             return fail(l10n::tr("Invalid directive", &[]));
         };
         if in_connection && !CONNECTION_ALLOWED.contains(directive.as_str()) {

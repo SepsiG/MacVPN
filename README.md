@@ -6,7 +6,10 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.4.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. It is written in Rust with a Tauri user interface (since 1.0); the current version is 1.5.
+
+### What's new in 1.5
+- **Under the hood:** prepared for a Windows version; MacVPN works exactly as before. The root layer stays 8: updating from 1.4 needs no admin password.
 
 ### What's new in 1.4
 - **Search in the Connections window.** The **Search connections** field at the top of the sidebar (**⌘F**) filters as you type, ignoring case and accents. It finds a connection by its name, its type, its server (from the settings or the config, such as OpenVPN's first `remote`; the host only), its team catalog and its folders. **↑** / **↓** and Return move through the results. See [search](docs/user-guide.en.md#128-searching-connections).
@@ -77,9 +80,9 @@ Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 1.2? See [
 Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. A team catalog is signed and encrypted, but everyone with the team key can read it, and whoever holds the admin key decides what your team connects to: see the [team catalog security model](docs/user-guide.en.md#1611-security-model). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
 
 ### Development
-MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
+MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript). Since 1.5 the workspace is split into shared logic and a thin platform layer per operating system, so the same code can later ship as WinVPN on Windows; MacVPN is the only product so far. Start with [`docs/architecture.md`](docs/architecture.md): the crates, the `cfg` and `unsafe` rules, the per-OS texts and how a platform plugs in.
 
-**Toolchain.** `rust-toolchain.toml` pins the exact Rust version (currently 1.99.1) with clippy, rustfmt and both macOS targets. `rustup` uses it automatically inside the repository; if it is not installed yet, run `rustup toolchain install` there. CI and the release workflow use Node.js 26.8.2 (`app/ui/package.json` needs at least 22.12).
+**Toolchain.** `rust-toolchain.toml` pins the exact Rust version (currently 1.99.1) with clippy, rustfmt, both macOS targets and both Windows targets (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`, for the compile check). `rustup` uses it automatically inside the repository; if it is not installed yet, run `rustup toolchain install` there. CI and the release workflow use Node.js 26.8.2 (`app/ui/package.json` needs at least 22.12).
 
 **Build.**
 - `scripts/build-dmg.sh` builds the universal `dist/MacVPN.app` and `dist/MacVPN-x.y.z.dmg`: the UI, the app, and the `mvpn` root binary, all signed ad-hoc with the hardened runtime.
@@ -90,20 +93,24 @@ MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
 - `scripts/test-root.sh`: black-box tests of the root binary (dry run, no root needed)
 - `cd app/ui && npm ci && npm test && npm run build`: UI tests (language rule, l10n coverage) and the UI build
 - `scripts/check-l10n.sh`: every text (UI and Rust) has a Hungarian translation
+- `scripts/check-windows.sh`: `cargo check` of `macvpn-core` (without the vault), `macvpn-helper` and the control client for both Windows targets, from the Mac. The full Windows check (the vault, platform-api, platform-win, app-core and the app, which need an MSVC toolchain for their C code) runs only in CI: the `windows` and `windows-node` jobs in `.github/workflows/ci.yml`
+- `crates/app-core/tests/cfg_rule.rs` (part of `cargo test`): an OS `cfg` only in the platform places, `unsafe` only in the platform crates and the helper
+- `node scripts/l10n-baseline.mjs --check` and `scripts/bundle-baseline.sh dist/MacVPN.app`: the macOS texts and the built bundle compared with the 1.4.0 baseline
 - `scripts/smoke-manage.sh`: smoke test of the real windows in a sandbox; run it with `SMOKE_LANG=en` and `SMOKE_LANG=hu`
 - `scripts/test-sign-release.sh`: the release signing script, dry run with a throwaway key
 - Manual GUI checklist: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md)
 
 **Repository layout.**
-- `crates/core`: platform-independent logic (models, the vault behind the `vault` feature, validators, import/export, MFA, update checks, ranking) and the EN/HU text table `crates/core/l10n/strings.json`
-- `crates/mvpn`: the root binary (`/usr/local/libexec/macvpn/mvpn`, root layer version in `crates/mvpn/VERSION`)
-- `crates/platform-mac`: macOS services (Keychain for the vault key, native VPN, login item, dialogs, installers)
+- `crates/core`: platform-independent logic (models, the vault behind the `vault` feature, validators, import/export, MFA, update checks, ranking), the safe file operations (`fsx`, its only OS-specific module) and the EN/HU text table `crates/core/l10n/strings.json`
+- `crates/platform-api`: the traits every platform implements, the shared types and the product identity (`Product`)
+- `crates/platform-mac`: the macOS platform (Keychain for the vault key, native VPN, login item, dialogs, installers, updater); `crates/platform-win`: the Windows platform, a stub that answers "not supported" for now
+- `crates/helper`: the root binary `mvpn` (`/usr/local/libexec/macvpn/mvpn`, root layer version in `crates/helper/VERSION`): shared protocol logic in `src/shared`, the macOS backend in `src/macos`
 - `crates/app-core`: the app logic without a UI
-- `app/src-tauri`: the Tauri app; `app/ui`: its web UI
+- `app/src-tauri`: the Tauri app (its `src/platform` module picks the platform crate); `app/ui`: its web UI
 - `scripts/`: build, test, signing and icon scripts; `Tests/Fixtures`: OpenVPN and MikroTik fixtures
 - The 0.x Swift app is only in the git history (up to tag `v0.4.0`); `crates/core/tests/fixtures/swift` keeps data it wrote, frozen, for the compatibility and migration tests.
 
-**Localization.** English is the source language and Hungarian the translation. Every text (UI, app, root binary) is in `crates/core/l10n/strings.json`, keyed by the English text. The app follows the macOS preferred languages (the first Hungarian or English one, otherwise English; a per-app language in System Settings works too). The root binary gets the language through `--lang en|hu`.
+**Localization.** English is the source language and Hungarian the translation. Every text (UI, app, root binary) is in `crates/core/l10n/strings.json`, keyed by the English (macOS) text; an entry can carry per-OS variants (`variants`, `only`, see [`docs/architecture.md`](docs/architecture.md#texts-per-os)). The app follows the macOS preferred languages (the first Hungarian or English one, otherwise English; a per-app language in System Settings works too). The root binary gets the language through `--lang en|hu`.
 
 **Releasing.** See [`docs/RELEASING.md`](docs/RELEASING.md) for the release procedure and the repository security settings.
 
@@ -114,7 +121,10 @@ MIT – see [LICENSE](LICENSE). Third-party components (among them SQLCipher, BS
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.4.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Rustban készült, Tauri felülettel (az 1.0 óta); a jelenlegi verzió az 1.5.
+
+### Újdonságok az 1.5-ben
+- **A háttérben:** felkészülés egy Windows-változatra; a MacVPN pontosan úgy működik, mint eddig. A root réteg 8 marad: az 1.4-ről frissítve nem kell admin jelszó.
 
 ### Újdonságok az 1.4-ben
 - **Keresés a Kapcsolatok ablakban.** Az oldalsáv tetején a **Kapcsolatok keresése** mező (**⌘F**) gépelés közben szűr, a kis- és nagybetűtől és az ékezetektől függetlenül. Megtalálja a kapcsolatot a neve, a típusa, a szervere (a beállításokból vagy a configból, például az OpenVPN első `remote` sora; csak a gépnév), a csapatkatalógusa és a mappái alapján. A **↑** / **↓** és a Return a találatok között lépked. Lásd [keresés](docs/user-guide.hu.md#128-kapcsolatok-keresése).
@@ -185,9 +195,9 @@ Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Az 1.2-t használo
 A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. A csapatkatalógus alá van írva és titkosítva van, de akinél megvan a csapatkulcs, elolvashatja, és aki az aláírókulcsot birtokolja, az dönti el, mihez csatlakozik a csapatod: lásd [a csapatkatalógusok biztonsági modelljét](docs/user-guide.hu.md#1611-biztonsági-modell). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
 
 ### Fejlesztés
-A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).
+A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). Az 1.5 óta a workspace közös logikára és operációs rendszerenként egy vékony platformrétegre oszlik, hogy ugyanaz a kód később WinVPN néven Windowson is megjelenhessen; egyelőre a MacVPN az egyetlen termék. Kezdd a [`docs/architecture.md`](docs/architecture.md) leírással (angolul): a crate-ek, a `cfg` és az `unsafe` szabályai, az operációs rendszerenkénti szövegek, és hogyan csatlakozik egy új platform.
 
-**Eszközök.** A `rust-toolchain.toml` rögzíti a pontos Rust verziót (jelenleg 1.99.1) a clippyvel, a rustfmt-vel és mindkét macOS targettel. A repón belül a `rustup` automatikusan ezt használja; ha még nincs telepítve, futtasd ott: `rustup toolchain install`. A CI és a kiadási workflow Node.js 26.8.2-t használ (az `app/ui/package.json` legalább 22.12-t kér).
+**Eszközök.** A `rust-toolchain.toml` rögzíti a pontos Rust verziót (jelenleg 1.99.1) a clippyvel, a rustfmt-vel, mindkét macOS és mindkét Windows targettel (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`, a fordítási ellenőrzéshez). A repón belül a `rustup` automatikusan ezt használja; ha még nincs telepítve, futtasd ott: `rustup toolchain install`. A CI és a kiadási workflow Node.js 26.8.2-t használ (az `app/ui/package.json` legalább 22.12-t kér).
 
 **Build.**
 - `scripts/build-dmg.sh`: a universal `dist/MacVPN.app` és `dist/MacVPN-x.y.z.dmg`: a felület, az app és a `mvpn` root bináris, mind ad-hoc aláírva, hardened runtime-mal.
@@ -198,20 +208,24 @@ A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript).
 - `scripts/test-root.sh`: a root bináris fekete dobozos tesztje (dry-run, nem kell root)
 - `cd app/ui && npm ci && npm test && npm run build`: a felület tesztjei (nyelvválasztás, lokalizáció-lefedettség) és buildje
 - `scripts/check-l10n.sh`: minden szövegnek (felület és Rust) van magyar fordítása
+- `scripts/check-windows.sh`: a `macvpn-core` (széf nélkül), a `macvpn-helper` és a vezérlő kliens `cargo check`-je mindkét Windows targetre, a Macen. A teljes Windows-ellenőrzés (a széf, a platform-api, a platform-win, az app-core és az app, amelyek C kódjához MSVC eszközlánc kell) csak a CI-ban fut: a `.github/workflows/ci.yml` `windows` és `windows-node` jobja
+- `crates/app-core/tests/cfg_rule.rs` (a `cargo test` része): operációsrendszer-függő `cfg` csak a platformrétegben, `unsafe` csak a platform crate-ekben és a helperben
+- `node scripts/l10n-baseline.mjs --check` és `scripts/bundle-baseline.sh dist/MacVPN.app`: a macOS-es szövegek és a kész app összevetése az 1.4.0-s alapállapottal
 - `scripts/smoke-manage.sh`: a valódi ablakok smoke tesztje egy sandboxban; futtasd `SMOKE_LANG=en` és `SMOKE_LANG=hu` mellett is
 - `scripts/test-sign-release.sh`: a kiadás-aláíró script próbafuttatása eldobható kulccsal
 - Kézi GUI tesztlista: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md)
 
 **A repó felépítése.**
-- `crates/core`: platformfüggetlen logika (modellek, a `vault` feature mögötti széf, validátorok, import/export, MFA, frissítés-ellenőrzés, rangsor) és az EN/HU szövegtábla, a `crates/core/l10n/strings.json`
-- `crates/mvpn`: a root bináris (`/usr/local/libexec/macvpn/mvpn`, a root réteg verziója a `crates/mvpn/VERSION`-ben)
-- `crates/platform-mac`: macOS-szolgáltatások (Keychain a széfkulcsnak, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők)
+- `crates/core`: platformfüggetlen logika (modellek, a `vault` feature mögötti széf, validátorok, import/export, MFA, frissítés-ellenőrzés, rangsor), a biztonságos fájlműveletek (`fsx`, az egyetlen operációsrendszer-függő modulja) és az EN/HU szövegtábla, a `crates/core/l10n/strings.json`
+- `crates/platform-api`: a trait-ek, amelyeket minden platform megvalósít, a közös típusok és a termékazonosság (`Product`)
+- `crates/platform-mac`: a macOS-platform (Keychain a széfkulcsnak, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők, frissítő); `crates/platform-win`: a Windows-platform, egyelőre csonk, amely mindenre azt feleli, hogy „nem támogatott”
+- `crates/helper`: az `mvpn` root bináris (`/usr/local/libexec/macvpn/mvpn`, a root réteg verziója a `crates/helper/VERSION`-ben): a közös protokollogika az `src/shared`, a macOS-backend az `src/macos` alatt
 - `crates/app-core`: az app logikája felület nélkül
-- `app/src-tauri`: a Tauri app; `app/ui`: a webes felülete
+- `app/src-tauri`: a Tauri app (az `src/platform` modulja választja ki a platform crate-et); `app/ui`: a webes felülete
 - `scripts/`: build-, teszt-, aláíró és ikon scriptek; `Tests/Fixtures`: OpenVPN és MikroTik tesztadatok
 - A 0.x Swift app csak a git történetben van meg (a `v0.4.0` tagig); a `crates/core/tests/fixtures/swift` az általa írt adatokat őrzi, befagyasztva, a kompatibilitási és migrációs tesztekhez.
 
-**Lokalizáció.** Az angol a forrásnyelv, a magyar a fordítás. Minden szöveg (felület, app, root bináris) a `crates/core/l10n/strings.json`-ban van, a kulcs az angol szöveg. Az app a macOS preferált nyelveit követi (az első magyar vagy angol, különben angol; a Rendszerbeállításokban appra beállított nyelv is működik). A root bináris a `--lang en|hu` kapcsolóból kapja a nyelvet.
+**Lokalizáció.** Az angol a forrásnyelv, a magyar a fordítás. Minden szöveg (felület, app, root bináris) a `crates/core/l10n/strings.json`-ban van, a kulcs az angol (macOS-es) szöveg; egy bejegyzésnek lehetnek operációs rendszerenkénti változatai (`variants`, `only`, lásd [`docs/architecture.md`](docs/architecture.md#texts-per-os)). Az app a macOS preferált nyelveit követi (az első magyar vagy angol, különben angol; a Rendszerbeállításokban appra beállított nyelv is működik). A root bináris a `--lang en|hu` kapcsolóból kapja a nyelvet.
 
 **Kiadás.** A kiadás menete és a repó biztonsági beállításai: [`docs/RELEASING.md`](docs/RELEASING.md) (angolul).
 

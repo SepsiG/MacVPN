@@ -5,6 +5,7 @@
 use crate::deps::SecretField;
 use crate::editor::EditorDeps;
 use macvpn_core::exporter;
+use macvpn_core::fsx::{self, Follow, OpenFor};
 use macvpn_core::importer::{self, ExportMeta};
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::{Connection, VPNKind, ValidationIssue, uuid_string};
@@ -50,37 +51,24 @@ impl ImportReport {
 /// The path must name a regular file before it is opened (`stat`: a FIFO, a device or a directory is never opened,
 /// as an open alone can have effects). It is then opened with `O_NONBLOCK` (a file swapped for a FIFO meanwhile
 /// never blocks the open) and `O_NOCTTY` (a swapped-in terminal never becomes the controlling one), the descriptor
-/// is checked again (`fstat`: a regular file, at most 1 MB) and only then switched back to blocking reads. Symlinks
+/// is checked again (`fstat`: a regular file) and only then switched back to blocking reads (`fsx::open_regular`),
+/// and the size is checked (at most 1 MB). Symlinks
 /// are followed as before (a link to a regular file imports that file; a link to a FIFO is refused by the same
 /// checks).
 pub fn read_import_file(path: &Path) -> Option<String> {
-    use std::os::unix::fs::OpenOptionsExt;
     if !std::fs::metadata(path).ok()?.is_file() {
         return None;
     }
-    let file =
-        std::fs::OpenOptions::new().read(true).custom_flags(libc::O_NONBLOCK | libc::O_NOCTTY).open(path).ok()?;
-    let meta = file.metadata().ok()?;
-    if !meta.is_file() || meta.len() > MAX_IMPORT_BYTES {
+    let (file, meta) = fsx::open_regular(path, OpenFor::Read, Follow::Yes, true).ok()?;
+    if meta.len() > MAX_IMPORT_BYTES {
         return None;
     }
-    let file = clear_nonblocking(file)?;
     let mut data = Vec::new();
     file.take(MAX_IMPORT_BYTES + 1).read_to_end(&mut data).ok()?;
     if data.len() as u64 > MAX_IMPORT_BYTES {
         return None;
     }
     String::from_utf8(data).ok()
-}
-
-/// Switches an open descriptor back to blocking reads. The crate has no `unsafe` (no `fcntl`): the descriptor is
-/// wrapped for a moment in a `UnixStream`, whose `set_nonblocking` (`ioctl(FIONBIO)`) clears `O_NONBLOCK` on any
-/// descriptor, a regular file included, and then unwrapped again.
-fn clear_nonblocking(file: std::fs::File) -> Option<std::fs::File> {
-    use std::os::fd::OwnedFd;
-    let stream = std::os::unix::net::UnixStream::from(OwnedFd::from(file));
-    stream.set_nonblocking(false).ok()?;
-    Some(std::fs::File::from(OwnedFd::from(stream)))
 }
 
 /// The credential-file question: "Use the credentials from … for this connection?" (true: Use).
@@ -301,6 +289,7 @@ pub fn export_plan(deps: &EditorDeps, c: &Connection, with_keys: bool) -> Result
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
     use std::os::unix::fs::OpenOptionsExt;
     use std::time::{Duration, Instant};
 
@@ -315,6 +304,7 @@ mod tests {
         std::fs::create_dir(&dir).unwrap();
         Dir(dir)
     }
+    #[cfg(unix)]
     fn mkfifo(path: &Path) {
         let status = std::process::Command::new("/usr/bin/mkfifo").arg("-m").arg("600").arg(path).status().unwrap();
         assert!(status.success(), "mkfifo");
@@ -332,6 +322,7 @@ mod tests {
         result
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_fifo_is_refused_without_blocking() {
         let dir = temp_dir();
@@ -342,6 +333,7 @@ mod tests {
 
     /// A FIFO is not even opened: a writer waiting in its blocking `open` would be released by any reader (and a
     /// device's open can have side effects), so the path's type is checked first.
+    #[cfg(unix)]
     #[test]
     fn a_fifo_is_never_opened() {
         let dir = temp_dir();
@@ -368,6 +360,7 @@ mod tests {
         assert_eq!(read_quickly(&dir.0), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_symlink_to_a_fifo_is_refused_without_blocking() {
         let dir = temp_dir();
@@ -378,12 +371,14 @@ mod tests {
         assert_eq!(read_quickly(&link), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_device_is_refused() {
         assert_eq!(read_quickly(Path::new("/dev/zero")), None);
         assert_eq!(read_quickly(Path::new("/dev/null")), None);
     }
 
+    #[cfg(unix)]
     #[test]
     fn a_regular_file_and_a_symlink_to_one_are_read() {
         let dir = temp_dir();

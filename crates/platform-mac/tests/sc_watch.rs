@@ -1,5 +1,6 @@
 //! The system VPN change watcher (`SCPreferences` commit / apply notifications on its own run loop thread).
 //! Registering for the notifications only reads; nothing here changes the system's network setup.
+#![cfg(target_os = "macos")]
 
 use macvpn_platform_mac::sc_watch::SystemVpnWatcher;
 use std::process::Command;

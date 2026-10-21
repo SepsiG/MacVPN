@@ -7,7 +7,7 @@ mod common;
 
 use common::*;
 use macvpn_app_core::connections::{ConnectionsModel, PendingAction, Resolved, Tab, UnsavedChoice};
-use macvpn_app_core::deps::{SecretField, SecretReader, SystemService};
+use macvpn_app_core::deps::{SecretField, SecretReader, SystemVpn};
 use macvpn_app_core::editor::{EditorDeps, EditorFields, NativeFields, Separator, SystemFields, TextFields};
 use macvpn_app_core::import_export;
 use macvpn_core::l10n::AppLanguage;
@@ -18,7 +18,7 @@ use std::sync::Arc;
 struct Window {
     fx: Fixture,
     model: Arc<ConnectionsModel>,
-    profiles: Arc<MockProfiles>,
+    profiles: Arc<MobileconfigProfiles>,
     manager: Arc<macvpn_app_core::ConnectionManager>,
 }
 
@@ -27,7 +27,7 @@ const CLEAN: &str = "client\ndev tun\nremote vpn.example.com 1194\n";
 fn window() -> Window {
     let fx = Fixture::new(AppLanguage::En);
     let manager = fx.manager();
-    let profiles = Arc::new(MockProfiles::default());
+    let profiles = Arc::new(MobileconfigProfiles::default());
     let deps = EditorDeps {
         manager: manager.clone(),
         store: fx.store.clone(),
@@ -66,6 +66,7 @@ fn key(c: &Connection) -> String {
 // MARK: - Text editor
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn text_editor_loads_tracks_changes_and_saves() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -98,6 +99,7 @@ fn text_editor_loads_tracks_changes_and_saves() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn key_password_is_only_stored_for_openvpn() {
     let w = window();
     let c = w.add("WG", VPNKind::Wireguard, Some(&macvpn_core::importer::template(VPNKind::Wireguard)));
@@ -108,6 +110,7 @@ fn key_password_is_only_stored_for_openvpn() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn validation_problems_are_listed_with_line_numbers() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -121,6 +124,7 @@ fn validation_problems_are_listed_with_line_numbers() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn control_characters_in_secrets_block_the_save() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -131,6 +135,7 @@ fn control_characters_in_secrets_block_the_save() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn risky_panel_acknowledgement_and_its_reset() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -160,6 +165,7 @@ fn risky_panel_acknowledgement_and_its_reset() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn stored_acknowledgement_is_exactly_the_current_risky_set() {
     let w = window();
     let mut c = Connection::new("Office", VPNKind::Openvpn);
@@ -175,6 +181,7 @@ fn stored_acknowledgement_is_exactly_the_current_risky_set() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn static_challenge_replaces_the_otp_setting() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(&format!("{CLEAN}static-challenge \"Code\" 1\n")));
@@ -182,6 +189,7 @@ fn static_challenge_replaces_the_otp_setting() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn oversized_or_mismatched_fields_are_refused() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -199,6 +207,7 @@ fn oversized_or_mismatched_fields_are_refused() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_issues_are_shown_once() {
     let w = window();
     let dir = w.fx.dir.path().join("import");
@@ -223,6 +232,7 @@ fn sstp_fields(w: &Window, c: &Connection) -> macvpn_app_core::editor::SstpField
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_form_saves_a_serialized_config() {
     let w = window();
     let c = w.add("SSTP", VPNKind::Sstp, Some(&macvpn_core::importer::template(VPNKind::Sstp)));
@@ -246,6 +256,7 @@ fn sstp_form_saves_a_serialized_config() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_issues_have_no_line_numbers_and_ca_import() {
     let w = window();
     let c = w.add("SSTP", VPNKind::Sstp, Some(&macvpn_core::importer::template(VPNKind::Sstp)));
@@ -277,6 +288,7 @@ fn native_fields(w: &Window, c: &Connection) -> NativeFields {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_save_installs_a_profile_without_the_password() {
     let w = window();
     let c = w.add("L2TP", VPNKind::L2tp, None);
@@ -304,6 +316,7 @@ fn native_save_installs_a_profile_without_the_password() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_only_otp_change_needs_no_new_profile() {
     let w = window();
     let c = w.add("L2TP", VPNKind::L2tp, None);
@@ -320,6 +333,7 @@ fn native_only_otp_change_needs_no_new_profile() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_save_needs_server_and_account() {
     let w = window();
     let c = w.add("L2TP", VPNKind::L2tp, None);
@@ -342,7 +356,7 @@ const SERVICE: &str = "6A3F0B1E-2C4D-4E5F-8A9B-0C1D2E3F4A5B";
 
 fn system_window(type_label: &str) -> Window {
     let w = window();
-    w.fx.native.set_list(Ok(vec![SystemService::new(SERVICE, "Company", type_label, "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SERVICE, "Company", type_label, "Disconnected")]));
     w.manager.refresh();
     w
 }
@@ -382,6 +396,7 @@ fn make_dirty(w: &Window, c: &Connection) {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn selection_change_asks_with_unsaved_changes() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -409,6 +424,7 @@ fn selection_change_asks_with_unsaved_changes() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn save_then_proceed() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -421,6 +437,7 @@ fn save_then_proceed() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn failed_save_reports_and_shows_the_editor() {
     let w = window();
     let a = w.add("Alpha", VPNKind::Openvpn, Some(CLEAN));
@@ -445,6 +462,7 @@ fn failed_save_reports_and_shows_the_editor() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn window_close_and_quit_wait_for_the_answer() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -468,6 +486,7 @@ fn window_close_and_quit_wait_for_the_answer() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_selection_during_the_quit_question_waits_for_its_answer() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -491,6 +510,7 @@ fn a_selection_during_the_quit_question_waits_for_its_answer() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_selection_during_the_quit_question_follows_a_discard() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -508,6 +528,7 @@ fn a_selection_during_the_quit_question_follows_a_discard() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_quit_cancelled_elsewhere_dismisses_the_question() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -533,6 +554,7 @@ fn a_quit_cancelled_elsewhere_dismisses_the_question() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_selection_deferred_by_the_quit_follows_when_the_window_closes() {
     let w = window();
     let a = w.add("A", VPNKind::Openvpn, Some(CLEAN));
@@ -558,6 +580,7 @@ fn settings_request_comes_before_the_log_request() {
 // MARK: - Create, import, export, delete
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_saves_the_template_and_selects() {
     let w = window();
     let id = w.model.create(VPNKind::Openvpn).unwrap();
@@ -582,6 +605,7 @@ fn import_dir(w: &Window) -> PathBuf {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_asks_about_credential_files() {
     for answer in [true, false] {
         let w = window();
@@ -626,6 +650,7 @@ fn import_asks_about_credential_files() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn closing_the_window_answers_the_question_with_ignore() {
     let w = window();
     let dir = import_dir(&w);
@@ -645,6 +670,7 @@ fn closing_the_window_answers_the_question_with_ignore() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_reports_are_aggregated() {
     let w = window();
     let dir = import_dir(&w);
@@ -689,6 +715,7 @@ fn oversized_import_is_refused() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn export_warns_about_key_material() {
     let w = window();
     let config = format!("{CLEAN}<key>\nsecret\n</key>\n");
@@ -713,6 +740,7 @@ fn export_warns_about_key_material() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_removes_config_secrets_editor_and_selection() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -731,6 +759,7 @@ fn delete_removes_config_secrets_editor_and_selection() {
 // MARK: - Stored secrets never reach the web view
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn stored_secrets_are_only_flags_in_the_editor_view() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -748,6 +777,7 @@ fn stored_secrets_are_only_flags_in_the_editor_view() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_untouched_secret_keeps_the_keychain_value() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -762,6 +792,7 @@ fn an_untouched_secret_keeps_the_keychain_value() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_typed_secret_replaces_and_an_empty_one_removes() {
     let w = window();
     let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
@@ -783,6 +814,7 @@ fn a_typed_secret_replaces_and_an_empty_one_removes() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_kept_password_still_follows_the_rule_and_stays() {
     let w = window();
     let c = w.add("SSTP", VPNKind::Sstp, Some(&macvpn_core::importer::template(VPNKind::Sstp)));
@@ -812,6 +844,7 @@ fn sstp_kept_password_still_follows_the_rule_and_stays() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_kept_psk_goes_into_the_profile_and_secrets_stay() {
     let w = window();
     let c = w.add("L2TP", VPNKind::L2tp, None);

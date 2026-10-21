@@ -3,7 +3,9 @@
 
 mod common;
 
-use common::{TempDir, mode};
+use common::TempDir;
+#[cfg(unix)]
+use common::mode;
 use macvpn_core::control::protocol::{ErrorCode, is_token_shaped};
 use macvpn_core::control::registry::*;
 use macvpn_core::date::Date;
@@ -174,6 +176,7 @@ fn add_replaces_the_same_id() {
 // MARK: Persistence
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn save_then_load_round_trips() {
     let tmp = TempDir::new();
     let (mut r, id_a, token_a, _, _) = registry();
@@ -210,6 +213,7 @@ fn missing_file_is_empty_registry() {
     assert!(Registry::load(&tmp.path().join("nope")).unwrap().clients().is_empty());
 }
 
+#[cfg(unix)]
 #[test]
 fn file_mode_is_0600_and_dir_0700() {
     let tmp = TempDir::new();
@@ -230,6 +234,7 @@ fn file_mode_is_0600_and_dir_0700() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn corrupt_file_is_empty_registry_and_renamed_to_bad() {
     let (r, ..) = registry();
     let good = {
@@ -267,6 +272,7 @@ fn corrupt_file_is_empty_registry_and_renamed_to_bad() {
 // MARK: Pairing rate limit
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn pairing_rate_limit_with_fake_clock() {
     let mut r = Registry::new();
     assert!(!r.pairing_blocked(at(0.0)));

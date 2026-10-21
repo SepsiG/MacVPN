@@ -1,6 +1,6 @@
 [package]
 name = "macvpn-app"
-description = "MacVPN menu bar app: the Tauri 2 shell over macvpn-app-core and macvpn-platform-mac"
+description = "MacVPN menu bar app: the Tauri 2 shell over macvpn-app-core and the platform layer"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -21,12 +21,19 @@ tauri-build = { version = "2.7.3", features = [] }
 [dependencies]
 macvpn-app-core = { path = "../../crates/app-core" }
 macvpn-core = { path = "../../crates/core" }
-macvpn-platform-mac = { path = "../../crates/platform-mac" }
+macvpn-platform-api = { path = "../../crates/platform-api" }
 serde = { version = "1.0.229", features = ["derive"] }
 tauri = { version = "2.12.4", features = ["tray-icon", "image-png"] }
 uuid = { version = "1.26.1", features = ["v4"] }
 # Passwords and recovery keys from the vault windows are wiped after use.
 zeroize = "1.9.1"
+
+# The platform crate of the target, chosen by `src/platform/mod.rs` (the app's only `cfg(target_os)`).
+[target.'cfg(target_os = "macos")'.dependencies]
+macvpn-platform-mac = { path = "../../crates/platform-mac" }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+macvpn-platform-win = { path = "../../crates/platform-win" }
 
 [dev-dependencies]
 serde_json = "1.0.154"

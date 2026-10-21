@@ -1,10 +1,10 @@
 #!/bin/bash
-# A root réteg (crates/mvpn) fekete dobozos tesztje nem-root, dry-run / tesztmódban: mvpn, mvpn validate,
+# A root réteg (crates/helper) fekete dobozos tesztje nem-root, dry-run / tesztmódban: mvpn, mvpn validate,
 # mvpn hook ovpn-dns, mvpn-mgmt / mvpn mgmt-bridge. MVPN_BIN=<abszolút útvonal> egy kész binárist tesztel (pl. a
-# dist/MacVPN.app/Contents/Resources/root/mvpn-t); enélkül a crates/mvpn debug buildjét.
+# dist/MacVPN.app/Contents/Resources/root/mvpn-t); enélkül a crates/helper debug buildjét.
 #
 # Root réteg 8: az mvpn semmilyen felhasználói fájlt nem nyit meg. A config a standard bemeneten jön, hosszal
-# keretezve, utána a titok-sorok (lásd crates/mvpn/src/secrets.rs):
+# keretezve, utána a titok-sorok (lásd crates/helper/src/shared/framing.rs):
 #   config <hossz>\n<pontosan hossz bájt config>username=…\npassword=…\n…
 # A tesztkonfigok a $T/cfg/<id> alatt vannak (csak tesztadat, az mvpn sosem olvassa); a `feed <id>` írja ki a keretet.
 # Az expect_ok / expect_fail az `up <kind> <id>` hívásnak automatikusan a feed-et adja (ha van ilyen config),
@@ -17,10 +17,10 @@
 #   - A validátor: "$MVPN" validate (VALIDATE tömb); a közvetítő: MVPN_MGMT=$MVPN (argv[0] = mvpn-mgmt).
 #   - ovpn-dns `#!/bin/bash -p` → a hook ellenséges környezet (PATH, IFS, locale, BASH_ENV, …) mellett is ugyanazt adja;
 #     környezet-allowlist → a hook check-env kimenete pontosan az engedélyezett nevek (+ PATH, LC_ALL);
-#     ovpn-dns down `set -f` → a hook_dns::tests::backup_lines_never_glob egységteszt fut;
+#     ovpn-dns down `set -f` → a macos::hook_dns::tests::backup_lines_never_glob egységteszt fut;
 #     `export MVPN_MASK` hiánya, `export LC_ALL=C`, sstp indítás export nélkül → a gyermekfolyamatok környezete
 #       (hamis openvpn / sstpc env-mentéssel): nincs benne titok, PATH és LC_ALL=C rögzített;
-#     `pgrep -U 0 -x charon` → ugyanez a Rust forrásban (crates/mvpn/src/strongswan.rs);
+#     `pgrep -U 0 -x charon` → ugyanez a Rust forrásban (crates/helper/src/macos/strongswan.rs);
 #     OVPN_DONE_RE → a sorok a "$MVPN" __ovpn-done (csak tesztmódú) parancson át;
 #     do_respond here-string nélkül → a respond nem ír ideiglenes fájlt (üres TMPDIR marad), a kód csak a
 #       futási könyvtár mgmt-resp fájljában van;
@@ -36,14 +36,14 @@ if [ -n "${MVPN_BIN:-}" ]; then
   case "$MVPN_BIN" in /*) ;; *) echo "MVPN_BIN: abszolút útvonal kell"; exit 2 ;; esac
   MVPN="$MVPN_BIN"
 else
-  PATH="$HOME/.cargo/bin:$PATH" cargo build -q -p mvpn --locked || { echo "mvpn build sikertelen"; exit 1; }
+  PATH="$HOME/.cargo/bin:$PATH" cargo build -q -p macvpn-helper --locked || { echo "mvpn build sikertelen"; exit 1; }
   MVPN="$PWD/target/debug/mvpn"
 fi
 SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/mvpn/VERSION"; EXPECT_VERSION=8
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=8
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
@@ -324,11 +324,19 @@ grep -qx 'LC_ALL=C' "$T/child-env.openvpn" && grep -qx 'PATH=/usr/bin:/bin:/usr/
   && grep -qx 'LC_ALL=C' "$T/child-env.sstpc" && grep -qx 'PATH=/usr/bin:/bin:/usr/sbin:/sbin' "$T/child-env.sstpc" \
   && ok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban" || nok "LC_ALL=C és rögzített PATH a gyermekfolyamatokban"
 [ "$("$SH" "$MVPN" version)" = "$EXPECT_VERSION" ] && [ "$(cat "$VERSION_FILE")" = "$EXPECT_VERSION" ] && ok "root verzió: $EXPECT_VERSION" || nok "root verzió: $EXPECT_VERSION"
+# Az 1.4.0 kompatibilitási fixture-ök (platformsemleges refaktor, Task 1): az mvpn argumentum nélkül és a `version`
+# kimenete (stdout és stderr együtt, az utolsó sorban `exit <kód>`) bájtra azonos az 1.4.0-éval.
+COMPAT=crates/app-core/tests/fixtures/compat-1.4.0
+compat_out() { "$SH" "$MVPN" "$@" </dev/null 2>&1; echo "exit $?"; }
+compat_out | cmp -s - "$COMPAT/mvpn-usage.txt" && ok "1.4.0 fixture: mvpn (argumentum nélkül)" \
+  || { nok "1.4.0 fixture: mvpn (argumentum nélkül)"; compat_out | diff "$COMPAT/mvpn-usage.txt" - ; }
+compat_out version | cmp -s - "$COMPAT/mvpn-version.txt" && ok "1.4.0 fixture: mvpn version" \
+  || { nok "1.4.0 fixture: mvpn version"; compat_out version | diff "$COMPAT/mvpn-version.txt" - ; }
 OUT=$(printf 'Szép ÁRVÍZTŰRŐ\n' | env LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 MVPN_MASK_1=ŰR "$SH" "$MVPN" __mask)
 [ "$OUT" = "Szép ÁRVÍZT***Ő" ] && ok "mask felhasználói locale mellett is bájt-alapú" || nok "mask felhasználói locale mellett is bájt-alapú ($OUT)"
 # Ugyanez a Rust forrásban: a charon pid-ek csak a `pgrep -U 0 -x charon` (root) találatai lehetnek.
-SW_SRC=crates/mvpn/src/strongswan.rs
-grep -qF '"-U", "0", "-x", "charon"' "$SW_SRC" && [ "$(grep -c '"charon"' "$SW_SRC")" = 1 ] && ! grep -q 'pkill' crates/mvpn/src/*.rs \
+SW_SRC=crates/helper/src/macos/strongswan.rs
+grep -qF '"-U", "0", "-x", "charon"' "$SW_SRC" && [ "$(grep -c '"charon"' "$SW_SRC")" = 1 ] && ! grep -rq --include='*.rs' 'pkill' crates/helper/src \
   && ok "charon: csak root folyamat (pgrep -U 0)" || nok "charon: csak root folyamat (pgrep -U 0)"
 
 # Kapcsolatonkénti zár. Tesztmódban a dry-run is a valódi zár-útvonalon megy (a futási könyvtár itt
@@ -388,7 +396,7 @@ ODR2="$T/odrun2"; mkdir -p "$ODR2"
 env -i script_type=up 'dev=utun1;x' 'ifconfig_local=10.0.0.2/24' "${OD_SH[@]}" "$ODR2" "$T/od4.log"
 [ ! -e "$ODR2/iface" ] && [ ! -e "$ODR2/ip" ] && ok "ovpn-dns érvénytelen dev/ip nem íródik" || nok "ovpn-dns érvénytelen dev/ip nem íródik"
 # `set -f` helyett: a dns-backup sorainak bontása soha nem glob-kifejt (egységteszt).
-PATH="$HOME/.cargo/bin:$PATH" cargo test -q -p mvpn --locked -- hook_dns::tests::backup_lines_never_glob >"$T/glob.out" 2>&1 \
+PATH="$HOME/.cargo/bin:$PATH" cargo test -q -p macvpn-helper --locked -- macos::hook_dns::tests::backup_lines_never_glob >"$T/glob.out" 2>&1 \
   && grep -q '1 passed' "$T/glob.out" && ok "hook down: nincs glob-kifejtés" || { nok "hook down: nincs glob-kifejtés"; cat "$T/glob.out"; }
 
 # down: a típus a futási könyvtárból jön

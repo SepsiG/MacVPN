@@ -85,7 +85,7 @@ pub async fn folder_delete(state: Shared<'_>, id: String, mode: String) -> Resul
             shared.native_logs.remove(&c.id);
         }
         if deleted.iter().any(|c| c.kind.is_native()) && !shared.env.sandbox {
-            crate::platform::open_profiles_settings();
+            crate::platform::get().shell().open_native_profile_settings();
         }
         if !deleted.is_empty() {
             shared.manager.refresh();

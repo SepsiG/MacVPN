@@ -316,8 +316,8 @@ pub fn open_window(app: &AppHandle, state: &AppState, label: &str) -> Result<(),
     let label = label.to_string();
     window
         .run_on_main_thread(move || {
-            if let Ok(ns_window) = target.ns_window() {
-                macvpn_platform_mac::app_hooks::order_front_regardless(ns_window);
+            if let Some(native) = crate::platform::native_window(&target) {
+                crate::platform::get().windows().order_front_regardless(native);
                 if let Some(state) = handle.try_state::<Arc<AppState>>()
                     && let Some(lock) = guard(&state.vault.locks).get_mut(&label)
                 {
@@ -517,7 +517,7 @@ pub async fn vault_create(
     };
     // Smoke runs keep the key for the recovery step (debug builds; never logged).
     #[cfg(debug_assertions)]
-    crate::smoke::remember_recovery_key(&recovery_key);
+    crate::platform::smoke_remember_recovery_key(&recovery_key);
     // A restore fills the new vault after the recovery key check (`restore_fresh_apply`): until then nothing may
     // write to it (the pending migration of 1.1 data would claim the empty vault).
     if !migrating && !restoring {

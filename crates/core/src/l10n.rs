@@ -2,9 +2,15 @@
 //!
 //! The key is the English text (also the `en` value). Both Swift tables are merged into one JSON source,
 //! `crates/core/l10n/strings.json`, embedded here and loaded by the UI too; the texts are verbatim copies.
+//!
+//! The key is the macOS wording. An entry may carry per-OS texts (`variants.<os>`, both `en` and `hu`) and the OSes
+//! whose code paths show it (`only`). On an OS whose product is not MacVPN, `MacVPN` in the resolved text becomes
+//! the product name, except in texts that another OS's code paths show (`only` without this OS). On macOS the
+//! output is exactly the 1.4.0 text.
 
+use crate::TargetOs;
 use std::cell::Cell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::{LazyLock, RwLock};
 
@@ -151,6 +157,34 @@ impl From<i32> for Arg<'_> {
     }
 }
 
+/// The product name of the 1.4.0 texts (the keys), replaced by [`TextPlatform::product`] on other products.
+const BASE_PRODUCT: &str = "MacVPN";
+
+/// The OS and product the texts are worded for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TextPlatform {
+    pub os: TargetOs,
+    pub product: &'static str,
+}
+
+impl TextPlatform {
+    pub const MACOS: TextPlatform = TextPlatform { os: TargetOs::MacOs, product: BASE_PRODUCT };
+}
+
+static TEXT_PLATFORM: RwLock<TextPlatform> = RwLock::new(TextPlatform::MACOS);
+
+/// Sets the OS and product of every later translation; the platform layer calls it once at launch. The default
+/// is [`TextPlatform::MACOS`].
+pub fn set_text_platform(platform: TextPlatform) {
+    if let Ok(mut p) = TEXT_PLATFORM.write() {
+        *p = platform;
+    }
+}
+
+pub fn text_platform() -> TextPlatform {
+    TEXT_PLATFORM.read().map(|p| *p).unwrap_or(TextPlatform::MACOS)
+}
+
 /// Translation in the current language ([`AppLanguage::current`]).
 pub fn tr(key: &str, args: &[Arg<'_>]) -> String {
     tr_in(AppLanguage::current(), key, args)
@@ -158,9 +192,27 @@ pub fn tr(key: &str, args: &[Arg<'_>]) -> String {
 
 /// Translation in an explicit language (Swift `L10n.tr(_:_:language:)`).
 pub fn tr_in(language: AppLanguage, key: &str, args: &[Arg<'_>]) -> String {
-    let format = match language {
-        AppLanguage::Hu => hungarian(key).unwrap_or(key),
-        AppLanguage::En => key,
+    tr_for(text_platform(), language, key, args)
+}
+
+/// Translation for an explicit OS and product: the OS's variant if the entry has one, else the base text; then
+/// the product name (see the module comment). A missing key is its own English text.
+pub fn tr_for(platform: TextPlatform, language: AppLanguage, key: &str, args: &[Arg<'_>]) -> String {
+    let entry = TABLE.get(key);
+    let variant = entry.and_then(|e| e.variants.get(&platform.os));
+    let format = match (language, variant) {
+        (AppLanguage::En, Some((en, _))) => en.as_str(),
+        (AppLanguage::Hu, Some((_, hu))) => hu.as_str(),
+        (AppLanguage::En, None) => key,
+        (AppLanguage::Hu, None) => entry.map_or(key, |e| e.hu.as_str()),
+    };
+    let foreign = entry.is_some_and(|e| !e.only.is_empty() && !e.only.contains(&platform.os));
+    let renamed;
+    let format = if platform.product != BASE_PRODUCT && !foreign && format.contains(BASE_PRODUCT) {
+        renamed = format.replace(BASE_PRODUCT, platform.product);
+        renamed.as_str()
+    } else {
+        format
     };
     if args.is_empty() { format.to_string() } else { format_string(format, args) }
 }
@@ -229,6 +281,21 @@ pub struct Entry {
     pub hu: String,
     /// `core` (core and root messages) or `app` (UI texts).
     pub scope: String,
+    /// The OSes whose code paths show this text (empty: every OS).
+    pub only: Vec<TargetOs>,
+    /// The text on an OS whose wording differs from the key's: (English, Hungarian).
+    pub variants: BTreeMap<TargetOs, (String, String)>,
+}
+
+fn target_os(name: &str, key: &str) -> TargetOs {
+    TargetOs::parse(name).unwrap_or_else(|| panic!("l10n/strings.json: unknown OS {name:?} in {key:?}"))
+}
+
+fn text(value: &serde_json::Value, field: &str, key: &str) -> String {
+    match value.get(field).and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => panic!("l10n/strings.json: variant without {field:?} in {key:?}"),
+    }
 }
 
 /// The single EN/HU source (`crates/core/l10n/strings.json`), embedded. The UI loads the same file.
@@ -241,7 +308,19 @@ static TABLE: LazyLock<HashMap<String, Entry>> = LazyLock::new(|| {
         for (key, entry) in strings {
             let hu = entry.get("hu").and_then(|v| v.as_str()).unwrap_or_default().to_string();
             let scope = entry.get("scope").and_then(|v| v.as_str()).unwrap_or_default().to_string();
-            table.insert(key.clone(), Entry { key: key.clone(), hu, scope });
+            let only = entry
+                .get("only")
+                .and_then(|v| v.as_array())
+                .map(|a| a.iter().map(|os| target_os(os.as_str().unwrap_or_default(), key)).collect())
+                .unwrap_or_default();
+            let variants = entry
+                .get("variants")
+                .and_then(|v| v.as_object())
+                .map(|o| {
+                    o.iter().map(|(os, v)| (target_os(os, key), (text(v, "en", key), text(v, "hu", key)))).collect()
+                })
+                .unwrap_or_default();
+            table.insert(key.clone(), Entry { key: key.clone(), hu, scope, only, variants });
         }
     }
     table

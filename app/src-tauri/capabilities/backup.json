@@ -1,6 +1,6 @@
 {
   "identifier": "backup",
-  "description": "The full backup and restore windows (backup, restore; local content only): the view model, events, and the backup and restore commands. The native panels run in the backend; no path, file or shell API.",
+  "description": "The full backup and restore windows (backup, restore; local content only): the view model, the platform (its texts), events, and the backup and restore commands. The native panels run in the backend; no path, file or shell API.",
   "windows": [
     "backup",
     "restore"
@@ -9,6 +9,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-get-view-model",
+    "allow-get-platform",
     "allow-backup-show-window",
     "allow-backup-close-window",
     "allow-backup-choose-destination",

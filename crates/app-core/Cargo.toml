@@ -14,8 +14,8 @@ name = "macvpn_app_core"
 workspace = true
 
 [dependencies]
-libc = "0.2.191"
 macvpn-core = { path = "../core", features = ["vault"] }
+macvpn-platform-api = { path = "../platform-api" }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 uuid = { version = "1.26.1", features = ["v4"] }
@@ -33,3 +33,7 @@ macvpn-core = { path = "../core", features = ["vault", "test-support"] }
 # The control API example client, driven against the real server in `tests/control_example_client.rs`.
 macvpn-control-client = { path = "../../examples/macvpn-control-client" }
 regex = "1.13.1"
+
+[target.'cfg(unix)'.dev-dependencies]
+# The FIFO test of import_export opens the FIFO with O_NONBLOCK to release its writer.
+libc = "0.2.191"

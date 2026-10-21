@@ -4,11 +4,9 @@
 
 mod common;
 
-use common::{MockProfiles, TempDir, clock_at};
+use common::{MobileconfigProfiles, TempDir, clock_at};
 use macvpn_app_core::connections::ConnectionsModel;
-use macvpn_app_core::deps::{
-    FolderOp, FolderOpResult, FolderStore, RankingPersistence, SystemItemChange, SystemService,
-};
+use macvpn_app_core::deps::{FolderOp, FolderOpResult, FolderStore, RankingPersistence, SystemItemChange, SystemVpn};
 use macvpn_app_core::editor::EditorDeps;
 use macvpn_app_core::folders::{self, MemoryFolders, VaultFolders, retention};
 use macvpn_app_core::import_export;
@@ -65,7 +63,7 @@ fn world_with(ranking: ConnectionRanking) -> World {
         store: fx.store.clone(),
         secrets: fx.secrets.clone(),
         secret_writer: fx.secrets.clone(),
-        profiles: Arc::new(MockProfiles::default()),
+        profiles: Arc::new(MobileconfigProfiles::default()),
         clock: clock_at(NOW),
     }));
     World { fx, folders, manager, model }
@@ -129,6 +127,7 @@ fn connected_json(cs: &[&Connection]) -> String {
 // MARK: - Order
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_tree_orders_subfolders_first_then_pinned_items_then_usage() {
     let now = Date::from_time_interval_since_1970(NOW);
     let fx_ids: Vec<Connection> = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]
@@ -144,7 +143,7 @@ fn the_tree_orders_subfolders_first_then_pinned_items_then_usage() {
     for c in &fx_ids {
         w.fx.store.save(c, Some(OVPN)).unwrap();
     }
-    w.fx.native.set_list(Ok(vec![SystemService::new(SVC, "Zulu system", "IKEv2", "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SVC, "Zulu system", "IKEv2", "Disconnected")]));
     w.manager.reload();
     w.manager.refresh();
     let work = w.folder(None, "Work");
@@ -184,6 +183,7 @@ fn the_tree_orders_subfolders_first_then_pinned_items_then_usage() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn without_a_folder_store_everything_is_at_the_root_in_ranking_order() {
     let fx = common::Fixture::new(AppLanguage::En);
     let a = Connection::new("B", VPNKind::Openvpn);
@@ -209,6 +209,7 @@ fn without_a_folder_store_everything_is_at_the_root_in_ranking_order() {
 // MARK: - View model
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn folder_rows_count_active_connections_in_the_whole_subtree_and_show_the_green_dot() {
     let w = world();
     let a = w.add("A");
@@ -223,7 +224,7 @@ fn folder_rows_count_active_connections_in_the_whole_subtree_and_show_the_green_
     folders::set_color(&w.manager, &work, Some("teal")).unwrap();
     folders::set_item_color(&w.manager, &uuid_string(&b.id), Some("pink")).unwrap();
     folders::set_collapsed(&w.manager, &work, true).unwrap();
-    w.fx.root.respond("status", Ok(&connected_json(&[&a])));
+    w.fx.helper.respond("status", Ok(&connected_json(&[&a])));
     w.manager.refresh();
     // B is connecting: active, but no green dot for it alone.
     let vm = w.vm();
@@ -283,6 +284,7 @@ fn folder_rows_count_active_connections_in_the_whole_subtree_and_show_the_green_
 // MARK: - Commands
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn commands_validate_ids_colours_names_and_modes() {
     let w = world();
     let c = w.add("A");
@@ -339,6 +341,7 @@ fn a_folder_cannot_move_into_itself_or_a_descendant() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_with_move_up_puts_the_contents_into_the_parent() {
     let w = world();
     let a = w.add("A");
@@ -359,12 +362,13 @@ fn delete_with_move_up_puts_the_contents_into_the_parent() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_contents_deletes_the_connections_of_the_subtree_and_keeps_system_vpns() {
     let w = world();
     let a = w.add("A");
     let b = w.add("B");
     let keep = w.add("Keep");
-    w.fx.native.set_list(Ok(vec![SystemService::new(SVC, "Corp", "IKEv2", "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SVC, "Corp", "IKEv2", "Disconnected")]));
     w.manager.refresh();
     let work = w.folder(None, "Work");
     let clients = w.folder(Some(&work), "Clients");
@@ -372,14 +376,14 @@ fn delete_contents_deletes_the_connections_of_the_subtree_and_keeps_system_vpns(
     w.put(&b, Some(&clients));
     folders::move_item(&w.manager, SVC, Some(&clients)).unwrap();
     // Refused while one of them is active.
-    w.fx.root.respond("status", Ok(&connected_json(&[&b])));
+    w.fx.helper.respond("status", Ok(&connected_json(&[&b])));
     w.manager.refresh();
     assert_eq!(
         folders::delete(&w.manager, &w.model, &work, "deleteContents").unwrap_err(),
         "Disconnect the connections in this folder before deleting them"
     );
     assert_eq!(w.manager.folders().len(), 2, "nothing deleted");
-    w.fx.root.respond("status", Ok("[]"));
+    w.fx.helper.respond("status", Ok("[]"));
     w.manager.refresh();
     let deleted = folders::delete(&w.manager, &w.model, &work, "deleteContents").unwrap();
     let mut names: Vec<String> = deleted.iter().map(|c| c.name.clone()).collect();
@@ -437,7 +441,7 @@ fn the_manager_applies_the_retention_after_each_listing() {
     deps.folders = Some(w.folders.clone());
     deps.clock = clock.clone();
     let m = w.fx.manager_with(deps);
-    w.fx.native.set_list(Ok(vec![SystemService::new(SVC, "Corp", "IKEv2", "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SVC, "Corp", "IKEv2", "Disconnected")]));
     m.refresh();
     let work = folders::create(&m, None, "Work").unwrap();
     folders::move_item(&m, SVC, Some(&work)).unwrap();
@@ -448,7 +452,7 @@ fn the_manager_applies_the_retention_after_each_listing() {
     assert_eq!(items[0].missing_since, Some(Date::from_time_interval_since_1970(NOW)));
     // Back after 10 days: cleared, still in Work.
     clock.advance(10.0 * 86_400.0);
-    w.fx.native.set_list(Ok(vec![SystemService::new(SVC, "Corp", "IKEv2", "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SVC, "Corp", "IKEv2", "Disconnected")]));
     m.refresh();
     assert_eq!(w.folders.system_items().unwrap()[0].missing_since, None);
     assert_eq!(m.placement(SVC).and_then(|p| p.folder).map(|f| uuid_string(&f)), Some(work.clone()));
@@ -479,6 +483,7 @@ fn vault() -> (TempDir, Arc<VaultLifecycle>) {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_vault_store_round_trips_and_refuses_while_locked() {
     let (_tmp, vault) = vault();
     let store = VaultFolders::new(vault.clone());
@@ -527,6 +532,7 @@ fn the_vault_store_round_trips_and_refuses_while_locked() {
 // MARK: - Export and import
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn export_adds_the_folder_line_only_for_a_connection_in_a_folder() {
     let w = world();
     let c = w.add("Office");
@@ -561,6 +567,7 @@ fn import(w: &World, dir: &TempDir, file: &str, text: &str) -> Connection {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_strips_the_line_and_recreates_the_folder_path() {
     let w = world();
     let dir = TempDir::new();
@@ -599,6 +606,7 @@ fn import_strips_the_line_and_recreates_the_folder_path() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_malformed_meta_line_stays_in_the_config_as_a_comment() {
     let w = world();
     let dir = TempDir::new();

@@ -37,6 +37,7 @@ use macvpn_core::catalog::selection::{InlineSecret, PublishSelection};
 use macvpn_core::catalog::source::CatalogSource;
 use macvpn_core::catalog::subscription::{SubscriptionString, format_subscription};
 use macvpn_core::exporter;
+use macvpn_core::fsx::Access;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::uuid_string;
 use macvpn_core::vault::{AdminKeyRecord, AdminKeyRole, Entropy, KdfParams, PublicationRecord, Vault, VaultError};
@@ -49,8 +50,8 @@ use std::time::Instant;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// The catalog file's mode: readable by everyone (it is served; it is encrypted and signed).
-pub const CATALOG_FILE_MODE: u32 = 0o644;
+/// The catalog file's access: readable by everyone (0644; it is served; it is encrypted and signed).
+pub const CATALOG_FILE_ACCESS: Access = Access::Shared;
 
 /// One publish from the wizard: a new publication (`catalog_id: None`) or the next version of one.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -598,7 +599,7 @@ impl Publisher {
         if let Some(hook) = self.before_write.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
             hook();
         }
-        if let Err(e) = exporter::write_with_mode(&bytes, path, CATALOG_FILE_MODE) {
+        if let Err(e) = exporter::write_with_access(&bytes, path, CATALOG_FILE_ACCESS) {
             let restored = self.deps.vault.with(|v| match &prior {
                 None => v.delete_publication(catalog_id),
                 Some(p) => v.save_publication(p, prior_team_key.as_ref()),

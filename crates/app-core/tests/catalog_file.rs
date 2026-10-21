@@ -8,7 +8,9 @@ use common::TempDir;
 use macvpn_app_core::catalog_file::{FILE_READ_TIMEOUT, FileCatalogFetcher};
 use macvpn_app_core::deps::{CatalogFetcher, FetchOutcome, FetchRequest};
 use macvpn_core::catalog::fetch::content_hash;
-use macvpn_core::catalog::format::{CatalogError, MAX_CATALOG_BYTES};
+use macvpn_core::catalog::format::CatalogError;
+#[cfg(unix)]
+use macvpn_core::catalog::format::MAX_CATALOG_BYTES;
 use macvpn_core::catalog::source::{CatalogSource, HttpsUrl};
 use macvpn_core::vault::SourceValidators;
 use std::path::{Path, PathBuf};
@@ -56,6 +58,7 @@ fn a_regular_file_is_fetched_with_its_hash_and_the_same_content_is_not_modified(
     assert!(matches!(fetch(&f, &path, &v2), Ok(FetchOutcome::Fetched { .. })));
 }
 
+#[cfg(unix)]
 #[test]
 fn a_symlink_a_fifo_and_an_oversized_file_are_refused() {
     let tmp = TempDir::new();

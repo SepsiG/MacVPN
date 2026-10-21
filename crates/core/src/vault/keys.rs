@@ -9,6 +9,7 @@
 
 use super::entropy::Entropy;
 use super::recovery::RecoveryKey;
+use crate::fsx::{self, Follow, OpenFor};
 use crate::l10n::{Arg, tr};
 use argon2::{Algorithm, Argon2, Params, Version};
 use base64::Engine as _;
@@ -19,7 +20,6 @@ use serde_json::{Value, json};
 use std::fmt;
 use std::fs;
 use std::io::{self, Read};
-use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
 use zeroize::Zeroizing;
@@ -295,21 +295,25 @@ impl KeyFile {
         Ok(())
     }
 
-    /// Reads `<dir>/vault.keys`: a regular file (opened with `O_NOFOLLOW`) owned by the directory's owner.
+    /// Reads `<dir>/vault.keys`: a regular file (opened without following a symlink, never blocking on a FIFO)
+    /// owned by the directory's owner.
     pub fn load(dir: &Path) -> Result<KeyFile, KeyError> {
-        let file = fs::OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(dir.join(KEYS_FILE))
-            .map_err(KeyError::Io)?;
-        let meta = file.metadata().map_err(KeyError::Io)?;
-        let dir_owner = fs::metadata(dir).map_err(KeyError::Io)?.uid();
-        if !meta.file_type().is_file() || meta.uid() != dir_owner {
-            return Err(KeyError::Io(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "vault.keys must be a regular file of the vault directory's owner",
-            )));
-        }
+        // Not a regular file: refused below with the owner check's error, after the directory's owner is read.
+        let opened = match fsx::open_regular(&dir.join(KEYS_FILE), OpenFor::Read, Follow::No, false) {
+            Ok(opened) => Some(opened),
+            Err(e) if fsx::is_not_regular_file(&e) => None,
+            Err(e) => return Err(KeyError::Io(e)),
+        };
+        let dir_owner = fsx::owner(&fs::metadata(dir).map_err(KeyError::Io)?).map_err(KeyError::Io)?;
+        let file = match opened {
+            Some((file, meta)) if fsx::owner(&meta).map_err(KeyError::Io)? == dir_owner => file,
+            _ => {
+                return Err(KeyError::Io(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "vault.keys must be a regular file of the vault directory's owner",
+                )));
+            }
+        };
         let mut data = Vec::new();
         file.take(MAX_FILE_LEN + 1).read_to_end(&mut data).map_err(KeyError::Io)?;
         if data.len() as u64 > MAX_FILE_LEN {

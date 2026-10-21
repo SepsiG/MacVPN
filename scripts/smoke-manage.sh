@@ -73,7 +73,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 APP=${APP:-target/debug/macvpn-app}
-[ -x "$APP" ] || { echo "build first: (cd app/ui && npm run build) && cargo build -p macvpn-app --features custom-protocol" >&2; exit 2; }
+BUILD_HINT="build first: (cd app/ui && npm run build) && cargo build -p macvpn-app --features custom-protocol"
+[ -x "$APP" ] || { echo "$BUILD_HINT" >&2; exit 2; }
+# The binary must embed the current UI build. `cargo test`/`clippy` rebuild target/debug/macvpn-app without
+# custom-protocol (the app crate has integration tests); such a binary loads the dev server and every flow stalls.
+UI_JS=$(cd app/ui/dist/assets 2>/dev/null && ls index-*.js 2>/dev/null | head -1 || true)
+if [ -z "$UI_JS" ] || ! strings "$APP" | grep -F "assets/$UI_JS" >/dev/null; then
+  echo "$APP does not embed the current UI build (app/ui/dist/assets/${UI_JS:-?}); $BUILD_HINT" >&2
+  exit 2
+fi
 # A short path: the control socket (<home>/Library/Application Support/MacVPN/control/macvpn.sock) must fit a
 # Unix socket address (104 bytes), which $TMPDIR (/var/folders/…) would not leave room for.
 HOME_DIR=$(mktemp -d /tmp/macvpn-smoke.XXXXXX)

@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 
 /// The user's home directory from the user database (`getpwuid`), not from `$HOME`: the value the core store
-/// functions take (`~/Library/Application Support/MacVPN/…`).
+/// functions take (the app's data directory, `Product::data_dir`, is below it).
 pub fn home_directory() -> Option<PathBuf> {
     crate::sys::user_by_uid(crate::sys::getuid()).map(|u| u.home).filter(|h| h.is_absolute())
 }

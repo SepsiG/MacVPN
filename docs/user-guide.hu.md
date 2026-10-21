@@ -2,11 +2,15 @@
 
 [English version](user-guide.en.md)
 
-A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.4-es verziót írja le (lásd: [Újdonságok az 1.4-ben](#újdonságok-az-14-ben)). A menü **Súgó** pontja ezt nyitja meg.
+A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.5-ös verziót írja le (lásd: [Újdonságok az 1.5-ben](#újdonságok-az-15-ben)). A menü **Súgó** pontja ezt nyitja meg.
 
 Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útmutató a teljes referencia. Ha fejlesztőként azt szeretnéd, hogy egy másik program ezen a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait (**Párosított appok** a Kapcsolatok ablakban), olvasd el a [vezérlő API leírását](control-api.hu.md).
 
 > **Nyelv:** a MacVPN a macOS nyelvi beállítását követi (Rendszerbeállítások → Általános → Nyelv és régió, illetve az appra beállított nyelv). Magyarul és angolul érhető el; ha a preferált nyelvek között egyik sincs, angolul jelenik meg. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](user-guide.en.md) az angolokat.
+
+## Újdonságok az 1.5-ben
+
+- A háttérben: előkészítés egy Windowsos változatra. A MacVPN pontosan úgy működik, mint eddig; a root réteg 8 marad, így az 1.4-ről frissítve nem kell admin jelszó.
 
 ## Újdonságok az 1.4-ben
 

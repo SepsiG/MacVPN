@@ -9,14 +9,8 @@ use macvpn_app_core::quit::QuitOrigin;
 use macvpn_app_core::setup::{self, UninstallChoice, UninstallSystem, UserDataStores};
 use macvpn_app_core::updates::Notice;
 use macvpn_core::l10n;
-use macvpn_platform_mac::brew::{BrewBootstrap, BrewInstaller};
-use macvpn_platform_mac::command::ProcessCommandRunner;
-use macvpn_platform_mac::login_item::LaunchAgentLoginItem;
-use macvpn_platform_mac::root_installer;
-use macvpn_platform_mac::setup_checker::{SetupChecker, SetupReport};
-use macvpn_platform_mac::update_installer::UpdateInstaller;
+use macvpn_platform_api::{BootstrapTexts, SetupReport};
 use serde::Serialize;
-use std::collections::BTreeMap;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, PoisonError};
 use tauri::{AppHandle, State};
@@ -32,11 +26,10 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> 
 /// The system check (the Swift `checkSetup`): Homebrew, the tools, the root layer. Blocking (runs `sudo -n`).
 pub fn check(state: &AppState) -> SetupReport {
     #[cfg(debug_assertions)]
-    if let Some(report) = crate::smoke::setup_report(state) {
+    if let Some(report) = crate::platform::smoke_setup_report(state) {
         return store(state, report);
     }
-    let runner = ProcessCommandRunner::default();
-    let report = SetupChecker::new(&runner, state.env.bundled_root_dir()).check();
+    let report = crate::platform::get().setup().check(state.env.bundled_root_dir().as_deref());
     store(state, report)
 }
 
@@ -64,24 +57,23 @@ pub async fn setup_check(state: Shared<'_>) -> Result<(), String> {
 pub async fn setup_install_homebrew(state: Shared<'_>) -> Result<Option<Notice>, String> {
     let shared = state.inner().clone();
     blocking(move || {
-        let start = l10n::tr("Installing Homebrew (with the official installer)…", &[]);
-        let done = l10n::tr("Done. Go back to MacVPN and click Check Again.", &[]);
-        let failed =
-            l10n::tr("Could not download the Homebrew installer. Check the internet connection, then try again.", &[]);
+        let texts = BootstrapTexts {
+            start: l10n::tr("Installing Homebrew (with the official installer)…", &[]),
+            done: l10n::tr("Done. Go back to MacVPN and click Check Again.", &[]),
+            failed: l10n::tr(
+                "Could not download the Homebrew installer. Check the internet connection, then try again.",
+                &[],
+            ),
+        };
+        let platform = crate::platform::get();
         let parent = if shared.env.sandbox {
             shared.env.staging_parent().ok_or_else(|| "no sandbox temp directory".to_string())
         } else {
-            macvpn_platform_mac::temp_dir::temporary_directory().map_err(|e| e.0)
+            platform.system().temporary_directory().map_err(String::from)
         };
-        let written = parent.and_then(|parent| {
-            BrewBootstrap::write(|dir| BrewBootstrap::script(&start, &done, &failed, dir), &parent).map_err(|e| e.0)
-        });
-        let result = written.and_then(|script| {
-            if shared.env.sandbox {
-                eprintln!("MacVPN (sandbox): Homebrew installer written, not opened: {}", script.display());
-                return Ok(());
-            }
-            crate::platform::open_file(&script)
+        // Written in a fresh private directory under `parent`; the sandbox writes it but does not open it.
+        let result = parent.and_then(|parent| {
+            platform.setup().install_package_manager(&texts, &parent, shared.env.sandbox).map_err(String::from)
         });
         result.err().map(|message| Notice { title: l10n::tr("Could not start the Homebrew installer", &[]), message })
     })
@@ -92,7 +84,8 @@ pub async fn setup_install_homebrew(state: Shared<'_>) -> Result<Option<Notice>,
 /// closes, and the system is checked again at its end.
 #[tauri::command]
 pub async fn setup_install_tools(state: Shared<'_>) -> Result<(), String> {
-    let prefix = state.setup.read().unwrap_or_else(PoisonError::into_inner).brew_prefix.clone().ok_or("no Homebrew")?;
+    let report = state.setup.read().unwrap_or_else(PoisonError::into_inner).clone();
+    report.package_manager.as_ref().ok_or("no Homebrew")?;
     if !state.brew.lock().unwrap_or_else(PoisonError::into_inner).start() {
         return Err("already running".into());
     }
@@ -101,18 +94,12 @@ pub async fn setup_install_tools(state: Shared<'_>) -> Result<(), String> {
     std::thread::Builder::new()
         .name("macvpn-brew".into())
         .spawn(move || {
-            let output = |text: &str| {
+            let mut output = |text: &str| {
                 shared.brew.lock().unwrap_or_else(PoisonError::into_inner).append(text);
                 shared.publisher.mark();
             };
-            if shared.env.sandbox {
-                output(&BrewInstaller::header());
-                output("(sandbox: brew is not run)\n");
-                output(&BrewInstaller::footer(0));
-            } else {
-                let environment: BTreeMap<String, String> = std::env::vars().collect();
-                let _ = BrewInstaller::install(&prefix, &environment, output);
-            }
+            // The sandbox does not run brew (a short simulated output instead).
+            let _ = crate::platform::get().setup().install_tools(&report, &mut output);
             shared.brew.lock().unwrap_or_else(PoisonError::into_inner).finish();
             shared.publisher.mark();
             check(&shared);
@@ -153,17 +140,9 @@ fn install_root(state: &AppState) -> Result<(), String> {
     }
     let dir =
         state.env.bundled_root_dir().ok_or_else(|| l10n::tr("The root scripts were not found in the app", &[]))?;
-    let user = root_installer::current_user_name().ok_or("no user name")?;
-    root_installer::install(&dir, &user).map_err(|e| installer_message(e, "Installation error"))
-}
-
-/// The installer's error as the window shows it: its own messages are localized already; a failure to run
-/// `osascript` gets the localized prefix.
-fn installer_message(error: root_installer::InstallError, prefix: &str) -> String {
-    match error {
-        root_installer::InstallError::Message(message) => message,
-        root_installer::InstallError::Command(e) => format!("{}: {e}", l10n::tr(prefix, &[])),
-    }
+    let platform = crate::platform::get();
+    let user = platform.system().user_name().ok_or("no user name")?;
+    platform.setup().install_helper(&dir, &user).map_err(String::from)
 }
 
 /// The uninstall's outcome: the final message (its button quits), or the failure alert.
@@ -230,12 +209,13 @@ pub async fn quit_after_uninstall(app: AppHandle, state: Shared<'_>) -> Result<&
 struct Uninstaller<'a>(&'a AppState);
 
 impl UninstallSystem for Uninstaller<'_> {
-    fn uninstall_root(&self) -> Result<(), String> {
+    fn uninstall_helper(&self) -> Result<(), String> {
         if self.0.env.sandbox {
             return Err(l10n::tr("Uninstall cancelled", &[]));
         }
-        let user = root_installer::current_user_name().ok_or("no user name")?;
-        root_installer::uninstall(&user).map_err(|e| installer_message(e, "Uninstall error"))
+        let platform = crate::platform::get();
+        let user = platform.system().user_name().ok_or("no user name")?;
+        platform.setup().uninstall_helper(&user).map_err(String::from)
     }
 
     fn stop_polling(&self) {
@@ -243,20 +223,21 @@ impl UninstallSystem for Uninstaller<'_> {
     }
 
     fn unregister_login_item(&self) -> Result<(), String> {
-        crate::platform::login_items(&self.0.env).unregister_if_registered().map(|_| ()).map_err(|e| e.to_string())
+        crate::platform::login_items(&self.0.env).unregister_if_registered().map(|_| ()).map_err(String::from)
     }
 
-    fn remove_launch_agent(&self) -> Result<(), String> {
-        if self.0.env.sandbox {
-            return Ok(());
-        }
-        LaunchAgentLoginItem::new(&self.0.env.home).remove().map(|_| ()).map_err(|e| e.to_string())
+    /// The per-user LaunchAgent (none in the sandbox).
+    fn remove_stale_login_entries(&self) -> Result<(), String> {
+        crate::platform::login_items(&self.0.env).remove_stale_entries().map_err(String::from)
     }
 
     fn remove_user_files(&self) {
         let env = &self.0.env;
-        let _ = macvpn_core::store::remove_application_support_directory(&env.application_support());
-        let _ = std::fs::remove_dir_all(UpdateInstaller::default_cache_directory(&env.home));
+        let platform = crate::platform::get();
+        let _ = macvpn_core::store::remove_user_data(&env.application_support(), platform.product().name);
+        if let Some(cache) = platform.updater().cache_directory(&env.home) {
+            let _ = std::fs::remove_dir_all(cache);
+        }
         self.0.prefs.remove_all();
     }
 }

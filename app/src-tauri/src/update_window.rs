@@ -1,13 +1,13 @@
 //! The Update window's commands (the Swift `UpdateView` and `UpdateController.install`) and the launch
-//! housekeeping's notice. The install runs `macvpn_platform_mac::update_installer::install_update`, which keeps
-//! the only allowed order (install location → download + SHA-256 + signature → mount → verify the app → helper
+//! housekeeping's notice. The install runs the platform's `Updater::install` (macOS: `install_update`), which
+//! keeps the only allowed order (install location → download + SHA-256 + signature → mount → verify the app → helper
 //! script → the quit questions → launch the helper) and cleans up on any failure or a cancelled quit. Once the
 //! helper runs, the app quits at once, without asking again.
 
 use macvpn_app_core::quit::{AfterInstall, QuitOrigin, UpdateQuit};
 use macvpn_app_core::updates::InstallOutcome;
 use macvpn_core::update::Release;
-use macvpn_platform_mac::update_installer::{self, UpdateInstaller, UpdateOutcome, UpdateSteps};
+use macvpn_platform_api::UpdateOutcome;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::{AppHandle, State};
@@ -49,28 +49,6 @@ fn run(
     release: &Release,
     stage: &dyn Fn(String),
 ) -> Result<InstallOutcome, String> {
-    #[cfg(debug_assertions)]
-    if state.env.sandbox {
-        let steps = crate::smoke::SandboxUpdate::new(&state.env);
-        let bundle = state.env.home.join("Applications/MacVPN.app");
-        return install(app, state, quit, &steps, release, &bundle, stage);
-    }
-    let bundle = state.env.bundle.clone().ok_or("not running from MacVPN.app")?;
-    let http = macvpn_platform_mac::http::CurlHttpClient::default();
-    let runner = macvpn_platform_mac::command::ProcessCommandRunner::default();
-    let installer = UpdateInstaller::new(&http, &runner, UpdateInstaller::default_cache_directory(&state.env.home));
-    install(app, state, quit, &installer, release, &bundle, stage)
-}
-
-fn install(
-    app: &AppHandle,
-    state: &Arc<AppState>,
-    quit: &UpdateQuit,
-    steps: &dyn UpdateSteps,
-    release: &Release,
-    bundle: &std::path::Path,
-    stage: &dyn Fn(String),
-) -> Result<InstallOutcome, String> {
     // The quit questions, on this worker thread: the Connections window or the Update window (opened again if it
     // was closed) answers them; a question no window can show is cancelled at once, so this never waits forever.
     let confirm_quit = || {
@@ -83,12 +61,22 @@ fn install(
             },
         )
     };
-    let pid = i32::try_from(std::process::id()).map_err(|e| e.to_string())?;
-    match update_installer::install_update(steps, release, bundle, pid, |s| stage(s.message()), confirm_quit) {
-        Ok(UpdateOutcome::HelperLaunched) => Ok(InstallOutcome::HelperLaunched),
+    #[cfg(debug_assertions)]
+    if state.env.sandbox
+        && let Some(result) = crate::platform::smoke_update_install(&state.env, release, stage, Box::new(confirm_quit))
+    {
+        return outcome(result);
+    }
+    let bundle = state.env.bundle.clone().ok_or("not running from MacVPN.app")?;
+    let updater = crate::platform::get().updater();
+    outcome(updater.install(release, &bundle, &state.env.home, stage, Box::new(confirm_quit)))
+}
+
+fn outcome(result: Result<UpdateOutcome, String>) -> Result<InstallOutcome, String> {
+    match result? {
+        UpdateOutcome::HelperLaunched => Ok(InstallOutcome::HelperLaunched),
         // The cancelled question was handled where it was answered (a waiting system quit got no there).
-        Ok(UpdateOutcome::Cancelled) => Ok(InstallOutcome::Cancelled),
-        Err(e) => Err(e.to_string()),
+        UpdateOutcome::Cancelled => Ok(InstallOutcome::Cancelled),
     }
 }
 
@@ -112,9 +100,8 @@ pub async fn update_dismiss_notice(state: Shared<'_>) -> Result<(), String> {
 /// next to the bundle, then the previous update's failure, shown once (2 s after launch) in the Update window.
 pub fn launch_housekeeping(app: &AppHandle, state: &AppState) {
     let Some(bundle) = &state.env.bundle else { return };
-    let cache = UpdateInstaller::default_cache_directory(&state.env.home);
     let noticed = state.updates.noticed_helper_run();
-    let (_, notice) = update_installer::launch_housekeeping(bundle, &cache, &state.env.home, noticed.as_deref());
+    let (_, notice) = crate::platform::get().updater().launch_housekeeping(bundle, &state.env.home, noticed.as_deref());
     if state.updates.show_previous_update_notice(notice) {
         let app = app.clone();
         std::thread::spawn(move || {

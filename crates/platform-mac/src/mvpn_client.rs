@@ -56,6 +56,9 @@ impl From<CommandError> for ClientError {
 pub const INSTALL_DIR: &str = "/usr/local/libexec/macvpn";
 pub const EXECUTABLE: &str = "/usr/local/libexec/macvpn/mvpn";
 pub const LOG_DIR: &str = "/var/log/macvpn";
+/// MFA: the root helper's state files (`<id>.json`, the user's, 0600). The same literal as the helper's
+/// `paths::UI_BASE` (`crates/helper/tests/paths_agree.rs`).
+pub const UI_STATE_DIR: &str = "/var/run/macvpn-ui";
 
 pub struct MvpnClient<'a> {
     /// `down` (and by default everything else).

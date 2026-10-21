@@ -21,8 +21,7 @@
 //!   failure shows a translated text; the raw OS error goes to the audit lines only.
 
 use macvpn_app_core::control::{
-    BoundSocket, ControlHost, ControlOptions, ControlRelay, ControlServer, ControlTransport, PairingAnswer,
-    PairingRequest, PeerIdentity, RegistryStore, StopMode,
+    ControlHost, ControlOptions, ControlRelay, ControlServer, PairingAnswer, PairingRequest, RegistryStore, StopMode,
 };
 use macvpn_app_core::pairing::{PAIRING_TIMEOUT, PairingBroker};
 use macvpn_app_core::updates::Notice;
@@ -31,15 +30,13 @@ use macvpn_app_core::{ConnectionItem, ConnectionManager, DisconnectCause};
 use macvpn_core::control::protocol::{ErrorCode, escape_unsafe_text};
 use macvpn_core::control::registry::{PairedClient, Registry};
 use macvpn_core::date::Date;
+use macvpn_core::fsx::{self, Access, Follow, OpenFor};
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::ConnectionState;
-use macvpn_platform_mac::control_socket;
-use macvpn_platform_mac::setup_checker::SetupReport;
+use macvpn_platform_api::SetupReport;
 use std::collections::{BTreeMap, HashMap, VecDeque};
-use std::fs::{self, OpenOptions};
+use std::fs;
 use std::io::{self, ErrorKind, Read, Write};
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, channel};
@@ -61,14 +58,12 @@ pub const AUDIT_FILE: &str = "audit.log";
 pub const AUDIT_OLD_FILE: &str = "audit.log.1";
 /// The audit file is rotated before it would grow past this.
 pub const AUDIT_CAP: u64 = 256 * 1024;
-/// `O_NOFOLLOW` (`<sys/fcntl.h>` on macOS): the audit file is never opened through a symlink.
-const O_NOFOLLOW: i32 = 0x0100;
 
 /// Appends one line to `<dir>/audit.log` (0600, never through a symlink), rotating it to `audit.log.1` (replacing
 /// an older one) when the line would take it past `cap`. `dir` is checked like the socket's directory (a real
 /// directory of this user, 0700).
 pub fn append_audit(dir: &Path, line: &str, cap: u64) -> io::Result<()> {
-    control_socket::prepare_dir(dir)?;
+    crate::platform::get().control_transport().prepare_dir(dir)?;
     let path = dir.join(AUDIT_FILE);
     match fs::symlink_metadata(&path) {
         Ok(meta) if !meta.file_type().is_file() => {
@@ -77,8 +72,8 @@ pub fn append_audit(dir: &Path, line: &str, cap: u64) -> io::Result<()> {
         Ok(meta) if meta.len() + line.len() as u64 + 1 > cap => fs::rename(&path, dir.join(AUDIT_OLD_FILE))?,
         _ => {}
     }
-    let mut file = OpenOptions::new().append(true).create(true).mode(0o600).custom_flags(O_NOFOLLOW).open(&path)?;
-    file.set_permissions(fs::Permissions::from_mode(0o600))?;
+    let mut file = fsx::open_append(&path, Access::Private)?;
+    fsx::set_access(&file, Access::Private)?;
     file.write_all(format!("{line}\n").as_bytes())
 }
 
@@ -86,8 +81,8 @@ pub fn append_audit(dir: &Path, line: &str, cap: u64) -> io::Result<()> {
 pub fn read_audit(dir: &Path) -> io::Result<String> {
     let mut text = String::new();
     for name in [AUDIT_OLD_FILE, AUDIT_FILE] {
-        match OpenOptions::new().read(true).custom_flags(O_NOFOLLOW).open(dir.join(name)) {
-            Ok(mut file) => {
+        match fsx::open_regular(&dir.join(name), OpenFor::Read, Follow::No, false) {
+            Ok((mut file, _)) => {
                 file.read_to_string(&mut text)?;
             }
             Err(e) if e.kind() == ErrorKind::NotFound => {}
@@ -95,34 +90,6 @@ pub fn read_audit(dir: &Path) -> io::Result<String> {
         }
     }
     Ok(text)
-}
-
-// MARK: - Transport
-
-/// The platform socket (`macvpn-platform-mac::control_socket`).
-pub struct Transport;
-
-impl ControlTransport for Transport {
-    fn bind(&self, dir: &Path) -> io::Result<BoundSocket> {
-        let bound = control_socket::bind(dir)?;
-        let listener = bound.listener().try_clone()?;
-        // The `ControlListener` (with the instance lock) is the guard the server drops last.
-        Ok(BoundSocket { listener, path: control_socket::socket_path(dir), guard: Box::new(bound) })
-    }
-
-    fn peer(&self, stream: &UnixStream) -> io::Result<PeerIdentity> {
-        let peer = control_socket::peer(stream)?;
-        Ok(PeerIdentity {
-            uid: peer.uid,
-            same_user: control_socket::same_user(peer.uid),
-            pid: peer.pid,
-            executable: peer.executable.and_then(|p| p.into_os_string().into_string().ok()),
-        })
-    }
-
-    fn random_32(&self) -> io::Result<[u8; 32]> {
-        control_socket::random_32()
-    }
 }
 
 // MARK: - State
@@ -255,8 +222,9 @@ impl ControlApp {
         let line = &escape_unsafe_text(line);
         eprintln!("MacVPN (Control API): {line}");
         let now = Date::now();
-        let stamp =
-            macvpn_platform_mac::system::local_date_time(now.time_interval_since_1970(), l10n::AppLanguage::current());
+        let stamp = crate::platform::get()
+            .system()
+            .local_date_time(now.time_interval_since_1970(), l10n::AppLanguage::current());
         {
             let mut activity = self.activity.lock().unwrap_or_else(PoisonError::into_inner);
             activity.push_back(format!("{stamp}  {line}"));
@@ -550,7 +518,7 @@ fn start_locked(state: &Arc<AppState>) {
     control.attach(&state.manager);
     let host = Arc::new(Host { state: Arc::downgrade(state) });
     let options = ControlOptions::with_registry(control.socket_dir.clone(), control.registry.clone());
-    match ControlServer::start(options, host, Arc::new(Transport)) {
+    match ControlServer::start(options, host, crate::platform::get().control_transport()) {
         Ok(server) => {
             control.relay_set(Some(server.notifier()));
             let mut slot = control.slot();
@@ -724,6 +692,14 @@ mod tests {
     const A: &str = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
     const B: &str = "11111111-2222-4333-8444-555555555555";
 
+    /// macOS's tool table (platform-mac's `SetupChecker::REQUIRED_TOOLS`), for the readiness tests.
+    const REQUIRED_TOOLS: &[(VPNKind, &[&str])] = &[
+        (VPNKind::Openvpn, &["openvpn"]),
+        (VPNKind::Wireguard, &["wg", "wg-quick", "wireguard-go", "bash"]),
+        (VPNKind::Strongswan, &["swanctl", "charon"]),
+        (VPNKind::Sstp, &["sstpc"]),
+    ];
+
     #[test]
     fn client_ids_must_be_uuids() {
         assert_eq!(parse_client_id(A).unwrap(), macvpn_core::models::parse_uuid(A).unwrap());
@@ -747,7 +723,8 @@ mod tests {
     #[test]
     fn setup_ready_for_depends_on_what_the_connection_needs() {
         let ready = SetupReport {
-            brew_prefix: Some("/opt/homebrew".into()),
+            package_manager: Some("/opt/homebrew".into()),
+            required_tools: REQUIRED_TOOLS,
             missing_tools: vec!["sstpc".into()],
             installed_root_version: Some("7".into()),
             bundled_root_version: Some("7".into()),
@@ -759,7 +736,7 @@ mod tests {
         // A root-layer connection: Homebrew, a current root layer, `sudo -n` and its type's tool.
         assert!(setup_ready_for(&ready, &openvpn));
         assert!(!setup_ready_for(&ready, &managed(VPNKind::Sstp)), "its tool is missing");
-        assert!(!setup_ready_for(&SetupReport { brew_prefix: None, ..ready.clone() }, &openvpn));
+        assert!(!setup_ready_for(&SetupReport { package_manager: None, ..ready.clone() }, &openvpn));
         assert!(!setup_ready_for(&SetupReport { installed_root_version: None, ..ready.clone() }, &openvpn));
         assert!(!setup_ready_for(&SetupReport { installed_root_version: Some("6".into()), ..ready.clone() }, &openvpn));
         assert!(!setup_ready_for(&SetupReport { sudo_works: false, ..ready.clone() }, &openvpn));
@@ -768,10 +745,7 @@ mod tests {
         let none = SetupReport::unknown();
         assert!(setup_ready_for(&none, &managed(VPNKind::L2tp)));
         assert!(setup_ready_for(&none, &managed(VPNKind::Cisco)));
-        assert!(setup_ready_for(
-            &none,
-            &ConnectionItem::System(SystemService::new(B, "Corp", "IKEv2", "Disconnected"))
-        ));
+        assert!(setup_ready_for(&none, &ConnectionItem::System(SystemVpn::new(B, "Corp", "IKEv2", "Disconnected"))));
     }
 
     #[test]
@@ -813,14 +787,13 @@ mod tests {
 
     #[test]
     fn the_audit_file_is_private_and_rotates() {
-        use std::os::unix::fs::MetadataExt;
         let root = scratch("rotate");
         let dir = root.join("control");
         append_audit(&dir, "one", 64).unwrap();
         append_audit(&dir, "two", 64).unwrap();
         let path = dir.join(AUDIT_FILE);
-        assert_eq!(fs::metadata(&path).unwrap().mode() & 0o777, 0o600);
-        assert_eq!(fs::metadata(&dir).unwrap().mode() & 0o777, 0o700);
+        assert!(fsx::has_access(&fs::metadata(&path).unwrap(), Access::Private), "0600");
+        assert!(fsx::has_access(&fs::metadata(&dir).unwrap(), Access::Private), "0700");
         assert_eq!(fs::read_to_string(&path).unwrap(), "one\ntwo\n");
         // Past the cap: the file moves to audit.log.1 (one old file kept).
         append_audit(&dir, &"x".repeat(60), 64).unwrap();
@@ -832,6 +805,7 @@ mod tests {
         fs::remove_dir_all(&root).unwrap();
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_audit_file_never_follows_a_symlink() {
         let root = scratch("link");
@@ -942,7 +916,7 @@ mod tests {
         let server = ControlServer::start(
             ControlOptions::with_registry(control.control_dir().to_path_buf(), store.clone()),
             Arc::new(IdleHost),
-            Arc::new(Transport),
+            crate::platform::get().control_transport(),
         )
         .unwrap();
         control.set_server_for_test(server);
@@ -970,7 +944,7 @@ mod tests {
     // MARK: the host's mapping, over a real manager with fake system parts
 
     use macvpn_app_core::deps::{
-        ConnectionRepository, NativeController, RootClient, SecretField, SecretReader, SystemService,
+        ConnectionRepository, HelperClient, NativeController, SecretField, SecretReader, SystemVpn,
     };
     use macvpn_core::mfa::AuthResponseKind;
     use macvpn_core::models::{Connection, Secrets, VPNKind, uuid_string};
@@ -1014,7 +988,7 @@ mod tests {
     }
 
     struct Root(Arc<Calls>);
-    impl RootClient for Root {
+    impl HelperClient for Root {
         fn status(&self) -> Result<Vec<RootStatus>, String> {
             Ok(vec![])
         }
@@ -1033,8 +1007,8 @@ mod tests {
 
     struct Native(Arc<Calls>);
     impl NativeController for Native {
-        fn list(&self) -> Result<Vec<SystemService>, String> {
-            Ok(vec![SystemService::new(B, "Corp", "IKEv2", "Disconnected")])
+        fn list(&self) -> Result<Vec<SystemVpn>, String> {
+            Ok(vec![SystemVpn::new(B, "Corp", "IKEv2", "Disconnected")])
         }
         fn remote_address(&self, _: &str) -> Option<String> {
             None
@@ -1065,7 +1039,8 @@ mod tests {
 
     fn ready() -> SetupReport {
         SetupReport {
-            brew_prefix: Some("/opt/homebrew".into()),
+            package_manager: Some("/opt/homebrew".into()),
+            required_tools: REQUIRED_TOOLS,
             missing_tools: vec!["sstpc".into()],
             installed_root_version: Some("7".into()),
             bundled_root_version: Some("7".into()),
@@ -1108,7 +1083,7 @@ mod tests {
         assert_eq!(calls.take(), [format!("down wireguard {key}"), format!("stop {B}")]);
         assert_eq!(users.load(Ordering::SeqCst), 0, "a lease's disconnect is not the user's");
         // The user's own disconnect is (the control API ends every lease on it).
-        m.disconnect_system(&SystemService::new(B, "Corp", "IKEv2", "Connected"));
+        m.disconnect_system(&SystemVpn::new(B, "Corp", "IKEv2", "Connected"));
         assert_eq!(users.load(Ordering::SeqCst), 1);
     }
 }

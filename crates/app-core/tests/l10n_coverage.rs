@@ -17,11 +17,18 @@ fn workspace() -> PathBuf {
 
 fn rust_sources() -> Vec<PathBuf> {
     let root = workspace();
-    let mut dirs: Vec<PathBuf> =
-        ["crates/core/src", "crates/mvpn/src", "crates/platform-mac/src", "crates/app-core/src", "app/src-tauri/src"]
-            .iter()
-            .map(|d| root.join(d))
-            .collect();
+    let mut dirs: Vec<PathBuf> = [
+        "crates/core/src",
+        "crates/helper/src",
+        "crates/platform-api/src",
+        "crates/platform-mac/src",
+        "crates/platform-win/src",
+        "crates/app-core/src",
+        "app/src-tauri/src",
+    ]
+    .iter()
+    .map(|d| root.join(d))
+    .collect();
     let mut files = Vec::new();
     while let Some(dir) = dirs.pop() {
         for entry in std::fs::read_dir(&dir).unwrap() {
@@ -108,6 +115,7 @@ const VARIABLE_KEYS: &[(&str, &str, KeySource)] = &[
     ("commands.rs", "title", KeySource::Function("window_title")),
     ("backup.rs", "title", KeySource::Function("window_title")),
     ("system.rs", "prefix", KeySource::CallArgument("installer_message")),
+    ("services.rs", "prefix", KeySource::CallArgument("installer_error")),
     ("login_item.rs", "key", KeySource::MatchBefore),
     ("update_installer.rs", "key", KeySource::MatchBefore),
     ("openvpn.rs", "key", KeySource::MatchBefore),
@@ -205,4 +213,46 @@ fn every_rust_text_is_in_the_table() {
     assert!(unknown.is_empty(), "keys through a variable, add them to VARIABLE_KEYS: {unknown:#?}");
     assert!(missing.is_empty(), "no Hungarian text: {missing:#?}");
     assert!(checked > 300, "only {checked} keys found");
+}
+
+/// Every text that names a macOS facility is classified (platform-neutral refactor, Task 6): `only` (the OSes
+/// whose code paths show it) or a `windows` variant. `only` and `variants` never name the same OS, and a variant
+/// has both languages.
+#[test]
+fn macos_terms_are_classified() {
+    let terms = Regex::new(
+        r"\b(Keychain|Kulcskarika|Finder|Mac|macOS|Homebrew|brew|System Settings|Rendszerbeállítások|Login Items|LaunchAgent|Applications|Device Management|scutil|sudo|sudoers|Dock|menu bar|menüsor|Option-click|Gatekeeper)\b",
+    )
+    .unwrap();
+    let json: serde_json::Value = serde_json::from_str(l10n::STRINGS_JSON).unwrap();
+    let strings = json["strings"].as_object().unwrap();
+    let mut unclassified = Vec::new();
+    let mut matched = 0;
+    for (key, entry) in strings {
+        let hu = entry["hu"].as_str().unwrap();
+        let only: Vec<&str> = entry.get("only").map_or_else(Vec::new, |o| {
+            o.as_array().expect("only is a list").iter().map(|os| os.as_str().expect("an OS name")).collect()
+        });
+        let variants = entry.get("variants").map(|v| v.as_object().expect("variants is an object"));
+        for os in &only {
+            assert!(["macos", "windows", "linux"].contains(os), "unknown OS {os:?}: {key}");
+        }
+        for (os, variant) in variants.into_iter().flatten() {
+            assert!(["windows", "linux"].contains(&os.as_str()), "unknown variant OS {os:?}: {key}");
+            assert!(!only.contains(&os.as_str()), "only and variants both name {os}: {key}");
+            for language in ["en", "hu"] {
+                let text = variant.get(language).and_then(|t| t.as_str()).unwrap_or_default();
+                assert!(!text.trim().is_empty(), "variant {os} without {language}: {key}");
+            }
+            assert_eq!(variant.as_object().unwrap().len(), 2, "variant {os} has more than en and hu: {key}");
+        }
+        if terms.is_match(key) || terms.is_match(hu) {
+            matched += 1;
+            if only.is_empty() && !variants.is_some_and(|v| v.contains_key("windows")) {
+                unclassified.push(key.clone());
+            }
+        }
+    }
+    assert!(unclassified.is_empty(), "macOS terms without `only` or a `windows` variant: {unclassified:#?}");
+    assert!(matched >= 60, "only {matched} texts name a macOS term");
 }

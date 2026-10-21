@@ -13,7 +13,6 @@ use macvpn_app_core::quit::QuitStep;
 use macvpn_app_core::updates::Notice;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::{Connection, VPNKind};
-use macvpn_platform_mac::mvpn_client::MvpnClient;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -242,7 +241,7 @@ pub async fn delete_connection(state: Shared<'_>, id: String) -> Result<(), Stri
         shared.native_logs.remove(&c.id);
         if let Some(deleted) = shared.connections.delete(&c.id) {
             if deleted.kind.is_native() && !shared.env.sandbox {
-                crate::platform::open_profiles_settings();
+                crate::platform::get().shell().open_native_profile_settings();
             }
             shared.manager.refresh();
         }
@@ -275,7 +274,9 @@ pub async fn log_subscribe(app: AppHandle, state: Shared<'_>, id: Option<String>
     };
     let shared = state.inner().clone();
     let event = blocking(move || {
-        let mut feed = LogFeed::new(&c, MvpnClient::log_path(&c.id), shared.native_logs.clone());
+        // The helper's log of the connection (a helper without one: an empty path, which reads nothing).
+        let log_path = crate::platform::get().helper_client().log_path(&c.id).unwrap_or_default();
+        let mut feed = LogFeed::new(&c, log_path, shared.native_logs.clone());
         let chunk = feed.poll().unwrap_or(LogChunk { reset: true, lines: Vec::new() });
         let mut slot = shared.log_feed.lock().unwrap_or_else(PoisonError::into_inner);
         // A newer subscription won meanwhile: this one is dropped.
@@ -325,7 +326,7 @@ pub async fn log_copy(state: Shared<'_>, filter: String, search: String) -> Resu
         let (_, feed) = slot.as_ref().ok_or("no log")?;
         feed.buffer().visible_text(filter, &search)
     };
-    blocking(move || crate::platform::copy_to_pasteboard(&text)).await?
+    blocking(move || crate::platform::get().shell().copy_text(&text).map_err(String::from)).await?
 }
 
 /// "Save…": the kept lines into a file chosen in the save panel (0600, no symlink followed: the log can hold

@@ -6,7 +6,7 @@
 #   1. UI: npm ci && npm run build (app/ui/dist, embedded by the custom-protocol feature)
 #   2. app: tauri build --target universal-apple-darwin (cargo for both architectures, lipo, the bundle with
 #      app/src-tauri/Info.plist merged into its Info.plist)
-#   3. root layer: mvpn for both architectures, lipo, into Contents/Resources/root with VERSION (crates/mvpn)
+#   3. root layer: mvpn for both architectures, lipo, into Contents/Resources/root with VERSION (crates/helper)
 #      release gate: the app binary must not contain setInspectable, developerExtrasEnabled, MACVPN_SANDBOX_HOME
 #      or MACVPN_SMOKE (Web Inspector, the sandbox and the smoke driver are debug-only); the vault's SQLCipher
 #      must use CommonCrypto (no libcrypto/libssl linked, no OpenSSL inside); mvpn must contain no SQLite/SQLCipher
@@ -49,8 +49,8 @@ UI_VERSION=$(json_version app/ui/package.json)
 # never update.
 REPO_ID=$(/usr/libexec/PlistBuddy -c "Print :MacVPNUpdateRepoID" "$PLIST_SRC" 2>/dev/null || true)
 [ "$REPO_ID" = "$EXPECTED_REPO_ID" ] || die "MacVPNUpdateRepoID in $PLIST_SRC is '$REPO_ID', expected $EXPECTED_REPO_ID"
-ROOT_VERSION=$(tr -d '[:space:]' < crates/mvpn/VERSION)
-[[ "$ROOT_VERSION" =~ ^[1-9][0-9]*$ ]] || die "invalid root layer version in crates/mvpn/VERSION"
+ROOT_VERSION=$(tr -d '[:space:]' < crates/helper/VERSION)
+[[ "$ROOT_VERSION" =~ ^[1-9][0-9]*$ ]] || die "invalid root layer version in crates/helper/VERSION"
 step "MacVPN $VERSION (root layer $ROOT_VERSION), universal: ${ARCHS[*]}"
 
 for t in "${RUST_TARGETS[@]}"; do
@@ -75,7 +75,7 @@ EXECUTABLE=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$TAURI_APP/
 # --- 3. Root layer ----------------------------------------------------------------------------------------------
 step "root layer (mvpn)"
 for t in "${RUST_TARGETS[@]}"; do
-  cargo build --release --locked -p mvpn --target "$t"
+  cargo build --release --locked -p macvpn-helper --target "$t"
 done
 MVPN_UNIVERSAL="target/universal-apple-darwin/release/mvpn"
 mkdir -p "$(dirname "$MVPN_UNIVERSAL")"
@@ -144,7 +144,7 @@ mkdir -p dist
 RES="$APP/Contents/Resources"
 mkdir -p "$RES/root"
 install -m 755 "$MVPN_UNIVERSAL" "$RES/root/mvpn"
-install -m 644 crates/mvpn/VERSION "$RES/root/VERSION"
+install -m 644 crates/helper/VERSION "$RES/root/VERSION"
 # The icon under the Swift app's name (Resources/AppIcon.icns, CFBundleIconFile AppIcon) instead of Tauri's copy.
 rm -f "$RES/icon.icns"
 install -m 644 Resources/AppIcon.icns "$RES/AppIcon.icns"

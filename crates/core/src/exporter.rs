@@ -2,6 +2,7 @@
 //! Keychain are not included (for SSTP the user name is part of the config); key material and credentials inline
 //! in the config are handled by `secret_material` / `strip_secrets`.
 
+use crate::fsx::{self, Access};
 use crate::importer::{self, ExportMeta};
 use crate::l10n::{self, Arg};
 use crate::mobileconfig::{self, MobileconfigError};
@@ -12,7 +13,6 @@ use regex::Regex;
 use std::collections::BTreeSet;
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::Path;
 use std::sync::LazyLock;
 use uuid::Uuid;
@@ -106,48 +106,48 @@ impl std::error::Error for WriteError {}
 /// Creates the export with 0600 from the start: a temp file in the target folder (`O_EXCL`, no symlink followed),
 /// an fsync, then an atomic rename and an fsync of the folder. An existing file's permissions are not inherited.
 pub fn write(data: &[u8], path: &Path) -> Result<(), WriteError> {
-    write_with_mode(data, path, 0o600)
+    write_with_access(data, path, Access::Private)
 }
 
-/// [`write`] with another final mode (a team catalog is written 0644: it is meant to be served, and it is
-/// encrypted and signed). The temp file is created 0600 and gets `mode` explicitly (not through the umask) before
-/// the rename.
+/// [`write`] with another final access (a team catalog is written [`Access::Shared`], 0644: it is meant to be
+/// served, and it is encrypted and signed). The temp file is created private (0600) and gets `access` explicitly
+/// (not through the umask) before the rename.
 ///
-/// The mode is set on the open descriptor (`fchmod`), never by path: in a shared or group-writable folder someone
+/// The access is set on the open descriptor (`fchmod`), never by path: in a shared or group-writable folder someone
 /// could swap the temp name for a symlink to one of the user's files, and a chmod by path would follow it. Before
-/// the rename the temp name must still be the written file (same device and inode, not a symlink), else nothing is
-/// published.
-pub fn write_with_mode(data: &[u8], path: &Path, mode: u32) -> Result<(), WriteError> {
-    write_with_mode_raced(data, path, mode, &|_| {})
+/// the rename the temp name must still be the written file (same file identity, not a symlink), else nothing is
+/// published; where the platform cannot tell the identity ([`fsx::file_id`] is `None`), nothing is published.
+pub fn write_with_access(data: &[u8], path: &Path, access: Access) -> Result<(), WriteError> {
+    write_with_access_raced(data, path, access, &|_| {})
 }
 
-/// [`write_with_mode`] with a hook that runs on the temp file's path after it was written, before its mode is set
-/// and it is renamed: tests swap the temp file there to check that a race cannot redirect the chmod or the rename.
+/// [`write_with_access`] with a hook that runs on the temp file's path after it was written, before its access is
+/// set and it is renamed: tests swap the temp file there to check that a race cannot redirect the chmod or the
+/// rename.
 #[doc(hidden)]
-pub fn write_with_mode_raced(data: &[u8], path: &Path, mode: u32, race: &dyn Fn(&Path)) -> Result<(), WriteError> {
-    use std::os::unix::fs::MetadataExt;
+pub fn write_with_access_raced(
+    data: &[u8],
+    path: &Path,
+    access: Access,
+    race: &dyn Fn(&Path),
+) -> Result<(), WriteError> {
     let display = path.to_string_lossy().into_owned();
     let cannot_write = || WriteError { message: l10n::tr("Cannot write: %@", &[Arg::Str(&display)]) };
     let dir = path.parent().unwrap_or(Path::new("."));
     let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let tmp = dir.join(format!(".{name}.{}.tmp", uuid_string(&Uuid::new_v4())));
-    let mut file = fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(&tmp)
-        .map_err(|_| cannot_write())?;
+    let mut file = fsx::create_new(&tmp, Access::Private).map_err(|_| cannot_write())?;
     let mut ours = true;
     let result = (|| {
         file.write_all(data).map_err(|_| cannot_write())?;
         file.sync_all().map_err(|_| cannot_write())?;
         race(&tmp);
-        file.set_permissions(fs::Permissions::from_mode(mode))
+        fsx::set_access(&file, access)
             .map_err(|_| WriteError { message: l10n::tr("Cannot set the permissions: %@", &[Arg::Str(&display)]) })?;
         let written = file.metadata().map_err(|_| cannot_write())?;
         let named = fs::symlink_metadata(&tmp).map_err(|_| cannot_write())?;
-        if !named.file_type().is_file() || named.dev() != written.dev() || named.ino() != written.ino() {
+        let same_file = matches!((fsx::file_id(&named), fsx::file_id(&written)), (Some(a), Some(b)) if a == b);
+        if !named.file_type().is_file() || !same_file {
             ours = false;
             return Err(cannot_write());
         }
@@ -162,9 +162,7 @@ pub fn write_with_mode_raced(data: &[u8], path: &Path, mode: u32, race: &dyn Fn(
         return result;
     }
     // Durability of the rename; if the directory cannot be opened, the write still succeeded.
-    if let Ok(d) = fs::File::open(dir) {
-        let _ = d.sync_all();
-    }
+    fsx::sync_dir(dir);
     result
 }
 

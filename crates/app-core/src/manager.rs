@@ -13,9 +13,9 @@
 //! prompts) are called without the lock too, so they may call back into the manager.
 
 use crate::deps::{
-    AuthStateReader, Clock, ConnectionRepository, FolderOp, FolderStore, NativeController, NoAuthState, Placement,
-    RankingPersistence, RootClient, SecretField, SecretReader, SecretWriter, SystemClock, SystemOTPPersistence,
-    SystemService,
+    AuthStateReader, Clock, ConnectionRepository, FolderOp, FolderStore, HelperClient, NativeController, NoAuthState,
+    Placement, RankingPersistence, SecretField, SecretReader, SecretWriter, SystemClock, SystemOTPPersistence,
+    SystemVpn,
 };
 use macvpn_core::credentials::{
     self, CredentialAnswer, CredentialField, CredentialPrompt, CredentialValues, RequiredFields,
@@ -54,7 +54,7 @@ pub enum ConnectionEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub enum ConnectionItem {
     Managed(Connection),
-    System(SystemService),
+    System(SystemVpn),
 }
 
 impl ConnectionItem {
@@ -77,19 +77,19 @@ impl ConnectionItem {
 /// How a managed native connection maps to the listed services.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeMatch {
-    Service(SystemService),
+    Service(SystemVpn),
     None,
     /// No bound ID, and more than one service has the name.
-    Ambiguous(Vec<SystemService>),
+    Ambiguous(Vec<SystemVpn>),
 }
 
 /// Bound ID: only that counts (vanished: `None`); otherwise the name, with a unique match.
-pub fn match_service(c: &Connection, services: &[SystemService]) -> NativeMatch {
+pub fn match_service(c: &Connection, services: &[SystemVpn]) -> NativeMatch {
     if let Some(id) = &c.native_service_id {
         return services.iter().find(|s| &s.id == id).cloned().map_or(NativeMatch::None, NativeMatch::Service);
     }
     let name = c.native_service_name.as_deref().unwrap_or(&c.name);
-    let named: Vec<SystemService> = services.iter().filter(|s| s.name == name).cloned().collect();
+    let named: Vec<SystemVpn> = services.iter().filter(|s| s.name == name).cloned().collect();
     match named.len() {
         0 => NativeMatch::None,
         1 => NativeMatch::Service(named[0].clone()),
@@ -110,7 +110,7 @@ fn redacted(c: &Connection) -> Connection {
 
 /// The service IDs of the managed native connections (these are not shown as system VPNs). For an unbound
 /// connection, every service with its name.
-pub fn managed_service_ids(connections: &[Connection], services: &[SystemService]) -> HashSet<String> {
+pub fn managed_service_ids(connections: &[Connection], services: &[SystemVpn]) -> HashSet<String> {
     let mut ids = HashSet::new();
     for c in connections.iter().filter(|c| c.kind.is_native()) {
         match match_service(c, services) {
@@ -268,7 +268,7 @@ struct Hooks {
 pub struct Dependencies {
     pub store: Arc<dyn ConnectionRepository>,
     pub secrets: Arc<dyn SecretReader>,
-    pub root: Arc<dyn RootClient>,
+    pub helper: Arc<dyn HelperClient>,
     pub native: Arc<dyn NativeController>,
     pub ranking_store: Option<Arc<dyn RankingPersistence>>,
     pub system_otp_store: Option<Arc<dyn SystemOTPPersistence>>,
@@ -285,13 +285,13 @@ impl Dependencies {
     pub fn new(
         store: Arc<dyn ConnectionRepository>,
         secrets: Arc<dyn SecretReader>,
-        root: Arc<dyn RootClient>,
+        helper: Arc<dyn HelperClient>,
         native: Arc<dyn NativeController>,
     ) -> Self {
         Dependencies {
             store,
             secrets,
-            root,
+            helper,
             native,
             ranking_store: None,
             system_otp_store: None,
@@ -333,7 +333,7 @@ struct Prepared {
 struct Inner {
     connections: Vec<Connection>,
     /// Only the system VPNs the app does not manage.
-    system_services: Vec<SystemService>,
+    system_services: Vec<SystemVpn>,
     /// Every service ID of the last successful listing, managed ones included.
     listed_service_ids: HashSet<String>,
     states: HashMap<String, ConnectionState>,
@@ -473,7 +473,7 @@ impl Inner {
         &mut self,
         key: &str,
         name: &str,
-        service: Option<&SystemService>,
+        service: Option<&SystemVpn>,
         now: Date,
         failure_reason: impl FnOnce() -> String,
         to_stop: &mut Vec<String>,
@@ -482,7 +482,7 @@ impl Inner {
             return None;
         };
         let elapsed = now.time_interval_since(started);
-        match service.map(SystemService::connection_state) {
+        match service.map(SystemVpn::connection_state) {
             Some(ConnectionState::Connected { .. }) => {
                 self.set_op(key, None);
                 None
@@ -812,7 +812,7 @@ impl ConnectionManager {
         self.read(|i| i.connections.clone())
     }
 
-    pub fn system_services(&self) -> Vec<SystemService> {
+    pub fn system_services(&self) -> Vec<SystemVpn> {
         self.read(|i| i.system_services.clone())
     }
 
@@ -1058,7 +1058,7 @@ impl ConnectionManager {
 
     /// The system-VPN placement retention after a successful listing (spec 5): a placed service that is not
     /// listed is marked missing, one listed again is cleared, one missing for 30 days loses its placement.
-    fn retain_system_items(&self, services: &[SystemService]) {
+    fn retain_system_items(&self, services: &[SystemVpn]) {
         let Some(store) = &self.deps.folders else { return };
         let Ok(items) = store.system_items() else { return };
         let listed: HashSet<String> = services.iter().map(|s| s.id.clone()).collect();
@@ -1163,7 +1163,7 @@ impl ConnectionManager {
     /// Binding: a bound but vanished ID is cleared; an unbound connection binds to the first service with its
     /// name whose server address matches too (and that no other connection is bound to). Saved to `meta.json`
     /// (only the binding, [`ConnectionRepository::set_native_service`], so a catalog connection keeps it too).
-    fn bind_native_services(&self, services: &[SystemService]) {
+    fn bind_native_services(&self, services: &[SystemVpn]) {
         let listed: HashSet<&str> = services.iter().map(|s| s.id.as_str()).collect();
         let snapshot = self.read(|i| i.connections.clone());
         {
@@ -1227,7 +1227,7 @@ impl ConnectionManager {
         };
         let mut failure: Option<String> = None;
         let root = if has_root {
-            match self.deps.root.status() {
+            match self.deps.helper.status() {
                 Ok(root) => Some(root),
                 Err(e) => {
                     failure = Some(e);
@@ -1355,8 +1355,7 @@ impl ConnectionManager {
                     .filter(|c| c.kind.is_native() && match_service(c, services) != NativeMatch::None)
                     .map(|c| c.id)
                     .collect();
-                let unmanaged: Vec<SystemService> =
-                    services.iter().filter(|s| !managed.contains(&s.id)).cloned().collect();
+                let unmanaged: Vec<SystemVpn> = services.iter().filter(|s| !managed.contains(&s.id)).cloned().collect();
                 for s in &unmanaged {
                     let previous = i.states.get(&s.id).cloned();
                     if stale(i, &s.id) {
@@ -1442,7 +1441,7 @@ impl ConnectionManager {
     }
 
     /// A system VPN's failure: without a PSK (L2TP / Cisco) the hint says it can be entered in MacVPN.
-    pub fn system_failure_reason(&self, s: &SystemService) -> String {
+    pub fn system_failure_reason(&self, s: &SystemVpn) -> String {
         if s.supports_stored_secrets()
             && let Some(id) = s.secret_id()
             && self.deps.secrets.get(&id, SecretField::Psk).unwrap_or_default().is_empty()
@@ -1456,7 +1455,7 @@ impl ConnectionManager {
     }
 
     /// The PSK / password MacVPN stores for a system VPN (in its secret store, the vault; L2TP / Cisco IPsec only).
-    pub fn system_secrets(&self, s: &SystemService) -> Secrets {
+    pub fn system_secrets(&self, s: &SystemVpn) -> Secrets {
         let (true, Some(id)) = (s.supports_stored_secrets(), s.secret_id()) else { return Secrets::default() };
         Secrets {
             password: self.deps.secrets.get(&id, SecretField::Password),
@@ -1650,7 +1649,7 @@ impl ConnectionManager {
             let watch = (c.kind == VPNKind::Openvpn).then(|| self.start_auth_watch(c));
             let accept_risky =
                 if c.kind == VPNKind::Openvpn { c.acknowledged_risky_directives.clone() } else { Vec::new() };
-            let up = self.deps.root.up(c.kind, &c.id, sent.as_bytes(), &prepared, debug, &accept_risky);
+            let up = self.deps.helper.up(c.kind, &c.id, sent.as_bytes(), &prepared, debug, &accept_risky);
             drop(sent);
             drop(prepared);
             if let Some(watch) = watch {
@@ -1688,7 +1687,7 @@ impl ConnectionManager {
             // Meanwhile the user disconnected: the successful tunnel is torn down. A newer connect is untouched.
             Some(want_down) => {
                 if want_down {
-                    let _ = self.deps.root.down(c.kind, &c.id);
+                    let _ = self.deps.helper.down(c.kind, &c.id);
                     self.mutate(|i| i.settle_after_teardown(key));
                 }
             }
@@ -1723,7 +1722,7 @@ impl ConnectionManager {
         // up and releases the lock at once, and `down` does not wait for it. Without a running bridge the error
         // does not matter.
         if c.kind == VPNKind::Openvpn && was_connecting {
-            let _ = self.deps.root.respond(&c.id, AuthResponseKind::Cancel, "");
+            let _ = self.deps.helper.respond(&c.id, AuthResponseKind::Cancel, "");
         }
         let result: Result<(), String> = if c.kind.is_native() {
             self.deps.native.list().and_then(|services| match match_service(&c, &services) {
@@ -1738,7 +1737,7 @@ impl ConnectionManager {
                 NativeMatch::None => Ok(()),
             })
         } else {
-            self.deps.root.down(c.kind, &c.id)
+            self.deps.helper.down(c.kind, &c.id)
         };
         if let Err(reason) = result
             && self.read(|i| i.key_epoch(&key)) == token
@@ -1754,7 +1753,7 @@ impl ConnectionManager {
         self.refresh();
     }
 
-    pub fn connect_system(&self, s: &SystemService) {
+    pub fn connect_system(&self, s: &SystemVpn) {
         if self.is_locked() {
             return;
         }
@@ -1819,11 +1818,11 @@ impl ConnectionManager {
     }
 
     /// A disconnect the user asked for ([`DisconnectCause::User`]).
-    pub fn disconnect_system(&self, s: &SystemService) {
+    pub fn disconnect_system(&self, s: &SystemVpn) {
         self.disconnect_system_for(s, DisconnectCause::User);
     }
 
-    pub fn disconnect_system_for(&self, s: &SystemService, cause: DisconnectCause) {
+    pub fn disconnect_system_for(&self, s: &SystemVpn, cause: DisconnectCause) {
         self.user_disconnected(&s.id, cause);
         self.mutate(|i| {
             i.want_down.insert(s.id.clone());
@@ -2259,9 +2258,9 @@ impl ConnectionManager {
                         } else {
                             AuthResponseKind::Crv1
                         };
-                        self.deps.root.respond(&c.id, kind, &code)
+                        self.deps.helper.respond(&c.id, kind, &code)
                     }
-                    _ => self.deps.root.respond(&c.id, AuthResponseKind::Cancel, ""),
+                    _ => self.deps.helper.respond(&c.id, AuthResponseKind::Cancel, ""),
                 };
             }
             AuthUIStateKind::Webauth => {
@@ -2276,7 +2275,7 @@ impl ConnectionManager {
                 } else {
                     AuthResponseKind::Cancel
                 };
-                let _ = self.deps.root.respond(&c.id, kind, "");
+                let _ = self.deps.helper.respond(&c.id, kind, "");
             }
             AuthUIStateKind::Pending => {
                 self.mutate(|i| {

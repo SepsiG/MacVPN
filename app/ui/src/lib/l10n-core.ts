@@ -3,9 +3,44 @@
 
 export type Language = 'en' | 'hu';
 
+export type Os = 'macos' | 'windows' | 'linux';
+
+/// The OS and product the texts are worded for (core `TextPlatform`).
+export interface Platform {
+  os: Os;
+  product: string;
+}
+
+export const MACOS: Platform = { os: 'macos', product: 'MacVPN' };
+
+/// The backend's `get_platform` reply (`{ os, productName }`).
+export interface PlatformReply {
+  os: string;
+  productName: string;
+}
+
+const OSES: readonly string[] = ['macos', 'windows', 'linux'] satisfies Os[];
+
+/// The platform of a `get_platform` reply; anything else (an unknown OS, no product name) keeps the macOS default.
+export function platformOf(reply: unknown): Platform {
+  if (typeof reply !== 'object' || reply === null) return { ...MACOS };
+  const { os, productName } = reply as Partial<Record<keyof PlatformReply, unknown>>;
+  if (typeof os !== 'string' || !OSES.includes(os) || typeof productName !== 'string' || productName === '') {
+    return { ...MACOS };
+  }
+  return { os: os as Os, product: productName };
+}
+
+/// The product name of the keys, replaced by `Platform.product` on other products.
+const BASE_PRODUCT = 'MacVPN';
+
 export interface Entry {
   hu: string;
   scope: string;
+  /// The OSes whose code paths show the text (absent: every OS).
+  only?: Os[];
+  /// The text on an OS whose wording differs from the key's.
+  variants?: Partial<Record<Os, { en: string; hu: string }>>;
 }
 
 export type Table = Record<string, Entry>;
@@ -62,8 +97,20 @@ export function format(fmt: string, args: readonly (string | number)[]): string 
 }
 
 /// The UI texts: only the `app` scope of the table is used (core messages arrive translated from the backend).
-export function translate(table: Table, language: Language, key: string, args: readonly (string | number)[]): string {
-  const entry = table[key];
-  const fmt = language === 'hu' && entry !== undefined && entry.scope === 'app' ? entry.hu : key;
+/// The OS's variant if the entry has one, else the base text; on another product `MacVPN` becomes the product
+/// name, except in texts only another OS shows (core `l10n::tr_for`).
+export function translate(
+  table: Table,
+  language: Language,
+  platform: Platform,
+  key: string,
+  args: readonly (string | number)[],
+): string {
+  const found = table[key];
+  const entry = found !== undefined && found.scope === 'app' ? found : undefined;
+  const variant = entry?.variants?.[platform.os];
+  let fmt = variant !== undefined ? variant[language] : language === 'hu' && entry !== undefined ? entry.hu : key;
+  const foreign = entry?.only !== undefined && entry.only.length > 0 && !entry.only.includes(platform.os);
+  if (platform.product !== BASE_PRODUCT && !foreign) fmt = fmt.replaceAll(BASE_PRODUCT, platform.product);
   return args.length > 0 ? format(fmt, args) : fmt;
 }

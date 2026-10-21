@@ -7,6 +7,8 @@
   import NativeForm from './NativeForm.svelte';
   import SstpForm from './SstpForm.svelte';
   import TextEditor from './TextEditor.svelte';
+  import { i18n } from '../l10n.svelte';
+  import { isPrimaryShortcut } from '../keys';
 
   let { id, kind, active, epoch }: { id: string; kind: Kind; active: boolean; epoch: number } = $props();
 
@@ -35,7 +37,8 @@
   onDestroy(() => session.dispose());
 
   function keydown(event: KeyboardEvent) {
-    if (!active || !event.metaKey || event.key.toLowerCase() !== 's') return;
+    // Cmd+S (Ctrl+S on Windows and Linux).
+    if (!active || !isPrimaryShortcut(event, 's', i18n.platform.os)) return;
     if (kind === 'l2tp' || kind === 'cisco') return;
     event.preventDefault();
     session.save().catch(console.error);

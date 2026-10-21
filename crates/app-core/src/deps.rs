@@ -4,85 +4,23 @@
 //! Errors cross these traits as the user-facing (localized) message, the Swift `error.localizedDescription`.
 
 use macvpn_core::date::Date;
-use macvpn_core::mfa::{AuthResponseKind, AuthUIState};
-use macvpn_core::models::{Connection, ConnectionState, CredentialRef, OTPSetting, Secrets, VPNKind, parse_uuid};
-use macvpn_core::native::NativeKind;
+use macvpn_core::models::{Connection, CredentialRef, OTPSetting, Secrets};
 use macvpn_core::ranking::{ConnectionRanking, ConnectionRankingStore};
-use macvpn_core::status::RootStatus;
 use macvpn_core::store::ConnectionStore;
 use macvpn_core::system_otp::SystemOTPStore;
 use macvpn_core::vault::{DeleteMode, FolderColor, FolderNode, SystemItem};
 use std::collections::HashMap;
 use std::io;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// The root helper (`sudo -n mvpn …`), the Swift `MvpnClient`.
-pub trait RootClient: Send + Sync {
-    fn status(&self) -> Result<Vec<RootStatus>, String>;
-    /// `config`: the connection's stored config, sent on stdin ahead of the secrets (root layer 8 opens no user
-    /// file). `accept_risky`: the acknowledged risky OpenVPN directives (`--accept-risky`).
-    fn up(
-        &self,
-        kind: VPNKind,
-        id: &Uuid,
-        config: &[u8],
-        secrets: &Secrets,
-        debug: bool,
-        accept_risky: &[String],
-    ) -> Result<(), String>;
-    fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String>;
-    /// `mvpn respond openvpn <id>` (MFA answer to the management bridge).
-    fn respond(&self, id: &Uuid, kind: AuthResponseKind, response: &str) -> Result<(), String>;
-}
-
-/// A VPN service listed by `scutil --nc list` (the Swift `SystemVPNService`).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SystemService {
-    /// The scutil service ID.
-    pub id: String,
-    pub name: String,
-    /// `L2TP`, `Cisco IPsec`, `IKEv2`, `WireGuard (app)`, `OpenVPN (app)` or `VPN`.
-    pub type_label: String,
-    /// `Connected`, `Connecting`, `Disconnecting`, `Disconnected`, …
-    pub status: String,
-}
-
-impl SystemService {
-    pub fn new(id: &str, name: &str, type_label: &str, status: &str) -> Self {
-        SystemService { id: id.into(), name: name.into(), type_label: type_label.into(), status: status.into() }
-    }
-
-    /// The MacVPN keychain key for this service's PSK / password (scutil IDs are UUIDs; `None` if not).
-    pub fn secret_id(&self) -> Option<Uuid> {
-        parse_uuid(&self.id)
-    }
-
-    /// The PSK / password can be stored in MacVPN and passed when starting (L2TP and Cisco IPsec only).
-    pub fn supports_stored_secrets(&self) -> bool {
-        self.secret_id().is_some() && NativeKind::from_type_label(&self.type_label).is_some()
-    }
-
-    pub fn connection_state(&self) -> ConnectionState {
-        match self.status.as_str() {
-            "Connected" => ConnectionState::Connected { ip: None, since: None },
-            "Connecting" => ConnectionState::Connecting,
-            "Disconnecting" => ConnectionState::Disconnecting,
-            _ => ConnectionState::Disconnected,
-        }
-    }
-}
-
-/// The native VPN services (scutil listing + in-process `SCNetworkConnection`), the Swift `NativeVPNController`.
-pub trait NativeController: Send + Sync {
-    fn list(&self) -> Result<Vec<SystemService>, String>;
-    /// The service's server address (`scutil --nc show`); `None` if it cannot be read.
-    fn remote_address(&self, service_id: &str) -> Option<String>;
-    /// `kind` `None` or no secrets: started with the stored configuration only.
-    fn start(&self, service_id: &str, kind: Option<NativeKind>, secrets: &Secrets) -> Result<(), String>;
-    fn stop(&self, service_id: &str) -> Result<(), String>;
-}
+/// The privileged helper, the system VPNs, the native profiles and the helper's UI state files: platform traits,
+/// defined in `macvpn-platform-api` and re-exported here (their old home).
+pub use macvpn_platform_api::{
+    AuthStateReader, HelperClient, LegacySecrets, NativeController, NativeProfile, NativeProfiles, NoAuthState,
+    SystemVpn,
+};
 
 /// The connection store (`connections/<UUID>/{meta.json,config}`).
 pub trait ConnectionRepository: Send + Sync {
@@ -212,6 +150,16 @@ pub trait SecretReader: Send + Sync {
     }
 }
 
+/// The 1.1 secrets as a [`SecretReader`] (the legacy read-only mode): reads exactly what the platform's
+/// [`LegacySecrets`] gives.
+pub struct LegacySecretReader(pub Arc<dyn LegacySecrets>);
+
+impl SecretReader for LegacySecretReader {
+    fn get(&self, id: &Uuid, field: SecretField) -> Option<String> {
+        self.0.get(id, field)
+    }
+}
+
 /// Write access to the Keychain items (the editors' save and forget, import, delete).
 pub trait SecretWriter: Send + Sync {
     /// The editors' and the import's write: the item's own value; an empty value deletes the item. A vault-backed
@@ -320,13 +268,6 @@ pub trait FolderStore: Send + Sync {
     fn apply(&self, op: FolderOp) -> io::Result<FolderOpResult>;
 }
 
-/// Installs a generated native (L2TP / Cisco) profile: staged in a private temp directory, opened for the user
-/// to approve, and deleted once the service is listed (the Swift `NativeProfileStaging` + `StagedProfiles`).
-pub trait ProfileInstaller: Send + Sync {
-    /// `service_existed`: the connection's service was already installed (a re-saved profile).
-    fn install(&self, id: &Uuid, profile: &[u8], file_name: &str, service_existed: bool) -> Result<(), String>;
-}
-
 /// `connection-order.json`.
 pub trait RankingPersistence: Send + Sync {
     fn load(&self) -> ConnectionRanking;
@@ -356,21 +297,6 @@ impl SystemOTPPersistence for SystemOTPStore {
 
     fn save(&self, map: &HashMap<String, OTPSetting>) -> io::Result<()> {
         SystemOTPStore::save(self, map)
-    }
-}
-
-/// The management bridge's UI state file (`/var/run/macvpn-ui/<id>.json`), read safely.
-pub trait AuthStateReader: Send + Sync {
-    fn read(&self, id: &Uuid) -> Option<AuthUIState>;
-}
-
-/// No state file is ever present (no root layer, tests).
-#[derive(Debug, Default, Clone, Copy)]
-pub struct NoAuthState;
-
-impl AuthStateReader for NoAuthState {
-    fn read(&self, _id: &Uuid) -> Option<AuthUIState> {
-        None
     }
 }
 

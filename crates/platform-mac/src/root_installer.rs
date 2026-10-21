@@ -9,7 +9,6 @@ use crate::command::{CommandError, CommandRunner, ProcessCommandRunner};
 use crate::mvpn_client::{EXECUTABLE, INSTALL_DIR, LOG_DIR};
 use crate::temp_dir::MessageError;
 use macvpn_core::l10n::{self, AppLanguage, Arg};
-use macvpn_core::mfa::AuthUIState;
 use macvpn_core::swift_str;
 use macvpn_core::update::sha256_hex;
 use regex::Regex;
@@ -308,7 +307,7 @@ pub fn uninstall_script(user: &str) -> Result<String, InstallError> {
     let mvpn = shell_quote(EXECUTABLE);
     let down_loop = down_loop(user);
     let marker = shell_quote(&disconnect_failure_marker());
-    let ui_dir = AuthUIState::DEFAULT_DIRECTORY;
+    let ui_dir = crate::mvpn_client::UI_STATE_DIR;
     Ok(format!(
         r#"#!/bin/bash
 set -uo pipefail

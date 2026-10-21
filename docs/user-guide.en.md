@@ -2,11 +2,15 @@
 
 [Magyar változat](user-guide.hu.md)
 
-MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.4 (see [What's new in 1.4](#whats-new-in-14)). The menu's **Help** item opens it.
+MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.5 (see [What's new in 1.5](#whats-new-in-15)). The menu's **Help** item opens it.
 
 For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference. Developers who want another program on this Mac to bring MacVPN connections up and down (**Paired apps** in the Connections window) should read the [Control API guide](control-api.md).
 
 > **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
+
+## What's new in 1.5
+
+- Under the hood: prepared for a Windows version. MacVPN works exactly as before; the root layer stays 8, so updating from 1.4 needs no admin password.
 
 ## What's new in 1.4
 

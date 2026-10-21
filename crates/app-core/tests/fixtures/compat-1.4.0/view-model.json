@@ -1,0 +1,386 @@
+{
+  "language": "en",
+  "rows": [
+    {
+      "id": "C0DE0000-0000-4000-8000-000000000002",
+      "name": "Home WireGuard",
+      "typeLabel": "WireGuard",
+      "server": "vpn.example.com",
+      "managed": true,
+      "kind": "wireguard",
+      "storedSecrets": false,
+      "pinned": true,
+      "available": true,
+      "state": "disconnected",
+      "switchOn": false,
+      "switchEnabled": true,
+      "heldBy": [],
+      "catalog": null,
+      "published": []
+    },
+    {
+      "id": "C0DE0000-0000-4000-8000-000000000001",
+      "name": "Office OpenVPN",
+      "typeLabel": "OpenVPN",
+      "server": "vpn.example.com",
+      "managed": true,
+      "kind": "openvpn",
+      "storedSecrets": false,
+      "pinned": false,
+      "available": true,
+      "state": "connected",
+      "ip": "10.0.0.2",
+      "since": 1790000000.0,
+      "switchOn": true,
+      "switchEnabled": true,
+      "heldBy": [],
+      "catalog": null,
+      "published": []
+    },
+    {
+      "id": "8F1C2D3E-0000-4000-8000-000000000001",
+      "name": "Office VPN",
+      "typeLabel": "L2TP",
+      "server": null,
+      "managed": false,
+      "kind": null,
+      "storedSecrets": true,
+      "pinned": false,
+      "available": true,
+      "state": "connected",
+      "ip": null,
+      "since": null,
+      "switchOn": true,
+      "switchEnabled": true,
+      "heldBy": [],
+      "catalog": null,
+      "published": []
+    },
+    {
+      "id": "C0DE0000-0000-4000-8000-000000000003",
+      "name": "Branch L2TP",
+      "typeLabel": "L2TP",
+      "server": "vpn.example.com",
+      "managed": true,
+      "kind": "l2tp",
+      "storedSecrets": false,
+      "pinned": false,
+      "available": true,
+      "state": "disconnected",
+      "switchOn": false,
+      "switchEnabled": true,
+      "heldBy": [],
+      "catalog": null,
+      "published": []
+    },
+    {
+      "id": "46B3F5E4-C6D4-89A4-B6A0-F841611FC985",
+      "name": "Team L2TP",
+      "typeLabel": "L2TP",
+      "server": "vpn.example.com",
+      "managed": true,
+      "kind": "l2tp",
+      "storedSecrets": false,
+      "pinned": false,
+      "available": true,
+      "state": "disconnected",
+      "switchOn": false,
+      "switchEnabled": true,
+      "heldBy": [],
+      "catalog": {
+        "catalogId": "C0DE0000-0000-4000-8000-000000000040",
+        "name": "Acme VPN",
+        "pendingRemoval": false,
+        "profileOutdated": false
+      },
+      "published": []
+    },
+    {
+      "id": "59775799-C2B8-888B-9C9E-4038F0D74E2B",
+      "name": "Team OpenVPN",
+      "typeLabel": "OpenVPN",
+      "server": "vpn.example.com",
+      "managed": true,
+      "kind": "openvpn",
+      "storedSecrets": false,
+      "pinned": false,
+      "available": true,
+      "state": "disconnected",
+      "switchOn": false,
+      "switchEnabled": true,
+      "heldBy": [],
+      "catalog": {
+        "catalogId": "C0DE0000-0000-4000-8000-000000000040",
+        "name": "Acme VPN",
+        "pendingRemoval": false,
+        "profileOutdated": false
+      },
+      "published": []
+    }
+  ],
+  "tree": [
+    {
+      "type": "folder",
+      "id": "C0DE0000-0000-4000-8000-000000000010",
+      "name": "Work",
+      "parent": null,
+      "depth": 0,
+      "color": "blue",
+      "colorSource": "own",
+      "ownColor": "blue",
+      "collapsed": false,
+      "activeCount": 2,
+      "hasConnected": true,
+      "connectionCount": 2,
+      "itemCount": 3,
+      "folderCount": 1
+    },
+    {
+      "type": "folder",
+      "id": "C0DE0000-0000-4000-8000-000000000011",
+      "name": "Remote",
+      "parent": "C0DE0000-0000-4000-8000-000000000010",
+      "depth": 1,
+      "color": "green",
+      "colorSource": "own",
+      "ownColor": "green",
+      "collapsed": true,
+      "activeCount": 1,
+      "hasConnected": true,
+      "connectionCount": 1,
+      "itemCount": 1,
+      "folderCount": 0
+    },
+    {
+      "type": "item",
+      "id": "C0DE0000-0000-4000-8000-000000000001",
+      "parent": "C0DE0000-0000-4000-8000-000000000011",
+      "depth": 2,
+      "color": "green",
+      "colorSource": "inherited",
+      "ownColor": null
+    },
+    {
+      "type": "item",
+      "id": "C0DE0000-0000-4000-8000-000000000002",
+      "parent": "C0DE0000-0000-4000-8000-000000000010",
+      "depth": 1,
+      "color": "blue",
+      "colorSource": "inherited",
+      "ownColor": null
+    },
+    {
+      "type": "item",
+      "id": "8F1C2D3E-0000-4000-8000-000000000001",
+      "parent": "C0DE0000-0000-4000-8000-000000000010",
+      "depth": 1,
+      "color": "orange",
+      "colorSource": "own",
+      "ownColor": "orange"
+    },
+    {
+      "type": "folder",
+      "id": "402D469A-4105-8808-8840-2F573C97779D",
+      "name": "Acme VPN",
+      "parent": null,
+      "depth": 0,
+      "color": null,
+      "colorSource": "none",
+      "ownColor": null,
+      "collapsed": false,
+      "activeCount": 0,
+      "hasConnected": false,
+      "connectionCount": 2,
+      "itemCount": 2,
+      "folderCount": 1
+    },
+    {
+      "type": "folder",
+      "id": "5D54C445-5335-882D-911B-7226CBE21657",
+      "name": "Team",
+      "parent": "402D469A-4105-8808-8840-2F573C97779D",
+      "depth": 1,
+      "color": "purple",
+      "colorSource": "own",
+      "ownColor": "purple",
+      "collapsed": false,
+      "activeCount": 0,
+      "hasConnected": false,
+      "connectionCount": 2,
+      "itemCount": 2,
+      "folderCount": 0
+    },
+    {
+      "type": "item",
+      "id": "46B3F5E4-C6D4-89A4-B6A0-F841611FC985",
+      "parent": "5D54C445-5335-882D-911B-7226CBE21657",
+      "depth": 2,
+      "color": "purple",
+      "colorSource": "inherited",
+      "ownColor": null
+    },
+    {
+      "type": "item",
+      "id": "59775799-C2B8-888B-9C9E-4038F0D74E2B",
+      "parent": "5D54C445-5335-882D-911B-7226CBE21657",
+      "depth": 2,
+      "color": "purple",
+      "colorSource": "inherited",
+      "ownColor": null
+    },
+    {
+      "type": "item",
+      "id": "C0DE0000-0000-4000-8000-000000000003",
+      "parent": null,
+      "depth": 0,
+      "color": "red",
+      "colorSource": "own",
+      "ownColor": "red"
+    }
+  ],
+  "foldersEnabled": true,
+  "foldersNote": null,
+  "palette": [
+    "red",
+    "orange",
+    "amber",
+    "yellow",
+    "lime",
+    "green",
+    "teal",
+    "cyan",
+    "blue",
+    "indigo",
+    "purple",
+    "pink"
+  ],
+  "statusError": null,
+  "tray": "active",
+  "hasActive": true,
+  "prompts": [],
+  "setupComplete": true,
+  "update": {
+    "enabled": true,
+    "available": "v1.4.0",
+    "checking": false,
+    "autoCheck": true,
+    "delayUpdates": false,
+    "currentVersion": "1.3.0",
+    "release": {
+      "tag": "v1.4.0",
+      "notes": "## What's new\n- The team catalog file has its own slot.",
+      "hasPage": true
+    },
+    "installStage": null,
+    "installError": null,
+    "notice": null
+  },
+  "loginItem": null,
+  "manage": {
+    "selected": null,
+    "pending": null,
+    "dirty": [],
+    "logRequest": null,
+    "settingsRequest": null,
+    "question": null,
+    "editorsEpoch": 0,
+    "kinds": [],
+    "logFilters": [],
+    "selectedRemoved": false
+  },
+  "setup": {
+    "checked": false,
+    "homebrew": null,
+    "tools": null,
+    "root": null,
+    "canInstallTools": false,
+    "brewOutput": "",
+    "brewRunning": false,
+    "installingRoot": false,
+    "installError": null,
+    "upgradeNotice": null,
+    "uninstalling": false
+  },
+  "quit": null,
+  "quitNote": null,
+  "control": {
+    "enabled": true,
+    "running": true,
+    "error": null,
+    "clients": [
+      {
+        "id": "C0DE0000-0000-4000-8000-000000000030",
+        "name": "Acme Remote",
+        "executable": "/Applications/Acme Remote.app/Contents/MacOS/Acme Remote",
+        "allowed": [
+          "C0DE0000-0000-4000-8000-000000000001",
+          "8F1C2D3E-0000-4000-8000-000000000001"
+        ],
+        "created": 1790000000.0,
+        "lastUsed": null,
+        "pathChanged": null
+      }
+    ],
+    "activity": []
+  },
+  "pairings": [],
+  "credentialPrompts": [],
+  "credentials": {
+    "available": true,
+    "message": null,
+    "items": [
+      {
+        "id": "C0DE0000-0000-4000-8000-000000000020",
+        "name": "Office Login",
+        "username": "alice",
+        "hasPassword": true,
+        "usedBy": 1
+      },
+      {
+        "id": "@SLOT-CREDENTIAL@",
+        "name": "Team Login",
+        "username": "",
+        "hasPassword": false,
+        "usedBy": 2
+      }
+    ]
+  },
+  "appVersion": "@VERSION@",
+  "vault": {
+    "state": "unlocked",
+    "autoUnlock": false,
+    "showLockNow": true,
+    "showLockNowPref": false,
+    "activeCount": 2,
+    "legacyError": null,
+    "passwordMode": null
+  },
+  "vaultSetup": null,
+  "backupAvailable": true,
+  "catalogs": [
+    {
+      "id": "C0DE0000-0000-4000-8000-000000000040",
+      "name": "Acme VPN",
+      "source": "https://vpn.example.com/team.macvpncatalog",
+      "fingerprint": "7C0E-EEC2-7467-A74D-F67B-E930-3A4A-88F1",
+      "version": 1,
+      "status": "ok",
+      "lastRefresh": 1790000000.0,
+      "lastSuccess": 1790000000.0,
+      "error": null,
+      "hasToken": false,
+      "slots": [
+        {
+          "name": "Team Login",
+          "filled": false,
+          "credentialName": "Team Login"
+        }
+      ]
+    }
+  ],
+  "teamFolders": {},
+  "publishing": {
+    "adminKeys": [],
+    "publications": []
+  }
+}

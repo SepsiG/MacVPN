@@ -192,9 +192,9 @@ pub async fn backup_choose_destination(
 ) -> Result<Option<String>, String> {
     allow(window.label(), &[BACKUP_WINDOW])?;
     state.backup.require()?;
-    let name = default_file_name(&macvpn_platform_mac::system::local_date(Date::now().time_interval_since_1970()));
+    let name = default_file_name(&crate::platform::get().system().local_date(Date::now().time_interval_since_1970()));
     #[cfg(debug_assertions)]
-    if let Some(path) = crate::smoke::backup_file(&state) {
+    if let Some(path) = crate::platform::smoke_backup_file(&state) {
         state.backup.pick(BACKUP_WINDOW, path.clone());
         return Ok(Some(display_name(&path)));
     }
@@ -242,7 +242,7 @@ pub async fn restore_choose_file(app: AppHandle, window: Window, state: Shared<'
     allow_armed(&state, &label, &[RESTORE_WINDOW, FRESH_WINDOW])?;
     let service = state.backup.require()?;
     #[cfg(debug_assertions)]
-    if let Some(path) = crate::smoke::backup_file(&state) {
+    if let Some(path) = crate::platform::smoke_backup_file(&state) {
         service.discard(&label);
         state.backup.pick(&label, path.clone());
         return Ok(Some(display_name(&path)));
@@ -442,8 +442,7 @@ impl PreferencePort for AppPreferences {
             Preference::LaunchAtLogin => {
                 let mut controller = crate::platform::login_items(&self.state.env);
                 let result = controller.set_enabled(on);
-                *self.state.login_item.write().unwrap_or_else(PoisonError::into_inner) =
-                    Some(crate::platform::login_item_view(controller.state()));
+                *self.state.login_item.write().unwrap_or_else(PoisonError::into_inner) = Some(controller.state());
                 result.map_err(|_| {
                     l10n::tr(
                         if on { "Could not turn on launch at login" } else { "Could not turn off launch at login" },
@@ -503,7 +502,7 @@ mod tests {
 
     #[test]
     fn the_default_name_carries_the_local_date() {
-        let date = macvpn_platform_mac::system::local_date(1_792_400_000.0);
+        let date = crate::platform::get().system().local_date(1_792_400_000.0);
         assert_eq!(date.len(), 10, "{date}");
         assert!(date.starts_with("2026-"), "{date}");
         let name = default_file_name(&date);

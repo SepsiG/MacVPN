@@ -2,12 +2,14 @@
 
 mod common;
 
-use common::{TempDir, mode};
+use common::TempDir;
+#[cfg(unix)]
+use common::mode;
 use macvpn_core::collation;
 use macvpn_core::date::Date;
+#[cfg(unix)]
 use macvpn_core::models::{OTPSeparator, OTPSetting};
 use macvpn_core::ranking::{ConnectionRanking, ConnectionRankingStore, HALF_LIFE};
-use macvpn_core::store;
 use macvpn_core::system_otp::SystemOTPStore;
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::path::Path;
@@ -167,6 +169,7 @@ fn prune_removes_deleted_connections() {
     assert!(!r.prune(&["keep".to_string()].into()), "nothing to remove");
 }
 
+#[cfg(unix)]
 #[test]
 fn store_round_trip_with_0600_file() {
     let tmp = TempDir::new();
@@ -195,15 +198,16 @@ fn corrupt_file_loads_empty() {
 
 #[test]
 fn default_location_is_application_support() {
-    let support = store::application_support_directory(Path::new("/Users/x"));
-    let path = ConnectionRankingStore::default_path(&support);
+    let support = Path::new("/Users/x/Library/Application Support/MacVPN");
+    let path = ConnectionRankingStore::default_path(support);
     assert_eq!(path.file_name().unwrap(), "connection-order.json");
     assert_eq!(path.parent().unwrap(), support);
-    let otp = SystemOTPStore::default_path(&support);
+    let otp = SystemOTPStore::default_path(support);
     assert_eq!(otp.file_name().unwrap(), "system-otp.json");
     assert_eq!(otp.parent().unwrap(), support);
 }
 
+#[cfg(unix)]
 #[test]
 fn system_otp_store() {
     let tmp = TempDir::new();

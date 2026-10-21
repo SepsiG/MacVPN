@@ -294,8 +294,9 @@ impl OpenQueue {
 mod tests {
     use super::*;
 
+    /// An absolute path on every OS (`/s/a.ovpn` is not absolute on Windows, and the queue takes absolute paths only).
     fn p(s: &str) -> PathBuf {
-        PathBuf::from(s)
+        std::env::temp_dir().join(s.trim_start_matches('/'))
     }
 
     #[test]
@@ -325,7 +326,7 @@ mod tests {
             p("/s/team.macvpncatalog"),
             p("/s/second.macvpncatalog"),
             p("/secret-dir/k.macvpnadminkey"),
-            p("relative.ovpn"),
+            PathBuf::from("relative.ovpn"),
             p("/s/one.ovpn"),
             p("/s/two.sstp"),
         ]);
@@ -343,7 +344,7 @@ mod tests {
 
     #[test]
     fn a_batch_imports_at_most_the_import_limit() {
-        let batch = Batch::sort((0..100).map(|i| PathBuf::from(format!("/s/{i}.ovpn"))));
+        let batch = Batch::sort((0..100).map(|i| p(&format!("/s/{i}.ovpn"))));
         assert_eq!(batch.imports.len(), MAX_IMPORTED);
     }
 
@@ -404,13 +405,13 @@ mod tests {
     fn the_queue_is_capped() {
         let mut queue = OpenQueue::default();
         queue.launched(false);
-        let many: Vec<PathBuf> = (0..40).map(|i| PathBuf::from(format!("/s/{i}.ovpn"))).collect();
+        let many: Vec<PathBuf> = (0..40).map(|i| p(&format!("/s/{i}.ovpn"))).collect();
         assert_eq!(queue.receive(many, false), Received::Queued { show_vault: true, dropped: 40 - MAX_QUEUED });
         assert_eq!(queue.len(), MAX_QUEUED);
         assert_eq!(queue.receive([p("/s/more.ovpn")], false), Received::Queued { show_vault: false, dropped: 1 });
         // Relative paths are never queued.
         let mut other = OpenQueue::default();
-        other.receive([p("x.ovpn")], false);
+        other.receive([PathBuf::from("x.ovpn")], false);
         assert!(other.is_empty());
     }
 
@@ -427,10 +428,10 @@ mod tests {
     #[test]
     fn a_flood_of_paths_is_cut_before_it_is_sorted() {
         // Far more paths than looked at: only the first MAX_SORTED count, the imports are capped.
-        let batch = Batch::sort((0..100_000).map(|i| PathBuf::from(format!("/s/{i}.ovpn"))));
+        let batch = Batch::sort((0..100_000).map(|i| p(&format!("/s/{i}.ovpn"))));
         assert_eq!(batch.imports.len(), MAX_IMPORTED);
         // A catalog file after the cut is never seen.
-        let late = (0..MAX_SORTED).map(|i| PathBuf::from(format!("/s/{i}.ovpn"))).chain([p("/s/t.macvpncatalog")]);
+        let late = (0..MAX_SORTED).map(|i| p(&format!("/s/{i}.ovpn"))).chain([p("/s/t.macvpncatalog")]);
         assert_eq!(Batch::sort(late).catalog, None);
         // Duplicates are dropped (each path once), however many there are.
         let dup = Batch::sort(std::iter::repeat_n(p("/s/a.ovpn"), MAX_SORTED));
@@ -439,7 +440,7 @@ mod tests {
 
     #[test]
     fn refusals_are_capped_and_counted() {
-        let batch = Batch::sort((0..50).map(|i| PathBuf::from(format!("/s/{i}.macvpnbackup"))));
+        let batch = Batch::sort((0..50).map(|i| p(&format!("/s/{i}.macvpnbackup"))));
         assert_eq!(batch.refused.len(), MAX_REFUSED);
         assert_eq!(batch.refused_more, 50 - MAX_REFUSED);
         assert!(!batch.is_empty());
@@ -455,8 +456,8 @@ mod tests {
         assert_eq!(a.imports, [p("/s/a.ovpn"), p("/s/b.ovpn")]);
         assert_eq!(a.catalog, Some(p("/s/two.macvpncatalog")), "the latest open's catalog file");
         assert_eq!(a.refused.len(), 1);
-        let mut full = Batch::sort((0..MAX_IMPORTED).map(|i| PathBuf::from(format!("/s/{i}.ovpn"))));
-        full.merge(Batch::sort((0..20).map(|i| PathBuf::from(format!("/t/{i}.macvpnbackup")))));
+        let mut full = Batch::sort((0..MAX_IMPORTED).map(|i| p(&format!("/s/{i}.ovpn"))));
+        full.merge(Batch::sort((0..20).map(|i| p(&format!("/t/{i}.macvpnbackup")))));
         full.merge(Batch::sort([p("/t/extra.ovpn")]));
         assert_eq!(full.imports.len(), MAX_IMPORTED);
         assert_eq!((full.refused.len(), full.refused_more), (MAX_REFUSED, 20 - MAX_REFUSED));
@@ -484,7 +485,7 @@ mod tests {
         queue.launched(false);
         assert_eq!(queue.receive([p("/s/a.ovpn")], false), Received::Queued { show_vault: true, dropped: 0 });
         for i in 0..100 {
-            let r = queue.receive([PathBuf::from(format!("/s/{i}.ovpn"))], false);
+            let r = queue.receive([p(&format!("/s/{i}.ovpn"))], false);
             assert!(matches!(r, Received::Queued { show_vault: false, .. }), "{r:?}");
         }
         // Cancelled: the next open shows it again.
@@ -493,11 +494,11 @@ mod tests {
         // Nothing kept (a relative path): nothing to show.
         let mut other = OpenQueue::default();
         other.launched(false);
-        assert_eq!(other.receive([p("x.ovpn")], false), Received::Queued { show_vault: false, dropped: 0 });
+        assert_eq!(other.receive([PathBuf::from("x.ovpn")], false), Received::Queued { show_vault: false, dropped: 0 });
         // A flood counts what was not looked at as dropped.
         let mut flood = OpenQueue::default();
         flood.launched(false);
-        let r = flood.receive((0..10_000).map(|i| PathBuf::from(format!("/s/{i}.ovpn"))), false);
+        let r = flood.receive((0..10_000).map(|i| p(&format!("/s/{i}.ovpn"))), false);
         assert_eq!(r, Received::Queued { show_vault: true, dropped: 10_000 - MAX_QUEUED });
     }
 

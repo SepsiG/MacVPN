@@ -5,12 +5,12 @@
 
 mod common;
 
-use common::{MockNative, MockProfiles, MockRoot, TempDir, clock_at, up_line};
+use common::{MobileconfigProfiles, MockHelper, MockNative, TempDir, clock_at, up_line};
 use macvpn_app_core::connections::ConnectionsModel;
 use macvpn_app_core::control::{FileRegistryStore, RegistryStore};
 use macvpn_app_core::deps::{
     ConnectionRepository, FolderOp, FolderOpResult, FolderStore, RankingPersistence, SecretField, SecretReader,
-    SecretWriter, SystemOTPPersistence, SystemService,
+    SecretWriter, SystemOTPPersistence, SystemVpn,
 };
 use macvpn_app_core::editor::EditorDeps;
 use macvpn_app_core::folders::VaultFolders;
@@ -51,7 +51,7 @@ struct Fixture {
     otp: Arc<VaultSystemOtp>,
     registry: Arc<VaultRegistry>,
     folders: Arc<VaultFolders>,
-    root: Arc<MockRoot>,
+    helper: Arc<MockHelper>,
     native: Arc<MockNative>,
 }
 
@@ -74,7 +74,7 @@ impl Fixture {
             otp: Arc::new(VaultSystemOtp::new(vault.clone())),
             registry: Arc::new(VaultRegistry::new(vault.clone())),
             folders: Arc::new(VaultFolders::new(vault.clone())),
-            root: Arc::new(MockRoot::default()),
+            helper: Arc::new(MockHelper::default()),
             native: Arc::new(MockNative::default()),
             vault,
             tmp,
@@ -83,7 +83,7 @@ impl Fixture {
 
     fn deps(&self) -> Dependencies {
         let mut deps =
-            Dependencies::new(self.connections.clone(), self.secrets.clone(), self.root.clone(), self.native.clone());
+            Dependencies::new(self.connections.clone(), self.secrets.clone(), self.helper.clone(), self.native.clone());
         deps.ranking_store = Some(self.ranking.clone());
         deps.system_otp_store = Some(self.otp.clone());
         deps.secret_writer = Some(self.secrets.clone());
@@ -103,7 +103,7 @@ impl Fixture {
             store: self.connections.clone(),
             secrets: self.secrets.clone(),
             secret_writer: self.secrets.clone(),
-            profiles: Arc::new(MockProfiles::default()),
+            profiles: Arc::new(MobileconfigProfiles::default()),
             clock: clock_at(1_000_000.0),
         })
     }
@@ -140,6 +140,7 @@ fn client(name: &str) -> PairedClient {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn each_store_round_trips_while_unlocked() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -165,6 +166,7 @@ fn each_store_round_trips_while_unlocked() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn each_store_fails_as_specified_while_locked() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -197,16 +199,17 @@ fn each_store_fails_as_specified_while_locked() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn lock_keeps_a_redacted_active_connection_and_unlock_brings_the_names_back() {
     let f = Fixture::new();
     let up = f.add("Office", VPNKind::Openvpn);
     let idle = f.add("Home", VPNKind::Wireguard);
     let key = uuid_string(&up.id);
-    f.root.respond(
+    f.helper.respond(
         "status",
         Ok(&format!(r#"[{{"id":"{key}","kind":"openvpn","state":"connected","iface":"utun4","ip":"10.8.0.2"}}]"#)),
     );
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Corp", "IKEv2", "Disconnected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Corp", "IKEv2", "Disconnected")]));
     let m = f.manager();
     m.pin(&key);
     m.set_system_otp(OTPSetting::new(true, OTPSeparator::None), SVC);
@@ -225,7 +228,7 @@ fn lock_keeps_a_redacted_active_connection_and_unlock_brings_the_names_back() {
     assert!(m.state(&key).is_connected());
     m.connect(&idle, false);
     assert!(!m.state(&uuid_string(&idle.id)).is_active());
-    assert!(!f.root.lines().iter().any(|l| l == &up_line(VPNKind::Wireguard, &idle.id)));
+    assert!(!f.helper.lines().iter().any(|l| l == &up_line(VPNKind::Wireguard, &idle.id)));
     m.pin(SVC);
     assert!(!m.is_pinned(SVC));
     // A reload while still locked changes nothing.
@@ -233,7 +236,7 @@ fn lock_keeps_a_redacted_active_connection_and_unlock_brings_the_names_back() {
     assert!(m.is_locked());
     // Quit: the active one is disconnected.
     m.disconnect_all();
-    assert!(f.root.lines().iter().any(|l| l.starts_with("down ")), "{:?}", f.root.lines());
+    assert!(f.helper.lines().iter().any(|l| l.starts_with("down ")), "{:?}", f.helper.lines());
 
     f.unlock();
     m.reload();
@@ -246,6 +249,7 @@ fn lock_keeps_a_redacted_active_connection_and_unlock_brings_the_names_back() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_manager_built_while_locked_reads_the_ranking_at_the_first_reload() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -263,6 +267,7 @@ fn a_manager_built_while_locked_reads_the_ranking_at_the_first_reload() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_editors_import_export_and_delete_refuse_while_locked() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -288,13 +293,14 @@ fn the_editors_import_export_and_delete_refuse_while_locked() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_view_model_while_locked_contains_no_name() {
     let f = Fixture::new();
     let up = f.add("Seeded Office", VPNKind::Openvpn);
     f.add("Seeded Home", VPNKind::Wireguard);
     let key = uuid_string(&up.id);
-    f.root.respond("status", Ok(&format!(r#"[{{"id":"{key}","kind":"openvpn","state":"connected"}}]"#)));
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Seeded Corp", "IKEv2", "Disconnected")]));
+    f.helper.respond("status", Ok(&format!(r#"[{{"id":"{key}","kind":"openvpn","state":"connected"}}]"#)));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Seeded Corp", "IKEv2", "Disconnected")]));
     let m = f.manager();
     m.refresh();
     let unlocked = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
@@ -344,6 +350,7 @@ fn the_view_model_while_locked_contains_no_name() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn lock_drops_the_folders_and_the_credentials_and_unlock_brings_them_back() {
     let f = Fixture::new();
     let c = f.add("Seeded Office", VPNKind::Openvpn);
@@ -388,6 +395,7 @@ fn lock_drops_the_folders_and_the_credentials_and_unlock_brings_them_back() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn reload_all_reads_what_a_restore_wrote() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -407,6 +415,7 @@ fn reload_all_reads_what_a_restore_wrote() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_legacy_mode_offers_no_folder_editing() {
     let f = Fixture::new();
     let m = f.manager();
@@ -432,6 +441,7 @@ fn show_lock_now_follows_auto_unlock_and_the_preference() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_legacy_mode_reads_the_old_storage_and_refuses_writes() {
     AppLanguage::set_thread_override(Some(AppLanguage::En));
     let tmp = TempDir::new();
@@ -479,7 +489,7 @@ fn the_legacy_mode_reads_the_old_storage_and_refuses_writes() {
     let m = ConnectionManager::new(Dependencies::new(
         Arc::new(connections),
         Arc::new(VaultSecrets::new(vault.clone())),
-        Arc::new(MockRoot::default()),
+        Arc::new(MockHelper::default()),
         Arc::new(MockNative::default()),
     ));
     m.reload();

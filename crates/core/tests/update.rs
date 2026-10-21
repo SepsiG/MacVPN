@@ -15,6 +15,11 @@ use std::process::Command;
 const REPO_ID: i64 = 1_422_472_799;
 const REPO: &str = "SepsiG/MacVPN";
 
+/// MacVPN's release asset (`Product::update_asset` of MacVPN; core does not know the product).
+fn macvpn_asset(version: &str) -> Option<String> {
+    Some(format!("MacVPN-{version}.dmg"))
+}
+
 // MARK: SemVer
 
 fn v(s: &str) -> SemVer {
@@ -96,7 +101,7 @@ impl ReleaseJson {
 }
 
 fn parse(r: ReleaseJson) -> Result<Release, UpdateError> {
-    UpdateChecker::parse_release(&r.data(), REPO)
+    UpdateChecker::parse_release(&r.data(), REPO, &macvpn_asset)
 }
 
 fn published() -> Date {
@@ -191,11 +196,11 @@ fn bundled_info_plist_pins_repo_id() {
 
 #[test]
 fn latest_release_parses_assets() {
-    let r = UpdateChecker::release_from_response(200, &ReleaseJson::default().data(), REPO).unwrap();
+    let r = UpdateChecker::release_from_response(200, &ReleaseJson::default().data(), REPO, &macvpn_asset).unwrap();
     assert_eq!(r.tag, "v0.2.0");
     assert_eq!(r.version, "0.2.0");
     assert_eq!(r.notes, "## Újdonságok\n- frissítés az appból");
-    assert_eq!(r.dmg.name, "MacVPN-0.2.0.dmg");
+    assert_eq!(r.package.name, "MacVPN-0.2.0.dmg");
     assert_eq!(r.checksum.name, "MacVPN-0.2.0.dmg.sha256");
     assert_eq!(r.checksum.url, "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/MacVPN-0.2.0.dmg.sha256");
     assert_eq!(r.signature.as_ref().unwrap().name, "MacVPN-0.2.0.dmg.sig");
@@ -212,8 +217,11 @@ fn latest_release_parses_assets() {
 
 #[test]
 fn http_errors() {
-    assert_eq!(UpdateChecker::release_from_response(404, b"", REPO), Err(UpdateError::Http(404)));
-    assert_eq!(UpdateChecker::release_from_response(200, b"nem json", REPO), Err(UpdateError::InvalidResponse));
+    assert_eq!(UpdateChecker::release_from_response(404, b"", REPO, &macvpn_asset), Err(UpdateError::Http(404)));
+    assert_eq!(
+        UpdateChecker::release_from_response(200, b"nem json", REPO, &macvpn_asset),
+        Err(UpdateError::InvalidResponse)
+    );
 }
 
 #[test]
@@ -286,9 +294,9 @@ fn asset_path_must_match_repo_tag_and_name() {
         })
         .is_ok()
     );
-    assert!(UpdateChecker::parse_release(&ReleaseJson::default().data(), "sepsig/MACVPN").is_ok());
+    assert!(UpdateChecker::parse_release(&ReleaseJson::default().data(), "sepsig/MACVPN", &macvpn_asset).is_ok());
     // An app set to another (valid) repo does not accept SepsiG's assets.
-    assert!(UpdateChecker::parse_release(&ReleaseJson::default().data(), "Other/MacVPN").is_err());
+    assert!(UpdateChecker::parse_release(&ReleaseJson::default().data(), "Other/MacVPN", &macvpn_asset).is_err());
 }
 
 #[test]
@@ -339,6 +347,32 @@ fn missing_assets_and_bad_tags() {
     );
     assert!(parse(ReleaseJson { tag: "v0.2.0/../x".into(), ..Default::default() }).is_err());
     assert!(parse(ReleaseJson { tag: "nightly".into(), ..Default::default() }).is_err());
+}
+
+/// The asset name is the caller's (the product's): the same release JSON with another product's asset names, and
+/// no asset for this machine.
+#[test]
+fn package_asset_is_a_parameter() {
+    let base = "https://github.com/SepsiG/MacVPN/releases/download/v0.2.0/";
+    let assets = ["WinVPN-0.2.0-arm64.msi", "WinVPN-0.2.0-arm64.msi.sha256", "WinVPN-0.2.0-arm64.msi.sig"]
+        .map(|n| serde_json::json!({"name": n, "browser_download_url": format!("{base}{n}")}));
+    let json = serde_json::json!({"tag_name": "v0.2.0", "assets": assets});
+    let data = serde_json::to_vec(&json).unwrap();
+    let msi = |v: &str| Some(format!("WinVPN-{v}-arm64.msi"));
+    let r = UpdateChecker::parse_release(&data, REPO, &msi).unwrap();
+    assert_eq!(r.package.name, "WinVPN-0.2.0-arm64.msi");
+    assert_eq!(r.checksum.name, "WinVPN-0.2.0-arm64.msi.sha256");
+    assert_eq!(r.signature.unwrap().name, "WinVPN-0.2.0-arm64.msi.sig");
+    assert_eq!(
+        UpdateChecker::parse_release(&data, REPO, &macvpn_asset),
+        Err(UpdateError::MissingAsset("MacVPN-0.2.0.dmg".into()))
+    );
+    // No asset for this architecture: the release has nothing to install here.
+    assert_eq!(UpdateChecker::parse_release(&data, REPO, &|_| None), Err(UpdateError::MissingAsset("v0.2.0".into())));
+    assert_eq!(
+        UpdateChecker::release_from_response(200, &data, REPO, &|_| None),
+        Err(UpdateError::MissingAsset("v0.2.0".into()))
+    );
 }
 
 /// The optional delay: only a release published at least 24 hours ago is offered.
@@ -417,14 +451,22 @@ fn url_policy() {
 #[test]
 fn user_guide_url() {
     assert_eq!(
-        UserGuide::url(Some(REPO), &["hu-HU", "en-US"]),
+        UserGuide::url(Some(REPO), REPO, "user-guide", &["hu-HU", "en-US"]),
         "https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.hu.md"
     );
     assert_eq!(
-        UserGuide::url(Some(REPO), &["en-US", "hu-HU"]),
+        UserGuide::url(Some(REPO), REPO, "user-guide", &["en-US", "hu-HU"]),
         "https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.en.md"
     );
-    assert_eq!(UserGuide::url(None, &["hu"]), "https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.hu.md");
+    assert_eq!(
+        UserGuide::url(None, REPO, "user-guide", &["hu"]),
+        "https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.hu.md"
+    );
+    // An invalid repo falls back to the caller's; the stem is the product's.
+    assert_eq!(
+        UserGuide::url(Some("evil.com/x?y"), REPO, "winvpn-user-guide", &["en"]),
+        "https://github.com/SepsiG/MacVPN/blob/main/docs/winvpn-user-guide.en.md"
+    );
     assert_eq!(UserGuide::language::<&str>(&[]), "en");
     assert_eq!(UserGuide::language(&["hr-HR"]), "en");
 }
@@ -757,6 +799,8 @@ fn sign_release_dry_run_matches_app() {
 }
 
 /// The script reads the embedded keys from this crate's source (`UpdateSignature`): it gets the same as the app.
+// Unix only: the script runs under /bin/bash (a macOS release tool).
+#[cfg(unix)]
 #[test]
 fn sign_release_uses_the_embedded_keys() {
     let out = Command::new("/bin/bash")

@@ -1,0 +1,60 @@
+{
+  "connections": [
+    {
+      "color": null,
+      "config": "Y2xpZW50CmRldiB0dW4KcHJvdG8gdWRwCnJlbW90ZSB2cG4uZXhhbXBsZS5jb20gMTE5NApub2JpbmQKYXV0aC11c2VyLXBhc3MKdmVyYiAzCg==",
+      "folderId": "C0DE0000-0000-4000-8000-000000000041",
+      "id": "C0DE0000-0000-4000-8000-000000000044",
+      "kind": "openvpn",
+      "name": "Team OpenVPN",
+      "native": null,
+      "otp": {
+        "enabled": false,
+        "separator": "none"
+      },
+      "secretRefs": {},
+      "slot": "C0DE0000-0000-4000-8000-000000000042"
+    },
+    {
+      "color": "teal",
+      "config": "",
+      "folderId": "C0DE0000-0000-4000-8000-000000000041",
+      "id": "C0DE0000-0000-4000-8000-000000000045",
+      "kind": "l2tp",
+      "name": "Team L2TP",
+      "native": {
+        "account": "",
+        "groupName": "",
+        "sendAllTraffic": true,
+        "server": "vpn.example.com"
+      },
+      "otp": {
+        "enabled": true,
+        "separator": "none"
+      },
+      "secretRefs": {
+        "psk": "C0DE0000-0000-4000-8000-000000000043"
+      },
+      "slot": "C0DE0000-0000-4000-8000-000000000042"
+    }
+  ],
+  "credentialSlots": [
+    {
+      "id": "C0DE0000-0000-4000-8000-000000000042",
+      "name": "Team Login"
+    }
+  ],
+  "folders": [
+    {
+      "color": "purple",
+      "id": "C0DE0000-0000-4000-8000-000000000041",
+      "name": "Team",
+      "parentId": null,
+      "position": 0
+    }
+  ],
+  "sharedSecrets": {
+    "C0DE0000-0000-4000-8000-000000000043": "Zml4dHVyZS1zZWNyZXQ="
+  },
+  "version": 1
+}

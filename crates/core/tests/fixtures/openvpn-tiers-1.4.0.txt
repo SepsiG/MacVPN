@@ -1,0 +1,320 @@
+allow-compression	safe	-
+allow-deprecated-insecure-static-crypto	risky	Weakens the security of the tunnel (deprecated or insecure mode)
+allow-nonadmin	risky	Not supported on macOS (Windows or Linux only)
+allow-pull-fqdn	safe	-
+allow-recursive-routing	risky	Allows routing that can bypass or loop the tunnel
+askpass	safe	-
+auth	safe	-
+auth-gen-token	risky	Server-side option, not meant for a client connection
+auth-gen-token-secret	forbidden	-
+auth-nocache	safe	-
+auth-retry	safe	-
+auth-token	safe	-
+auth-token-user	safe	-
+auth-user-pass	safe	-
+auth-user-pass-optional	risky	Server-side option, not meant for a client connection
+auth-user-pass-verify	forbidden	-
+bcast-buffers	risky	Server-side option, not meant for a client connection
+bind	safe	-
+bind-dev	safe	-
+block-ipv6	safe	-
+block-outside-dns	safe	-
+ca	safe	-
+capath	forbidden	-
+ccd-exclusive	risky	Server-side option, not meant for a client connection
+cd	forbidden	-
+cert	safe	-
+chroot	forbidden	-
+cipher	safe	-
+ciphers	safe	-
+client	safe	-
+client-cert-not-required	risky	Server-side option, not meant for a client connection
+client-config-dir	forbidden	-
+client-connect	forbidden	-
+client-crresponse	forbidden	-
+client-disconnect	forbidden	-
+client-nat	risky	Server-side option, not meant for a client connection
+client-to-client	risky	Makes this Mac accept incoming VPN connections (listens on the network as root)
+comp-lzo	safe	-
+comp-noadapt	safe	-
+compat-mode	risky	Weakens the security of the tunnel (deprecated or insecure mode)
+compat-names	risky	Removed from OpenVPN: the connection will fail to start
+compress	safe	-
+config	forbidden	-
+connect-freq	risky	Server-side option, not meant for a client connection
+connect-freq-initial	risky	Server-side option, not meant for a client connection
+connect-retry	safe	-
+connect-retry-max	safe	-
+connect-timeout	safe	-
+crl-verify	safe	-
+cryptoapicert	risky	Not supported on macOS (Windows or Linux only)
+daemon	forbidden	-
+data-ciphers	safe	-
+data-ciphers-fallback	safe	-
+dev	safe	-
+dev-node	forbidden	-
+dev-type	safe	-
+dh	safe	-
+dhcp-internal	risky	Not supported on macOS (Windows or Linux only)
+dhcp-option	safe	-
+dhcp-pre-release	safe	-
+dhcp-release	safe	-
+dhcp-renew	safe	-
+disable	risky	Server-side option, not meant for a client connection
+disable-dco	safe	-
+disable-occ	safe	-
+dns	safe	-
+dns-updown	forbidden	-
+down	forbidden	-
+down-pre	risky	Changes when MacVPN's DNS hooks run
+duplicate-cn	risky	Server-side option, not meant for a client connection
+ecdh-curve	safe	-
+echo	forbidden	-
+engine	forbidden	-
+errors-to-stderr	safe	-
+explicit-exit-notify	safe	-
+extra-certs	safe	-
+fast-io	safe	-
+float	safe	-
+force-tls-key-material-export	safe	-
+fragment	safe	-
+genkey	forbidden	-
+gremlin	risky	Debugging option that deliberately disrupts the connection
+group	risky	Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects
+hand-window	safe	-
+hash-size	risky	Server-side option, not meant for a client connection
+help	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+http-proxy	safe	-
+http-proxy-option	safe	-
+http-proxy-override	risky	Normally sent by the server or used internally by OpenVPN, not set in a client config
+http-proxy-retry	safe	-
+http-proxy-timeout	safe	-
+http-proxy-user-pass	safe	-
+ifconfig	safe	-
+ifconfig-ipv6	safe	-
+ifconfig-ipv6-pool	risky	Server-side option, not meant for a client connection
+ifconfig-ipv6-push	risky	Server-side option, not meant for a client connection
+ifconfig-noexec	risky	OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic
+ifconfig-nowarn	safe	-
+ifconfig-pool	risky	Server-side option, not meant for a client connection
+ifconfig-pool-linear	risky	Server-side option, not meant for a client connection
+ifconfig-pool-persist	forbidden	-
+ifconfig-push	risky	Server-side option, not meant for a client connection
+ifconfig-push-constraint	risky	Server-side option, not meant for a client connection
+ignore-unknown-option	safe	-
+inactive	safe	-
+ip-remote-hint	safe	-
+ip-win32	safe	-
+ipchange	forbidden	-
+iproute	forbidden	-
+iroute	risky	Server-side option, not meant for a client connection
+iroute-ipv6	risky	Server-side option, not meant for a client connection
+keepalive	safe	-
+key	safe	-
+key-derivation	risky	Normally sent by the server or used internally by OpenVPN, not set in a client config
+key-direction	safe	-
+key-method	risky	Weakens the security of the tunnel (deprecated or insecure mode)
+keying-material-exporter	safe	-
+learn-address	forbidden	-
+link-mtu	safe	-
+lladdr	safe	-
+local	safe	-
+log	forbidden	-
+log-append	forbidden	-
+lport	safe	-
+machine-readable-output	safe	-
+management	forbidden	-
+management-client	forbidden	-
+management-client-auth	forbidden	-
+management-client-group	forbidden	-
+management-client-pf	forbidden	-
+management-client-user	forbidden	-
+management-external-cert	forbidden	-
+management-external-key	forbidden	-
+management-forget-disconnect	forbidden	-
+management-hold	forbidden	-
+management-log-cache	forbidden	-
+management-query-passwords	forbidden	-
+management-query-proxy	forbidden	-
+management-query-remote	forbidden	-
+management-signal	forbidden	-
+management-up-down	forbidden	-
+mark	safe	-
+max-clients	risky	Server-side option, not meant for a client connection
+max-packet-size	safe	-
+max-routes	safe	-
+max-routes-per-client	risky	Server-side option, not meant for a client connection
+mktun	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+mlock	safe	-
+mode	risky	Makes this Mac accept incoming VPN connections (listens on the network as root)
+msg-channel	risky	Not supported on macOS (Windows or Linux only)
+mssfix	safe	-
+mtu-disc	safe	-
+mtu-dynamic	risky	Removed from OpenVPN: the connection will fail to start
+mtu-test	safe	-
+multihome	safe	-
+mute	safe	-
+mute-replay-warnings	safe	-
+ncp-ciphers	safe	-
+ncp-disable	safe	-
+nice	safe	-
+no-iv	risky	Weakens the security of the tunnel (deprecated or insecure mode)
+no-name-remapping	risky	Removed from OpenVPN: the connection will fail to start
+no-replay	risky	Weakens the security of the tunnel (deprecated or insecure mode)
+nobind	safe	-
+ns-cert-type	safe	-
+opt-verify	safe	-
+override-username	risky	Server-side option, not meant for a client connection
+parameter	forbidden	-
+passtos	safe	-
+pause-exit	safe	-
+peer-fingerprint	safe	-
+peer-id	risky	Normally sent by the server or used internally by OpenVPN, not set in a client config
+persist-key	safe	-
+persist-local-ip	safe	-
+persist-remote-ip	safe	-
+persist-tun	safe	-
+ping	safe	-
+ping-exit	safe	-
+ping-restart	safe	-
+ping-timer-rem	safe	-
+pkcs11-cert-private	forbidden	-
+pkcs11-id	forbidden	-
+pkcs11-id-management	forbidden	-
+pkcs11-pin-cache	forbidden	-
+pkcs11-private-mode	forbidden	-
+pkcs11-protected-authentication	forbidden	-
+pkcs11-providers	forbidden	-
+pkcs12	safe	-
+plugin	forbidden	-
+port	safe	-
+port-share	forbidden	-
+preresolve	safe	-
+prng	safe	-
+proto	safe	-
+proto-force	safe	-
+protocol-flags	risky	Normally sent by the server or used internally by OpenVPN, not set in a client config
+providers	forbidden	-
+pull	safe	-
+pull-filter	safe	-
+push	risky	Server-side option, not meant for a client connection
+push-continuation	risky	Normally sent by the server or used internally by OpenVPN, not set in a client config
+push-peer-info	safe	-
+push-remove	risky	Server-side option, not meant for a client connection
+push-reset	risky	Server-side option, not meant for a client connection
+rcvbuf	safe	-
+rdns-internal	risky	Not supported on macOS (Windows or Linux only)
+redirect-gateway	safe	-
+redirect-private	safe	-
+register-dns	safe	-
+remap-usr1	safe	-
+remote	safe	-
+remote-cert-eku	safe	-
+remote-cert-ku	safe	-
+remote-cert-tls	safe	-
+remote-random	safe	-
+remote-random-hostname	safe	-
+reneg-bytes	safe	-
+reneg-pkts	safe	-
+reneg-sec	safe	-
+replay-persist	forbidden	-
+replay-window	safe	-
+resolv-retry	safe	-
+rmtun	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+route	safe	-
+route-delay	safe	-
+route-gateway	safe	-
+route-ipv6	safe	-
+route-ipv6-gateway	safe	-
+route-method	safe	-
+route-metric	safe	-
+route-noexec	risky	OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic
+route-nopull	safe	-
+route-pre-down	forbidden	-
+route-table	safe	-
+route-up	forbidden	-
+rport	safe	-
+script-security	forbidden	-
+secret	safe	-
+server	risky	Makes this Mac accept incoming VPN connections (listens on the network as root)
+server-bridge	risky	Makes this Mac accept incoming VPN connections (listens on the network as root)
+server-ipv6	risky	Makes this Mac accept incoming VPN connections (listens on the network as root)
+server-poll-timeout	safe	-
+service	risky	Not supported on macOS (Windows or Linux only)
+session-timeout	safe	-
+setcon	risky	Not supported on macOS (Windows or Linux only)
+setenv	safe	-
+setenv-safe	safe	-
+shaper	safe	-
+show-adapters	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-ciphers	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-curves	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-digests	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-engines	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-gateway	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-groups	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-net	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-net-up	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-pkcs11-ids	forbidden	-
+show-tls	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+show-valid-subnets	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+single-session	safe	-
+sndbuf	safe	-
+socket-flags	safe	-
+socks-proxy	safe	-
+socks-proxy-retry	safe	-
+stale-routes-check	risky	Server-side option, not meant for a client connection
+static-challenge	safe	-
+status	forbidden	-
+status-version	safe	-
+suppress-timestamps	safe	-
+syslog	forbidden	-
+tap-sleep	safe	-
+tcp-nodelay	safe	-
+tcp-queue-limit	safe	-
+test-crypto	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+tls-auth	safe	-
+tls-cert-profile	safe	-
+tls-cipher	safe	-
+tls-ciphersuites	safe	-
+tls-client	safe	-
+tls-crypt	safe	-
+tls-crypt-v2	safe	-
+tls-crypt-v2-max-age	risky	Server-side option, not meant for a client connection
+tls-crypt-v2-verify	forbidden	-
+tls-exit	safe	-
+tls-export-cert	forbidden	-
+tls-groups	safe	-
+tls-server	risky	Makes this Mac accept incoming VPN connections (listens on the network as root)
+tls-timeout	safe	-
+tls-verify	forbidden	-
+tls-version-max	safe	-
+tls-version-min	safe	-
+tmp-dir	forbidden	-
+topology	safe	-
+tran-window	safe	-
+tun-ipv6	safe	-
+tun-mtu	safe	-
+tun-mtu-extra	safe	-
+tun-mtu-max	safe	-
+txqueuelen	safe	-
+udp-mtu	safe	-
+up	forbidden	-
+up-delay	safe	-
+up-restart	risky	Changes when MacVPN's DNS hooks run
+use-prediction-resistance	safe	-
+user	risky	Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects
+username-as-common-name	risky	Server-side option, not meant for a client connection
+verb	safe	-
+verify-client-cert	risky	Server-side option, not meant for a client connection
+verify-hash	safe	-
+verify-x509-name	safe	-
+version	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
+vlan-accept	risky	Server-side option, not meant for a client connection
+vlan-pvid	risky	Server-side option, not meant for a client connection
+vlan-tagging	risky	Server-side option, not meant for a client connection
+win-sys	risky	Not supported on macOS (Windows or Linux only)
+windows-driver	safe	-
+writepid	forbidden	-
+x509-track	safe	-
+x509-username-field	safe	-

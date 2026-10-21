@@ -1,6 +1,7 @@
 //! MacVPN: the menu bar app (Tauri 2 shell). The logic lives in `macvpn-app-core` (connection manager, view
-//! model, orchestration) over the macOS implementations in `macvpn-platform-mac`; this crate wires them to the
-//! tray icon, the menu popover and the windows.
+//! model, orchestration) over the platform layer (`macvpn-platform-api`, implemented on macOS by
+//! `macvpn-platform-mac`, reached through the `platform` module); this crate wires them to the tray icon, the menu
+//! popover and the windows.
 //!
 //! Threads: the main thread runs the event loop only. The launch steps after the first three, the status poller,
 //! the view-model publisher and every connect / disconnect run on their own threads or the blocking pool,
@@ -24,15 +25,13 @@ mod pairing;
 mod platform;
 mod prompts;
 mod shared_credentials;
-#[cfg(debug_assertions)]
-mod smoke;
 mod state;
 mod system;
 mod tray;
 mod update_window;
 mod vault;
 
-use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, MemoryPreferences, POLL_TICK, Poller, PreferenceStore};
+use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, POLL_TICK, Poller, PreferenceStore};
 use macvpn_app_core::backup::BackupService;
 use macvpn_app_core::catalog::{CatalogDeps, CatalogService};
 use macvpn_app_core::catalog_file::FileCatalogFetcher;
@@ -40,12 +39,12 @@ use macvpn_app_core::catalog_publish::{Publisher as CatalogPublisher, PublisherD
 use macvpn_app_core::connections::ConnectionsModel;
 use macvpn_app_core::control::FileRegistryStore;
 use macvpn_app_core::credential_prompt::CredentialBroker;
-use macvpn_app_core::deps::{SecretReader, SystemClock};
+use macvpn_app_core::deps::{LegacySecretReader, SecretReader, SystemClock};
 use macvpn_app_core::editor::EditorDeps;
 use macvpn_app_core::folders::VaultFolders;
 use macvpn_app_core::live::{LiveReload, WATCHER_TRUSTED};
 use macvpn_app_core::logs::{NativeLogCollector, NativeLogs};
-use macvpn_app_core::migration::{LegacyKeychain, LegacySources};
+use macvpn_app_core::migration::LegacySources;
 use macvpn_app_core::prompt::PromptBroker;
 use macvpn_app_core::quit::{QuitAction, QuitGuard, QuitOrigin};
 use macvpn_app_core::shared_credentials::SharedCredentials;
@@ -60,24 +59,14 @@ use macvpn_core::l10n;
 use macvpn_core::ranking::ConnectionRankingStore;
 use macvpn_core::store::ConnectionStore;
 use macvpn_core::system_otp::SystemOTPStore;
-use macvpn_core::vault::{Entropy, KdfParams, KeyStore, MemoryKeyStore, VAULT_FILE};
-use macvpn_platform_mac::app_hooks::{self, TerminateReply};
-use macvpn_platform_mac::legacy_store::KeychainLegacy;
-use macvpn_platform_mac::profile_staging::{self, StagedProfiles};
-use macvpn_platform_mac::secrets::{InMemoryKeychain, KeychainSecretStore};
-use macvpn_platform_mac::setup_checker::SetupReport;
-use macvpn_platform_mac::vault_keys::{KeychainKeyStore, SystemEntropy};
+use macvpn_core::vault::{Entropy, KdfParams, VAULT_FILE};
+use macvpn_platform_api::{NativeProfiles, Platform, SetupReport, TerminateReply};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{AppHandle, Emitter, Manager, RunEvent, WindowEvent};
 
-use macvpn_platform_mac::http::CurlHttpClient;
-use macvpn_platform_mac::preferences::CFPreferencesStore;
-use platform::{
-    AuthStateFiles, Environment, GitHubReleases, Keychain, LogStreams, Native, Preferences, ProfileFiles, Root,
-    SharedKeychain,
-};
+use platform::Environment;
 use state::{AppState, Publisher};
 
 /// Every store the app uses, backed by the vault; the 1.1 storage is the migration's source and, in the legacy
@@ -93,38 +82,23 @@ struct Storage {
     registry: Arc<VaultRegistry>,
 }
 
-/// The auto-unlock key store, the old Keychain items (as the migration and as the read-only mode read them) and the
-/// one-time move of the older service's items.
-type Platform = (Arc<dyn KeyStore>, Arc<dyn LegacyKeychain>, Arc<dyn SecretReader>, Box<dyn FnOnce() + Send>);
-
-/// The storage and the one-time move of the Keychain items of the older service (`macvpn`), before anything is
-/// read. The sandbox keeps the old Keychain items and the auto-unlock key in memory (never the real Keychain).
-fn storage(env: &Environment, legacy_store: Arc<ConnectionStore>) -> (Storage, Box<dyn FnOnce() + Send>) {
+/// The storage, before anything is read. The platform hands out the auto-unlock key store, the entropy and the old
+/// Keychain items (as the migration and as the read-only mode read them); the sandbox's are in memory (never the
+/// real Keychain).
+fn storage(env: &Environment, platform: &dyn Platform, legacy_store: Arc<ConnectionStore>) -> Storage {
     let support = env.application_support();
-    let entropy: Arc<dyn Entropy> = Arc::new(SystemEntropy);
-    let (keystore, keychain, legacy_secrets, migrate): Platform = if env.sandbox {
-        let memory = Arc::new(InMemoryKeychain::new());
-        #[cfg(debug_assertions)]
-        smoke::seed_legacy_keychain(env, &memory);
-        (
-            Arc::new(MemoryKeyStore::new()),
-            Arc::new(KeychainLegacy::new(KeychainSecretStore::new(SharedKeychain(memory.clone())))),
-            Arc::new(Keychain(KeychainSecretStore::new(SharedKeychain(memory)))),
-            Box::new(|| {}),
-        )
-    } else {
-        (
-            Arc::new(KeychainKeyStore::new()),
-            Arc::new(KeychainLegacy::system()),
-            Arc::new(Keychain(KeychainSecretStore::system())),
-            Box::new(|| {
-                KeychainSecretStore::system().migrate_legacy_items();
-            }),
-        )
-    };
+    let entropy = platform.entropy();
+    let keystore = platform.key_store();
+    let keychain = platform.legacy_keychain();
+    let legacy_secrets: Arc<dyn SecretReader> = Arc::new(LegacySecretReader(platform.legacy_secrets()));
+    // A smoke run seeds the sandbox's old Keychain items (debug builds only).
+    #[cfg(debug_assertions)]
+    if env.sandbox {
+        platform::smoke_seed_legacy_keychain(env);
+    }
     let vault = Arc::new(VaultLifecycle::new(support.clone(), keystore, entropy.clone(), KdfParams::DEFAULT));
     let legacy = Arc::new(LegacySources::new(support.clone(), keychain));
-    let storage = Storage {
+    Storage {
         connections: Arc::new(VaultConnections::new(vault.clone()).with_legacy(Arc::new(ReadOnly(legacy_store)))),
         secrets: Arc::new(VaultSecrets::new(vault.clone()).with_legacy(Arc::new(ReadOnly(legacy_secrets)))),
         ranking: Arc::new(VaultRanking::new(vault.clone()).with_legacy(Arc::new(ReadOnly(Arc::new(
@@ -141,63 +115,57 @@ fn storage(env: &Environment, legacy_store: Arc<ConnectionStore>) -> (Storage, B
         vault,
         legacy,
         entropy,
-    };
-    (storage, migrate)
+    }
 }
 
-fn build_state(env: Environment, storage: Storage) -> Arc<AppState> {
+fn build_state(
+    env: Environment,
+    platform: &'static dyn Platform,
+    storage: Storage,
+    profiles: Arc<dyn NativeProfiles>,
+) -> Arc<AppState> {
     let support = env.application_support();
-    let root: Arc<dyn macvpn_app_core::deps::RootClient> = Arc::new(Root::new());
+    let helper = platform.helper_client();
     // The smoke run never reaches the root helper: its connects go to a stand-in (debug builds only).
     #[cfg(debug_assertions)]
-    let root = smoke::fake_root(&env).unwrap_or(root);
-    let native: Arc<dyn macvpn_app_core::deps::NativeController> = Arc::new(Native::new());
+    let helper = platform::smoke_fake_helper(&env).unwrap_or(helper);
+    let native = platform.native_controller();
     // The smoke run's system VPN list is a stand-in the driver changes (debug builds only).
     #[cfg(debug_assertions)]
-    let native = smoke::fake_native(&env).unwrap_or(native);
-    let mut deps = Dependencies::new(storage.connections.clone(), storage.secrets.clone(), root, native);
+    let native = platform::smoke_fake_native(&env).unwrap_or(native);
+    let mut deps = Dependencies::new(storage.connections.clone(), storage.secrets.clone(), helper, native);
     deps.ranking_store = Some(storage.ranking.clone());
     deps.system_otp_store = Some(storage.system_otp.clone());
-    deps.auth_state = Arc::new(AuthStateFiles { uid: macvpn_platform_mac::system::user_id() });
+    deps.auth_state = platform.auth_state();
     // "Save in vault" of the credential prompt writes to the same store as the editors.
     deps.secret_writer = Some(storage.secrets.clone());
     // Folders and colours live in the vault (dropped while it is locked).
     deps.folders = Some(Arc::new(VaultFolders::new(storage.vault.clone())));
     // The Swift app's UserDefaults domain; the sandbox keeps them in memory.
-    let prefs: Arc<dyn PreferenceStore> =
-        if env.sandbox { Arc::new(MemoryPreferences::new()) } else { Arc::new(Preferences(CFPreferencesStore::app())) };
+    let prefs: Arc<dyn PreferenceStore> = platform.preferences();
     let updates = Arc::new(UpdateController::new(
         env.update_source(),
         env!("CARGO_PKG_VERSION"),
         prefs.clone(),
-        Arc::new(GitHubReleases(CurlHttpClient::default())),
+        platform.release_source(),
         Arc::new(SystemClock),
     ));
     let manager = ConnectionManager::new(deps);
-    let staged_profiles = Arc::new(Mutex::new(StagedProfiles::default()));
-    let profiles = ProfileFiles {
-        parent: env.staging_parent().unwrap_or_else(std::env::temp_dir),
-        staged: staged_profiles.clone(),
-        open: !env.sandbox,
-    };
     let connections = Arc::new(ConnectionsModel::new(EditorDeps {
         manager: manager.clone(),
         store: storage.connections.clone(),
         secrets: storage.secrets.clone(),
         secret_writer: storage.secrets.clone(),
-        profiles: Arc::new(profiles),
+        profiles: profiles.clone(),
         clock: Arc::new(SystemClock),
     }));
     // The shared credentials live in the vault (the section answers "locked" while it is locked).
     connections.set_shared_credentials(SharedCredentials::new(storage.vault.clone()));
-    let native_logs = Arc::new(NativeLogs::new(Box::new(|| {
+    let native_logs = Arc::new(NativeLogs::new(Box::new(move || {
         NativeLogCollector::new(
-            Arc::new(LogStreams),
-            Arc::new(|date: Date| {
-                macvpn_platform_mac::system::local_date_time(
-                    date.time_interval_since_1970(),
-                    l10n::AppLanguage::current(),
-                )
+            platform.log_streams(),
+            Arc::new(move |date: Date| {
+                platform.system().local_date_time(date.time_interval_since_1970(), l10n::AppLanguage::current())
             }),
             Arc::new(SystemClock),
             std::time::Duration::from_secs_f64(macvpn_app_core::logs::NATIVE_LOG_MAX_SECONDS),
@@ -211,9 +179,9 @@ fn build_state(env: Environment, storage: Storage) -> Arc<AppState> {
         KdfParams::DEFAULT,
         macvpn_core::VERSION,
     )));
-    // Team catalogs (spec 5–7): the HTTPS source through curl (refused in the sandbox), the file source with its
-    // read timeout, the publishing side on the same vault.
-    let https = catalog::https_fetcher(env.sandbox);
+    // Team catalogs (spec 5–7): the platform's HTTPS source (curl; refused in the sandbox), the file source with
+    // its read timeout, the publishing side on the same vault.
+    let https = platform.https_catalog_fetcher();
     let catalog_service = CatalogService::new(CatalogDeps {
         vault: storage.vault.clone(),
         https,
@@ -234,7 +202,7 @@ fn build_state(env: Environment, storage: Storage) -> Arc<AppState> {
         login_item: RwLock::new(None),
         connections,
         native_logs,
-        staged_profiles,
+        native_profiles: profiles,
         log_feed: Mutex::new(None),
         log_generation: AtomicU64::new(0),
         log_poller: AtomicBool::new(false),
@@ -292,10 +260,8 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
     // The team catalogs: notifications, the log, the allowlist pruning, the pending removals' listener.
     catalog::connect_hooks(state);
     // A staged native profile is deleted once its service is listed (the Swift `stagedProfiles.servicesSeen`).
-    let staged = state.staged_profiles.clone();
-    state.manager.set_on_native_services_seen(move |ids| {
-        staged.lock().unwrap_or_else(PoisonError::into_inner).services_seen(ids);
-    });
+    let profiles = state.native_profiles.clone();
+    state.manager.set_on_native_services_seen(move |ids| profiles.services_seen(ids));
     let broker = state.broker.clone();
     state.manager.set_prompt_handler(move |prompt| broker.present(prompt, Date::now()));
     let broker = state.broker.clone();
@@ -390,7 +356,7 @@ fn start_live_list(state: &Arc<AppState>) {
         return;
     }
     let live = state.live.clone();
-    match macvpn_platform_mac::sc_watch::SystemVpnWatcher::start(move || live.trigger()) {
+    match platform::get().system_vpn_watch().start(Box::new(move || live.trigger())) {
         Ok(watcher) => {
             *state.watcher.lock().unwrap_or_else(PoisonError::into_inner) = Some(watcher);
             state.live_trusted.store(WATCHER_TRUSTED, Ordering::SeqCst);
@@ -464,8 +430,17 @@ fn install_menu(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn main() {
-    macvpn_platform_mac::install_core_hooks();
-    let env = match Environment::detect() {
+    if let Err(e) = platform::supported() {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+    let sandbox_home = Environment::sandbox_home().unwrap_or_else(|e| {
+        eprintln!("MacVPN: {e}");
+        std::process::exit(1);
+    });
+    let platform = platform::init(sandbox_home.is_some());
+    platform.install_core_hooks();
+    let env = match Environment::detect(platform, sandbox_home) {
         Ok(env) => env,
         Err(e) => {
             eprintln!("MacVPN: {e}");
@@ -474,20 +449,20 @@ fn main() {
     };
     // The 1.1 connection store: only the migration's source and the legacy read-only mode's fallback.
     let store = Arc::new(ConnectionStore::new(env.connections_dir()));
-    let (storage, migrate) = storage(&env, store.clone());
+    let storage = storage(&env, platform, store.clone());
+    // The native profiles, staged in the user's private temp directory (the sandbox's `<sandbox>/tmp`; staged
+    // there, never opened).
+    let staging = env.staging_parent();
+    let profiles = platform.native_profiles(&staging.clone().unwrap_or_else(std::env::temp_dir), !env.sandbox);
     // The Swift `AppModel.init` part, before anything else (and before any secret is read): the Keychain
-    // migration, the sweep of the native profiles staged by the previous run, and the legacy profile removal.
-    let mut migrate = Some(migrate);
+    // migration (the older service's items; not in the sandbox), the sweep of the native profiles staged by the
+    // previous run, and the legacy profile removal.
     for step in &LAUNCH_SEQUENCE[..3] {
         match step {
-            LaunchStep::MigrateKeychain => {
-                if let Some(migrate) = migrate.take() {
-                    migrate();
-                }
-            }
+            LaunchStep::MigrateKeychain => platform.migrate_legacy_service(),
             LaunchStep::SweepStagedProfiles => {
-                if let Some(parent) = env.staging_parent() {
-                    profile_staging::sweep(&parent);
+                if staging.is_some() {
+                    profiles.sweep_leftovers();
                 }
             }
             LaunchStep::RemoveLegacyProfiles => {
@@ -496,12 +471,13 @@ fn main() {
             _ => unreachable!("the first three launch steps"),
         }
     }
-    let state = build_state(env, storage);
+    let state = build_state(env, platform, storage, profiles);
 
     let app = tauri::Builder::default()
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             commands::get_view_model,
+            commands::get_platform,
             commands::connect,
             commands::disconnect,
             commands::pin,
@@ -683,21 +659,21 @@ fn main() {
             }
         })
         .setup(move |app| {
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            platform::configure_app(app);
             let handle = app.handle().clone();
             // A system quit goes through the quit questions too (tao does not implement this delegate method).
             let terminating = handle.clone();
-            if !app_hooks::install_terminate_handler(move || system_terminate_request(&terminating)) {
+            let lifecycle = platform.lifecycle();
+            if !lifecycle.install_terminate_handler(Box::new(move || system_terminate_request(&terminating))) {
                 eprintln!("MacVPN: applicationShouldTerminate could not be installed");
             }
             // A woken Mac refreshes at once (the Swift `didWakeNotification`), the team catalogs too.
             let poller = state.poller.clone();
             let catalogs = state.catalog.service.clone();
-            app_hooks::observe_wake(move || {
+            lifecycle.observe_wake(Box::new(move || {
                 poller.wake();
                 catalogs.wake();
-            });
+            }));
             install_menu(&handle)?;
             tray::create_menu_window(&handle)?;
             tray::create(&handle)?;
@@ -706,7 +682,7 @@ fn main() {
             state.open_files.attach(handle.clone());
             Publisher::spawn(handle.clone(), state.clone());
             #[cfg(debug_assertions)]
-            smoke::start(&handle, &state);
+            platform::smoke_start(&handle, &state);
             std::thread::Builder::new().name("macvpn-launch".into()).spawn(move || {
                 for step in &LAUNCH_SEQUENCE[3..] {
                     run_late_launch_step(&handle, &state, *step);
@@ -728,13 +704,7 @@ fn main() {
     app.run(|app, event| match event {
         // Closing the last window does not quit a menu bar app; only `app.exit` (the quit flow) does.
         RunEvent::ExitRequested { code: None, api, .. } => api.prevent_exit(),
-        // A click on the Dock icon (shown while a window is open): that window comes forward; nothing opens.
-        #[cfg(target_os = "macos")]
-        RunEvent::Reopen { .. } => dock::reopen(app),
-        // Files opened from Finder (double click, "Open With", a drop on the app icon), at launch too: the import or
-        // the team catalog's add dialog, after the unlock if the vault is locked. Paths only; nothing connects.
-        #[cfg(target_os = "macos")]
-        RunEvent::Opened { urls } => open_files::opened(app, &urls),
-        _ => {}
+        // The platform's own events (macOS: a click on the Dock icon, files opened from Finder).
+        event => platform::on_run_event(app, &event),
     });
 }

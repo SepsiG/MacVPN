@@ -1,5 +1,6 @@
 //! `control_socket::bind` sets the process-global umask to 077 for the bind only and restores it. One test
 //! only, in its own binary (process), so no parallel test changes the umask meanwhile.
+#![cfg(target_os = "macos")]
 #![allow(unsafe_code)]
 
 mod common;

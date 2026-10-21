@@ -1,6 +1,7 @@
 //! Port of `UpdateInstallerTests` (`UpdateTests.swift`): download + verification, mounting, the bundle check,
 //! the install target, the helper script (also run in a sandbox with stubbed `open` / `hdiutil`), the leftover
 //! sweep, the helper launch and the launch housekeeping. Throwaway signing keys only; no network.
+#![cfg(target_os = "macos")]
 
 mod common;
 
@@ -38,7 +39,7 @@ fn release() -> Release {
         notes: String::new(),
         page_url: None,
         published_at: None,
-        dmg: asset("MacVPN-0.2.0.dmg", DMG_URL),
+        package: asset("MacVPN-0.2.0.dmg", DMG_URL),
         checksum: asset("MacVPN-0.2.0.dmg.sha256", SUM_URL),
         signature: Some(asset("MacVPN-0.2.0.dmg.sig", SIG_URL)),
     }
@@ -156,11 +157,11 @@ fn download_rejects_untrusted_urls_and_names() {
     let http = served(b"x");
     let runner = MockCommandRunner::new();
     let mut r = release();
-    r.dmg.url = "https://evil.example.com/MacVPN-0.2.0.dmg".into();
+    r.package.url = "https://evil.example.com/MacVPN-0.2.0.dmg".into();
     let e = installer(&http, &runner, cache.path()).download_verified(&r).unwrap_err();
     assert_eq!(update_error(&e), Some(UpdateError::UntrustedUrl("https://evil.example.com/MacVPN-0.2.0.dmg".into())));
     let mut r = release();
-    r.dmg.name = "../MacVPN-0.2.0.dmg".into();
+    r.package.name = "../MacVPN-0.2.0.dmg".into();
     let e = installer(&http, &runner, cache.path()).download_verified(&r).unwrap_err();
     assert_eq!(update_error(&e), Some(UpdateError::MissingAsset("../MacVPN-0.2.0.dmg".into())));
     assert!(http.requested().is_empty());
@@ -1012,7 +1013,7 @@ fn download_uses_canonical_urls() {
     let http = served(dmg);
     let runner = MockCommandRunner::new();
     let mut r = release();
-    r.dmg.url = DMG_URL.replace("github.com", "github%2Ecom");
+    r.package.url = DMG_URL.replace("github.com", "github%2Ecom");
     r.checksum.url = SUM_URL.replace("github.com", "\u{FF47}\u{FF49}\u{FF54}\u{FF48}\u{FF55}\u{FF42}.com");
     r.signature.as_mut().unwrap().url = SIG_URL.replace("github.com", "GitHub.COM");
     let d = installer(&http, &runner, cache.path()).download_verified(&r).unwrap();
@@ -1027,7 +1028,7 @@ fn download_uses_canonical_urls() {
     ] {
         let mut r = release();
         match field {
-            0 => r.dmg.url = bad.into(),
+            0 => r.package.url = bad.into(),
             1 => r.checksum.url = bad.into(),
             _ => r.signature.as_mut().unwrap().url = bad.into(),
         }

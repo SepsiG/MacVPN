@@ -6,6 +6,8 @@ mod common;
 use common::*;
 use macvpn_core::date::Date;
 use macvpn_core::exporter;
+#[cfg(unix)]
+use macvpn_core::fsx::Access;
 use macvpn_core::importer;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::mobileconfig::{self, MobileconfigError};
@@ -62,6 +64,7 @@ fn file_names() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn text_export_is_config_as_is() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -96,6 +99,7 @@ fn cisco_export_has_no_secrets() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn round_trip_through_importer_detection() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -213,6 +217,7 @@ fn other_kinds_have_no_secret_material() {
     assert_eq!(exporter::strip_secrets("server=x\n", VPNKind::Sstp), "server=x\n");
 }
 
+#[cfg(unix)]
 #[test]
 fn write_creates_private_file() {
     let tmp = TempDir::new();
@@ -223,6 +228,7 @@ fn write_creates_private_file() {
     assert_eq!(mode(&path), 0o600);
 }
 
+#[cfg(unix)]
 #[test]
 fn write_replaces_existing_world_readable_file() {
     use std::os::unix::fs::PermissionsExt;
@@ -238,25 +244,27 @@ fn write_replaces_existing_world_readable_file() {
     assert_eq!(leftovers, ["x.conf"]);
 }
 
+#[cfg(unix)]
 #[test]
-fn write_with_mode_sets_the_mode_whatever_the_umask_and_the_old_file() {
+fn write_with_access_sets_the_mode_whatever_the_umask_and_the_old_file() {
     use std::os::unix::fs::PermissionsExt;
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
     let path = tmp.path().join("acme.macvpncatalog");
     fs::write(&path, "old").unwrap();
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600)).unwrap();
-    exporter::write_with_mode(b"catalog", &path, 0o644).unwrap();
+    exporter::write_with_access(b"catalog", &path, Access::Shared).unwrap();
     assert_eq!(fs::read(&path).unwrap(), b"catalog");
     assert_eq!(mode(&path), 0o644);
     let leftovers: Vec<_> = fs::read_dir(tmp.path()).unwrap().flatten().map(|e| e.file_name()).collect();
     assert_eq!(leftovers, ["acme.macvpncatalog"]);
-    assert!(exporter::write_with_mode(b"x", std::path::Path::new("/nonexistent-dir/x"), 0o644).is_err());
+    assert!(exporter::write_with_access(b"x", std::path::Path::new("/nonexistent-dir/x"), Access::Shared).is_err());
 }
 
 /// A symlink swapped in for the temp file between its creation and the chmod (a shared, group-writable publish
 /// folder): the mode goes to the file written through the open descriptor, never to the symlink's target, and the
 /// swapped name is not renamed into place.
+#[cfg(unix)]
 #[test]
 fn a_symlink_swapped_in_for_the_temp_file_is_never_chmodded_or_published() {
     use std::os::unix::fs::PermissionsExt;
@@ -270,7 +278,7 @@ fn a_symlink_swapped_in_for_the_temp_file_is_never_chmodded_or_published() {
         fs::remove_file(temp).unwrap();
         std::os::unix::fs::symlink(&victim, temp).unwrap();
     };
-    let result = exporter::write_with_mode_raced(b"catalog", &path, 0o644, &swap);
+    let result = exporter::write_with_access_raced(b"catalog", &path, Access::Shared, &swap);
     assert!(result.is_err(), "the swapped temp file is refused");
     assert_eq!(mode(&victim), 0o600, "the symlink's target keeps its mode");
     assert_eq!(fs::read(&victim).unwrap(), b"private");
@@ -286,6 +294,7 @@ fn write_errors_are_localized() {
 
 /// SSTPTests: the export is the config without a password.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_export_is_config_without_password() {
     let good = "# office\nserver=vpn.example.com\nport=4443\nuser=alice@corp.example\ncert=ca\nroute_all=no\npeer_dns=yes\n<ca>\n-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ2E+/=\n-----END CERTIFICATE-----\n</ca>\n\n";
     let tmp = TempDir::new();

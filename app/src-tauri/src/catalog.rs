@@ -328,34 +328,6 @@ impl<T: Expiring> Previews<T> {
     }
 }
 
-/// The sandbox's HTTPS source: refused (smoke runs use a file source; HTTPS is covered by the fetcher's own
-/// tests and the manual checklist). Debug builds only: release builds have no sandbox.
-#[cfg(debug_assertions)]
-pub struct SandboxHttps;
-
-#[cfg(debug_assertions)]
-impl macvpn_core::catalog::fetch::CatalogFetcher for SandboxHttps {
-    fn fetch(
-        &self,
-        _: &macvpn_core::catalog::fetch::FetchRequest,
-    ) -> Result<macvpn_core::catalog::fetch::FetchOutcome, macvpn_core::catalog::format::CatalogError> {
-        Err(macvpn_core::catalog::format::CatalogError::Io(l10n::tr(
-            "HTTPS sources are not available in the sandbox",
-            &[],
-        )))
-    }
-}
-
-/// The HTTPS fetcher: curl (the sandbox's refusal in its place in a debug build's sandbox).
-pub fn https_fetcher(sandbox: bool) -> Arc<dyn macvpn_core::catalog::fetch::CatalogFetcher> {
-    #[cfg(debug_assertions)]
-    if sandbox {
-        return Arc::new(SandboxHttps);
-    }
-    let _ = sandbox;
-    Arc::new(macvpn_platform_mac::catalog_http::CurlCatalogFetcher::default())
-}
-
 /// The sandbox refuses an HTTPS source (debug builds; release builds have no sandbox).
 #[cfg(debug_assertions)]
 fn sandbox_refuses_https(sandbox: bool) -> Result<(), String> {
@@ -777,7 +749,7 @@ async fn save_path(
     extension: &str,
 ) -> Result<Option<PathBuf>, String> {
     #[cfg(debug_assertions)]
-    if let Some(path) = crate::smoke::panel_file(state, extension) {
+    if let Some(path) = crate::platform::smoke_panel_file(state, extension) {
         return Ok(Some(path));
     }
     let _ = extension;
@@ -787,7 +759,7 @@ async fn save_path(
 /// The open panel for an admin key file (a smoke run takes its sandbox file instead: debug builds only).
 async fn open_admin_key_path(app: &AppHandle, state: &AppState) -> Result<Option<PathBuf>, String> {
     #[cfg(debug_assertions)]
-    if let Some(path) = crate::smoke::panel_file(state, admin_file::EXTENSION) {
+    if let Some(path) = crate::platform::smoke_panel_file(state, admin_file::EXTENSION) {
         return Ok(Some(path));
     }
     Ok(crate::dialogs::choose_files(app, state, MANAGE_WINDOW, false).await?.into_iter().next())
@@ -831,7 +803,7 @@ pub async fn catalog_choose_file_source(
     state.catalog.require_unlocked()?;
     // The smoke run's catalog file in place of the open panel (debug builds only).
     #[cfg(debug_assertions)]
-    if let Some(path) = crate::smoke::panel_file(&state, catalog_format::EXTENSION) {
+    if let Some(path) = crate::platform::smoke_panel_file(&state, catalog_format::EXTENSION) {
         state.catalog.chose_file(path.clone());
         return Ok(Some(display_name(&path)));
     }
@@ -1328,7 +1300,7 @@ mod tests {
     use macvpn_app_core::catalog::{CatalogDeps, SlotView, SubscriptionView};
     use macvpn_app_core::catalog_publish::PublisherDeps;
     use macvpn_app_core::deps::{
-        ConnectionRepository, NativeController, RootClient, SecretReader, SystemClock, SystemService,
+        ConnectionRepository, HelperClient, NativeController, SecretReader, SystemClock, SystemVpn,
     };
     use macvpn_core::catalog::fetch::{CatalogFetcher, FetchOutcome, FetchRequest};
     use macvpn_core::catalog::format::CatalogError;
@@ -1496,11 +1468,6 @@ mod tests {
         let source = include_str!("catalog.rs");
         let source = &source[..source.find("#[cfg(test)]\nmod tests").unwrap()];
         let lines: Vec<&str> = source.lines().collect();
-        for item in ["pub struct SandboxHttps;", "impl macvpn_core::catalog::fetch::CatalogFetcher for SandboxHttps {"]
-        {
-            let at = lines.iter().position(|l| *l == item).unwrap_or_else(|| panic!("{item}"));
-            assert_eq!(lines[at - 1], "#[cfg(debug_assertions)]", "{item}");
-        }
         let refusal = "\"HTTPS sources are not available in the sandbox\"";
         for (at, line) in lines.iter().enumerate().filter(|(_, l)| l.contains(refusal) || l.contains("SandboxHttps")) {
             // Inside a debug-only statement, or a top-level item with the attribute right above it.
@@ -1516,7 +1483,10 @@ mod tests {
             };
             assert!(debug_only, "line {}: {line}", at + 1);
         }
-        assert!(!include_str!("main.rs").contains("SandboxHttps"), "main.rs takes catalog::https_fetcher");
+        assert!(
+            !include_str!("main.rs").contains("SandboxHttps"),
+            "the sandbox's refusal is the platform's https_catalog_fetcher"
+        );
     }
 
     #[test]
@@ -1640,8 +1610,8 @@ mod tests {
             None
         }
     }
-    struct Root;
-    impl RootClient for Root {
+    struct Helper;
+    impl HelperClient for Helper {
         fn status(&self) -> Result<Vec<RootStatus>, String> {
             Ok(vec![])
         }
@@ -1657,7 +1627,7 @@ mod tests {
     }
     struct Native;
     impl NativeController for Native {
-        fn list(&self) -> Result<Vec<SystemService>, String> {
+        fn list(&self) -> Result<Vec<SystemVpn>, String> {
             Ok(vec![])
         }
         fn remote_address(&self, _: &str) -> Option<String> {
@@ -1692,7 +1662,7 @@ mod tests {
         let manager = macvpn_app_core::ConnectionManager::new(macvpn_app_core::Dependencies::new(
             Arc::new(Repo),
             Arc::new(NoSecrets),
-            Arc::new(Root),
+            Arc::new(Helper),
             Arc::new(Native),
         ));
         let fetcher = Arc::new(Fetcher::default());

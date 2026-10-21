@@ -1,4 +1,5 @@
 //! The 1.1 Keychain items for the vault migration (plan B Task 13), over the in-memory Keychain backend only.
+#![cfg(target_os = "macos")]
 
 use macvpn_core::models::SecretField;
 use macvpn_core::vault::{LegacyKeychain, LegacyRead};

@@ -1,11 +1,11 @@
 //! The local control server (spec `2026-10-19-control-api-design.md`): another program of the same user pairs
-//! with MacVPN over a Unix socket, lists the connections it may use, and holds one up through a socket lease.
+//! with MacVPN over a local socket, lists the connections it may use, and holds one up through a socket lease.
 //!
 //! The pure parts live in `macvpn_core::control` (protocol, registry, lease table). This module runs them: an
 //! accept thread, and per client connection a reader thread (requests) plus a writer thread (replies and
 //! events, through a bounded queue so a slow client never blocks the manager). The system is reached through two
-//! seams: [`ControlTransport`] (the socket, the peer identity and the entropy; the app implements it over
-//! `macvpn-platform-mac::control_socket`) and [`ControlHost`] (the connections, the pairing window and the
+//! seams: [`ControlTransport`] (the endpoint, its client streams with the peer identity, and the entropy; the app
+//! implements it over `macvpn-platform-mac::control_socket`) and [`ControlHost`] (the connections, the pairing window and the
 //! log; the app implements it over the `ConnectionManager` and the UI).
 //!
 //! The manager's state changes and the user's own disconnects come in through a [`ControlNotifier`]. The app
@@ -59,7 +59,6 @@ use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fs;
 use std::io::{self, BufRead, BufReader, ErrorKind, Read, Write};
 use std::net::Shutdown;
-use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, SyncSender, TrySendError, sync_channel};
@@ -149,37 +148,11 @@ pub enum PairingAnswer {
     TimedOut,
 }
 
-/// The process on the other end of a client connection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PeerIdentity {
-    pub uid: u32,
-    /// `uid` is this process's user.
-    pub same_user: bool,
-    pub pid: i32,
-    /// The executable path, `None` if it could not be read (or is not UTF-8): such a peer cannot pair or
-    /// authenticate.
-    pub executable: Option<String>,
-}
-
-/// A bound control socket.
-pub struct BoundSocket {
-    pub listener: UnixListener,
-    /// The socket's path (removed by [`ControlServer::stop`]).
-    pub path: PathBuf,
-    /// The platform's single-instance lock (`control_socket::ControlListener`). [`ControlServer::stop`] drops it
-    /// last, after the socket is removed and the clients are gone, so a new instance never binds while this one
-    /// still serves.
-    pub guard: Box<dyn Send + Sync>,
-}
-
-/// The socket and the peer identity (the platform layer).
-pub trait ControlTransport: Send + Sync {
-    /// Prepares the private directory and binds `<dir>/macvpn.sock` (another instance: `AddrInUse`).
-    fn bind(&self, dir: &Path) -> io::Result<BoundSocket>;
-    fn peer(&self, stream: &UnixStream) -> io::Result<PeerIdentity>;
-    /// 32 bytes from the system CSPRNG.
-    fn random_32(&self) -> io::Result<[u8; 32]>;
-}
+/// The transport seam (the endpoint, its client streams with the peer identity, the entropy): defined in
+/// `macvpn-platform-api` and re-exported here (their old home).
+pub use macvpn_platform_api::{
+    Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, PeerIdentity, PeerUser,
+};
 
 // MARK: - Options
 
@@ -339,7 +312,7 @@ struct Pending {
 struct Session {
     out: SyncSender<Out>,
     /// For shutting the socket down from another thread.
-    stream: UnixStream,
+    stream: Box<dyn ControlStream>,
     pid: i32,
     executable: Option<String>,
     /// After a successful `hello`.
@@ -514,7 +487,8 @@ pub fn forget_keys_in_registry(dir: &Path, keys: &[String]) -> io::Result<()> {
 pub struct ControlServer {
     shared: Arc<Shared>,
     accept: Option<JoinHandle<()>>,
-    socket_path: PathBuf,
+    endpoint: String,
+    socket_file: Option<PathBuf>,
     guard: Option<Box<dyn Send + Sync>>,
 }
 
@@ -539,15 +513,21 @@ impl ControlServer {
             signal: Condvar::new(),
             save_lock: Mutex::new(()),
         });
+        // The listener waits at most `accept_poll` per accept, so the accept thread can see the stop flag (a
+        // wake-up connect could fail).
         let listener = bound.listener;
-        // Non-blocking, so the accept thread can see the stop flag (a wake-up connect could fail).
-        listener.set_nonblocking(true)?;
         let accept_shared = shared.clone();
         let accept = thread::Builder::new()
             .name("macvpn-control-accept".into())
-            .spawn(move || accept_loop(&accept_shared, &listener))?;
-        shared.log(format!("listening on {}", bound.path.display()));
-        Ok(ControlServer { shared, accept: Some(accept), socket_path: bound.path, guard: Some(bound.guard) })
+            .spawn(move || accept_loop(&accept_shared, listener.as_ref()))?;
+        shared.log(format!("listening on {}", bound.display));
+        Ok(ControlServer {
+            shared,
+            accept: Some(accept),
+            endpoint: bound.display,
+            socket_file: bound.socket_file,
+            guard: Some(bound.guard),
+        })
     }
 
     /// Feeds the manager's state changes and the user's disconnects to this server; a no-op once it is gone.
@@ -555,8 +535,14 @@ impl ControlServer {
         ControlNotifier { shared: Arc::downgrade(&self.shared) }
     }
 
-    pub fn socket_path(&self) -> &Path {
-        &self.socket_path
+    /// The endpoint as the "listening on …" log line shows it.
+    pub fn endpoint(&self) -> &str {
+        &self.endpoint
+    }
+
+    /// The endpoint's file, removed by [`Self::stop`] (`None`: it has none).
+    pub fn socket_file(&self) -> Option<&Path> {
+        self.socket_file.as_deref()
     }
 
     /// The paired clients (no token: only its hash, which the view model must not show either).
@@ -660,10 +646,12 @@ impl ControlServer {
         }
         // The accept thread polls the stop flag.
         let _ = accept.join();
-        match fs::remove_file(&self.socket_path) {
-            Ok(()) => {}
-            Err(e) if e.kind() == ErrorKind::NotFound => {}
-            Err(e) => self.shared.log(format!("could not remove the socket: {e}")),
+        if let Some(socket_file) = &self.socket_file {
+            match fs::remove_file(socket_file) {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::NotFound => {}
+                Err(e) => self.shared.log(format!("could not remove the socket: {e}")),
+            }
         }
         let deadline = Instant::now() + self.shared.limits.stop_timeout;
         let mut state = self.shared.lock();
@@ -842,21 +830,15 @@ fn connected_extra() -> Map<String, Value> {
 
 // MARK: - Accept
 
-fn accept_loop(shared: &Arc<Shared>, listener: &UnixListener) {
+fn accept_loop(shared: &Arc<Shared>, listener: &dyn ControlListener) {
     loop {
         if shared.stopping() {
             return;
         }
-        let stream = match listener.accept() {
-            // The listener is non-blocking; the client's stream must not be (BSD sockets inherit the flag).
-            Ok((stream, _)) => match stream.set_nonblocking(false) {
-                Ok(()) => stream,
-                Err(_) => continue,
-            },
-            Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                thread::sleep(shared.limits.accept_poll);
-                continue;
-            }
+        // The listener sleeps for the poll while nothing comes in, and hands over a blocking stream.
+        let (stream, peer) = match listener.accept(shared.limits.accept_poll) {
+            Ok(Accepted::Client { stream, peer }) => (stream, peer),
+            Ok(Accepted::Idle) => continue,
             Err(e) => {
                 shared.log(format!("accept failed: {e}"));
                 // E.g. out of descriptors: do not spin.
@@ -864,33 +846,27 @@ fn accept_loop(shared: &Arc<Shared>, listener: &UnixListener) {
                 continue;
             }
         };
-        let peer = match shared.transport.peer(&stream) {
+        let peer = match peer {
             Ok(peer) => peer,
-            Err(e) if already_closed(&e) => continue,
+            Err(e) if shared.transport.is_already_closed(&e) => continue,
             Err(e) => {
                 shared.log(format!("closed a connection: its peer could not be identified ({e})"));
                 continue;
             }
         };
         if !peer.same_user {
-            shared.log(format!("closed a connection from another user (uid {}, pid {})", peer.uid, peer.pid));
+            shared.log(format!("closed a connection from another user ({}, pid {})", peer.user, peer.pid));
             continue;
         }
         match spawn_session(shared, stream, peer) {
             Ok(()) => {}
-            Err(e) if already_closed(&e) => {}
+            Err(e) if shared.transport.is_already_closed(&e) => {}
             Err(e) => shared.log(format!("could not serve a connection: {e}")),
         }
     }
 }
 
-/// The client connected and closed at once (macOS answers a socket option on such a socket with `EINVAL`): a
-/// probe that said nothing, not worth a log line.
-fn already_closed(e: &io::Error) -> bool {
-    matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOTCONN | libc::ECONNRESET))
-}
-
-fn spawn_session(shared: &Arc<Shared>, stream: UnixStream, peer: PeerIdentity) -> io::Result<()> {
+fn spawn_session(shared: &Arc<Shared>, stream: Box<dyn ControlStream>, peer: PeerIdentity) -> io::Result<()> {
     let exe = escape_unsafe_text(peer.executable.as_deref().unwrap_or("?"));
     let mut state = shared.lock();
     if shared.stopping() {
@@ -942,7 +918,7 @@ fn spawn_session(shared: &Arc<Shared>, stream: UnixStream, peer: PeerIdentity) -
     Ok(())
 }
 
-fn write_loop(mut stream: UnixStream, rx: Receiver<Out>) {
+fn write_loop(mut stream: Box<dyn ControlStream>, rx: Receiver<Out>) {
     for out in rx {
         match out {
             Out::Line(line) => {
@@ -971,7 +947,7 @@ enum Line {
 /// The client's socket with the auth deadline: while it is set, every underlying read gets only the time left
 /// (so a client dripping one byte at a time cannot stretch it), and a read after it is `TimedOut`.
 struct DeadlineReader {
-    stream: UnixStream,
+    stream: Box<dyn ControlStream>,
     deadline: Option<Instant>,
 }
 
@@ -1035,7 +1011,7 @@ enum Flow {
 struct Client<'a> {
     shared: &'a Arc<Shared>,
     id: SessionId,
-    stream: UnixStream,
+    stream: Box<dyn ControlStream>,
     peer: PeerIdentity,
     out: SyncSender<Out>,
     /// After a successful `hello`: the client's id and name.
@@ -1101,7 +1077,7 @@ impl Client<'_> {
                 }
                 // The peer is already gone (a socket option on it fails); one that never said a word is not worth
                 // a log line.
-                Err(e) if already_closed(&e) => {
+                Err(e) if self.shared.transport.is_already_closed(&e) => {
                     if said_anything || !buf.is_empty() {
                         self.shared.log(format!("{} closed the connection", self.who()));
                     }
@@ -1325,19 +1301,9 @@ impl Client<'_> {
         rx.recv_timeout(self.shared.limits.pairing_timeout).unwrap_or(PairingAnswer::TimedOut)
     }
 
-    /// The client is still connected (it waits for the pairing reply). Peeks without blocking: the reader is
-    /// this thread, and the connection is closed after the pairing anyway, so a byte read here is not missed.
+    /// The client is still connected (it waits for the pairing reply): [`ControlStream::peer_connected`].
     fn peer_connected(&self) -> bool {
-        if self.stream.set_nonblocking(true).is_err() {
-            return false;
-        }
-        let mut byte = [0u8; 1];
-        let alive = match (&self.stream).read(&mut byte) {
-            Ok(0) => false,
-            Ok(_) => true,
-            Err(e) => e.kind() == ErrorKind::WouldBlock,
-        };
-        self.stream.set_nonblocking(false).is_ok() && alive
+        self.stream.peer_connected()
     }
 
     fn hello(&mut self, id: Option<u64>, token: &str) -> Flow {

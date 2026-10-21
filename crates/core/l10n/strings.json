@@ -1,5 +1,5 @@
 {
-  "comment": "The single EN/HU text table of MacVPN. The key is the English text (also the en value); scope core = core/root messages (was L10n.swift), app = UI texts (was Localizable.xcstrings), mvpn = root layer messages (were the msg texts of the bash mvpn / ovpn-dns), platform = messages new in the Rust platform layer. String(format:) specifiers.",
+  "comment": "The single EN/HU text table of MacVPN. The key is the English text (also the en value); scope core = core/root messages (was L10n.swift), app = UI texts (was Localizable.xcstrings), mvpn = root layer messages (were the msg texts of the bash mvpn / ovpn-dns), platform = messages new in the Rust platform layer. String(format:) specifiers. The key is the macOS wording. Optional per entry: only = the OSes whose code paths show the text (e.g. [\"macos\"]; no variant needed); variants.<os> (windows or linux) = {en, hu}, the text on that OS, with the same format specifiers as the base. On an OS whose product is not MacVPN, MacVPN in the resolved text becomes the product name (WinVPN), except in a text whose only list leaves that OS out. On macOS every text is the base text. See docs/architecture.md.",
   "sourceLanguage": "en",
   "strings": {
     " – delete the line or comment it out (#)": {
@@ -184,7 +184,10 @@
     },
     "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).": {
       "hu": "A .mobileconfig profil nem importálható a MacVPN-be. Kattints rá duplán a Finderben: a macOS profilként telepíti, utána a Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt hagyd jóvá.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "A VPN connection dropped": {
       "hu": "Egy VPN-kapcsolat megszakadt",
@@ -312,7 +315,13 @@
     },
     "Admin keys and publications the backup does not have stay on this Mac.": {
       "hu": "Azok az aláírókulcsok és közzétételek, amelyek nincsenek a mentésben, ezen a Macen maradnak.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Admin keys and publications the backup does not have stay on this PC.",
+          "hu": "Azok az aláírókulcsok és közzétételek, amelyek nincsenek a mentésben, ezen a számítógépen maradnak."
+        }
+      }
     },
     "Admin keys replaced by the backup’s: %lld": {
       "hu": "A mentésben lévőre cserélt aláírókulcsok: %lld",
@@ -320,7 +329,10 @@
     },
     "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.": {
       "hu": "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn, /var/run/macvpn-ui (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "All": {
       "hu": "Minden",
@@ -372,7 +384,13 @@
     },
     "An app on this Mac asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.": {
       "hu": "Egy app ezen a Macen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "An app on this PC asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.",
+          "hu": "Egy app ezen a számítógépen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne."
+        }
+      }
     },
     "Another backup or restore is running.": {
       "hu": "Egy másik biztonsági mentés vagy visszaállítás fut.",
@@ -400,7 +418,10 @@
     },
     "Approve MacVPN in System Settings → General → Login Items.": {
       "hu": "Engedélyezd a MacVPN-t a Rendszerbeállítások → Általános → Bejelentkezési elemek alatt.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "Ask for a one-time code at connect and append it to the password": {
       "hu": "Egyszer használatos kód kérése csatlakozáskor, a jelszó végére fűzve",
@@ -408,7 +429,10 @@
     },
     "Asks for the admin password once: installs the scripts in /usr/local/libexec/macvpn and the /etc/sudoers.d/macvpn rule.": {
       "hu": "Egyszer kéri az admin jelszót: telepíti a /usr/local/libexec/macvpn scripteket és a /etc/sudoers.d/macvpn szabályt.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "At least %d characters.": {
       "hu": "Legalább %d karakter.",
@@ -508,7 +532,13 @@
     },
     "Backup: %@ · This Mac: %@": {
       "hu": "Mentés: %@ · Ez a Mac: %@",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Backup: %@ · This PC: %@",
+          "hu": "Mentés: %@ · Ez a számítógép: %@"
+        }
+      }
     },
     "Blue": {
       "hu": "Kék",
@@ -716,7 +746,13 @@
     },
     "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new Mac.": {
       "hu": "Válassz egy .macvpnadminkey fájlt, és add meg a jelszavát. A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, nem a kulcsfájlban: új Macen előbb állíts vissza egy teljes biztonsági mentést.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new PC.",
+          "hu": "Válassz egy .macvpnadminkey fájlt, és add meg a jelszavát. A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, nem a kulcsfájlban: új számítógépen előbb állíts vissza egy teljes biztonsági mentést."
+        }
+      }
     },
     "Choose a backup made with Back Up Everything. Nothing changes before you confirm what to restore.": {
       "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Semmi sem változik, amíg jóvá nem hagyod, mit állítson vissza.",
@@ -724,7 +760,13 @@
     },
     "Choose a backup made with Back Up Everything. You set a new master password for this Mac next.": {
       "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Utána új mesterjelszót adsz meg ehhez a Machez.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Choose a backup made with Back Up Everything. You set a new master password for this PC next.",
+          "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Utána új mesterjelszót adsz meg ehhez a számítógéphez."
+        }
+      }
     },
     "Choose a master password": {
       "hu": "Válassz mesterjelszót",
@@ -816,7 +858,10 @@
     },
     "Confirm only after you clicked “Install profile” and approved the new profile in System Settings → General → Device Management. MacVPN cannot always see the change. If the old profile is still installed, the connection uses settings the team catalog has replaced.": {
       "hu": "Csak akkor erősítsd meg, ha a „Profil telepítése” után jóváhagytad az új profilt a Rendszerbeállítások → Általános → Eszközkezelés alatt. A MacVPN nem mindig látja a változást. Ha még a régi profil van telepítve, a kapcsolat olyan beállításokat használ, amelyeket a csapatkatalógus már lecserélt.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Connect": {
       "hu": "Csatlakozás",
@@ -908,7 +953,10 @@
     },
     "Could not download the Homebrew installer. Check the internet connection, then try again.": {
       "hu": "Nem sikerült letölteni a Homebrew telepítőt. Ellenőrizd az internetkapcsolatot, majd próbáld újra.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Could not remove %@: %@": {
       "hu": "A(z) %@ nem törölhető: %@",
@@ -928,7 +976,10 @@
     },
     "Could not start the Homebrew installer": {
       "hu": "Nem indítható a Homebrew telepítő",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Could not turn off launch at login": {
       "hu": "Nem sikerült kikapcsolni az indítást bejelentkezéskor",
@@ -1148,7 +1199,10 @@
     },
     "Enabled via a login LaunchAgent (applies at next login).": {
       "hu": "Bejelentkezési LaunchAgenttel bekapcsolva (a következő bejelentkezéstől érvényes).",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "Encrypting and saving the backup…": {
       "hu": "A mentés titkosítása és mentése…",
@@ -1172,7 +1226,13 @@
     },
     "Enter the master password. Its key is then kept in the macOS Keychain, and MacVPN opens without asking.": {
       "hu": "Add meg a mesterjelszót. A széf kulcsa ezután a macOS Keychainjében marad, és a MacVPN kérdés nélkül megnyílik.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Enter the master password. Its key is then kept in the Windows Credential Manager, and MacVPN opens without asking.",
+          "hu": "Add meg a mesterjelszót. A széf kulcsa ezután a Windows Hitelesítőadat-kezelőjében marad, és a MacVPN kérdés nélkül megnyílik."
+        }
+      }
     },
     "Enter the new team key your administrator sent you through a secure channel.": {
       "hu": "Add meg az új csapatkulcsot, amelyet a rendszergazda biztonságos csatornán küldött.",
@@ -1244,7 +1304,13 @@
     },
     "Export it to a password-protected file and remove it from this Mac: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.": {
       "hu": "Exportáld jelszóval védett fájlba, és töröld erről a Macről: a fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Export it to a password-protected file and remove it from this PC: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.",
+          "hu": "Exportáld jelszóval védett fájlba, és töröld erről a számítógépről: a fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol."
+        }
+      }
     },
     "Export…": {
       "hu": "Exportálás…",
@@ -1388,7 +1454,10 @@
     },
     "Homebrew": {
       "hu": "Homebrew",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "I Saved It": {
       "hu": "Elmentettem",
@@ -1408,11 +1477,20 @@
     },
     "If macOS asks for access to the Keychain, choose Always Allow.": {
       "hu": "Ha a macOS hozzáférést kér a Keychainhez, válaszd a Mindig engedélyez gombot.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "If the admin key may have leaked: generate a new admin key on a Mac you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.": {
       "hu": "Ha az aláírókulcs kiszivároghatott: hozz létre új adminisztrátori aláírókulcsot egy megbízható Macen, tedd közzé a kapcsolatokat új katalógusként, töröld a régi katalógusfájlt a szerverről vagy a megosztásról, és küldd el minden tagnak az új feliratkozási kódot és ujjlenyomatot megbízható csatornán. A régi katalógus csapattitkait is változtasd meg.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "If the admin key may have leaked: generate a new admin key on a PC you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.",
+          "hu": "Ha az aláírókulcs kiszivároghatott: hozz létre új adminisztrátori aláírókulcsot egy megbízható számítógépen, tedd közzé a kapcsolatokat új katalógusként, töröld a régi katalógusfájlt a szerverről vagy a megosztásról, és küldd el minden tagnak az új feliratkozási kódot és ujjlenyomatot megbízható csatornán. A régi katalógus csapattitkait is változtasd meg."
+        }
+      }
     },
     "If the new source is on another host or port, or is a file, the stored access token is dropped: it is never sent to a new address.": {
       "hu": "Ha az új forrás másik hoston vagy porton van, vagy fájl, a tárolt hozzáférési token törlődik: a token sosem megy új címre.",
@@ -1500,7 +1578,10 @@
     },
     "Installation cancelled: %@ is not owned by root or is writable by other users, so anything running as that user could replace the MacVPN root scripts. Fix it in Terminal, then try again: sudo chown root:wheel %@ && sudo chmod go-w %@ (on Intel Macs this may affect Homebrew).": {
       "hu": "A telepítés megszakítva: a(z) %@ nem a root tulajdona, vagy más felhasználó is írhatja, így bármi, ami ennek a felhasználónak a nevében fut, kicserélhetné a MacVPN root scriptjeit. Javítsd a Terminálban, majd próbáld újra: sudo chown root:wheel %@ && sudo chmod go-w %@ (Intel Macen ez érintheti a Homebrew-t).",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "Installation error": {
       "hu": "Telepítési hiba",
@@ -1516,7 +1597,10 @@
     },
     "Installing Homebrew (with the official installer)…": {
       "hu": "Homebrew telepítése (a hivatalos telepítővel)…",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Installing…": {
       "hu": "Telepítés…",
@@ -1628,11 +1712,23 @@
     },
     "Its %lld connections and folders are removed from this Mac, and paired apps lose access to them.": {
       "hu": "A(z) %lld kapcsolata és a mappái törlődnek erről a Macről, és a párosított appok elveszítik hozzájuk a hozzáférést.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Its %lld connections and folders are removed from this PC, and paired apps lose access to them.",
+          "hu": "A(z) %lld kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzájuk a hozzáférést."
+        }
+      }
     },
     "Its connection and folders are removed from this Mac, and paired apps lose access to it.": {
       "hu": "A kapcsolata és a mappái törlődnek erről a Macről, és a párosított appok elveszítik hozzá a hozzáférést.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Its connection and folders are removed from this PC, and paired apps lose access to it.",
+          "hu": "A kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzá a hozzáférést."
+        }
+      }
     },
     "Keep both (the backup’s copy is named “(backup)”)": {
       "hu": "Mindkettő megtartása (a mentésből származó másolat neve „(backup)” végződést kap)",
@@ -1640,7 +1736,13 @@
     },
     "Keep the file and its password apart. To restore it, choose Restore from Backup… in the settings, or in the first-run window on a new Mac.": {
       "hu": "A fájlt és a jelszavát tartsd külön. A visszaállításhoz válaszd a Visszaállítás biztonsági mentésből… pontot a beállításokban, vagy új Macen az első indításkori ablakban.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Keep the file and its password apart. To restore it, choose Restore from Backup… in the settings, or in the first-run window on a new PC.",
+          "hu": "A fájlt és a jelszavát tartsd külön. A visszaállításhoz válaszd a Visszaállítás biztonsági mentésből… pontot a beállításokban, vagy új számítógépen az első indításkori ablakban."
+        }
+      }
     },
     "Keep the item that is here": {
       "hu": "Az itt lévő elem megtartása",
@@ -1668,7 +1770,10 @@
     },
     "L2TP and Cisco IPsec connections need their profile on this Mac. macOS asks you to approve each one.": {
       "hu": "Az L2TP és Cisco IPsec kapcsolatoknak profil kell ezen a Macen. A macOS mindegyik jóváhagyását kéri.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "L2TP and Cisco IPsec work without these.": {
       "hu": "L2TP és Cisco IPsec ezek nélkül is működik.",
@@ -1704,7 +1809,10 @@
     },
     "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.": {
       "hu": "Az indítás bejelentkezéskor csak akkor érhető el, ha a MacVPN az Alkalmazások mappából fut. Előbb húzd oda az appot.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "Lime": {
       "hu": "Citromzöld",
@@ -1740,7 +1848,13 @@
     },
     "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items.": {
       "hu": "A MacVPN-t nem sikerült eltávolítani a bejelentkezési elemek közül. A Rendszerbeállítások → Általános → Bejelentkezési elemek alatt távolíthatod el.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "MacVPN could not be removed from the startup apps. You can remove it in Settings → Apps → Startup.",
+          "hu": "A MacVPN-t nem sikerült eltávolítani az indítási alkalmazások közül. A Gépház → Alkalmazások → Indítás alatt távolíthatod el."
+        }
+      }
     },
     "MacVPN did not accept these values. Check them and try again.": {
       "hu": "A MacVPN nem fogadta el ezeket az adatokat. Ellenőrizd őket, és próbáld újra.",
@@ -1780,7 +1894,10 @@
     },
     "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.": {
       "hu": "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, sstp-client, bash). A hiányzókat innen telepítheted.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "MacVPN will ask for the master password at every launch.": {
       "hu": "A MacVPN minden indításkor elkéri a mesterjelszót.",
@@ -1800,7 +1917,13 @@
     },
     "Makes this Mac accept incoming VPN connections (listens on the network as root)": {
       "hu": "Ez a Mac bejövő VPN-kapcsolatokat fogadna (rootként figyel a hálózaton)",
-      "scope": "core"
+      "scope": "core",
+      "variants": {
+        "windows": {
+          "en": "Makes this PC accept incoming VPN connections (listens on the network with system rights)",
+          "hu": "Ez a számítógép bejövő VPN-kapcsolatokat fogadna (rendszerjogosultsággal figyel a hálózaton)"
+        }
+      }
     },
     "Manage Connections…": {
       "hu": "Kapcsolatok kezelése…",
@@ -1860,7 +1983,10 @@
     },
     "More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.": {
       "hu": "Több „%@” nevű VPN szolgáltatás van. A MacVPN nem adja át a jelszót, amíg nem egyértelmű, melyik az övé: nevezd át vagy töröld a másikat a Rendszerbeállítások → Hálózat alatt.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "Mounting the disk image…": {
       "hu": "Lemezkép csatolása…",
@@ -2042,6 +2168,10 @@
       "hu": "Nem könyvtár: %@",
       "scope": "core"
     },
+    "Not available on this system yet": {
+      "hu": "Ezen a rendszeren még nem érhető el",
+      "scope": "platform"
+    },
     "Not checked yet": {
       "hu": "Még nincs ellenőrizve",
       "scope": "app"
@@ -2058,9 +2188,17 @@
       "hu": "Még nem kész. Várj egy pillanatot, aztán próbáld újra.",
       "scope": "app"
     },
+    "Not supported on Windows (Linux only)": {
+      "hu": "Windowson nem támogatott (csak Linuxon)",
+      "scope": "core"
+    },
     "Not supported on macOS (Windows or Linux only)": {
       "hu": "macOS-en nem támogatott (csak Windows vagy Linux)",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos",
+        "linux"
+      ]
     },
     "Nothing can be moved into a team catalog.": {
       "hu": "Csapatkatalógusba semmi nem helyezhető át.",
@@ -2096,7 +2234,13 @@
     },
     "On this Mac": {
       "hu": "Ezen a Macen",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "On this PC",
+          "hu": "Ezen a számítógépen"
+        }
+      }
     },
     "One encrypted file with every connection and its secrets, the folders, the shared credentials, the order and the app preferences. Paired apps are not included: they pair again after a restore.": {
       "hu": "Egyetlen titkosított fájl az összes kapcsolattal és titkaikkal, a mappákkal, a közös hitelesítő adatokkal, a sorrenddel és az app beállításaival. A párosított appok nincsenek benne: visszaállítás után újra párosodnak.",
@@ -2136,7 +2280,13 @@
     },
     "Open Login Items Settings…": {
       "hu": "Bejelentkezési elemek beállításai…",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Open Startup Apps Settings…",
+          "hu": "Indítási alkalmazások beállításai…"
+        }
+      }
     },
     "Open MacVPN for details": {
       "hu": "Részletek a MacVPN-ben",
@@ -2172,7 +2322,13 @@
     },
     "Option-click a switch: debug mode": {
       "hu": "Option+kattintás a kapcsolón: debug mód",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Alt-click a switch: debug mode",
+          "hu": "Alt+kattintás a kapcsolón: debug mód"
+        }
+      }
     },
     "Optional, HTTPS only": {
       "hu": "Nem kötelező, csak HTTPS-nél",
@@ -2228,7 +2384,13 @@
     },
     "Password (optional, if not saved in macOS)": {
       "hu": "Jelszó (nem kötelező, ha nincs elmentve a macOS-ben)",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Password (optional, if not saved in Windows)",
+          "hu": "Jelszó (nem kötelező, ha nincs elmentve a Windowsban)"
+        }
+      }
     },
     "Password for %@ — used by %lld connections": {
       "hu": "A(z) %@ jelszava — %lld kapcsolat használja",
@@ -2260,7 +2422,10 @@
     },
     "Permissions (root scripts + sudoers)": {
       "hu": "Jogosultság (root scriptek + sudoers)",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Personal fields": {
       "hu": "Személyes mezők",
@@ -2300,11 +2465,20 @@
     },
     "Profile opened, approve it in System Settings.": {
       "hu": "Profil megnyitva, hagyd jóvá a Rendszerbeállításokban.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Programs on this Mac that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.": {
       "hu": "Az ezen a Macen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Programs on this PC that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.",
+          "hu": "Az ezen a számítógépen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak."
+        }
+      }
     },
     "Publications replaced by the backup’s: %@": {
       "hu": "A mentésben lévőre cserélt közzétételek: %@",
@@ -2372,7 +2546,13 @@
     },
     "Publishing needs an admin key. Generate one, or import the key file of the Mac you published from.": {
       "hu": "A közzétételhez adminisztrátori aláírókulcs kell. Hozz létre egyet, vagy importáld annak a Macnek a kulcsfájlját, amelyről eddig közzétettél.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Publishing needs an admin key. Generate one, or import the key file of the PC you published from.",
+          "hu": "A közzétételhez adminisztrátori aláírókulcs kell. Hozz létre egyet, vagy importáld annak a számítógépnek a kulcsfájlját, amelyről eddig közzétettél."
+        }
+      }
     },
     "Publish…": {
       "hu": "Közzététel…",
@@ -2440,7 +2620,13 @@
     },
     "Remove the backup key from this Mac after export": {
       "hu": "A tartalék kulcs törlése erről a Macről az export után",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Remove the backup key from this PC after export",
+          "hu": "A tartalék kulcs törlése erről a számítógépről az export után"
+        }
+      }
     },
     "Remove the stored access token": {
       "hu": "A tárolt hozzáférési token törlése",
@@ -2456,7 +2642,10 @@
     },
     "Removes the root scripts, the sudoers rule and the logs; optionally your connections too.": {
       "hu": "A root scriptek, a sudoers szabály és a naplók törlése; opcionálisan a kapcsolatoké is.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Rename": {
       "hu": "Átnevezés",
@@ -2624,7 +2813,10 @@
     },
     "Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).": {
       "hu": "Mentéskor egy konfigurációs profil készül és megnyílik. A Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt kell jóváhagyni. Módosítás után ismét jóvá kell hagyni. A jelszó nincs a profilban: a MacVPN csatlakozáskor adja át (a Rendszerbeállításokból indítva a macOS rákérdez).",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Saving failed": {
       "hu": "A mentés nem sikerült",
@@ -2702,6 +2894,10 @@
       "hu": "Széf beállítása…",
       "scope": "app"
     },
+    "Set by the VPN service itself, not by a connection's config": {
+      "hu": "Ezt maga a VPN-szolgáltatás állítja be, nem a kapcsolat konfigurációja",
+      "scope": "core"
+    },
     "Set up the vault": {
       "hu": "A széf beállítása",
       "scope": "app"
@@ -2768,7 +2964,10 @@
     },
     "Stored in the MacVPN vault and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own (\"incorrect user shared secret\").": {
       "hu": "A MacVPN széfjében tárolódik, és csatlakozáskor a macOS megkapja. Akkor kell, ha a macOS magától nem tudja kiolvasni a közös kulcsot („incorrect user shared secret”).",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "Stored in the vault": {
       "hu": "A széfben tárolva",
@@ -2948,7 +3147,13 @@
     },
     "The admin key file could not be read back. The key was kept on this Mac.": {
       "hu": "Az adminkulcs-fájlt nem sikerült visszaolvasni. A kulcs ezen a Macen maradt.",
-      "scope": "core-rust"
+      "scope": "core-rust",
+      "variants": {
+        "windows": {
+          "en": "The admin key file could not be read back. The key was kept on this PC.",
+          "hu": "Az adminkulcs-fájlt nem sikerült visszaolvasni. A kulcs ezen a számítógépen maradt."
+        }
+      }
     },
     "The admin key file password must be at least %d characters long": {
       "hu": "Az adminkulcs-fájl jelszavának legalább %d karakter hosszúnak kell lennie",
@@ -2968,7 +3173,10 @@
     },
     "The app's location is not writable: %@. Drag the app to the Applications folder, or update manually from the DMG.": {
       "hu": "Az alkalmazás helye nem írható: %@. Húzd az appot az Alkalmazások mappába, vagy frissíts kézzel a DMG-ből.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "The backup cannot be opened. The password is wrong, or the file is damaged.": {
       "hu": "A mentés nem nyitható meg. Hibás a jelszó, vagy sérült a fájl.",
@@ -2984,7 +3192,13 @@
     },
     "The backup key becomes the admin key, and the old admin key is deleted from this Mac. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.": {
       "hu": "A tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a Macről. Utána tedd közzé minden katalógus új verzióját: azok a tagok, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást, a többieknek az új ujjlenyomattal újra fel kell iratkozniuk.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "The backup key becomes the admin key, and the old admin key is deleted from this PC. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.",
+          "hu": "A tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a számítógépről. Utána tedd közzé minden katalógus új verzióját: azok a tagok, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást, a többieknek az új ujjlenyomattal újra fel kell iratkozniuk."
+        }
+      }
     },
     "The backup key is now the admin key. Publish a new version of each catalog, then generate and export a new backup key.": {
       "hu": "A tartalék kulcs lett az aláírókulcs. Tedd közzé minden katalógus új verzióját, majd hozz létre és exportálj egy új tartalék kulcsot.",
@@ -2996,7 +3210,13 @@
     },
     "The backup key was saved as %@ and removed from this Mac. Keep the file offline and its password somewhere else.": {
       "hu": "A tartalék kulcs mentve: %@, és törlődött erről a Macről. A fájlt offline tartsd, a jelszavát máshol.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "The backup key was saved as %@ and removed from this PC. Keep the file offline and its password somewhere else.",
+          "hu": "A tartalék kulcs mentve: %@, és törlődött erről a számítógépről. A fájlt offline tartsd, a jelszavát máshol."
+        }
+      }
     },
     "The backup key was saved as %@. Keep the file offline and its password somewhere else.": {
       "hu": "A tartalék kulcs mentve: %@. A fájlt offline tartsd, a jelszavát máshol.",
@@ -3020,7 +3240,13 @@
     },
     "The backup’s preferences are not applied by themselves. Tick the ones to use on this Mac.": {
       "hu": "A mentés beállításai maguktól nem lépnek életbe. Jelöld be azokat, amelyeket ezen a Macen használnál.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "The backup’s preferences are not applied by themselves. Tick the ones to use on this PC.",
+          "hu": "A mentés beállításai maguktól nem lépnek életbe. Jelöld be azokat, amelyeket ezen a számítógépen használnál."
+        }
+      }
     },
     "The bearer token the web server asks for. It is stored in the vault and sent only to the source’s own address.": {
       "hu": "A webszerver által kért bearer token. A széfben tárolódik, és csak a forrás saját címére megy.",
@@ -3344,7 +3570,10 @@
     },
     "The server address of the VPN service named “%@” does not match this connection’s server. MacVPN does not pass the password or the PSK to it: reinstall the profile in MacVPN → Connections, or remove the other service in System Settings → Network.": {
       "hu": "A(z) „%@” nevű VPN szolgáltatás szervercíme nem egyezik a kapcsolat szerverével. A MacVPN nem adja át neki a jelszót és a PSK-t: telepítsd újra a profilt a MacVPN → Kapcsolatok alatt, vagy töröld a másik szolgáltatást a Rendszerbeállítások → Hálózat alatt.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "The server asks for a code.": {
       "hu": "A szerver kódot kér.",
@@ -3552,7 +3781,13 @@
     },
     "The vault key is kept in the macOS Keychain, so MacVPN opens without asking. Turn it off to type the master password at every launch.": {
       "hu": "A széf kulcsa a macOS Keychainjében marad, így a MacVPN kérdés nélkül megnyílik. Kapcsold ki, ha minden indításkor a mesterjelszót szeretnéd megadni.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "The vault key is kept in the Windows Credential Manager, so MacVPN opens without asking. Turn it off to type the master password at every launch.",
+          "hu": "A széf kulcsa a Windows Hitelesítőadat-kezelőjében marad, így a MacVPN kérdés nélkül megnyílik. Kapcsold ki, ha minden indításkor a mesterjelszót szeretnéd megadni."
+        }
+      }
     },
     "Then anyone who learns your master password can also open this file, wherever it is kept. A separate backup password keeps the two apart.": {
       "hu": "Akkor bárki, aki megtudja a mesterjelszavadat, ezt a fájlt is megnyithatja, bárhol is tárolod. Egy külön mentési jelszó elválasztja a kettőt.",
@@ -3572,7 +3807,13 @@
     },
     "There is no backup admin key on this Mac.": {
       "hu": "Ezen a Macen nincs tartalék adminkulcs.",
-      "scope": "core-rust"
+      "scope": "core-rust",
+      "variants": {
+        "windows": {
+          "en": "There is no backup admin key on this PC.",
+          "hu": "Ezen a számítógépen nincs tartalék adminkulcs."
+        }
+      }
     },
     "There is no shared credential named '%@'": {
       "hu": "Nincs „%@” nevű közös hitelesítő adat",
@@ -3604,7 +3845,13 @@
     },
     "This VPN was removed from macOS": {
       "hu": "Ezt a VPN-t eltávolították a macOS-ből",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "This VPN was removed from Windows",
+          "hu": "Ezt a VPN-t eltávolították a Windowsból"
+        }
+      }
     },
     "This app was started from another location: %@. Revoke it and pair it again to use the new copy.": {
       "hu": "Ezt az appot más helyről indították: %@. Az új példány használatához vond vissza, és párosítsd újra.",
@@ -3632,7 +3879,13 @@
     },
     "This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.": {
       "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Rendszerbeállításokban vagy a saját alkalmazásában vannak.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "This connection can only be connected and disconnected here. Its settings are in Settings or in its own app.",
+          "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Gépházban vagy a saját alkalmazásában vannak."
+        }
+      }
     },
     "This connection cannot be published.": {
       "hu": "Ez a kapcsolat nem tehető közzé.",
@@ -3656,7 +3909,13 @@
     },
     "This file is opened from its own panel in MacVPN, not from Finder.": {
       "hu": "Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Finderből.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "This file is opened from its own panel in MacVPN, not from File Explorer.",
+          "hu": "Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Fájlkezelőből."
+        }
+      }
     },
     "This folder no longer exists": {
       "hu": "Ez a mappa már nem létezik",
@@ -3704,7 +3963,13 @@
     },
     "Tick it only if you use paired apps on this Mac. They pair again after a restore.": {
       "hu": "Csak akkor jelöld be, ha ezen a Macen párosított appokat használsz. Visszaállítás után újra párosodnak.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Tick it only if you use paired apps on this PC. They pair again after a restore.",
+          "hu": "Csak akkor jelöld be, ha ezen a számítógépen párosított appokat használsz. Visszaállítás után újra párosodnak."
+        }
+      }
     },
     "Timed out": {
       "hu": "Időtúllépés",
@@ -4036,7 +4301,10 @@
     },
     "Uses the CA certificates of Homebrew's OpenSSL, not the macOS Keychain. For a company CA, choose a custom CA file.": {
       "hu": "A Homebrew OpenSSL CA-tanúsítványait használja, nem a macOS kulcskarikát. Céges CA-hoz válaszd a saját CA fájlt.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "VPN connections your administrator shares with the team. They update by themselves and are read-only here; you sign in with your own user name and password.": {
       "hu": "A rendszergazda által a csapattal megosztott VPN-kapcsolatok. Maguktól frissülnek, és itt csak olvashatók; a saját felhasználóneveddel és jelszavaddal jelentkezel be.",
@@ -4148,11 +4416,17 @@
     },
     "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).": {
       "hu": "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan sstp-client).",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.": {
       "hu": "Az L2TP / Cisco profilokat a Rendszerbeállítások → Általános → Eszközkezelés alatt távolíthatod el.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "You enter your own user name and password for them when you first connect.": {
       "hu": "Az első csatlakozáskor a saját felhasználónevedet és jelszavadat adod meg hozzájuk.",
@@ -4212,7 +4486,10 @@
     },
     "bash 4+ not found (brew install bash)": {
       "hu": "A bash 4+ nem található (brew install bash)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "before": {
       "hu": "előtte",
@@ -4220,7 +4497,10 @@
     },
     "brew error (%d)": {
       "hu": "brew hiba (%d)",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "bundle identifier %@, expected: %@": {
       "hu": "a bundle azonosító %@, várt: %@",
@@ -4244,7 +4524,10 @@
     },
     "charon not found (brew install strongswan)": {
       "hu": "A charon nem található (brew install strongswan)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "cleaning up after the failed connection attempt": {
       "hu": "takarítás a sikertelen kapcsolódás után",
@@ -4312,15 +4595,24 @@
     },
     "macOS is running MacVPN from a temporary location. Move the app to the Applications folder and open it from there.": {
       "hu": "A macOS egy ideiglenes helyről futtatja a MacVPN-t. Helyezd az appot az Alkalmazások mappába, és onnan nyisd meg.",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "macOS may ask once for access to the Keychain — choose Always Allow. This happens only once.": {
       "hu": "A macOS egyszer hozzáférést kérhet a Keychainhez – válaszd a Mindig engedélyez gombot. Ez csak egyszer történik meg.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "macOS may ask up to %lld times for access to the Keychain — choose Always Allow each time. This happens only once.": {
       "hu": "A macOS legfeljebb %lld alkalommal kérhet hozzáférést a Keychainhez – minden alkalommal válaszd a Mindig engedélyez gombot. Ez csak egyszer történik meg.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "mvpn error (exit code: %d)": {
       "hu": "mvpn hiba (kilépési kód: %d)",
@@ -4352,7 +4644,10 @@
     },
     "openvpn not found (brew install openvpn)": {
       "hu": "Az openvpn nem található (brew install openvpn)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "or": {
       "hu": "vagy",
@@ -4368,7 +4663,10 @@
     },
     "scutil error (exit code: %d)": {
       "hu": "scutil hiba (kilépési kód: %d)",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "secrets block added (masked)": {
       "hu": "secrets blokk hozzáadva (maszkolva)",
@@ -4400,7 +4698,10 @@
     },
     "sstpc not found (brew install sstp-client)": {
       "hu": "Az sstpc nem található (brew install sstp-client)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "stale lock removed": {
       "hu": "elárvult zár eltávolítva",
@@ -4416,7 +4717,10 @@
     },
     "swanctl not found (brew install strongswan)": {
       "hu": "A swanctl nem található (brew install strongswan)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "the mounted disk image is not the downloaded and verified file": {
       "hu": "a csatolt lemezkép nem a letöltött és ellenőrzött fájl",
@@ -4444,7 +4748,10 @@
     },
     "wg-quick not found (brew install wireguard-tools)": {
       "hu": "A wg-quick nem található (brew install wireguard-tools)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "wg-quick up failed (details in the log)": {
       "hu": "A wg-quick up sikertelen (részletek a naplóban)",
@@ -4452,11 +4759,17 @@
     },
     "wireguard-go not found (brew install wireguard-tools)": {
       "hu": "A wireguard-go nem található (brew install wireguard-tools)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items": {
       "hu": "~/Library/Application Support/MacVPN a széffel, és a Keychainben a széf kulcsa és a régi MacVPN 1.1 bejegyzések",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     }
   },
   "version": 1

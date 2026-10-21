@@ -1,0 +1,13 @@
+{
+  "acknowledgedRiskyDirectives" : [
+
+  ],
+  "createdAt" : "2026-09-21T14:13:20Z",
+  "id" : "C0DE0000-0000-4000-8000-000000000001",
+  "kind" : "openvpn",
+  "name" : "Office OpenVPN",
+  "otp" : {
+    "enabled" : true,
+    "separator" : "colon"
+  }
+}

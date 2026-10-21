@@ -11,6 +11,7 @@ use tauri::image::Image;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, LogicalSize, Manager, PhysicalPosition, Rect, WebviewWindow, WebviewWindowBuilder};
 
+use crate::platform;
 use crate::state::AppState;
 
 pub const TRAY_ID: &str = "main";
@@ -33,8 +34,10 @@ pub fn hide_menu(app: &AppHandle) {
 
 /// The popover's width (points); its height follows the content (`set_menu_height`).
 pub const MENU_WIDTH: f64 = 330.0;
-/// The popover's corner radius (points), the system popovers' and Control Center's.
-pub const MENU_CORNER_RADIUS: f64 = macvpn_platform_mac::window_shape::POPOVER_CORNER_RADIUS;
+/// The popover's corner radius (points; macOS: the system popovers' and Control Center's).
+pub fn menu_corner_radius() -> f64 {
+    platform::get().windows().popover_corner_radius()
+}
 
 /// The popover window as [`create_menu_window`] and [`resize_menu`] use it (a fake in the tests).
 pub trait MenuWindow {
@@ -52,8 +55,8 @@ impl MenuWindow for WebviewWindow {
         let target = self.clone();
         // Queued after the window's pending changes (a resize), so the shadow follows the new size.
         let _ = self.run_on_main_thread(move || {
-            if let Ok(ns_window) = target.ns_window() {
-                macvpn_platform_mac::window_shape::round_corners(ns_window, radius);
+            if let Some(native) = platform::native_window(&target) {
+                platform::get().windows().round_corners(native, radius);
             }
         });
     }
@@ -61,7 +64,7 @@ impl MenuWindow for WebviewWindow {
 
 /// Rounds the popover's corners: once created ([`create_menu_window`]) and after each resize ([`resize_menu`]).
 pub fn shape_menu(window: &impl MenuWindow) {
-    window.round_corners(MENU_CORNER_RADIUS);
+    window.round_corners(menu_corner_radius());
 }
 
 /// The popover follows its content's height; the shadow is recomputed for the new shape.
@@ -226,7 +229,7 @@ mod tests {
 
     #[test]
     fn the_corner_radius_is_a_popovers() {
-        assert_eq!(MENU_CORNER_RADIUS, 12.0);
+        assert_eq!(menu_corner_radius(), 12.0);
     }
 
     #[test]

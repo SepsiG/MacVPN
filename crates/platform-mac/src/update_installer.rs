@@ -138,13 +138,13 @@ impl<'a> UpdateInstaller<'a> {
         let canonical = |url: &str| {
             UpdateURLPolicy::canonical_download_url(url).ok_or_else(|| UpdateError::UntrustedUrl(url.to_string()))
         };
-        let dmg_url = canonical(&release.dmg.url)?;
+        let dmg_url = canonical(&release.package.url)?;
         let checksum_url = canonical(&release.checksum.url)?;
         let Some(signature_asset) = &release.signature else { return Err(UpdateError::UnsignedUpdate.into()) };
         let signature_url = canonical(&signature_asset.url)?;
         // The name comes from the release, but only the expected form is accepted (no path components).
-        if !DMG_NAME.is_match(&release.dmg.name) {
-            return Err(UpdateError::MissingAsset(release.dmg.name.clone()).into());
+        if !DMG_NAME.is_match(&release.package.name) {
+            return Err(UpdateError::MissingAsset(release.package.name.clone()).into());
         }
         let sum = self.http.get(&checksum_url)?;
         if sum.status != 200 {
@@ -154,7 +154,7 @@ impl<'a> UpdateInstaller<'a> {
             return Err(UpdateError::InvalidChecksumFile.into());
         }
         let text = String::from_utf8(sum.data).map_err(|_| UpdateError::InvalidChecksumFile)?;
-        let expected = parse_checksum(&text, &release.dmg.name)?;
+        let expected = parse_checksum(&text, &release.package.name)?;
         let signature = self.download_signature(&signature_url)?;
 
         self.prepare_cache_directory()?;
@@ -165,7 +165,7 @@ impl<'a> UpdateInstaller<'a> {
                 if status != 200 {
                     return Err(UpdateError::Http(status).into());
                 }
-                let dest = directory.join(&release.dmg.name);
+                let dest = directory.join(&release.package.name);
                 move_item(&tmp, &dest)?;
                 Ok(dest)
             })();
@@ -797,13 +797,8 @@ impl UpdateStage {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpdateOutcome {
-    /// The helper runs and waits for this process: the app must quit now.
-    HelperLaunched,
-    /// The user declined to quit; everything was cleaned up.
-    Cancelled,
-}
+/// How [`install_update`] ended without an error (platform-api's).
+pub use macvpn_platform_api::UpdateOutcome;
 
 /// The whole update (the app's `UpdateController.install`), in the only allowed order:
 /// `check_install_target` → `download_verified` → `mount` → `verify_app` → `write_helper` → (`confirm_quit`) →

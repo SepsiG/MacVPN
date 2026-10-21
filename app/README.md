@@ -1,20 +1,27 @@
 # MacVPN app (Tauri 2)
 
-- `src-tauri/`: the Rust shell (`macvpn-app`): tray icon, menu popover, windows, the IPC commands, and the
-  adapters from `macvpn-app-core`'s traits to `macvpn-platform-mac`.
+- `src-tauri/`: the Rust shell (`macvpn-app`): tray icon, menu popover, windows and the IPC commands. It reaches
+  the operating system only through `macvpn-platform-api`: `src-tauri/src/platform/` (the app's only
+  `cfg(target_os)`) creates the platform (`MacPlatform` from `macvpn-platform-mac` on macOS, the `WinPlatform` stub
+  from `macvpn-platform-win` elsewhere) and holds the Tauri glue (native window handle, activation policy, the
+  macOS run events) and the smoke driver. On Windows, `platform::supported()` refuses and the app exits 1 before
+  any window opens (phase 1).
 - `ui/`: the web UI (Svelte 5 + TypeScript + Vite). Texts come from `crates/core/l10n/strings.json` (scope `app`
-  only is bundled); the language is the core's rule, sent by the backend in the view model.
+  only is bundled); the language is the core's rule, sent by the backend in the view model. The OS and the product
+  name (for the per-OS text variants and the Cmd / Ctrl shortcuts) come from the `get_platform` command at start.
 - The logic (connection manager, view model, polling, launch order, quit decision, update schedule) is in
   `crates/app-core`, tested without a UI.
 
-The rest of the repository: `crates/core` (platform-independent logic and the EN/HU text table), `crates/mvpn` (the
-root binary), `crates/platform-mac` (macOS services), `scripts/` (build, test and signing scripts). The 0.x Swift app
-is only in the git history (up to tag `v0.4.0`).
+The rest of the repository: `crates/core` (platform-independent logic and the EN/HU text table), `crates/platform-api`
+(the platform traits and the product identity), `crates/platform-mac` (the macOS platform), `crates/platform-win` (the
+Windows stub), `crates/helper` (the root binary `mvpn`), `scripts/` (build, test and signing scripts). How they fit
+together: [`docs/architecture.md`](../docs/architecture.md). The 0.x Swift app is only in the git history (up to tag
+`v0.4.0`).
 
 ## Build
 
-Toolchain: `rust-toolchain.toml` pins the exact Rust version (1.99.1, with clippy, rustfmt and both macOS targets),
-which `rustup` uses inside the repository (`rustup toolchain install` installs it). CI and the release workflow use
+Toolchain: `rust-toolchain.toml` pins the exact Rust version (1.99.1, with clippy, rustfmt, both macOS targets and
+both Windows targets), which `rustup` uses inside the repository (`rustup toolchain install` installs it). CI and the release workflow use
 Node.js 26.8.2; `package.json` requires at least 22.12.
 
 ```sh
@@ -42,7 +49,7 @@ the feature on, the build fails at compile time if `app/ui/dist` is missing; `np
 `scripts/build-dmg.sh` makes `dist/MacVPN.app` and `dist/MacVPN-<version>.dmg` (the app and an `Applications`
 link): `npm ci && npm run build`, then `tauri build --target universal-apple-darwin --features custom-protocol`
 (arm64 + x86_64, `lipo`; `mainBinaryName` makes the executable `MacVPN`, `src-tauri/Info.plist` is merged into the
-bundle's Info.plist), the universal `mvpn` and `crates/mvpn/VERSION` into `Contents/Resources/root/` (where the
+bundle's Info.plist), the universal `mvpn` and `crates/helper/VERSION` into `Contents/Resources/root/` (where the
 root installer looks), `Resources/AppIcon.icns` as the icon. Every Info.plist key the updater and macOS rely on
 is checked (`local.macvpn`, `MacVPN`, the version, 14.0, `LSUIElement`, `en` / `[en, hu]`, the update source).
 `mvpn` and the bundle are signed ad-hoc with the hardened runtime and no entitlements (dyld ignores `DYLD_*` and
@@ -73,7 +80,7 @@ libsqlite3-sys` if one was set); `scripts/build-dmg.sh` unsets all of them itsel
 - in each architecture slice, the app binary contains no `openssl` / `libcrypto` string, and the linked SQLCipher
   carries the `commoncrypto` provider name;
 - `mvpn` contains neither `sqlcipher` nor `SQLite format`: the vault code must never reach the root layer
-  (`crates/mvpn` uses `crates/core` without the `vault` feature);
+  (`crates/helper` uses `crates/core` without the `vault` feature);
 - the bundle carries `THIRD-PARTY-NOTICES.txt` (see `docs/RELEASING.md`), and the usual Info.plist, signature and
   symlink checks pass.
 
@@ -84,6 +91,14 @@ libsqlite3-sys` if one was set); `scripts/build-dmg.sh` unsets all of them itsel
   built binary)
 - `npm test` and `npm run build` in `app/ui`: the UI tests, then `svelte-check` and the build
 - `scripts/smoke-manage.sh`: the smoke test of the real windows (below), with `SMOKE_LANG=en` and `SMOKE_LANG=hu`
+- `scripts/check-windows.sh`: the Windows compile check that runs on a Mac (`macvpn-core` without the vault,
+  `macvpn-helper`, the control client; both Windows targets, debug and release). The app, app-core, the vault and
+  the platform crates need an MSVC toolchain for their C code, so they are checked on Windows only in CI (the
+  `windows` and `windows-node` jobs in `.github/workflows/ci.yml`)
+- `crates/app-core/tests/cfg_rule.rs` (in `cargo test`): an OS `cfg` in this crate only under `src/platform/`,
+  and no `unsafe` at all
+- `scripts/bundle-baseline.sh dist/MacVPN.app` and `node scripts/l10n-baseline.mjs --check`: the built bundle and
+  the macOS texts compared with the 1.4.0 baseline
 - the manual checklist: `docs/manual-test-checklist.md`
 
 ## Running a development build without touching real data
@@ -142,7 +157,10 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
   `aria-label` / `label` … attributes) or in TypeScript objects.
 - `cargo test` (`crates/app-core/tests/l10n_coverage.rs`): every key the Rust side translates (core, `mvpn`,
   platform layer, app logic, Tauri shell), literal or passed through a listed variable, has a Hungarian text;
-  `crates/core/tests/l10n.rs` checks the table itself (both languages, the same format specifiers).
+  `crates/core/tests/l10n.rs` checks the table itself (both languages, the same format specifiers, also in every
+  per-OS variant). `macos_terms_are_classified` (in `l10n_coverage.rs`) fails for a text that names a macOS
+  facility (Keychain, Finder, System Settings, Dock, …) without `only` or a `windows` variant: see
+  [Texts per OS](../docs/architecture.md#texts-per-os).
 
 ## Security
 
@@ -152,7 +170,8 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
   events. `main.json` (the menu, Connections, System Status and Update windows) grants every command but
   `answer_prompt` and `prompt_ready`; `prompt.json` (the `prompt-*` windows) grants only `get_view_model`,
   `prompt_ready` and `answer_prompt`. No core
-  window / webview / path API, no plugin (a test keeps the files to exactly the generated commands).
+  window / webview / path API, no plugin (a test keeps the files to exactly the generated commands). Every
+  window's capability also grants `get_platform` (read-only, no input; it returns the OS and the product name).
 - Commands: `get_view_model`, `connect` (with the Option-click debug flag), `disconnect`, `pin`, `unpin`,
   `move_pinned`, `open_window`, `set_menu_height`, `quit`, `check_for_updates`, `set_update_option`,
   `set_launch_at_login`, `open_login_items_settings`, `open_user_guide`; the Connections window's

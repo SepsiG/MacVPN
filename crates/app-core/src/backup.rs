@@ -17,19 +17,17 @@
 //!
 //! **After a restore** ([`RestoreOutcome`]): the backed-up preferences are listed one by one and applied only when
 //! the user ticks them ([`BackupService::apply_preferences`]); the control API is never ticked by default. The
-//! native (L2TP / Cisco) profiles are reinstalled one at a time through the existing [`ProfileInstaller`]
+//! native (L2TP / Cisco) profiles are reinstalled one at a time through the existing [`NativeProfiles`]
 //! ([`BackupService::reinstall_profile`]).
 //!
 //! Every long call (the KDF runs for seconds) is meant for a worker thread. Passwords arrive as `Zeroizing`
 //! strings and are dropped (wiped) at the end of the call that used them; they are never stored, logged or part
 //! of a returned value. A failure is one localized message; a wrong password and a damaged file are the same one.
 
-use crate::deps::ProfileInstaller;
+use crate::deps::NativeProfiles;
 use crate::vault::{UnlockError, VaultLifecycle};
 use macvpn_core::date::Date;
-use macvpn_core::exporter;
 use macvpn_core::l10n::{Arg, tr};
-use macvpn_core::mobileconfig;
 use macvpn_core::models::{SecretField, uuid_string};
 use macvpn_core::vault::backup::{
     self as format, BackupError, BackupPayload, BackupPreferences, ConflictMode, RestorePlan,
@@ -648,7 +646,7 @@ impl BackupService {
         &self,
         owner: &str,
         id: &str,
-        installer: &dyn ProfileInstaller,
+        installer: &dyn NativeProfiles,
         service_existed: impl Fn(&Uuid) -> bool,
     ) -> Result<Vec<NativeProfileView>, String> {
         let listed = match &guard(&self.session).restored {
@@ -671,9 +669,9 @@ impl BackupService {
             .map_err(|e| restore_error_message(&e))?;
         let connection = connection.ok_or_else(|| tr("The connection is no longer in the vault.", &[]))?;
         let psk = psk.unwrap_or_else(|| Zeroizing::new(String::new()));
-        let data = mobileconfig::generate(&connection, &psk).map_err(|e| e.message())?;
+        let profile = installer.build(&connection, &psk)?;
         drop(psk);
-        installer.install(&connection.id, &data, &exporter::file_name(&connection), service_existed(&connection.id))?;
+        installer.install(&connection.id, &profile.data, &profile.file_name, service_existed(&connection.id))?;
         let mut session = guard(&self.session);
         let restored = session.restored.as_mut().ok_or("no restore in this window")?;
         for n in &mut restored.natives {

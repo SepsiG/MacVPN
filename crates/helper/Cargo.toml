@@ -1,0 +1,28 @@
+[package]
+name = "macvpn-helper"
+description = "MacVPN root helper (successor of the bash mvpn, mvpn-validate, mvpn-mgmt and ovpn-dns)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "macvpn_helper"
+path = "src/lib.rs"
+
+[[bin]]
+name = "mvpn"
+path = "src/main.rs"
+
+[dependencies]
+macvpn-core = { path = "../core" }
+regex = "1.13.1"
+uuid = { version = "1.26.1", features = ["v4"] }
+zeroize = "1.9.1"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+
+[lints]
+workspace = true

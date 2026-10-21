@@ -9,13 +9,24 @@ rust-version.workspace = true
 
 [lib]
 name = "macvpn_platform_mac"
+# No doc tests. rustdoc compiles the crate with `debug_assertions` even in `cargo test --release`, while
+# platform-api is the release build there, so the debug-only smoke hooks would not resolve.
+doctest = false
 
 [dependencies]
+libc = "0.2.191"
+macvpn-core = { path = "../core", features = ["vault"] }
+macvpn-platform-api = { path = "../platform-api" }
+regex = "1.13.1"
+uuid = { version = "1.26.1", features = ["v4"] }
+zeroize = "1.9.1"
+
+# The whole crate is macOS-only (`#![cfg(target_os = "macos")]`): another target sees an empty crate and needs none
+# of the Apple frameworks' bindings.
+[target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6.2"
 core-foundation = "0.10.1"
 core-foundation-sys = "0.8.7"
-libc = "0.2.191"
-macvpn-core = { path = "../core", features = ["vault"] }
 objc2 = "0.6.5"
 objc2-app-kit = { version = "0.3.2", default-features = false, features = [
     "std",
@@ -51,10 +62,7 @@ objc2-user-notifications = { version = "=0.3.2", default-features = false, featu
 ] }
 oslog = { version = "0.2.0", default-features = false }
 plist = "1.10.1"
-regex = "1.13.1"
 security-framework-sys = "2.17.0"
-uuid = { version = "1.26.1", features = ["v4"] }
-zeroize = "1.9.1"
 
 [features]
 # Test-only API (`KeychainKeyStore::in_keychain`); enabled only by this crate's own dev-dependency on itself.

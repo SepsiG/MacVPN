@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { format, resolveLanguage, translate, type Table } from './l10n-core.ts';
+import { MACOS, format, platformOf, resolveLanguage, translate, type Platform, type Table } from './l10n-core.ts';
 import { uptime } from './format.ts';
 
 const root = new URL('../../../../', import.meta.url);
@@ -27,10 +27,83 @@ test('format subset', () => {
 });
 
 test('translate uses the app scope only', () => {
-  assert.equal(translate(table, 'hu', 'Quit MacVPN', []), table['Quit MacVPN'].hu);
-  assert.equal(translate(table, 'en', 'Quit MacVPN', []), 'Quit MacVPN');
-  assert.equal(translate(table, 'hu', '%@ · Missing tool', ['OpenVPN']), `OpenVPN · ${table['%@ · Missing tool'].hu.slice(5)}`);
-  assert.equal(translate(table, 'hu', 'not a key', []), 'not a key');
+  assert.equal(translate(table, 'hu', MACOS, 'Quit MacVPN', []), table['Quit MacVPN'].hu);
+  assert.equal(translate(table, 'en', MACOS, 'Quit MacVPN', []), 'Quit MacVPN');
+  assert.equal(translate(table, 'hu', MACOS, '%@ · Missing tool', ['OpenVPN']), `OpenVPN · ${table['%@ · Missing tool'].hu.slice(5)}`);
+  assert.equal(translate(table, 'hu', MACOS, 'not a key', []), 'not a key');
+});
+
+const WINDOWS: Platform = { os: 'windows', product: 'WinVPN' };
+
+/// The macOS wording is the 1.4.0 text for every `app` key (the frozen baseline of Task 1).
+test('macOS texts equal the 1.4.0 baseline', () => {
+  const baseline: Record<string, { en: string; hu: string }> = JSON.parse(
+    readFileSync(new URL('scripts/bundle-baseline/1.4.0/l10n-macos.json', root), 'utf8'),
+  );
+  let checked = 0;
+  for (const [key, texts] of Object.entries(baseline)) {
+    if (table[key]?.scope !== 'app') continue;
+    checked += 1;
+    assert.equal(translate(table, 'en', MACOS, key, []), texts.en, key);
+    assert.equal(translate(table, 'hu', MACOS, key, []), texts.hu, key);
+  }
+  assert.ok(checked > 500, `${checked}`);
+});
+
+test('a windows variant is used on Windows in both languages', () => {
+  const key = 'Enter the master password. Its key is then kept in the macOS Keychain, and MacVPN opens without asking.';
+  assert.equal(
+    translate(table, 'en', WINDOWS, key, []),
+    'Enter the master password. Its key is then kept in the Windows Credential Manager, and WinVPN opens without asking.',
+  );
+  assert.equal(
+    translate(table, 'hu', WINDOWS, key, []),
+    'Add meg a mesterjelszót. A széf kulcsa ezután a Windows Hitelesítőadat-kezelőjében marad, és a WinVPN kérdés nélkül megnyílik.',
+  );
+  assert.equal(translate(table, 'hu', WINDOWS, 'On this Mac', []), 'Ezen a számítógépen');
+  assert.equal(translate(table, 'en', WINDOWS, 'Option-click a switch: debug mode', []), 'Alt-click a switch: debug mode');
+  // Linux has no variant yet: the base text.
+  assert.equal(translate(table, 'en', { os: 'linux', product: 'MacVPN' }, 'On this Mac', []), 'On this Mac');
+});
+
+test('without a variant the product name is replaced', () => {
+  assert.equal(translate(table, 'en', WINDOWS, 'Quit MacVPN', []), 'Quit WinVPN');
+  assert.equal(translate(table, 'hu', WINDOWS, 'MacVPN is locked', []), 'A WinVPN zárolva van');
+  // Arguments are not rewritten.
+  assert.equal(translate(table, 'en', WINDOWS, '%@ (personal)', ['MacVPN']), 'MacVPN (personal)');
+});
+
+test('a macOS-only text is never substituted', () => {
+  const key = 'MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.';
+  assert.deepEqual(table[key].only, ['macos']);
+  assert.equal(translate(table, 'en', WINDOWS, key, []), key);
+  assert.equal(translate(table, 'hu', WINDOWS, key, []), table[key].hu);
+});
+
+test('the platform comes from the get_platform reply', () => {
+  assert.deepEqual(platformOf({ os: 'macos', productName: 'MacVPN' }), MACOS);
+  const windows = platformOf({ os: 'windows', productName: 'WinVPN' });
+  assert.deepEqual(windows, WINDOWS);
+  assert.equal(translate(table, 'en', windows, 'Quit MacVPN', []), 'Quit WinVPN');
+  assert.deepEqual(platformOf({ os: 'linux', productName: 'LinVPN' }), { os: 'linux', product: 'LinVPN' });
+});
+
+test('an unknown or malformed get_platform reply keeps macOS', () => {
+  for (const reply of [
+    { os: 'beos', productName: 'WinVPN' },
+    { os: 'Windows', productName: 'WinVPN' },
+    { os: 'windows' },
+    { os: 'windows', productName: '' },
+    { os: 'windows', productName: 7 },
+    { product: 'WinVPN' },
+    'windows',
+    null,
+    undefined,
+  ]) {
+    assert.deepEqual(platformOf(reply), MACOS, JSON.stringify(reply));
+  }
+  // A fresh copy: changing it never changes the default.
+  assert.notEqual(platformOf(null), MACOS);
 });
 
 test('uptime', () => {

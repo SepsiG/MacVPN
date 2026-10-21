@@ -2,14 +2,15 @@
 
 mod common;
 
+#[cfg(unix)]
 use common::{TempDir, mode};
-use macvpn_core::catalog::admin_file::{
-    AdminKeyFileError, MAX_ADMIN_KEY_FILE_BYTES, export_admin_key, import_admin_key, read_admin_key_file,
-    write_admin_key_file,
-};
+use macvpn_core::catalog::admin_file::{AdminKeyFileError, export_admin_key, import_admin_key};
+#[cfg(unix)]
+use macvpn_core::catalog::admin_file::{MAX_ADMIN_KEY_FILE_BYTES, read_admin_key_file, write_admin_key_file};
 use macvpn_core::catalog::keys::AdminKey;
 use macvpn_core::date::Date;
 use macvpn_core::vault::{AdminKeyRole, FixedEntropy, KdfParams};
+#[cfg(unix)]
 use std::fs;
 
 const PASSWORD: &str = "offline backup password";
@@ -80,6 +81,7 @@ fn a_short_password_is_refused() {
     assert!(matches!(e, AdminKeyFileError::WeakPassword(_)));
 }
 
+#[cfg(unix)]
 #[test]
 fn the_file_is_written_private_and_read_with_the_backup_rules() {
     let tmp = TempDir::new();

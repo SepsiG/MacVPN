@@ -11,7 +11,6 @@
 use macvpn_app_core::notify::{PromptChanges, prompt_id_of_label, prompt_window_label};
 use macvpn_app_core::prompt::{PromptView, parse_answer};
 use macvpn_core::mfa::{AuthPromptResult, WebAuthURL};
-use macvpn_platform_mac::command::{CommandRunner, ProcessCommandRunner, RunnerTimeouts};
 use std::sync::{Arc, PoisonError};
 use std::time::Instant;
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder, Window, WindowEvent};
@@ -53,8 +52,8 @@ pub async fn prompt_ready(window: Window, state: Shared<'_>, id: u64) -> Result<
     if state.broker.mark_loaded(id, Instant::now()) { Ok(()) } else { Err("no such prompt".into()) }
 }
 
-/// `/usr/bin/open <https URL>` (validated again: https only, strict ASCII, so it cannot look like an option).
-/// The sandbox only logs it.
+/// The default browser (macOS: `/usr/bin/open <https URL>`), validated again (https only, strict ASCII, so it
+/// cannot look like an option). The sandbox only logs it.
 fn open_web_auth_url(url: &str, sandbox: bool) -> Result<(), String> {
     if WebAuthURL::validate(url).as_deref() != Some(url) {
         return Err("refused URL".into());
@@ -63,10 +62,7 @@ fn open_web_auth_url(url: &str, sandbox: bool) -> Result<(), String> {
         eprintln!("MacVPN (sandbox): web sign-in not opened: {}", WebAuthURL::display_host(url));
         return Ok(());
     }
-    let result = ProcessCommandRunner::new(RunnerTimeouts::QUICK)
-        .run("/usr/bin/open", &[url.to_string()], None)
-        .map_err(|e| e.to_string())?;
-    if result.exit_code == 0 { Ok(()) } else { Err(result.stderr.trim().to_string()) }
+    crate::platform::get().shell().open_url(url).map_err(String::from)
 }
 
 /// Opens a window for each new prompt and closes the windows of the ended ones (called by the view-model
@@ -111,8 +107,8 @@ fn open_window(app: &AppHandle, state: &AppState, prompt: &PromptView) -> Result
     let id = prompt.id;
     window
         .run_on_main_thread(move || {
-            if let Ok(ns_window) = target.ns_window() {
-                macvpn_platform_mac::app_hooks::order_front_regardless(ns_window);
+            if let Some(native) = crate::platform::native_window(&target) {
+                crate::platform::get().windows().order_front_regardless(native);
                 broker.mark_shown(id, Instant::now());
             }
         })

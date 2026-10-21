@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use macvpn_app_core::connections::ConnectionsModel;
-use macvpn_app_core::deps::{SecretField, SecretReader, SystemService};
+use macvpn_app_core::deps::{SecretField, SecretReader, SystemVpn};
 use macvpn_app_core::editor::EditorDeps;
 use macvpn_app_core::migration::{LegacyKeychain, LegacyRead};
 use macvpn_app_core::setup::*;
@@ -112,14 +112,14 @@ fn brew_run_output() {
 #[derive(Default)]
 struct Recorder {
     calls: RefCell<Vec<&'static str>>,
-    root_error: Option<String>,
+    helper_error: Option<String>,
     login_item_error: bool,
 }
 
 impl UninstallSystem for Recorder {
-    fn uninstall_root(&self) -> Result<(), String> {
-        self.calls.borrow_mut().push("root");
-        self.root_error.clone().map_or(Ok(()), Err)
+    fn uninstall_helper(&self) -> Result<(), String> {
+        self.calls.borrow_mut().push("helper");
+        self.helper_error.clone().map_or(Ok(()), Err)
     }
     fn stop_polling(&self) {
         self.calls.borrow_mut().push("stopPolling");
@@ -128,8 +128,8 @@ impl UninstallSystem for Recorder {
         self.calls.borrow_mut().push("loginItem");
         if self.login_item_error { Err("no".into()) } else { Ok(()) }
     }
-    fn remove_launch_agent(&self) -> Result<(), String> {
-        self.calls.borrow_mut().push("launchAgent");
+    fn remove_stale_login_entries(&self) -> Result<(), String> {
+        self.calls.borrow_mut().push("staleLoginEntries");
         Ok(())
     }
     fn remove_user_files(&self) {
@@ -178,7 +178,7 @@ fn setup() -> Setup {
     native.native_service_name = Some("Home".into());
     fx.store.save(&native, None).unwrap();
     fx.secrets.set("pw", &native.id, SecretField::Password);
-    fx.native.set_list(Ok(vec![SystemService::new("SVC-1", "Home", "L2TP", "Connected")]));
+    fx.native.set_list(Ok(vec![SystemVpn::new("SVC-1", "Home", "L2TP", "Connected")]));
     let manager = fx.manager();
     manager.refresh();
     let model = ConnectionsModel::new(EditorDeps {
@@ -186,17 +186,18 @@ fn setup() -> Setup {
         store: fx.store.clone(),
         secrets: fx.secrets.clone(),
         secret_writer: fx.secrets.clone(),
-        profiles: Arc::new(MockProfiles::default()),
+        profiles: Arc::new(MobileconfigProfiles::default()),
         clock: clock_at(0.0),
     });
     Setup { fx, manager, model, native }
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failed_root_uninstall_stops_everything() {
     let s = setup();
     let (key_store, old) = stores();
-    let system = Recorder { root_error: Some("Uninstall cancelled".into()), ..Default::default() };
+    let system = Recorder { helper_error: Some("Uninstall cancelled".into()), ..Default::default() };
     let failure = uninstall(
         &s.manager,
         &s.model,
@@ -207,13 +208,14 @@ fn a_failed_root_uninstall_stops_everything() {
     )
     .unwrap_err();
     assert_eq!((failure.title.as_str(), failure.message.as_str()), ("Uninstall failed", "Uninstall cancelled"));
-    assert_eq!(*system.calls.borrow(), ["root"]);
+    assert_eq!(*system.calls.borrow(), ["helper"]);
     assert!(s.fx.native.stops().is_empty());
     assert_eq!(s.fx.secrets.get(&s.native.id, SecretField::Password).as_deref(), Some("pw"));
     assert!(key_store.exists().unwrap() && old.items().len() == 2);
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn uninstall_order_and_final_message() {
     let s = setup();
     assert!(s.manager.state(&macvpn_core::models::uuid_string(&s.native.id)).is_active());
@@ -228,7 +230,7 @@ fn uninstall_order_and_final_message() {
         UninstallChoice { remove_user_data: false },
     )
     .unwrap();
-    assert_eq!(*system.calls.borrow(), ["root", "stopPolling", "loginItem", "launchAgent"]);
+    assert_eq!(*system.calls.borrow(), ["helper", "stopPolling", "loginItem", "staleLoginEntries"]);
     assert_eq!(s.fx.native.stops(), ["SVC-1"], "the active native connection is disconnected");
     assert_eq!(s.fx.secrets.get(&s.native.id, SecretField::Password).as_deref(), Some("pw"), "user data kept");
     assert!(key_store.exists().unwrap() && old.items().len() == 2, "the keys are kept too");
@@ -239,6 +241,7 @@ fn uninstall_order_and_final_message() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn uninstall_with_user_data_and_a_login_item_left() {
     let s = setup();
     let (key_store, old) = stores();
@@ -252,7 +255,7 @@ fn uninstall_with_user_data_and_a_login_item_left() {
         UninstallChoice { remove_user_data: true },
     )
     .unwrap();
-    assert_eq!(*system.calls.borrow(), ["root", "stopPolling", "loginItem", "launchAgent", "userFiles"]);
+    assert_eq!(*system.calls.borrow(), ["helper", "stopPolling", "loginItem", "staleLoginEntries", "userFiles"]);
     assert_eq!(s.fx.secrets.count(&s.native.id), 0);
     // The vault key (`local.macvpn.vault`) and every item of the old service (also in the legacy read-only mode)
     // go with the vault file: no orphaned key is left.

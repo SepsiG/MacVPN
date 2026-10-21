@@ -126,6 +126,7 @@ fn json(p: &CatalogPayload) -> String {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_selected_folder_brings_its_subtree_and_a_loose_connection_lands_at_the_root() {
     let f = fixture();
     let built = build(&f.vault, &select(&[f.offices], &[f.loose]));
@@ -158,6 +159,7 @@ fn a_selected_folder_brings_its_subtree_and_a_loose_connection_lands_at_the_root
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn secrets_are_offered_but_included_only_when_ticked() {
     let f = fixture();
     let mut sel = select(&[], &[f.office, f.loose]);
@@ -204,6 +206,7 @@ fn record(sel: &PublishSelection, built: &macvpn_core::catalog::publish::BuiltPa
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn slots_carry_the_credentials_id_and_name_never_its_values() {
     let f = fixture();
     let mut sel = select(&[f.offices], &[f.loose]);
@@ -233,6 +236,7 @@ fn slots_carry_the_credentials_id_and_name_never_its_values() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn refusals_are_listed_and_block_the_build() {
     let f = fixture();
     let mut vault = f.vault;
@@ -261,6 +265,7 @@ fn refusals_are_listed_and_block_the_build() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_native_account_is_listed_and_always_stripped() {
     let f = fixture();
     let mut vault = f.vault;
@@ -281,6 +286,7 @@ fn a_native_account_is_listed_and_always_stripped() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn inline_key_material_needs_an_explicit_tick_each() {
     let f = fixture();
     let mut vault = f.vault;
@@ -324,6 +330,7 @@ fn inline_key_material_needs_an_explicit_tick_each() {
 const SSTP: &str = "server=vpn.example.com\nport=443\nuser=alice.admin\ncert=system\nroute_all=yes\npeer_dns=yes\n";
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_sstp_user_goes_with_a_slot_or_needs_a_tick() {
     let f = fixture();
     let mut vault = f.vault;
@@ -354,6 +361,7 @@ fn an_sstp_user_goes_with_a_slot_or_needs_a_tick() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_vpns_and_catalog_connections_cannot_be_selected() {
     let f = fixture();
     let mut vault = f.vault;
@@ -421,6 +429,7 @@ fn system_vpns_and_catalog_connections_cannot_be_selected() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_empty_selection_is_refused_and_a_deleted_connection_is_dropped() {
     let f = fixture();
     let mut vault = f.vault;
@@ -431,6 +440,7 @@ fn an_empty_selection_is_refused_and_a_deleted_connection_is_dropped() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn changed_since_publish_marks_what_the_catalog_would_carry_differently() {
     let f = fixture();
     let mut vault = f.vault;

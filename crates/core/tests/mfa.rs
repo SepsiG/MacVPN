@@ -4,6 +4,8 @@ mod common;
 
 use common::*;
 use macvpn_core::date::Date;
+#[cfg(unix)]
+use macvpn_core::fsx::FileOwner;
 use macvpn_core::mfa::*;
 use macvpn_core::models::{OTPSeparator, Secrets, VPNKind, parse_uuid};
 use macvpn_core::native::{self, NativeKind};
@@ -260,11 +262,15 @@ fn auth_ui_state_parse() {
     assert_eq!(AuthUIState::parse(&[0x20; 9000]), None);
     assert_eq!(AuthUIState::parse(b"not json"), None);
     assert_eq!(
-        AuthUIState::path(&parse_uuid("11111111-2222-3333-4444-555555555555").unwrap()),
-        "/var/run/macvpn-ui/11111111-2222-3333-4444-555555555555.json"
+        AuthUIState::path(
+            std::path::Path::new("/var/run/macvpn-ui"),
+            &parse_uuid("11111111-2222-3333-4444-555555555555").unwrap()
+        ),
+        std::path::Path::new("/var/run/macvpn-ui/11111111-2222-3333-4444-555555555555.json")
     );
 }
 
+#[cfg(unix)]
 #[test]
 fn auth_ui_state_reader_rejects_symlink() {
     use std::os::unix::fs::MetadataExt;
@@ -273,12 +279,13 @@ fn auth_ui_state_reader_rejects_symlink() {
     let file = tmp.path().join("a.json");
     std::fs::write(&file, AuthUIState::new(1, AuthUIStateKind::Pending).encoded()).unwrap();
     let uid = std::fs::metadata(&file).unwrap().uid();
-    assert_eq!(AuthUIState::read(&file, uid).map(|s| s.state), Some(AuthUIStateKind::Pending));
-    assert_eq!(AuthUIState::read(&file, uid + 1), None, "another owner");
+    let (owner, other) = (FileOwner::from_uid(uid), FileOwner::from_uid(uid + 1));
+    assert_eq!(AuthUIState::read(&file, &owner).map(|s| s.state), Some(AuthUIStateKind::Pending));
+    assert_eq!(AuthUIState::read(&file, &other), None, "another owner");
     let link = tmp.path().join("b.json");
     std::os::unix::fs::symlink(&file, &link).unwrap();
-    assert_eq!(AuthUIState::read(&link, uid), None);
-    assert_eq!(AuthUIState::read(&tmp.path().join("missing.json"), uid), None);
+    assert_eq!(AuthUIState::read(&link, &owner), None);
+    assert_eq!(AuthUIState::read(&tmp.path().join("missing.json"), &owner), None);
 }
 
 #[test]

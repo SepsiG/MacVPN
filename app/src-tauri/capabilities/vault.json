@@ -1,6 +1,6 @@
 {
   "identifier": "vault",
-  "description": "The vault windows (vault-create, vault-unlock, vault-password, vault-recovery; local content only): the view model, listening to events, and the vault windows' commands (each checks the calling window's label). Nothing else.",
+  "description": "The vault windows (vault-create, vault-unlock, vault-password, vault-recovery; local content only): the view model, the platform (its texts), listening to events, and the vault windows' commands (each checks the calling window's label). Nothing else.",
   "windows": [
     "vault-create",
     "vault-unlock",
@@ -11,6 +11,7 @@
     "core:event:allow-listen",
     "core:event:allow-unlisten",
     "allow-get-view-model",
+    "allow-get-platform",
     "allow-fit-window",
     "allow-vault-ready",
     "allow-vault-setup-step",

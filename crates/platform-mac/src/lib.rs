@@ -6,7 +6,13 @@
 //! `unsafe` code is confined to the small FFI modules `sys`, `control_socket`, `cf`, `keychain_ffi`, `sc_ffi`, `sc_watch`,
 //! `preferences`, `smappservice_ffi`, `dialogs`, `notifications`, `app_hooks`, `window_fit` and `window_shape`, each with an audit note and a `SAFETY` comment
 //! per block.
+//!
+//! [`api::MacPlatform`] implements `macvpn-platform-api`'s [`Platform`](macvpn_platform_api::Platform) over these
+//! modules. The whole crate is macOS-only: on any other target it is empty.
 
+#![cfg(target_os = "macos")]
+
+pub mod api;
 pub mod app_hooks;
 pub mod brew;
 pub mod catalog_http;

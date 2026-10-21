@@ -93,8 +93,8 @@ fn open_window(app: &AppHandle, state: &AppState, pairing: &PairingView) -> Resu
     let id = pairing.id;
     window
         .run_on_main_thread(move || {
-            if let Ok(ns_window) = target.ns_window() {
-                macvpn_platform_mac::app_hooks::order_front_regardless(ns_window);
+            if let Some(native) = crate::platform::native_window(&target) {
+                crate::platform::get().windows().order_front_regardless(native);
                 broker.mark_shown(id, Instant::now());
             }
         })

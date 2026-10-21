@@ -24,14 +24,14 @@
 //! here logs or formats key material. The log has events only: `created`, `unlocked (password|recovery key|auto)`,
 //! `locked`, `wrong password (attempt n)`, and key-store status codes.
 
+use macvpn_core::fsx;
 use macvpn_core::vault::{
     Dek, Entropy, KEYS_FILE, KdfParams, KeyError, KeyFile, KeyStore, RecoveryKey, VAULT_FILE, Vault, VaultError,
     check_password_rules,
 };
 use std::fmt;
-use std::fs::{self, DirBuilder};
+use std::fs;
 use std::io;
-use std::os::unix::fs::DirBuilderExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -186,7 +186,7 @@ fn remove_vault_files(dir: &Path) {
 }
 
 impl VaultLifecycle {
-    /// `dir` is the app-data directory (`~/Library/Application Support/MacVPN`); `kdf` the parameters for new
+    /// `dir` is the app's data directory (`Product::data_dir`); `kdf` the parameters for new
     /// wraps (`KdfParams::DEFAULT` in the app, raised to at least that by core anyway).
     pub fn new(dir: PathBuf, keystore: Arc<dyn KeyStore>, entropy: Arc<dyn Entropy>, kdf: KdfParams) -> Self {
         let logger: Logger = Arc::new(|line: &str| eprintln!("MacVPN: Vault: {line}"));
@@ -332,7 +332,7 @@ impl VaultLifecycle {
         if self.exists() {
             return Err(VaultError::Io(io::Error::new(io::ErrorKind::AlreadyExists, "a vault already exists")));
         }
-        DirBuilder::new().recursive(true).mode(0o700).create(&self.dir)?;
+        fsx::create_missing_private_dirs(&self.dir)?;
         let dek = Dek::generate(self.entropy.as_ref())?;
         let key = RecoveryKey::generate(self.entropy.as_ref())?;
         self.kdf_runs.fetch_add(2, Ordering::Relaxed);
@@ -705,6 +705,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn discard_removes_only_a_vault_still_fresh_for_the_migration() {
         let tmp = std::env::temp_dir().join(format!("macvpn-app-core-unit-{}", uuid::Uuid::new_v4()));
         let dir = tmp.join("MacVPN");

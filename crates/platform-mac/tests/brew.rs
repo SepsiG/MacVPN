@@ -1,4 +1,5 @@
 //! Port of `BrewBootstrapTests.swift`, plus the brew install runner (the app's `BrewInstaller`).
+#![cfg(target_os = "macos")]
 
 mod common;
 

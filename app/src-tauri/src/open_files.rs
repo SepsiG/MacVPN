@@ -245,7 +245,7 @@ fn run_batch(app: &AppHandle, state: &Arc<AppState>, batch: Batch) {
     // import directly. The mark is only read.
     let imports = macvpn_app_core::open_files::confirm_downloaded(
         batch.imports,
-        macvpn_platform_mac::quarantine::is_quarantined,
+        |path| crate::platform::get().download_mark().is_marked(path),
         |title, message| {
             state.connections.questions().ask(title, message, l10n::tr("Import", &[]), l10n::tr("Cancel", &[]))
         },

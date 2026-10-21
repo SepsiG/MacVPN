@@ -5,8 +5,8 @@
 
 mod common;
 
-use common::{MockNative, MockProfiles, MockRoot, TempDir, clock_at};
-use macvpn_app_core::deps::{SecretField, SecretReader, SecretWriter, SystemService};
+use common::{MobileconfigProfiles, MockHelper, MockNative, TempDir, clock_at};
+use macvpn_app_core::deps::{SecretField, SecretReader, SecretWriter, SystemVpn};
 use macvpn_app_core::editor::{self, EditorDeps};
 use macvpn_app_core::shared_credentials::{DeleteCredentialError, ImportLink, SharedCredentials, prompt_credential};
 use macvpn_app_core::vault::VaultLifecycle;
@@ -30,7 +30,7 @@ struct Fixture {
     vault: Arc<VaultLifecycle>,
     log: Arc<Mutex<Vec<String>>>,
     store: Arc<ConnectionStore>,
-    root: Arc<MockRoot>,
+    helper: Arc<MockHelper>,
     native: Arc<MockNative>,
     secrets: Arc<VaultSecrets>,
     creds: SharedCredentials,
@@ -52,7 +52,7 @@ impl Fixture {
         vault.create(Zeroizing::new("correct horse battery".into()), false).unwrap();
         Fixture {
             store: Arc::new(ConnectionStore::new(tmp.path().join("connections"))),
-            root: Arc::new(MockRoot::default()),
+            helper: Arc::new(MockHelper::default()),
             native: Arc::new(MockNative::default()),
             secrets: Arc::new(VaultSecrets::new(vault.clone())),
             creds: SharedCredentials::new(vault.clone()),
@@ -63,7 +63,8 @@ impl Fixture {
     }
 
     fn manager(&self) -> Arc<ConnectionManager> {
-        let deps = Dependencies::new(self.store.clone(), self.secrets.clone(), self.root.clone(), self.native.clone());
+        let deps =
+            Dependencies::new(self.store.clone(), self.secrets.clone(), self.helper.clone(), self.native.clone());
         let m = ConnectionManager::new(deps);
         m.reload();
         m
@@ -77,11 +78,11 @@ impl Fixture {
 
     /// The stdin of the last `mvpn up` of `c`.
     fn connect_stdin(&self, c: &Connection) -> String {
-        self.root.respond("status", Ok("[]"));
+        self.helper.respond("status", Ok("[]"));
         let m = self.manager();
         m.connect(c, false);
         let key = uuid_string(&c.id);
-        let up = self.root.calls().into_iter().rev().find(|call| call.line.contains(&key)).expect("up call");
+        let up = self.helper.calls().into_iter().rev().find(|call| call.line.contains(&key)).expect("up call");
         up.stdin.unwrap_or_default()
     }
 }
@@ -91,6 +92,7 @@ fn pw(s: &str) -> Option<Zeroizing<String>> {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_linked_connection_connects_with_the_credentials_username_and_password() {
     let f = Fixture::new();
     let c = f.openvpn("Office");
@@ -114,14 +116,15 @@ fn a_linked_connection_connects_with_the_credentials_username_and_password() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_linked_native_connection_passes_the_credential_as_auth_name_and_keeps_its_psk() {
     let f = Fixture::new();
     let mut c = Connection::new("Office L2TP", VPNKind::L2tp);
     c.native_service_name = Some("Office L2TP".into());
     c.native = Some(NativeSettings { server: "vpn.example.com".into(), account: "bob".into(), ..Default::default() });
     f.store.save(&c, None).unwrap();
-    f.root.respond("status", Ok("[]"));
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
+    f.helper.respond("status", Ok("[]"));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
     f.native.set_address(SVC, Some("vpn.example.com"));
     f.secrets.set("own-psk", &c.id, SecretField::Psk);
     let cred = f.creds.create("Office L2TP user", "alice", pw("shared")).unwrap();
@@ -136,6 +139,7 @@ fn a_linked_native_connection_passes_the_credential_as_auth_name_and_keeps_its_p
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_credential_without_a_password_is_asked_for_and_saved_into_the_credential() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -172,6 +176,7 @@ fn a_credential_without_a_password_is_asked_for_and_saved_into_the_credential() 
 /// The manager end to end: the prompt for a linked credential without a password names the credential, its
 /// "Save" goes into the credential (through `save_prompted`), and the second linked connection asks nothing.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_prompt_names_the_credential_and_its_save_updates_it() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -180,7 +185,7 @@ fn the_prompt_names_the_credential_and_its_save_updates_it() {
     for c in [&one, &two] {
         f.creds.link(&uuid_string(&c.id), Some(cred)).unwrap();
     }
-    let mut deps = Dependencies::new(f.store.clone(), f.secrets.clone(), f.root.clone(), f.native.clone());
+    let mut deps = Dependencies::new(f.store.clone(), f.secrets.clone(), f.helper.clone(), f.native.clone());
     deps.secret_writer = Some(f.secrets.clone());
     let m = ConnectionManager::new(deps);
     m.reload();
@@ -201,7 +206,7 @@ fn the_prompt_names_the_credential_and_its_save_updates_it() {
             uuid_string(&c.id)
         )
     };
-    f.root.respond("status", Ok(&connected(&one)));
+    f.helper.respond("status", Ok(&connected(&one)));
     m.connect(&one, false);
     m.flush_saves();
     {
@@ -215,14 +220,14 @@ fn the_prompt_names_the_credential_and_its_save_updates_it() {
     }
     assert!(f.creds.list().unwrap()[0].credential.has_password, "saved into the credential");
     assert_eq!(f.secrets.secrets(&two.id).password.as_deref(), Some("typed"));
-    f.root.respond("status", Ok(&connected(&two)));
+    f.helper.respond("status", Ok(&connected(&two)));
     m.connect(&two, false);
     assert_eq!(prompts.lock().unwrap().len(), 1, "the second linked connection asks nothing");
 
     // A connection with its own fields: no credential named.
     let own = f.openvpn("Own");
     m.reload();
-    f.root.respond("status", Ok(&connected(&own)));
+    f.helper.respond("status", Ok(&connected(&own)));
     m.connect(&own, false);
     m.flush_saves();
     let prompts = prompts.lock().unwrap();
@@ -231,6 +236,7 @@ fn the_prompt_names_the_credential_and_its_save_updates_it() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_while_linked_lists_the_items_and_copy_into_connections_unlinks_them() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -261,6 +267,7 @@ fn delete_while_linked_lists_the_items_and_copy_into_connections_unlinks_them() 
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_from_connection_links_the_chosen_matches() {
     let f = Fixture::new();
     let source = f.openvpn("Source");
@@ -282,6 +289,7 @@ fn create_from_connection_links_the_chosen_matches() {
 /// Review M3: an imported file never links itself to a shared credential. A matching name only asks, naming the
 /// server the file would send the shared password to; the default is the connection's own fields.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_never_links_by_itself_and_asks_with_the_remote_host() {
     let f = Fixture::new();
     let cred = f.creds.create("Office AD", "alice", pw("pw")).unwrap();
@@ -322,6 +330,7 @@ fn import_never_links_by_itself_and_asks_with_the_remote_host() {
 /// Review M4: an editor's write (`SecretWriter::set`) to a linked connection never changes the shared credential
 /// the other connections use; only the credential prompt's `save_prompted` does.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_editor_write_to_a_linked_item_is_refused_and_logged_without_the_value() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -344,6 +353,7 @@ fn an_editor_write_to_a_linked_item_is_refused_and_logged_without_the_value() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -357,7 +367,7 @@ fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
         store: f.store.clone(),
         secrets: f.secrets.clone(),
         secret_writer: f.secrets.clone(),
-        profiles: Arc::new(MockProfiles::default()),
+        profiles: Arc::new(MobileconfigProfiles::default()),
         clock: clock_at(1_000_000.0),
     };
     let config = "client\nremote vpn.example.com 1194\nauth-user-pass\n";
@@ -375,7 +385,7 @@ fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
 
     // A system VPN linked to the credential: a typed password is refused, a PSK is its own.
     f.creds.link(SVC, Some(cred)).unwrap();
-    let service = SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected");
+    let service = SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected");
     let error = editor::save_system_secrets(&deps, &service, Some("psk"), Some("typed"), OTPSetting::default());
     assert!(error.is_some_and(|e| e.contains("Office AD")));
     assert_eq!(editor::save_system_secrets(&deps, &service, Some("psk"), None, OTPSetting::default()), None);
@@ -406,6 +416,7 @@ fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn names_are_unique() {
     let f = Fixture::new();
     f.creds.create("Office AD", "alice", None).unwrap();
@@ -419,6 +430,7 @@ fn names_are_unique() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn locked_reads_nothing_and_writes_fail_with_a_log_line_only() {
     let f = Fixture::new();
     let c = f.openvpn("Office");
@@ -435,6 +447,7 @@ fn locked_reads_nothing_and_writes_fail_with_a_log_line_only() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn forgetting_an_items_secrets_also_unlinks_it() {
     let f = Fixture::new();
     let c = f.openvpn("Office");

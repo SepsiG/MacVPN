@@ -142,9 +142,11 @@ pub struct Release {
     pub page_url: Option<String>,
     /// GitHub's `published_at` (`None` if missing or unparsable).
     pub published_at: Option<Date>,
-    pub dmg: ReleaseAsset,
+    /// The installer package: the product's asset (`Product::update_asset`), e.g. `MacVPN-<version>.dmg`.
+    pub package: ReleaseAsset,
+    /// `<package>.sha256`.
     pub checksum: ReleaseAsset,
-    /// `MacVPN-<version>.dmg.sig`: the maintainer's offline Ed25519 signature. `None`: not signed yet, neither
+    /// `<package>.sig`: the maintainer's offline Ed25519 signature. `None`: not signed yet, neither
     /// offered nor installed.
     pub signature: Option<ReleaseAsset>,
 }
@@ -355,19 +357,30 @@ impl UpdateChecker {
         format!("https://api.github.com/repositories/{repo_id}/releases/latest")
     }
 
-    /// The `releases/latest` answer: HTTP 200 parsed, anything else an error.
-    pub fn release_from_response(status: i64, data: &[u8], repo: &str) -> Result<Release, UpdateError> {
+    /// The `releases/latest` answer: HTTP 200 parsed, anything else an error. `asset_for` as in
+    /// [`UpdateChecker::parse_release`].
+    pub fn release_from_response(
+        status: i64,
+        data: &[u8],
+        repo: &str,
+        asset_for: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Release, UpdateError> {
         if status != 200 {
             return Err(UpdateError::Http(status));
         }
-        Self::parse_release(data, repo)
+        Self::parse_release(data, repo, asset_for)
     }
 
-    /// GitHub's `releases/latest` JSON. The DMG is `MacVPN-<version>.dmg`, next to it `MacVPN-<version>.dmg.sha256`
-    /// and (when signed) `MacVPN-<version>.dmg.sig`. A missing `.sig` is not an error here (`signature` is
-    /// `None`, `offer` does not offer it), but if present the same path check applies. Assets may only come from
-    /// `https://github.com/<repo>/releases/download/<tag>/<name>`.
-    pub fn parse_release(data: &[u8], repo: &str) -> Result<Release, UpdateError> {
+    /// GitHub's `releases/latest` JSON. `asset_for(version)` names the product's package for this machine
+    /// (`Product::update_asset`, e.g. `MacVPN-<version>.dmg`; `None`: no package for this machine, an error); next
+    /// to it `<package>.sha256` and (when signed) `<package>.sig`. A missing `.sig` is not an error here
+    /// (`signature` is `None`, `offer` does not offer it), but if present the same path check applies. Assets may
+    /// only come from `https://github.com/<repo>/releases/download/<tag>/<name>`.
+    pub fn parse_release(
+        data: &[u8],
+        repo: &str,
+        asset_for: &dyn Fn(&str) -> Option<String>,
+    ) -> Result<Release, UpdateError> {
         let raw = RawRelease::decode(data).ok_or(UpdateError::InvalidResponse)?;
         if raw.draft == Some(true)
             || raw.prerelease == Some(true)
@@ -381,7 +394,7 @@ impl UpdateChecker {
         } else {
             raw.tag_name.clone()
         };
-        let dmg_name = format!("MacVPN-{version}.dmg");
+        let package_name = asset_for(&version).ok_or_else(|| UpdateError::MissingAsset(raw.tag_name.clone()))?;
         let optional_asset = |name: &str| -> Result<Option<ReleaseAsset>, UpdateError> {
             let Some((asset_name, url)) = raw.assets.iter().find(|(n, _)| swift_str::eq(n, name)) else {
                 return Ok(None);
@@ -395,16 +408,16 @@ impl UpdateChecker {
         let page =
             raw.html_url.clone().filter(|u| url::parse(u).is_some() && UpdateURLPolicy::is_release_page(u, repo));
         let published = raw.published_at.as_deref().and_then(Date::parse_iso8601_formatter);
-        let dmg = asset(&dmg_name)?;
-        let checksum = asset(&format!("{dmg_name}.sha256"))?;
-        let signature = optional_asset(&format!("{dmg_name}.sig"))?;
+        let package = asset(&package_name)?;
+        let checksum = asset(&format!("{package_name}.sha256"))?;
+        let signature = optional_asset(&format!("{package_name}.sig"))?;
         Ok(Release {
             tag: raw.tag_name.clone(),
             version,
             notes: raw.body.clone().unwrap_or_default(),
             page_url: page,
             published_at: published,
-            dmg,
+            package,
             checksum,
             signature,
         })
@@ -459,16 +472,21 @@ impl RawRelease {
 pub struct UserGuide;
 
 impl UserGuide {
-    pub const FALLBACK_REPO: &'static str = "SepsiG/MacVPN";
-
     /// The same choice as the app's UI: the first Hungarian or English preferred language, otherwise `en`.
     pub fn language<S: AsRef<str>>(preferred: &[S]) -> &'static str {
         AppLanguage::resolve(preferred).raw_value()
     }
 
-    pub fn url<S: AsRef<str>>(repo: Option<&str>, preferred_languages: &[S]) -> String {
-        let r = repo.filter(|r| UpdateChecker::is_valid_repo(r)).unwrap_or(Self::FALLBACK_REPO);
-        format!("https://github.com/{r}/blob/main/docs/user-guide.{}.md", Self::language(preferred_languages))
+    /// `https://github.com/<repo>/blob/main/docs/<stem>.<language>.md`. `repo` is the bundle's update source;
+    /// missing or invalid, `fallback_repo` (the product's `Product::repo`). `stem`: `Product::user_guide_stem`.
+    pub fn url<S: AsRef<str>>(
+        repo: Option<&str>,
+        fallback_repo: &str,
+        stem: &str,
+        preferred_languages: &[S],
+    ) -> String {
+        let r = repo.filter(|r| UpdateChecker::is_valid_repo(r)).unwrap_or(fallback_repo);
+        format!("https://github.com/{r}/blob/main/docs/{stem}.{}.md", Self::language(preferred_languages))
     }
 }
 

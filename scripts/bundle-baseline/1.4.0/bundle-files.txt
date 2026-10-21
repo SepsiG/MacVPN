@@ -1,0 +1,7 @@
+./Contents/Info.plist 4054
+./Contents/MacOS/MacVPN 54427712
+./Contents/Resources/AppIcon.icns 914518
+./Contents/Resources/THIRD-PARTY-NOTICES.txt 604482
+./Contents/Resources/root/VERSION 2
+./Contents/Resources/root/mvpn 7593568
+./Contents/_CodeSignature/CodeResources 3152

@@ -106,3 +106,139 @@ fn every_core_call_site_has_a_translation() {
     }
     assert!(found >= 50, "{found}");
 }
+
+// Per-OS variants and the product name (platform-neutral refactor, Task 6).
+
+use macvpn_core::TargetOs;
+use macvpn_core::l10n::TextPlatform;
+
+const WINDOWS: TextPlatform = TextPlatform { os: TargetOs::Windows, product: "WinVPN" };
+const LINUX: TextPlatform = TextPlatform { os: TargetOs::Linux, product: "LinVPN" };
+
+/// The macOS texts are byte-identical to 1.4.0 (the frozen baseline of Task 1), in both languages, and no 1.4.0
+/// key is gone. Keys added since are new texts, not changed ones.
+#[test]
+fn macos_texts_equal_the_1_4_0_baseline() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../scripts/bundle-baseline/1.4.0/l10n-macos.json");
+    let baseline: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert!(baseline.len() >= 1114, "{}", baseline.len());
+    assert_eq!(l10n::text_platform(), TextPlatform::MACOS);
+    for (key, texts) in &baseline {
+        assert!(l10n::table().iter().any(|e| &e.key == key), "a 1.4.0 key is gone: {key}");
+        for (language, name) in [(AppLanguage::En, "en"), (AppLanguage::Hu, "hu")] {
+            let expected = texts[name].as_str().unwrap();
+            assert_eq!(l10n::tr_for(TextPlatform::MACOS, language, key, &[]), expected, "{name}: {key}");
+            assert_eq!(l10n::tr_in(language, key, &[]), expected, "{name}: {key}");
+        }
+    }
+}
+
+#[test]
+fn text_platform_defaults_to_macos() {
+    assert_eq!(TextPlatform::MACOS, TextPlatform { os: TargetOs::MacOs, product: "MacVPN" });
+    assert_eq!(l10n::text_platform(), TextPlatform::MACOS);
+}
+
+#[test]
+fn windows_variant_in_both_languages() {
+    let key = "Enter the master password. Its key is then kept in the macOS Keychain, and MacVPN opens without asking.";
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::En, key, &[]),
+        "Enter the master password. Its key is then kept in the Windows Credential Manager, and WinVPN opens without asking."
+    );
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::Hu, key, &[]),
+        "Add meg a mesterjelszót. A széf kulcsa ezután a Windows Hitelesítőadat-kezelőjében marad, és a WinVPN kérdés nélkül megnyílik."
+    );
+    // Linux has no variant yet: the base text, with the product name.
+    assert_eq!(
+        l10n::tr_for(LINUX, AppLanguage::En, key, &[]),
+        "Enter the master password. Its key is then kept in the macOS Keychain, and LinVPN opens without asking."
+    );
+    // A variant with arguments.
+    assert_eq!(
+        l10n::tr_for(
+            WINDOWS,
+            AppLanguage::Hu,
+            "Its %lld connections and folders are removed from this Mac, and paired apps lose access to them.",
+            &[Arg::Int(3)]
+        ),
+        "A(z) 3 kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzájuk a hozzáférést."
+    );
+}
+
+#[test]
+fn product_name_replaced_without_a_variant() {
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::En, "Quit MacVPN", &[]), "Quit WinVPN");
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::En, "Disconnected in MacVPN", &[]), "Disconnected in WinVPN");
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::Hu, "Disconnected in MacVPN", &[]), "Bontva a WinVPN-ben");
+    assert_eq!(
+        l10n::tr_for(TextPlatform::MACOS, AppLanguage::Hu, "Disconnected in MacVPN", &[]),
+        "Bontva a MacVPN-ben"
+    );
+    // Arguments are not rewritten, only the text.
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::En, "%@ not found", &[Arg::Str("MacVPN")]), "MacVPN not found");
+    // A missing key is the base text too.
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::Hu, "No such MacVPN key", &[]), "No such WinVPN key");
+}
+
+#[test]
+fn macos_only_texts_are_never_substituted() {
+    let key =
+        "Launch at login is available only when MacVPN runs from the Applications folder. Drag the app there first.";
+    let entry = l10n::table().into_iter().find(|e| e.key == key).unwrap();
+    assert_eq!(entry.only, vec![TargetOs::MacOs]);
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::En, key, &[]), key);
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::Hu, key, &[]), entry.hu);
+    for e in l10n::table() {
+        if e.only == [TargetOs::MacOs] {
+            for language in AppLanguage::ALL {
+                assert_eq!(
+                    l10n::tr_for(WINDOWS, language, &e.key, &[]),
+                    l10n::tr_for(TextPlatform::MACOS, language, &e.key, &[]),
+                    "{}",
+                    e.key
+                );
+            }
+        }
+    }
+}
+
+/// Specifiers in their written order (kinds and positions), for the variants: a variant must take the same
+/// arguments the same way as its base.
+fn ordered_specifiers(s: &str) -> Vec<String> {
+    let re = Regex::new(r"%([0-9]+\$)?(l{0,2}[dfu]|@)").unwrap();
+    let mut v: Vec<String> = re.captures_iter(s).map(|c| c[0].to_string()).collect();
+    if v.iter().any(|x| x.contains('$')) {
+        v.sort();
+    }
+    v
+}
+
+#[test]
+fn variants_keep_the_format_specifiers() {
+    let mut variants = 0;
+    for e in l10n::table() {
+        for (os, (en, hu)) in &e.variants {
+            variants += 1;
+            assert_ne!(*os, TargetOs::MacOs, "a macOS variant: {}", e.key);
+            assert!(!e.only.contains(os), "only and variants both name {os:?}: {}", e.key);
+            assert!(!en.trim().is_empty() && !hu.trim().is_empty(), "empty variant: {}", e.key);
+            assert_eq!(ordered_specifiers(en), ordered_specifiers(&e.key), "en variant: {}", e.key);
+            assert_eq!(ordered_specifiers(hu), ordered_specifiers(&e.hu), "hu variant: {}", e.key);
+            assert_eq!(specifiers(en), specifiers(hu), "variant: {}", e.key);
+        }
+    }
+    assert!(variants >= 20, "{variants}");
+}
+
+#[test]
+fn not_available_on_this_system_yet() {
+    let key = "Not available on this system yet";
+    let entry = l10n::table().into_iter().find(|e| e.key == key).unwrap();
+    assert_eq!(entry.scope, "platform");
+    assert_eq!(entry.hu, "Ezen a rendszeren még nem érhető el");
+    assert!(entry.only.is_empty() && entry.variants.is_empty());
+}

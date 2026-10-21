@@ -73,7 +73,7 @@ pub const REGISTRY_FILE: &str = macvpn_core::control::registry::FILE_NAME;
 
 /// Where the 1.1 data lives.
 pub struct LegacySources {
-    /// `~/Library/Application Support/MacVPN` (the marker and the cleanup list go here).
+    /// The app's data directory (`Product::data_dir`; the marker and the cleanup list go here).
     pub support_dir: PathBuf,
     pub store: Arc<ConnectionStore>,
     pub keychain: Arc<dyn LegacyKeychain>,

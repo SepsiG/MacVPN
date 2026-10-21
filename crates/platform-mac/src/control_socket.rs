@@ -268,6 +268,12 @@ pub fn same_user(peer_uid: u32) -> bool {
     peer_uid == sys::getuid()
 }
 
+/// The client connected and closed at once: macOS answers a socket option (or a read) on such a socket with
+/// `EINVAL`, `ENOTCONN` or `ECONNRESET`. The control server writes no log line for it.
+pub fn is_already_closed(e: &io::Error) -> bool {
+    matches!(e.raw_os_error(), Some(libc::EINVAL | libc::ENOTCONN | libc::ECONNRESET))
+}
+
 /// 32 bytes from the kernel's CSPRNG ([`sys::getentropy`], the crate's one `getentropy` wrapper).
 pub fn random_32() -> io::Result<[u8; 32]> {
     let mut bytes = [0u8; 32];

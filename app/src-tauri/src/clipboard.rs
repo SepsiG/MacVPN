@@ -1,6 +1,6 @@
 //! Secrets the app puts on the pasteboard: the recovery key (create and new-key windows), a new team key (the
 //! reveal) and a subscription string. They are written here, never by the web view, through
-//! `macvpn_platform_mac::pasteboard` (concealed, transient, this Mac only), and cleared again after a while, at a
+//! the platform's [`SecretClipboard`] (macOS: concealed, transient, this Mac only), and cleared again after a while, at a
 //! vault lock and at quit, but only while the pasteboard still holds that write (anything copied since is left
 //! alone; the pasteboard is never read).
 //!
@@ -8,45 +8,39 @@
 //! clipboard manager running (it must not list it), then Lock Now / Quit (the pasteboard is empty) and copy
 //! something else before the minute is up (it stays).
 
-use macvpn_platform_mac::pasteboard::{self, Written};
+use macvpn_platform_api::{ClipboardMark, PlatformError, SecretClipboard};
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
 /// How long a copied recovery key, team key or subscription string may stay on the pasteboard.
 pub const CLEAR_AFTER: Duration = Duration::from_secs(60);
 
-/// The pasteboard as this module uses it.
-pub trait Board: Send + Sync {
-    fn write_secret(&self, text: &str) -> Result<Written, String>;
-    fn clear_if_unchanged(&self, written: Written) -> bool;
-}
-
-/// The general pasteboard.
+/// The general pasteboard: the platform's secret clipboard.
 pub struct General;
 
-impl Board for General {
-    fn write_secret(&self, text: &str) -> Result<Written, String> {
-        pasteboard::write_secret(text)
+impl SecretClipboard for General {
+    fn write_secret(&self, text: &str) -> Result<ClipboardMark, PlatformError> {
+        crate::platform::get().clipboard().write_secret(text)
     }
 
-    fn clear_if_unchanged(&self, written: Written) -> bool {
-        pasteboard::clear_if_unchanged(written)
+    fn clear_if_unchanged(&self, written: ClipboardMark) -> bool {
+        crate::platform::get().clipboard().clear_if_unchanged(written)
     }
 }
 
 /// The last secret written (only the last one can still be on the pasteboard).
 pub struct Secrets<B> {
     board: B,
-    written: Mutex<Option<Written>>,
+    written: Mutex<Option<ClipboardMark>>,
 }
 
-impl<B: Board> Secrets<B> {
+impl<B: SecretClipboard> Secrets<B> {
     pub const fn new(board: B) -> Self {
         Secrets { board, written: Mutex::new(None) }
     }
 
     /// Puts `text` on the pasteboard; the write to clear later.
-    pub fn copy(&self, text: &str) -> Result<Written, String> {
+    pub fn copy(&self, text: &str) -> Result<ClipboardMark, String> {
         let mut last = self.written.lock().unwrap_or_else(PoisonError::into_inner);
         let written = self.board.write_secret(text)?;
         *last = Some(written);
@@ -54,7 +48,7 @@ impl<B: Board> Secrets<B> {
     }
 
     /// Clears `written` if it is still the last secret and still on the pasteboard (the timer).
-    pub fn expire(&self, written: Written) -> bool {
+    pub fn expire(&self, written: ClipboardMark) -> bool {
         let mut last = self.written.lock().unwrap_or_else(PoisonError::into_inner);
         if *last != Some(written) {
             return false;
@@ -111,12 +105,12 @@ mod tests {
         }
     }
 
-    impl Board for Fake {
-        fn write_secret(&self, text: &str) -> Result<Written, String> {
+    impl SecretClipboard for Fake {
+        fn write_secret(&self, text: &str) -> Result<ClipboardMark, PlatformError> {
             self.user_copies(text);
-            Ok(Written(*self.count.lock().unwrap()))
+            Ok(ClipboardMark(*self.count.lock().unwrap()))
         }
-        fn clear_if_unchanged(&self, written: Written) -> bool {
+        fn clear_if_unchanged(&self, written: ClipboardMark) -> bool {
             let mut count = self.count.lock().unwrap();
             if *count != written.0 {
                 return false;

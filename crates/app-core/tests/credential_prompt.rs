@@ -6,7 +6,7 @@ mod common;
 
 use common::*;
 use macvpn_app_core::ConnectionManager;
-use macvpn_app_core::deps::{SecretField, SecretReader, SystemService};
+use macvpn_app_core::deps::{SecretField, SecretReader, SystemVpn};
 use macvpn_core::credentials::{CredentialAnswer, CredentialField, CredentialPrompt, CredentialValues};
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::mfa::{AuthPromptKind, AuthPromptResult};
@@ -95,10 +95,11 @@ fn openvpn(f: &Fixture, config: &str) -> Connection {
 }
 
 fn up_stdins(f: &Fixture, c: &Connection) -> Vec<String> {
-    f.root.calls().into_iter().filter(|call| call.line == up_line(c.kind, &c.id)).filter_map(|c| c.stdin).collect()
+    f.helper.calls().into_iter().filter(|call| call.line == up_line(c.kind, &c.id)).filter_map(|c| c.stdin).collect()
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn missing_credentials_are_asked_and_saved_after_success() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -106,7 +107,7 @@ fn missing_credentials_are_asked_and_saved_after_success() {
     let m = manager(&f);
     let w = window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "s3cret")], true)]);
     // The first status (right after `up`) still says connecting: nothing is saved yet.
-    f.root.respond("status", Ok(&status_json(&c, "connecting")));
+    f.helper.respond("status", Ok(&status_json(&c, "connecting")));
     m.connect(&c, false);
     assert_eq!(w.fields(), [vec![Username, Password]]);
     let p = &w.prompts()[0];
@@ -116,7 +117,7 @@ fn missing_credentials_are_asked_and_saved_after_success() {
     assert_eq!(up_stdins(&f, &c), ["username=alice\npassword=s3cret\n"]);
     m.flush_saves();
     assert!(f.secrets.writes().is_empty(), "nothing is written before the connection is up");
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.refresh();
     assert!(m.state(&key).is_connected());
     m.flush_saves();
@@ -131,12 +132,13 @@ fn missing_credentials_are_asked_and_saved_after_success() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn without_save_nothing_is_written() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
     let m = manager(&f);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], false)]);
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.connect(&c, false);
     assert!(m.state(&uuid_string(&c.id)).is_connected());
     m.flush_saves();
@@ -146,6 +148,7 @@ fn without_save_nothing_is_written() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_stored_user_name_is_prefilled_and_not_asked() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -159,6 +162,7 @@ fn a_stored_user_name_is_prefilled_and_not_asked() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn everything_stored_means_no_prompt() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -172,6 +176,7 @@ fn everything_stored_means_no_prompt() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn no_handler_connects_with_the_stored_secrets() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -181,6 +186,7 @@ fn no_handler_connects_with_the_stored_secrets() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn cancel_ends_silently() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -199,6 +205,7 @@ fn cancel_ends_silently() {
 /// Lock Now while the credential window is open (review 1.2.0 M2): the prompt is dismissed, and the connect ends
 /// before anything else is asked or the root layer is called, whatever the window answers.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_lock_while_the_credential_prompt_is_open_ends_the_connect() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -226,6 +233,7 @@ fn a_lock_while_the_credential_prompt_is_open_ends_the_connect() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn waiting_for_credentials_while_the_window_is_open() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -242,6 +250,7 @@ fn waiting_for_credentials_while_the_window_is_open() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn credentials_come_before_the_static_challenge() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, &format!("{OVPN}static-challenge \"PIN\" 1\n"));
@@ -261,6 +270,7 @@ fn credentials_come_before_the_static_challenge() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn kinds_without_credentials_never_prompt() {
     let f = Fixture::new(EN);
     let wg = Connection::new("WG", VPNKind::Wireguard);
@@ -278,6 +288,7 @@ fn kinds_without_credentials_never_prompt() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ikev2_eap_and_sstp_ask_their_fields() {
     let f = Fixture::new(EN);
     let ike = Connection::new("IKE", VPNKind::Strongswan);
@@ -297,11 +308,12 @@ fn managed_l2tp(f: &Fixture) -> Connection {
     c.native_service_id = Some(SVC.into());
     c.native = Some(NativeSettings { server: "vpn.example.com".into(), account: "bob".into(), ..Default::default() });
     f.store.save(&c, None).unwrap();
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
     c
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_l2tp_asks_for_the_missing_psk() {
     let f = Fixture::new(EN);
     let c = managed_l2tp(&f);
@@ -315,7 +327,7 @@ fn managed_l2tp_asks_for_the_missing_psk() {
     assert_eq!(options.get("IPSec").and_then(|e| e.get("SharedSecret")).map(String::as_str), Some("shared"));
     m.flush_saves();
     assert!(f.secrets.writes().is_empty());
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Connected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Connected")]));
     m.refresh();
     assert!(m.state(&uuid_string(&c.id)).is_connected());
     m.flush_saves();
@@ -323,6 +335,7 @@ fn managed_l2tp_asks_for_the_missing_psk() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_typed_native_user_name_becomes_the_account() {
     let f = Fixture::new(EN);
     let mut c = managed_l2tp(&f);
@@ -334,7 +347,7 @@ fn a_typed_native_user_name_becomes_the_account() {
     let w = window(&m, vec![Reply::Provide(vec![(Username, "carol")], true)]);
     m.connect(&c, false);
     assert_eq!(w.fields(), [vec![Username]]);
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Connected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Connected")]));
     m.refresh();
     m.flush_saves();
     assert_eq!(f.secrets.get(&c.id, SecretField::Username).as_deref(), Some("carol"));
@@ -346,7 +359,7 @@ fn a_typed_native_user_name_becomes_the_account() {
 #[test]
 fn system_vpns_get_no_prompt() {
     let f = Fixture::new(EN);
-    let s = SystemService::new(SVC, "Corp", "L2TP", "Disconnected");
+    let s = SystemVpn::new(SVC, "Corp", "L2TP", "Disconnected");
     f.native.set_list(Ok(vec![s.clone()]));
     let m = manager(&f);
     let w = window(&m, vec![]);
@@ -357,6 +370,7 @@ fn system_vpns_get_no_prompt() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_sign_in_failure_reprompts_once() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -369,8 +383,8 @@ fn a_sign_in_failure_reprompts_once() {
             Reply::Provide(vec![(Username, "alice"), (Password, "right")], true),
         ],
     );
-    f.root.respond_once(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond_once(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.connect(&c, false);
     let prompts = w.prompts();
     assert_eq!(prompts.len(), 2);
@@ -383,6 +397,7 @@ fn a_sign_in_failure_reprompts_once() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_second_sign_in_failure_fails_without_a_third_prompt() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -391,7 +406,7 @@ fn a_second_sign_in_failure_fails_without_a_third_prompt() {
     let m = manager(&f);
     let events = record_events(&m);
     let w = window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw2")], true)]);
-    f.root.respond(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
+    f.helper.respond(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
     m.connect(&c, false);
     assert_eq!(w.prompts().len(), 1, "stored credentials: only the re-prompt");
     assert!(w.prompts()[0].retry);
@@ -406,6 +421,7 @@ fn a_second_sign_in_failure_fails_without_a_third_prompt() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_reprompt_does_not_ask_a_stored_key_password_again() {
     let f = Fixture::new(EN);
     let config = format!(
@@ -417,7 +433,7 @@ fn the_reprompt_does_not_ask_a_stored_key_password_again() {
     f.secrets.set("kp", &c.id, SecretField::KeyPassword);
     let m = manager(&f);
     let w = window(&m, vec![Reply::Cancel]);
-    f.root.respond_once(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
+    f.helper.respond_once(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
     m.connect(&c, false);
     assert_eq!(w.fields(), [vec![Username, Password]]);
     assert!(!w.fields()[0].contains(&KeyPassword));
@@ -425,6 +441,7 @@ fn the_reprompt_does_not_ask_a_stored_key_password_again() {
 
 /// Root layer 8: strongSwan's EAP authentication failure is a sign-in failure too.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_ikev2_eap_failure_reprompts_once() {
     let f = Fixture::new(EN);
     let c = Connection::new("IKE", VPNKind::Strongswan);
@@ -433,8 +450,8 @@ fn an_ikev2_eap_failure_reprompts_once() {
     f.secrets.set("wrong", &c.id, SecretField::Password);
     let m = manager(&f);
     let w = window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "right")], true)]);
-    f.root.respond_once(&up_line(c.kind, &c.id), Err("Authentication failed (EAP)"));
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond_once(&up_line(c.kind, &c.id), Err("Authentication failed (EAP)"));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.connect(&c, false);
     assert_eq!(w.prompts().len(), 1, "stored credentials: only the re-prompt");
     assert!(w.prompts()[0].retry);
@@ -445,6 +462,7 @@ fn an_ikev2_eap_failure_reprompts_once() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn other_failures_do_not_reprompt() {
     let f = Fixture::new(EN);
     let c = Connection::new("IKE", VPNKind::Strongswan);
@@ -454,13 +472,14 @@ fn other_failures_do_not_reprompt() {
     let m = manager(&f);
     let w = window(&m, vec![]);
     let message = "IKE negotiation failed (details in the log)";
-    f.root.respond(&up_line(c.kind, &c.id), Err(message));
+    f.helper.respond(&up_line(c.kind, &c.id), Err(message));
     m.connect(&c, false);
     assert!(w.prompts().is_empty());
     assert_eq!(m.state(&uuid_string(&c.id)), ConnectionState::Failed(message.into()));
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_cancelled_reprompt_ends_silently() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -469,7 +488,7 @@ fn a_cancelled_reprompt_ends_silently() {
     let m = manager(&f);
     let events = record_events(&m);
     let w = window(&m, vec![Reply::Cancel]);
-    f.root.respond(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
+    f.helper.respond(&up_line(c.kind, &c.id), Err(AUTH_FAILED));
     m.connect(&c, false);
     assert_eq!(w.prompts().len(), 1);
     assert_eq!(m.state(&uuid_string(&c.id)), ConnectionState::Disconnected);
@@ -478,6 +497,7 @@ fn a_cancelled_reprompt_ends_silently() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn disconnecting_while_the_window_is_open_dismisses_it() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -500,19 +520,20 @@ fn disconnecting_while_the_window_is_open_dismisses_it() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failed_connect_after_save_writes_nothing() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
     let m = manager(&f);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], true)]);
-    f.root.respond(&up_line(c.kind, &c.id), Err("Cannot reach the server"));
+    f.helper.respond(&up_line(c.kind, &c.id), Err("Cannot reach the server"));
     m.connect(&c, false);
     m.refresh();
     m.flush_saves();
     assert!(f.secrets.writes().is_empty());
     // A later successful connect without a prompt does not save the old values either.
-    f.root.respond(&up_line(c.kind, &c.id), Ok(""));
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond(&up_line(c.kind, &c.id), Ok(""));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], false)]);
     m.connect(&c, false);
     assert!(m.state(&uuid_string(&c.id)).is_connected());
@@ -527,6 +548,7 @@ fn wiped() -> usize {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn typed_secrets_are_wiped_after_up() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -540,6 +562,7 @@ fn typed_secrets_are_wiped_after_up() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn typed_secrets_are_wiped_when_the_connect_is_superseded() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -560,6 +583,7 @@ fn typed_secrets_are_wiped_when_the_connect_is_superseded() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn typed_secrets_are_wiped_when_the_code_prompt_is_cancelled() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, &format!("{OVPN}static-challenge \"PIN\" 1\n"));
@@ -575,16 +599,17 @@ fn typed_secrets_are_wiped_when_the_code_prompt_is_cancelled() {
 // MARK: - "Save" never overrides a later change
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_editor_change_during_the_connect_wins() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
     let m = manager(&f);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "typed")], true)]);
-    f.root.respond("status", Ok(&status_json(&c, "connecting")));
+    f.helper.respond("status", Ok(&status_json(&c, "connecting")));
     m.connect(&c, false);
     // The editor saves another password before the connection is up.
     macvpn_app_core::deps::SecretWriter::set(&*f.secrets, "edited", &c.id, SecretField::Password);
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.refresh();
     m.flush_saves();
     assert_eq!(f.secrets.get(&c.id, SecretField::Password).as_deref(), Some("edited"));
@@ -592,6 +617,7 @@ fn an_editor_change_during_the_connect_wins() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_native_account_patches_the_fresh_meta() {
     let f = Fixture::new(EN);
     let mut c = managed_l2tp(&f);
@@ -606,7 +632,7 @@ fn the_native_account_patches_the_fresh_meta() {
     let mut edited = c.clone();
     edited.native.as_mut().unwrap().send_all_traffic = false;
     f.store.save(&edited, None).unwrap();
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Connected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Connected")]));
     m.refresh();
     m.flush_saves();
     let saved = f.store.list().unwrap().into_iter().find(|x| x.id == c.id).unwrap().native.unwrap();
@@ -615,6 +641,7 @@ fn the_native_account_patches_the_fresh_meta() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_changed_native_account_is_not_overwritten() {
     let f = Fixture::new(EN);
     let mut c = managed_l2tp(&f);
@@ -628,7 +655,7 @@ fn a_changed_native_account_is_not_overwritten() {
     let mut edited = c.clone();
     edited.native.as_mut().unwrap().account = "dave".into();
     f.store.save(&edited, None).unwrap();
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Connected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Connected")]));
     m.refresh();
     m.flush_saves();
     let saved = f.store.list().unwrap().into_iter().find(|x| x.id == c.id).unwrap().native.unwrap();
@@ -636,18 +663,19 @@ fn a_changed_native_account_is_not_overwritten() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_deleted_connection_gets_no_saved_items() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
     let m = manager(&f);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], true)]);
-    f.root.respond("status", Ok(&status_json(&c, "connecting")));
+    f.helper.respond("status", Ok(&status_json(&c, "connecting")));
     m.connect(&c, false);
     // Deleted while connecting (the order of `ConnectionsModel::delete`).
     m.forget_saves(&c.id);
     f.store.delete(&c.id).unwrap();
     m.reload();
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.refresh();
     m.flush_saves();
     assert!(f.secrets.writes().is_empty());
@@ -655,16 +683,17 @@ fn a_deleted_connection_gets_no_saved_items() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_ready_save_of_a_deleted_connection_is_dropped() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
     let m = manager(&f);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], true)]);
-    f.root.respond("status", Ok(&status_json(&c, "connecting")));
+    f.helper.respond("status", Ok(&status_json(&c, "connecting")));
     m.connect(&c, false);
     // Still listed, but marked deleted before the write runs.
     m.forget_saves(&c.id);
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.refresh();
     m.flush_saves();
     assert!(f.secrets.writes().is_empty());
@@ -702,6 +731,7 @@ impl macvpn_app_core::deps::SecretWriter for WriteKinds {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn save_writes_through_save_prompted() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -710,7 +740,7 @@ fn save_writes_through_save_prompted() {
     deps.secret_writer = Some(writer.clone());
     let m = f.manager_with(deps);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], true)]);
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     m.connect(&c, false);
     m.flush_saves();
     assert_eq!(
@@ -720,6 +750,7 @@ fn save_writes_through_save_prompted() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn saving_does_not_block_the_refresh() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -728,7 +759,7 @@ fn saving_does_not_block_the_refresh() {
     deps.secret_writer = Some(slow.clone());
     let m = f.manager_with(deps);
     window(&m, vec![Reply::Provide(vec![(Username, "alice"), (Password, "pw")], true)]);
-    f.root.respond("status", Ok(&status_json(&c, "connected")));
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
     // `connect` refreshes after `up`, which hands the save to the writer: it returns although the write waits.
     m.connect(&c, false);
     assert!(m.state(&uuid_string(&c.id)).is_connected());
@@ -740,6 +771,7 @@ fn saving_does_not_block_the_refresh() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_cancelled_prompt_is_recorded_until_the_next_connect() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);

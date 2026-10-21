@@ -91,6 +91,10 @@ impl StreamHandle for FakeHandle {
 }
 
 impl LogStreamSpawner for FakeSpawner {
+    fn command_line(&self) -> String {
+        r#"log stream --style compact --predicate 'process IN {"racoon","pppd","neagent","nesessionmanager"} OR subsystem == "com.apple.networkextension"'"#.into()
+    }
+
     fn spawn(
         &self,
         on_lines: Box<dyn FnMut(Vec<String>) + Send>,

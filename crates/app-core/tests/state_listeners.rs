@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use macvpn_app_core::deps::SystemService;
+use macvpn_app_core::deps::SystemVpn;
 use macvpn_app_core::manager::auth_cancelled_reason;
 use macvpn_app_core::{ConnectionManager, DisconnectCause};
 use macvpn_core::date::Date;
@@ -45,11 +45,12 @@ fn connected_status(c: &Connection) -> String {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn listeners_see_each_change_in_order() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
     f.store.save(&c, Some("x")).unwrap();
-    f.root.respond("status", Ok(&connected_status(&c)));
+    f.helper.respond("status", Ok(&connected_status(&c)));
     let m = f.manager();
     let first = record_states(&m);
     let second = record_states(&m);
@@ -64,12 +65,13 @@ fn listeners_see_each_change_in_order() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_reaches_the_listeners() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
     f.store.save(&c, Some("x")).unwrap();
-    f.root.respond(&up_line(VPNKind::Wireguard, &c.id), Err("boom"));
-    f.root.respond("status", Ok("[]"));
+    f.helper.respond(&up_line(VPNKind::Wireguard, &c.id), Err("boom"));
+    f.helper.respond("status", Ok("[]"));
     let m = f.manager();
     let seen = record_states(&m);
     m.connect(&c, false);
@@ -80,12 +82,13 @@ fn a_failure_reaches_the_listeners() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn only_a_user_disconnect_reaches_the_user_listeners() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
     f.store.save(&c, Some("x")).unwrap();
-    f.root.respond("status", Ok("[]"));
-    f.native.set_list(Ok(vec![SystemService::new(SVC, "Office", "L2TP", "Disconnected")]));
+    f.helper.respond("status", Ok("[]"));
+    f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office", "L2TP", "Disconnected")]));
     let m = f.manager();
     m.refresh();
     let s = m.system_services().first().cloned().unwrap();
@@ -102,24 +105,25 @@ fn only_a_user_disconnect_reaches_the_user_listeners() {
     m.disconnect(&c);
     m.disconnect_system(&s);
     assert_eq!(*users.lock().unwrap(), [key.clone(), SVC.to_string()]);
-    assert!(f.root.lines().contains(&down_line(VPNKind::Wireguard, &c.id)));
+    assert!(f.helper.lines().contains(&down_line(VPNKind::Wireguard, &c.id)));
 }
 
 /// The user listener runs before the state changes, so the control API can tell the user's disconnect from a
 /// drop.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn user_listener_runs_before_the_state_changes() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
     f.store.save(&c, Some("x")).unwrap();
-    f.root.respond("status", Ok(&connected_status(&c)));
+    f.helper.respond("status", Ok(&connected_status(&c)));
     let m = f.manager();
     m.refresh();
     let key = uuid_string(&c.id);
     let at_hook = Arc::new(Mutex::new(None));
     let (sink, weak) = (at_hook.clone(), Arc::downgrade(&m));
     m.add_user_disconnect_listener(move |k| *sink.lock().unwrap() = weak.upgrade().map(|m| m.state(k)));
-    f.root.respond("status", Ok("[]"));
+    f.helper.respond("status", Ok("[]"));
     m.disconnect(&c);
     assert_eq!(*at_hook.lock().unwrap(), Some(ConnectionState::Connected { ip: None, since: None }));
     assert_eq!(m.state(&key), ConnectionState::Disconnected);
@@ -127,12 +131,13 @@ fn user_listener_runs_before_the_state_changes() {
 
 /// Declining the server's code prompt makes the failing `up` report the cancel, not the tool's message.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn cancelled_dynamic_challenge_fails_with_the_cancel_reason() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
     f.store.save(&c, Some("client\nremote vpn.example.com 1194\n")).unwrap();
-    f.root.delay(&up_line(VPNKind::Openvpn, &c.id), 1.0);
-    f.root.respond(&up_line(VPNKind::Openvpn, &c.id), Err("bridge said no"));
+    f.helper.delay(&up_line(VPNKind::Openvpn, &c.id), 1.0);
+    f.helper.respond(&up_line(VPNKind::Openvpn, &c.id), Err("bridge said no"));
     let deadline = Date::now().adding(60.0).time_interval_since_1970();
     let id = c.id;
     let mut deps = f.deps();
@@ -153,7 +158,7 @@ fn cancelled_dynamic_challenge_fails_with_the_cancel_reason() {
     assert_eq!(auth_cancelled_reason(), "Authentication cancelled");
 
     // The next connect starts clean: its own failure keeps its own message.
-    f.root.delay(&up_line(VPNKind::Openvpn, &c.id), 0.0);
+    f.helper.delay(&up_line(VPNKind::Openvpn, &c.id), 0.0);
     m.set_prompt_handler(|_| AuthPromptResult::Code("1".into()));
     m.connect(&c, false);
     assert_eq!(m.state(&uuid_string(&c.id)), ConnectionState::Failed("bridge said no".into()));

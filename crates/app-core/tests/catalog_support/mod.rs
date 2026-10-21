@@ -3,7 +3,7 @@
 //! controller. The manager uses the app's own vault stores (`VaultConnections`, `VaultSecrets`).
 #![allow(dead_code)]
 
-use crate::common::{MemorySecrets, MockNative, MockRoot, TempDir};
+use crate::common::{MemorySecrets, MockHelper, MockNative, TempDir};
 use macvpn_app_core::catalog::{CatalogDeps, CatalogService};
 use macvpn_app_core::deps::{CatalogFetcher, ConnectionRepository, FetchOutcome, FetchRequest, ManualClock};
 use macvpn_app_core::notify::NotificationContent;
@@ -201,7 +201,7 @@ impl CatalogFetcher for FakeFetcher {
 pub struct CatalogFixture {
     pub tmp: TempDir,
     pub vault: Arc<VaultLifecycle>,
-    pub root: Arc<MockRoot>,
+    pub helper: Arc<MockHelper>,
     pub native: Arc<MockNative>,
     pub secrets: Arc<VaultSecrets>,
     pub manager: Arc<ConnectionManager>,
@@ -227,14 +227,14 @@ impl CatalogFixture {
         let sink = log.clone();
         vault.set_logger(move |line| sink.lock().unwrap().push(line.to_string()));
         vault.create(Zeroizing::new(MASTER.into()), false).unwrap();
-        let root = Arc::new(MockRoot::default());
-        root.respond("status", Ok("[]"));
+        let helper = Arc::new(MockHelper::default());
+        helper.respond("status", Ok("[]"));
         let secrets = Arc::new(VaultSecrets::new(vault.clone()));
         let native = Arc::new(MockNative::default());
         let mut deps = Dependencies::new(
             Arc::new(VaultConnections::new(vault.clone())),
             secrets.clone(),
-            root.clone(),
+            helper.clone(),
             native.clone(),
         );
         deps.secret_writer = Some(secrets.clone());
@@ -263,7 +263,20 @@ impl CatalogFixture {
         });
         service.attach();
         let _ = MemorySecrets::default();
-        CatalogFixture { tmp, vault, root, native, secrets, manager, fetcher, service, clock, notices, log, forgotten }
+        CatalogFixture {
+            tmp,
+            vault,
+            helper,
+            native,
+            secrets,
+            manager,
+            fetcher,
+            service,
+            clock,
+            notices,
+            log,
+            forgotten,
+        }
     }
 
     pub fn notices(&self) -> Vec<String> {

@@ -68,6 +68,7 @@ fn first_read_is_bounded_to_last_256kb() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn inode_replacement_resets() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -107,6 +108,7 @@ fn partial_flush_never_splits_multibyte_character() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn inode_replacement_reapplies_window() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();

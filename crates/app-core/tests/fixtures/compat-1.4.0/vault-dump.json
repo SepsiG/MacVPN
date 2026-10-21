@@ -1,0 +1,477 @@
+{
+  "schema": [
+    {
+      "name": "catalog_admin_keys",
+      "sql": "CREATE TABLE catalog_admin_keys(\n        key_id TEXT PRIMARY KEY,\n        role TEXT NOT NULL CHECK(role IN ('primary','backup')),\n        seed BLOB NOT NULL,\n        created TEXT NOT NULL\n    )",
+      "table": "catalog_admin_keys",
+      "type": "table"
+    },
+    {
+      "name": "catalog_items",
+      "sql": "CREATE TABLE catalog_items(\n        local_id TEXT PRIMARY KEY,\n        catalog_id TEXT NOT NULL REFERENCES catalog_subscriptions(catalog_id) ON DELETE CASCADE,\n        item_id TEXT NOT NULL,\n        kind TEXT NOT NULL CHECK(kind IN ('root','folder','connection')),\n        color TEXT NULL,\n        slot_id TEXT NULL,\n        provided_secrets TEXT NOT NULL DEFAULT '',\n        config_hash TEXT NULL,\n        meta_hash TEXT NULL,\n        pending_removal INTEGER NOT NULL DEFAULT 0,\n        profile_outdated INTEGER NOT NULL DEFAULT 0,\n        UNIQUE(catalog_id, item_id, kind)\n    )",
+      "table": "catalog_items",
+      "type": "table"
+    },
+    {
+      "name": "catalog_publications",
+      "sql": "CREATE TABLE catalog_publications(\n        catalog_id TEXT PRIMARY KEY,\n        json TEXT NOT NULL,\n        team_key BLOB NOT NULL\n    )",
+      "table": "catalog_publications",
+      "type": "table"
+    },
+    {
+      "name": "catalog_slots",
+      "sql": "CREATE TABLE catalog_slots(\n        catalog_id TEXT NOT NULL REFERENCES catalog_subscriptions(catalog_id) ON DELETE CASCADE,\n        slot_id TEXT NOT NULL,\n        name TEXT NOT NULL,\n        credential_id TEXT NULL REFERENCES credentials(id) ON DELETE SET NULL,\n        PRIMARY KEY(catalog_id, slot_id)\n    )",
+      "table": "catalog_slots",
+      "type": "table"
+    },
+    {
+      "name": "catalog_subscriptions",
+      "sql": "CREATE TABLE catalog_subscriptions(\n        catalog_id TEXT PRIMARY KEY,\n        json TEXT NOT NULL,\n        team_key BLOB NOT NULL,\n        bearer BLOB NULL,\n        publisher_key BLOB NULL,\n        successor_key BLOB NULL\n    )",
+      "table": "catalog_subscriptions",
+      "type": "table"
+    },
+    {
+      "name": "connections",
+      "sql": "CREATE TABLE connections(\n        id TEXT PRIMARY KEY,\n        kind TEXT NOT NULL,\n        meta_json TEXT NOT NULL,\n        config BLOB NOT NULL,\n        folder_id TEXT NULL REFERENCES folders(id) ON DELETE SET NULL,\n        color TEXT NULL,\n        position INTEGER NOT NULL\n    )",
+      "table": "connections",
+      "type": "table"
+    },
+    {
+      "name": "control_clients",
+      "sql": "CREATE TABLE control_clients(id TEXT PRIMARY KEY, json TEXT NOT NULL)",
+      "table": "control_clients",
+      "type": "table"
+    },
+    {
+      "name": "credential_links",
+      "sql": "CREATE TABLE credential_links(\n        item_id TEXT PRIMARY KEY,\n        credential_id TEXT NOT NULL REFERENCES credentials(id) ON DELETE RESTRICT\n    )",
+      "table": "credential_links",
+      "type": "table"
+    },
+    {
+      "name": "credentials",
+      "sql": "CREATE TABLE credentials(\n        id TEXT PRIMARY KEY,\n        name TEXT NOT NULL UNIQUE,\n        username TEXT NOT NULL,\n        password BLOB NULL,\n        created TEXT NOT NULL,\n        updated TEXT NOT NULL\n    )",
+      "table": "credentials",
+      "type": "table"
+    },
+    {
+      "name": "folders",
+      "sql": "CREATE TABLE folders(\n        id TEXT PRIMARY KEY,\n        parent_id TEXT NULL REFERENCES folders(id) ON DELETE CASCADE,\n        name TEXT NOT NULL,\n        color TEXT NULL,\n        position INTEGER NOT NULL,\n        collapsed INTEGER NOT NULL DEFAULT 0\n    )",
+      "table": "folders",
+      "type": "table"
+    },
+    {
+      "name": "meta",
+      "sql": "CREATE TABLE meta(key TEXT PRIMARY KEY, value TEXT)",
+      "table": "meta",
+      "type": "table"
+    },
+    {
+      "name": "pins",
+      "sql": "CREATE TABLE pins(id TEXT PRIMARY KEY, position INTEGER NOT NULL)",
+      "table": "pins",
+      "type": "table"
+    },
+    {
+      "name": "ranking",
+      "sql": "CREATE TABLE ranking(id TEXT PRIMARY KEY, json TEXT NOT NULL)",
+      "table": "ranking",
+      "type": "table"
+    },
+    {
+      "name": "secrets",
+      "sql": "CREATE TABLE secrets(connection_id TEXT, field TEXT, value BLOB, PRIMARY KEY(connection_id, field))",
+      "table": "secrets",
+      "type": "table"
+    },
+    {
+      "name": "sqlite_autoindex_catalog_admin_keys_1",
+      "sql": null,
+      "table": "catalog_admin_keys",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_catalog_items_1",
+      "sql": null,
+      "table": "catalog_items",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_catalog_items_2",
+      "sql": null,
+      "table": "catalog_items",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_catalog_publications_1",
+      "sql": null,
+      "table": "catalog_publications",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_catalog_slots_1",
+      "sql": null,
+      "table": "catalog_slots",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_catalog_subscriptions_1",
+      "sql": null,
+      "table": "catalog_subscriptions",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_connections_1",
+      "sql": null,
+      "table": "connections",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_control_clients_1",
+      "sql": null,
+      "table": "control_clients",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_credential_links_1",
+      "sql": null,
+      "table": "credential_links",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_credentials_1",
+      "sql": null,
+      "table": "credentials",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_credentials_2",
+      "sql": null,
+      "table": "credentials",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_folders_1",
+      "sql": null,
+      "table": "folders",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_meta_1",
+      "sql": null,
+      "table": "meta",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_pins_1",
+      "sql": null,
+      "table": "pins",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_ranking_1",
+      "sql": null,
+      "table": "ranking",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_secrets_1",
+      "sql": null,
+      "table": "secrets",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_system_items_1",
+      "sql": null,
+      "table": "system_items",
+      "type": "index"
+    },
+    {
+      "name": "sqlite_autoindex_system_otp_1",
+      "sql": null,
+      "table": "system_otp",
+      "type": "index"
+    },
+    {
+      "name": "system_items",
+      "sql": "CREATE TABLE system_items(\n        service_id TEXT PRIMARY KEY,\n        folder_id TEXT NULL,\n        color TEXT NULL,\n        position INTEGER NOT NULL,\n        missing_since TEXT NULL\n    )",
+      "table": "system_items",
+      "type": "table"
+    },
+    {
+      "name": "system_otp",
+      "sql": "CREATE TABLE system_otp(service_id TEXT PRIMARY KEY, json TEXT NOT NULL)",
+      "table": "system_otp",
+      "type": "table"
+    }
+  ],
+  "tables": {
+    "catalog_admin_keys": {
+      "columns": [
+        "key_id",
+        "role",
+        "seed",
+        "created"
+      ],
+      "rows": []
+    },
+    "catalog_items": {
+      "columns": [
+        "local_id",
+        "catalog_id",
+        "item_id",
+        "kind",
+        "color",
+        "slot_id",
+        "provided_secrets",
+        "config_hash",
+        "meta_hash",
+        "pending_removal",
+        "profile_outdated"
+      ],
+      "rows": []
+    },
+    "catalog_publications": {
+      "columns": [
+        "catalog_id",
+        "json",
+        "team_key"
+      ],
+      "rows": []
+    },
+    "catalog_slots": {
+      "columns": [
+        "catalog_id",
+        "slot_id",
+        "name",
+        "credential_id"
+      ],
+      "rows": []
+    },
+    "catalog_subscriptions": {
+      "columns": [
+        "catalog_id",
+        "json",
+        "team_key",
+        "bearer",
+        "publisher_key",
+        "successor_key"
+      ],
+      "rows": []
+    },
+    "connections": {
+      "columns": [
+        "id",
+        "kind",
+        "meta_json",
+        "config",
+        "folder_id",
+        "color",
+        "position"
+      ],
+      "rows": [
+        [
+          "'C0DE0000-0000-4000-8000-000000000001'",
+          "'openvpn'",
+          "'{\n  \"acknowledgedRiskyDirectives\" : [\n\n  ],\n  \"createdAt\" : \"2026-09-21T14:13:20Z\",\n  \"id\" : \"C0DE0000-0000-4000-8000-000000000001\",\n  \"kind\" : \"openvpn\",\n  \"name\" : \"Office OpenVPN\",\n  \"otp\" : {\n    \"enabled\" : true,\n    \"separator\" : \"colon\"\n  }\n}'",
+          "X'636C69656E740A6465762074756E0A70726F746F207564700A72656D6F74652076706E2E6578616D706C652E636F6D20313139340A6E6F62696E640A617574682D757365722D706173730A7665726220330A'",
+          "'C0DE0000-0000-4000-8000-000000000011'",
+          "NULL",
+          "0"
+        ],
+        [
+          "'C0DE0000-0000-4000-8000-000000000002'",
+          "'wireguard'",
+          "'{\n  \"acknowledgedRiskyDirectives\" : [\n\n  ],\n  \"createdAt\" : \"2026-09-21T14:13:20Z\",\n  \"id\" : \"C0DE0000-0000-4000-8000-000000000002\",\n  \"kind\" : \"wireguard\",\n  \"name\" : \"Home WireGuard\",\n  \"otp\" : {\n    \"enabled\" : false,\n    \"separator\" : \"none\"\n  }\n}'",
+          "X'5B496E746572666163655D0A507269766174654B6579203D2041514944424155474277674A4367734D4451345045424553457851564668635947526F62484230654879413D0A41646472657373203D2031302E302E302E322F33320A0A5B506565725D0A5075626C69634B6579203D204953496A4A43556D4A7967704B6973734C5334764D4445794D7A51314E6A63344F546F375044302B5030413D0A456E64706F696E74203D2076706E2E6578616D706C652E636F6D3A35313832300A416C6C6F776564495073203D20302E302E302E302F300A'",
+          "'C0DE0000-0000-4000-8000-000000000010'",
+          "NULL",
+          "0"
+        ],
+        [
+          "'C0DE0000-0000-4000-8000-000000000003'",
+          "'l2tp'",
+          "'{\n  \"acknowledgedRiskyDirectives\" : [\n\n  ],\n  \"createdAt\" : \"2026-09-21T14:13:20Z\",\n  \"id\" : \"C0DE0000-0000-4000-8000-000000000003\",\n  \"kind\" : \"l2tp\",\n  \"name\" : \"Branch L2TP\",\n  \"native\" : {\n    \"account\" : \"alice\",\n    \"groupName\" : \"\",\n    \"sendAllTraffic\" : true,\n    \"server\" : \"vpn.example.com\"\n  },\n  \"nativeServiceName\" : \"Branch L2TP\",\n  \"otp\" : {\n    \"enabled\" : false,\n    \"separator\" : \"none\"\n  }\n}'",
+          "X''",
+          "NULL",
+          "'red'",
+          "0"
+        ]
+      ]
+    },
+    "control_clients": {
+      "columns": [
+        "id",
+        "json"
+      ],
+      "rows": [
+        [
+          "'C0DE0000-0000-4000-8000-000000000030'",
+          "'{\"allowed\":[\"C0DE0000-0000-4000-8000-000000000001\",\"8F1C2D3E-0000-4000-8000-000000000001\"],\"created\":\"2026-09-21T14:13:20Z\",\"executable\":\"\\/Applications\\/Acme Remote.app\\/Contents\\/MacOS\\/Acme Remote\",\"id\":\"C0DE0000-0000-4000-8000-000000000030\",\"name\":\"Acme Remote\",\"tokenSha256\":\"92e95a7bf60ea06644c597dae6d8144890a5f9f5bdd1aa90b11115bbadc67f5c\"}'"
+        ]
+      ]
+    },
+    "credential_links": {
+      "columns": [
+        "item_id",
+        "credential_id"
+      ],
+      "rows": [
+        [
+          "'C0DE0000-0000-4000-8000-000000000001'",
+          "'C0DE0000-0000-4000-8000-000000000020'"
+        ]
+      ]
+    },
+    "credentials": {
+      "columns": [
+        "id",
+        "name",
+        "username",
+        "password",
+        "created",
+        "updated"
+      ],
+      "rows": [
+        [
+          "'C0DE0000-0000-4000-8000-000000000020'",
+          "'Office Login'",
+          "'alice'",
+          "X'666978747572652D736563726574'",
+          "'2026-09-21T14:13:20Z'",
+          "'2026-09-21T14:13:20Z'"
+        ]
+      ]
+    },
+    "folders": {
+      "columns": [
+        "id",
+        "parent_id",
+        "name",
+        "color",
+        "position",
+        "collapsed"
+      ],
+      "rows": [
+        [
+          "'C0DE0000-0000-4000-8000-000000000010'",
+          "NULL",
+          "'Work'",
+          "'blue'",
+          "0",
+          "0"
+        ],
+        [
+          "'C0DE0000-0000-4000-8000-000000000011'",
+          "'C0DE0000-0000-4000-8000-000000000010'",
+          "'Remote'",
+          "'green'",
+          "0",
+          "1"
+        ]
+      ]
+    },
+    "meta": {
+      "columns": [
+        "key",
+        "value"
+      ],
+      "rows": [
+        [
+          "'created'",
+          "'@CREATED@'"
+        ],
+        [
+          "'min_app_schema'",
+          "'1'"
+        ],
+        [
+          "'schema_version'",
+          "'2'"
+        ]
+      ]
+    },
+    "pins": {
+      "columns": [
+        "id",
+        "position"
+      ],
+      "rows": [
+        [
+          "'C0DE0000-0000-4000-8000-000000000002'",
+          "0"
+        ]
+      ]
+    },
+    "ranking": {
+      "columns": [
+        "id",
+        "json"
+      ],
+      "rows": [
+        [
+          "'8F1C2D3E-0000-4000-8000-000000000001'",
+          "'{\"lastUpdated\":\"2026-09-21T14:13:20Z\",\"score\":1}'"
+        ],
+        [
+          "'C0DE0000-0000-4000-8000-000000000001'",
+          "'{\"lastUpdated\":\"2026-09-21T14:13:20Z\",\"score\":2.5}'"
+        ]
+      ]
+    },
+    "secrets": {
+      "columns": [
+        "connection_id",
+        "field",
+        "value"
+      ],
+      "rows": [
+        [
+          "'8F1C2D3E-0000-4000-8000-000000000001'",
+          "'psk'",
+          "X'666978747572652D736563726574'"
+        ],
+        [
+          "'C0DE0000-0000-4000-8000-000000000003'",
+          "'password'",
+          "X'666978747572652D736563726574'"
+        ],
+        [
+          "'C0DE0000-0000-4000-8000-000000000003'",
+          "'psk'",
+          "X'666978747572652D736563726574'"
+        ]
+      ]
+    },
+    "system_items": {
+      "columns": [
+        "service_id",
+        "folder_id",
+        "color",
+        "position",
+        "missing_since"
+      ],
+      "rows": [
+        [
+          "'8F1C2D3E-0000-4000-8000-000000000001'",
+          "'C0DE0000-0000-4000-8000-000000000010'",
+          "'orange'",
+          "1",
+          "NULL"
+        ]
+      ]
+    },
+    "system_otp": {
+      "columns": [
+        "service_id",
+        "json"
+      ],
+      "rows": [
+        [
+          "'8F1C2D3E-0000-4000-8000-000000000001'",
+          "'{\"enabled\":true,\"separator\":\"comma\"}'"
+        ]
+      ]
+    }
+  }
+}

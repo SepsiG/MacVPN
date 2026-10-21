@@ -23,6 +23,7 @@ impl Drop for TempDir {
     }
 }
 
+#[cfg(unix)]
 pub fn mode(path: &Path) -> u32 {
     use std::os::unix::fs::PermissionsExt;
     std::fs::metadata(path).unwrap().permissions().mode() & 0o7777

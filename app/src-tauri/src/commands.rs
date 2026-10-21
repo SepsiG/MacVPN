@@ -8,6 +8,7 @@ use macvpn_app_core::app::{ActiveConnectionsAnswer, resolve_active_connections, 
 use macvpn_app_core::quit::{QuitAction, QuitOrigin, QuitStep};
 use macvpn_app_core::updates::{CheckNowResult, Notice};
 use macvpn_core::l10n;
+use macvpn_platform_api::Product;
 use std::collections::BTreeSet;
 use std::sync::Arc;
 use tauri::{AppHandle, Manager, State, WebviewUrl, WebviewWindowBuilder};
@@ -80,6 +81,28 @@ fn item(state: &AppState, id: &str) -> Result<ConnectionItem, String> {
 #[tauri::command]
 pub async fn get_view_model(state: Shared<'_>) -> Result<ViewModel, String> {
     Ok(state.view_model())
+}
+
+/// The OS and product the UI words its texts for (the per-OS l10n variants). Not part of the view model, so its
+/// JSON stays as it was.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlatformView {
+    /// `macos`, `windows` or `linux`.
+    pub os: &'static str,
+    pub product_name: &'static str,
+}
+
+impl PlatformView {
+    pub fn of(product: &Product) -> Self {
+        PlatformView { os: product.os.as_str(), product_name: product.name }
+    }
+}
+
+/// Read-only, no input: the platform's [`PlatformView`].
+#[tauri::command]
+pub async fn get_platform() -> Result<PlatformView, String> {
+    Ok(PlatformView::of(crate::platform::get().product()))
 }
 
 /// Connects (`debug`: the Option-click debug mode, managed connections only). The result arrives as state.
@@ -239,8 +262,7 @@ pub async fn set_launch_at_login(state: Shared<'_>, on: bool) -> Result<Option<N
     tauri::async_runtime::spawn_blocking(move || {
         let mut controller = crate::platform::login_items(&shared.env);
         let result = controller.set_enabled(on);
-        *shared.login_item.write().unwrap_or_else(std::sync::PoisonError::into_inner) =
-            Some(crate::platform::login_item_view(controller.state()));
+        *shared.login_item.write().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(controller.state());
         shared.publisher.mark();
         result.err().map(|e| Notice {
             title: l10n::tr(
@@ -257,7 +279,7 @@ pub async fn set_launch_at_login(state: Shared<'_>, on: bool) -> Result<Option<N
 #[tauri::command]
 pub async fn open_login_items_settings(state: Shared<'_>) -> Result<(), String> {
     let shared = state.inner().clone();
-    tauri::async_runtime::spawn_blocking(move || crate::platform::login_items(&shared.env).open_system_settings())
+    tauri::async_runtime::spawn_blocking(move || crate::platform::login_items(&shared.env).open_settings())
         .await
         .map_err(|e| e.to_string())
 }
@@ -407,7 +429,7 @@ pub fn handle_quit(app: &AppHandle, state: &AppState, action: QuitAction) -> &'s
 pub fn terminate(app: &AppHandle, state: &AppState) {
     // A smoke run leaves the connections for its checks (debug builds, the sandbox only).
     #[cfg(debug_assertions)]
-    crate::smoke::dump(state);
+    crate::platform::smoke_dump(state);
     state.quit.confirm();
     state.stop_polling();
     let finish = |app: &AppHandle, state: &AppState| {
@@ -432,7 +454,7 @@ pub fn terminate(app: &AppHandle, state: &AppState) {
 }
 
 fn reply_to_system(app: &AppHandle, terminate: bool) {
-    let _ = app.run_on_main_thread(move || macvpn_platform_mac::app_hooks::reply_to_terminate(terminate));
+    let _ = app.run_on_main_thread(move || crate::platform::get().lifecycle().reply_to_terminate(terminate));
 }
 
 #[cfg(test)]
@@ -501,6 +523,15 @@ mod tests {
     }
 
     #[test]
+    fn the_platform_view_names_the_os_and_the_product() {
+        let view = PlatformView::of(&macvpn_platform_api::MACVPN);
+        assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "macos", "productName": "MacVPN"}));
+        let view = PlatformView::of(&macvpn_platform_api::WINVPN);
+        assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "windows", "productName": "WinVPN"}));
+        assert_eq!(PlatformView::of(crate::platform::get().product()), PlatformView::of(&macvpn_platform_api::MACVPN));
+    }
+
+    #[test]
     fn update_options() {
         assert_eq!(parse_update_option("autoCheck"), Ok(UpdateOption::AutoCheck));
         assert_eq!(parse_update_option("delayUpdates"), Ok(UpdateOption::DelayUpdates));
@@ -509,7 +540,8 @@ mod tests {
     }
 
     /// Every command is granted exactly where it is used: the prompt, credential and pairing windows only signal and
-    /// answer their own prompt / pairing, fit their own height and read the view model; the other windows get everything else; nothing but listening to
+    /// answer their own prompt / pairing, fit their own height and read the view model; every window reads the
+    /// platform (`get_platform`, for its texts); the other windows get everything else; nothing but listening to
     /// events from the core. The build list, the capabilities and `generate_handler!` name the same commands.
     #[test]
     fn capabilities_grant_exactly_the_commands() {
@@ -531,11 +563,17 @@ mod tests {
         assert_eq!(vault["windows"], serde_json::json!(crate::vault::VAULT_WINDOWS));
         let vault_permissions = permissions(&vault);
         assert_eq!(
-            vault_permissions[..4],
-            ["core:event:allow-listen", "core:event:allow-unlisten", "allow-get-view-model", "allow-fit-window"]
+            vault_permissions[..5],
+            [
+                "core:event:allow-listen",
+                "core:event:allow-unlisten",
+                "allow-get-view-model",
+                "allow-get-platform",
+                "allow-fit-window"
+            ]
         );
         // The vault windows get only vault commands; the menu's vault commands (Lock now, the settings) are main's.
-        let vault_only: Vec<String> = vault_permissions[4..].to_vec();
+        let vault_only: Vec<String> = vault_permissions[5..].to_vec();
         assert!(vault_only.iter().all(|c| c.starts_with("allow-vault-") && commands.contains(c)), "{vault_only:?}");
         assert_eq!(credentials["windows"], serde_json::json!(["cred-*"]));
         assert_eq!(
@@ -544,6 +582,7 @@ mod tests {
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
+                "allow-get-platform",
                 "allow-answer-credentials",
                 "allow-credentials-ready",
                 "allow-fit-window"
@@ -557,6 +596,7 @@ mod tests {
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
+                "allow-get-platform",
                 "allow-pairing-answer",
                 "allow-pairing-ready",
                 "allow-fit-window"
@@ -568,6 +608,7 @@ mod tests {
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
+                "allow-get-platform",
                 "allow-answer-prompt",
                 "allow-prompt-ready",
                 "allow-fit-window"
@@ -584,6 +625,7 @@ mod tests {
                 "core:event:allow-listen",
                 "core:event:allow-unlisten",
                 "allow-get-view-model",
+                "allow-get-platform",
                 "allow-backup-show-window",
                 "allow-backup-close-window",
                 "allow-backup-choose-destination",
@@ -602,6 +644,7 @@ mod tests {
         assert_eq!(
             fresh_permissions,
             [
+                "allow-get-platform",
                 "allow-backup-show-window",
                 "allow-restore-choose-file",
                 "allow-restore-open",
@@ -611,6 +654,10 @@ mod tests {
                 "allow-restore-discard"
             ]
         );
+        // Every window words its texts for the platform.
+        for capability in [&main, &prompt, &pairing, &credentials, &vault, &backup, &fresh] {
+            assert!(permissions(capability).iter().any(|p| p == "allow-get-platform"), "{}", capability["identifier"]);
+        }
         for permission in backup_permissions.iter().chain(&fresh_permissions) {
             assert!(
                 commands.contains(permission) || permission.starts_with("core:event:allow-"),

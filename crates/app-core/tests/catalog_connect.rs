@@ -6,10 +6,10 @@ mod catalog_support;
 mod common;
 
 use catalog_support::*;
-use common::{MockProfiles, clock_at, up_line};
+use common::{MobileconfigProfiles, clock_at, up_line};
 use macvpn_app_core::connections::ConnectionsModel;
 use macvpn_app_core::credential_prompt::CredentialBroker;
-use macvpn_app_core::deps::{ConnectionRepository, SecretReader, SystemService};
+use macvpn_app_core::deps::{ConnectionRepository, SecretReader, SystemVpn};
 use macvpn_app_core::editor::{EditorDeps, EditorFields};
 use macvpn_app_core::manager::ConnectionItem;
 use macvpn_app_core::vault_stores::VaultConnections;
@@ -40,7 +40,7 @@ struct Connect {
     prompts: Arc<Mutex<Vec<CredentialPrompt>>>,
     /// The values the handler answers with (`None`: cancel).
     answer: Arc<Mutex<Option<(String, String)>>>,
-    profiles: Arc<MockProfiles>,
+    profiles: Arc<MobileconfigProfiles>,
     window: ConnectionsModel,
     clock: Arc<macvpn_app_core::deps::ManualClock>,
 }
@@ -68,7 +68,7 @@ impl Connect {
             }
             CredentialAnswer::Provided { values, save: true }
         });
-        let profiles = Arc::new(MockProfiles::default());
+        let profiles = Arc::new(MobileconfigProfiles::default());
         let clock = clock_at(1_000_000.0);
         let window = ConnectionsModel::new(EditorDeps {
             manager: f.manager.clone(),
@@ -113,7 +113,7 @@ impl Connect {
     /// Connects catalog connection `n` with the root reporting it up, and waits for the prompt's "Save".
     fn connect(&self, n: u128) {
         let c = self.item(n);
-        self.f.root.respond("status", Ok(&connected(&key(n), c.kind)));
+        self.f.helper.respond("status", Ok(&connected(&key(n), c.kind)));
         self.f.manager.connect(&c, false);
         self.f.manager.flush_saves();
     }
@@ -131,7 +131,7 @@ impl Connect {
 
     fn last_up(&self, n: u128) -> common::Call {
         let line = up_line(self.item(n).kind, &local(n));
-        self.f.root.calls().into_iter().rfind(|c| c.line.starts_with(&line)).expect("an up call")
+        self.f.helper.calls().into_iter().rfind(|c| c.line.starts_with(&line)).expect("an up call")
     }
 
     fn slot(&self) -> macvpn_core::vault::SharedCredential {
@@ -186,6 +186,7 @@ fn wait_until(what: &str, mut ok: impl FnMut() -> bool) {
 // MARK: - credential slots
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_unfilled_slot_asks_for_both_names_the_slot_and_the_catalog_and_save_fills_it() {
     let t = Connect::new();
     t.subscribe(&payload(&[(1, "One"), (2, "Two")]));
@@ -219,11 +220,12 @@ fn an_unfilled_slot_asks_for_both_names_the_slot_and_the_catalog_and_save_fills_
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_sign_in_failure_re_prompts_once_for_the_slot() {
     let t = Connect::new();
     t.subscribe(&payload(&[(1, "One")]));
     let line = up_line(VPNKind::Openvpn, &local(1));
-    t.f.root.respond_once(&line, Err("Authentication failed (AUTH_FAILED)"));
+    t.f.helper.respond_once(&line, Err("Authentication failed (AUTH_FAILED)"));
     t.connect(1);
     let prompts = t.prompts();
     assert_eq!(prompts.len(), 2);
@@ -234,6 +236,7 @@ fn a_sign_in_failure_re_prompts_once_for_the_slot() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_personal_link_or_an_own_login_is_not_named_as_a_team_slot() {
     let t = Connect::new();
     t.subscribe(&payload(&[(1, "One")]));
@@ -280,6 +283,7 @@ fn the_prompt_window_shows_the_team_catalog() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_https_slot_names_the_source_host_and_the_update_notice_names_moved_servers() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com"), sstp(2, "Office SSTP")]));
@@ -307,10 +311,11 @@ fn an_https_slot_names_the_source_host_and_the_update_notice_names_moved_servers
 // MARK: - team secrets and per-user fields
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_team_psk_is_not_asked_and_reaches_the_start_options_with_the_slot_username() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com")]));
-    t.f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
+    t.f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
     t.f.native.set_address(SVC, Some("vpn.example.com"));
     t.f.manager.reload();
 
@@ -325,6 +330,7 @@ fn a_team_psk_is_not_asked_and_reaches_the_start_options_with_the_slot_username(
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_team_profile_has_no_account_and_the_team_psk() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com")]));
@@ -349,6 +355,7 @@ fn the_team_profile_has_no_account_and_the_team_psk() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_gets_the_slot_username_in_memory_and_the_stored_config_stays() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![sstp(1, "Office SSTP")]));
@@ -369,12 +376,13 @@ fn sstp_gets_the_slot_username_in_memory_and_the_stored_config_stays() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_sstp_slot_username_the_config_cannot_carry_is_refused() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![sstp(1, "Office SSTP")]));
     *t.answer.lock().unwrap() = Some(("OFFICE\\alice".into(), "Secret123".into()));
     t.connect(1);
-    assert!(t.f.root.calls().iter().all(|c| !c.line.starts_with("up ")), "nothing reached the root layer");
+    assert!(t.f.helper.calls().iter().all(|c| !c.line.starts_with("up ")), "nothing reached the root layer");
     match t.f.manager.state(&key(1)) {
         macvpn_core::models::ConnectionState::Failed(reason) => {
             assert!(reason.contains("Invalid user name"), "{reason}")
@@ -387,6 +395,7 @@ fn an_sstp_slot_username_the_config_cannot_carry_is_refused() {
 // MARK: - risky directives
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_config_change_clears_the_acknowledgement_and_the_read_only_editor_ticks_it_again() {
     let t = Connect::new();
     let mut c = connection(1, "Risky");
@@ -397,7 +406,7 @@ fn a_config_change_clears_the_acknowledgement_and_the_read_only_editor_ticks_it_
     *t.answer.lock().unwrap() = Some(("alice".into(), "pw".into()));
 
     t.connect(1);
-    assert!(t.f.root.calls().iter().all(|c| !c.line.starts_with("up ")));
+    assert!(t.f.helper.calls().iter().all(|c| !c.line.starts_with("up ")));
     assert!(
         matches!(t.f.manager.state(&key(1)), macvpn_core::models::ConnectionState::Failed(r) if r.contains("Risky settings"))
     );
@@ -423,12 +432,13 @@ fn a_config_change_clears_the_acknowledgement_and_the_read_only_editor_ticks_it_
     v3.connections[0].config.push_str("verb 3\n");
     t.publish(3, &v3);
     assert!(t.item(1).acknowledged_risky_directives.is_empty());
-    let ups = t.f.root.lines().iter().filter(|l| l.starts_with("up ")).count();
+    let ups = t.f.helper.lines().iter().filter(|l| l.starts_with("up ")).count();
     t.connect(1);
-    assert_eq!(t.f.root.lines().iter().filter(|l| l.starts_with("up ")).count(), ups, "refused until ticked again");
+    assert_eq!(t.f.helper.lines().iter().filter(|l| l.starts_with("up ")).count(), ups, "refused until ticked again");
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_stale_editor_cannot_acknowledge_a_newer_catalog_config() {
     let t = Connect::new();
     let mut c = connection(1, "Risky");
@@ -453,6 +463,7 @@ fn a_stale_editor_cannot_acknowledge_a_newer_catalog_config() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_apply_reloads_the_open_editor_of_a_changed_catalog_connection() {
     let t = Connect::new();
     let mut c = connection(1, "Risky");
@@ -492,6 +503,7 @@ impl ConnectionRepository for BlindStore {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_refused_delete_keeps_the_secrets_and_the_slot_link() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com")]));
@@ -513,6 +525,7 @@ fn a_refused_delete_keeps_the_secrets_and_the_slot_link() {
 // MARK: - read-only editors
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_editors_refuse_every_other_change_to_a_catalog_connection() {
     let t = Connect::new();
     t.subscribe(&payload(&[(1, "One")]));
@@ -540,6 +553,7 @@ fn the_editors_refuse_every_other_change_to_a_catalog_connection() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_duplicate_is_an_editable_personal_connection_on_the_same_slot() {
     let t = Connect::new();
     t.subscribe(&payload(&[(1, "One")]));
@@ -558,7 +572,7 @@ fn a_duplicate_is_an_editable_personal_connection_on_the_same_slot() {
         Some(ConnectionItem::Managed(c)) => c,
         other => panic!("{other:?}"),
     };
-    t.f.root.respond("status", Ok(&connected(&copy_key, VPNKind::Openvpn)));
+    t.f.helper.respond("status", Ok(&connected(&copy_key, VPNKind::Openvpn)));
     t.f.manager.connect(&c, false);
     assert_eq!(t.prompts().len(), 1);
     assert_eq!(t.f.secrets.credential_for(&copy).map(|r| r.team), Some(None), "a personal copy is not a team item");
@@ -567,10 +581,11 @@ fn a_duplicate_is_an_editable_personal_connection_on_the_same_slot() {
 // MARK: - native profiles
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_outdated_profile_offers_the_reinstall_before_connecting() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com")]));
-    t.f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
+    t.f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
     t.f.native.set_address(SVC, Some("vpn2.example.com"));
     t.publish(2, &catalog(vec![l2tp(1, "Office L2TP", "vpn2.example.com")]));
     assert!(t.f.service.badges()[&key(1)].profile_outdated);
@@ -588,7 +603,7 @@ fn an_outdated_profile_offers_the_reinstall_before_connecting() {
     assert!(t.profiles.installs.lock().unwrap()[0].1.contains("vpn2.example.com"));
     assert!(t.f.service.badges()[&key(1)].profile_outdated, "staged only: not installed yet");
     // macOS replaces the service with the approved profile's.
-    t.f.native.set_list(Ok(vec![SystemService::new(SVC2, "Office L2TP", "L2TP", "Disconnected")]));
+    t.f.native.set_list(Ok(vec![SystemVpn::new(SVC2, "Office L2TP", "L2TP", "Disconnected")]));
     t.f.native.set_address(SVC2, Some("vpn2.example.com"));
     t.services_seen();
     assert!(!t.f.service.badges()[&key(1)].profile_outdated, "reinstalled");
@@ -599,7 +614,7 @@ fn an_outdated_profile_offers_the_reinstall_before_connecting() {
 /// The catalog moved the server; the old profile (old server) is installed.
 fn outdated_l2tp(t: &Connect) {
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com")]));
-    t.f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
+    t.f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
     t.f.native.set_address(SVC, Some("vpn.example.com"));
     t.publish(2, &catalog(vec![l2tp(1, "Office L2TP", "vpn2.example.com")]));
     t.f.manager.reload();
@@ -607,6 +622,7 @@ fn outdated_l2tp(t: &Connect) {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_cancelled_profile_install_keeps_the_connect_blocked() {
     let t = Connect::new();
     outdated_l2tp(&t);
@@ -622,6 +638,7 @@ fn a_cancelled_profile_install_keeps_the_connect_blocked() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_installed_profile_clears_the_mark_once_its_new_server_shows() {
     let t = Connect::new();
     outdated_l2tp(&t);
@@ -633,6 +650,7 @@ fn an_installed_profile_clears_the_mark_once_its_new_server_shows() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_apply_racing_the_install_keeps_its_new_mark() {
     let t = Connect::new();
     outdated_l2tp(&t);
@@ -645,10 +663,11 @@ fn an_apply_racing_the_install_keeps_its_new_mark() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_native_service_binding_of_a_catalog_connection_is_kept() {
     let t = Connect::new();
     t.subscribe(&catalog(vec![l2tp(1, "Office L2TP", "vpn.example.com")]));
-    t.f.native.set_list(Ok(vec![SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
+    t.f.native.set_list(Ok(vec![SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected")]));
     t.f.native.set_address(SVC, Some("vpn.example.com"));
     t.f.manager.refresh();
     t.f.manager.reload();
@@ -656,8 +675,8 @@ fn the_native_service_binding_of_a_catalog_connection_is_kept() {
 
     // Another system VPN with the same name is not hidden as the catalog connection's.
     t.f.native.set_list(Ok(vec![
-        SystemService::new(SVC, "Office L2TP", "L2TP", "Disconnected"),
-        SystemService::new(SVC2, "Office L2TP", "L2TP", "Disconnected"),
+        SystemVpn::new(SVC, "Office L2TP", "L2TP", "Disconnected"),
+        SystemVpn::new(SVC2, "Office L2TP", "L2TP", "Disconnected"),
     ]));
     t.f.native.set_address(SVC2, Some("evil.example.net"));
     t.f.manager.refresh();
@@ -668,6 +687,7 @@ fn the_native_service_binding_of_a_catalog_connection_is_kept() {
 // MARK: - control API
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_control_api_sees_catalog_connections_by_their_namespaced_ids() {
     let t = Connect::new();
     t.subscribe(&payload(&[(1, "One")]));
@@ -684,6 +704,7 @@ fn the_control_api_sees_catalog_connections_by_their_namespaced_ids() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn i_installed_it_clears_the_mark_of_a_staged_profile_only() {
     let t = Connect::new();
     outdated_l2tp(&t);
@@ -701,6 +722,7 @@ fn i_installed_it_clears_the_mark_of_a_staged_profile_only() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn i_installed_it_after_a_newer_apply_keeps_the_mark() {
     let t = Connect::new();
     outdated_l2tp(&t);

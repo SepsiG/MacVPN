@@ -1,4 +1,5 @@
 //! Port of `SetupCheckerTests.swift`.
+#![cfg(target_os = "macos")]
 
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::models::VPNKind;
@@ -39,7 +40,9 @@ fn root_binaries() -> Vec<String> {
 #[test]
 fn nothing_installed() {
     let r = check(&[], false, None, Some("1"));
-    assert_eq!(r.brew_prefix, None);
+    assert_eq!(r.package_manager, None);
+    // The report carries the checker's tool table (platform-api's `SetupReport::is_available` reads it).
+    assert_eq!(r.required_tools, &SetupChecker::REQUIRED_TOOLS[..]);
     assert!(!r.root_ok());
     assert!(!r.is_complete());
     assert!(!r.is_available(VPNKind::Openvpn));
@@ -52,7 +55,7 @@ fn partial_tools() {
     let mut existing = vec!["/opt/homebrew/bin/brew".to_string(), "/opt/homebrew/sbin/openvpn".to_string()];
     existing.extend(root_binaries());
     let r = check(&existing, true, Some("1\n"), Some("1\n"));
-    assert_eq!(r.brew_prefix.as_deref(), Some("/opt/homebrew"));
+    assert_eq!(r.package_manager.as_deref(), Some("/opt/homebrew"));
     assert!(r.root_ok());
     assert!(r.is_available(VPNKind::Openvpn));
     assert!(!r.is_available(VPNKind::Wireguard));
@@ -70,7 +73,7 @@ fn intel_prefix_and_complete() {
     }
     existing.extend(root_binaries());
     let r = check(&existing, true, Some("8"), Some("8"));
-    assert_eq!(r.brew_prefix.as_deref(), Some("/usr/local"));
+    assert_eq!(r.package_manager.as_deref(), Some("/usr/local"));
     assert!(r.missing_tools.is_empty());
     assert!(r.is_complete());
     assert!(VPNKind::ALL.iter().all(|k| r.is_available(*k)));

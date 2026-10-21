@@ -1,9 +1,29 @@
-# MacVPN – kézi tesztlista (1.4.1, 1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
+# MacVPN – kézi tesztlista (1.5.0, 1.4.1, 1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
 
-Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.4.1.dmg`), zöld: `cargo test --workspace`,
+Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.5.0.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
 az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
+
+## 1.5.0: belső átalakítás (Windows-előkészítés), a macOS-es app változatlan
+
+Az 1.5.0 csak a kód szerkezetét alakítja át egy későbbi Windows-változathoz; a MacVPN-nek pontosan úgy kell működnie, mint az 1.4.1-nek. A root réteg 8 marad (`Contents/Resources/root/VERSION`).
+
+- [ ] A smoke teszt mindkét nyelven zöld: `SMOKE_LANG=en scripts/smoke-manage.sh` és `SMOKE_LANG=hu scripts/smoke-manage.sh`
+- [ ] `scripts/bundle-baseline.sh dist/MacVPN.app`: az `Info.plist.xml`, a `tauri-config.json`, az `entitlements.txt` és az `otool-L.txt` azonos az 1.4.0-s alapállapottal, a `bundle-files.txt`-ben csak a két bináris mérete tér el
+- [ ] `node scripts/l10n-baseline.mjs --check`: minden macOS-es szöveg (angol és magyar) változatlan
+A következő lépésekhez egy Mac kell, rajta az 1.4.0 (vagy az 1.4.1) telepítve, valódi széffel és valódi adatokkal: legalább egy kapcsolat típusonként, egy rendszer VPN, egy feliratkozott 1.4.0-s csapatkatalógus, egy párosított app és bekapcsolt **Indítás bejelentkezéskor**. A frissítés előtt készíts az 1.4.0-ban egy teljes biztonsági mentést (**Teljes biztonsági mentés…**).
+
+- [ ] Frissítés az appon belül 1.4.0-ról (vagy 1.4.1-ről) 1.5.0-ra, egy helyben aláírt tesztkiadással, ahogy az 1.4.0-nál: a frissítő elfogadja a csomagot, nem kér admin jelszót, és a Rendszerállapot ablak szerint a root réteg (8) naprakész, nem kell újra **Engedélyezés**
+- [ ] A frissítés után a széf automatikusan feloldódik (ugyanaz a Keychain-elem), a kapcsolatok, a mappák és a beállítások megvannak
+- [ ] Minden kapcsolattípus csatlakozik és bont; egy rendszer VPN indul és leáll; a Rendszerbeállításokban végzett változás azonnal megjelenik a listában
+- [ ] Az ablakok, a menüsor popovere, az értesítések és a gyorsbillentyűk (⌘F, ⌘S, Option+kattintás a kapcsolón: hibakereső mód) ugyanúgy működnek és ugyanazt a szöveget mutatják, mint az 1.4.1-ben, angolul és magyarul is
+- [ ] Az 1.4.0-val készült teljes biztonsági mentés visszaállítható az 1.5.0-ban (**Visszaállítás biztonsági mentésből…**), és egy 1.5.0-val készült mentés visszaállítható az 1.4.0-ban (egy tesztfiókban vagy egy másik Macen)
+- [ ] Az 1.4.0-ban feliratkozott csapatkatalógus az 1.5.0-ban frissül (**Frissítés most** és a magától induló frissítés is); egy új, 1.4.0-val közzétett verzió megjön
+- [ ] A vezérlő API példakliense (`macvpn-control-client`) párosít, és a `hold` alatt fenntartja a kapcsolatot; a kliens kilépésekor a csak általa felépített VPN lebomlik
+- [ ] A Finderben a **Megnyitás ezzel** a `.ovpn`, a `.sstp`, a WireGuard `.conf` és a `.macvpncatalog` fájlra ugyanúgy működik, mint az 1.4.0-ban (a MacVPN-nel megnyitva importál, illetve a katalógus hozzáadása ablakot nyitja)
+- [ ] **Indítás bejelentkezéskor:** a frissítés után bekapcsolva marad; kijelentkezés és bejelentkezés után a MacVPN magától elindul
+- [ ] **MacVPN eltávolítása…** egy tesztfiókban, egyszer **A felhasználói adatok törlése is** jelöléssel (a széf, a `local.macvpn.vault` Keychain-elem és az Application Support/MacVPN törlődik), egyszer nélküle (minden adat megmarad, újratelepítés után a széf megnyílik)
 
 ## 1.4.1: kombinált PEM fájl (cert + key egy fájlban)
 

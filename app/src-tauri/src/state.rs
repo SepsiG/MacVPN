@@ -12,10 +12,7 @@ use macvpn_app_core::setup::{BrewRun, SetupFacts, SetupOps, SetupView};
 use macvpn_app_core::updates::UpdateController;
 use macvpn_app_core::{ConnectionManager, LoginItemView, ViewModel};
 use macvpn_core::l10n::AppLanguage;
-use macvpn_platform_mac::profile_staging::StagedProfiles;
-use macvpn_platform_mac::root_installer::upgrade_disconnect_notice;
-use macvpn_platform_mac::sc_watch::SystemVpnWatcher;
-use macvpn_platform_mac::setup_checker::SetupReport;
+use macvpn_platform_api::{NativeProfiles, SetupReport};
 use std::sync::atomic::{AtomicBool, AtomicU64};
 use std::sync::{Arc, Condvar, Mutex, PoisonError, RwLock};
 use std::time::{Duration, Instant};
@@ -31,8 +28,8 @@ pub struct AppState {
     pub poller: Arc<Poller>,
     /// The live system VPN list: the watcher's notifications, debounced, wake the poller.
     pub live: Arc<LiveReload>,
-    /// The system VPN change watcher (not in the sandbox; `None` if it could not start).
-    pub watcher: Mutex<Option<SystemVpnWatcher>>,
+    /// The system VPN change watcher (not in the sandbox; `None` if it could not start). Dropping it stops it.
+    pub watcher: Mutex<Option<Box<dyn Send>>>,
     /// A trusted watcher runs: the poll fallback keeps its idle pace with a window open.
     pub live_trusted: AtomicBool,
     pub publisher: Arc<Publisher>,
@@ -54,8 +51,8 @@ pub struct AppState {
     pub connections: Arc<ConnectionsModel>,
     /// The native debug log collections (`log stream`).
     pub native_logs: Arc<NativeLogs>,
-    /// The staged native profiles waiting for their service.
-    pub staged_profiles: Arc<Mutex<StagedProfiles>>,
+    /// The native profiles (their staged files wait for their service).
+    pub native_profiles: Arc<dyn NativeProfiles>,
     /// The Log tab being shown, with its subscription number (events of an older one are ignored by the UI).
     pub log_feed: Mutex<Option<(u64, LogFeed)>>,
     pub log_generation: AtomicU64,
@@ -98,16 +95,15 @@ impl AppState {
         crate::clipboard::clear_secret();
         self.poller.stop();
         self.live.stop();
-        if let Some(watcher) = self.watcher.lock().unwrap_or_else(PoisonError::into_inner).take() {
-            watcher.stop();
-        }
+        // Dropping the watcher stops it (and joins its thread).
+        drop(self.watcher.lock().unwrap_or_else(PoisonError::into_inner).take());
     }
 
     /// Re-reads launch at login from the system (menu open, after the switch) and publishes it.
     pub fn refresh_login_item(self: &Arc<Self>) {
         let state = self.clone();
         tauri::async_runtime::spawn_blocking(move || {
-            let view = crate::platform::login_item_view(crate::platform::login_items(&state.env).state());
+            let view = crate::platform::login_items(&state.env).state();
             *state.login_item.write().unwrap_or_else(PoisonError::into_inner) = Some(view);
             state.publisher.mark();
         });
@@ -135,7 +131,7 @@ impl AppState {
             facts.as_ref(),
             &self.brew.lock().unwrap_or_else(PoisonError::into_inner),
             &self.setup_ops.lock().unwrap_or_else(PoisonError::into_inner),
-            upgrade_disconnect_notice(),
+            crate::platform::get().setup().helper_upgrade_notice(),
         );
         vm.quit = self.quit.question();
         // The control API: the "Held by" labels, the quit question's note, the Paired apps section, the pairings.
@@ -166,7 +162,7 @@ impl AppState {
 /// The platform's report as the System Status window's facts.
 pub fn setup_facts(r: &SetupReport) -> SetupFacts {
     SetupFacts {
-        brew_prefix: r.brew_prefix.clone(),
+        brew_prefix: r.package_manager.clone(),
         missing_tools: r.missing_tools.clone(),
         installed_root_version: r.installed_root_version.clone(),
         bundled_root_version: r.bundled_root_version.clone(),

@@ -1,4 +1,5 @@
 //! Port of `SecureTempDirectoryTests.swift` and `RootInstallerTempTests` (`RootInstallerTests.swift`).
+#![cfg(target_os = "macos")]
 
 mod common;
 

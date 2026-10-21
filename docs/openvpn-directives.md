@@ -54,12 +54,29 @@ General rules that apply to every tier: the directive name must be `[A-Za-z0-9-]
 | Server-side option, not meant for a client connection | `ifconfig-push-constraint`, `duplicate-cn`, `max-clients`, `max-routes-per-client`, `ccd-exclusive`, `client-nat`, `connect-freq`, `connect-freq-initial`, `hash-size`, `bcast-buffers`, `stale-routes-check`, `verify-client-cert`, `client-cert-not-required`, `username-as-common-name`, `override-username`, `auth-user-pass-optional`, `auth-gen-token`, `ifconfig-pool`, `ifconfig-pool-linear`, `ifconfig-ipv6-pool`, `ifconfig-push`, `ifconfig-ipv6-push`, `iroute`, `iroute-ipv6`, `push`, `push-reset`, `push-remove`, `disable`, `vlan-tagging`, `vlan-accept`, `vlan-pvid`, `tls-crypt-v2-max-age` |
 | Weakens the security of the tunnel (deprecated or insecure mode) | `allow-deprecated-insecure-static-crypto`, `compat-mode`, `no-replay`, `no-iv`, `key-method` |
 | Allows routing that can bypass or loop the tunnel | `allow-recursive-routing` |
-| Not supported on macOS (Windows or Linux only) | `win-sys`, `service`, `cryptoapicert`, `allow-nonadmin`, `setcon`, `msg-channel`, `rdns-internal`, `dhcp-internal` |
+| Not supported on macOS (Windows or Linux only) | `win-sys`, `service`, `cryptoapicert`, `allow-nonadmin`, `setcon`, `msg-channel`, `rdns-internal`, `dhcp-internal` (the macOS [platform tier](#the-platform-tier-per-os)) |
 | Normally sent by the server or used internally by OpenVPN, not set in a client config | `key-derivation`, `protocol-flags`, `peer-id`, `push-continuation`, `http-proxy-override` |
 | Removed from OpenVPN: the connection will fail to start | `compat-names`, `no-name-remapping`, `mtu-dynamic` |
 | Debugging option that deliberately disrupts the connection | `gremlin` |
 | Standalone mode: OpenVPN prints information or exits instead of connecting | `help`, `version`, `show-adapters`, `show-ciphers`, `show-digests`, `show-engines`, `show-gateway`, `show-groups`, `show-net`, `show-net-up`, `show-tls`, `show-valid-subnets`, `show-curves`, `test-crypto`, `mktun`, `rmtun` |
 | Unknown to MacVPN: its effect cannot be checked | any directive not in a table (with the argument restrictions above) |
+
+### The platform tier per OS
+
+The directives that belong to one operating system's OpenVPN are a separate table, the platform tier (`platform_reasons(os)` in the validator, consulted after the RISKY table above). The validator uses the tier of the OS it was built for (`TargetOs::host()`), never a setting. MacVPN ships the macOS column, unchanged since 1.4. The Windows and Linux columns are drafts for the Windows security review (phase 2) and the Linux phase; only their mechanism is tested now.
+
+| Directive | macOS | Windows (draft) | Linux (draft) |
+|---|---|---|---|
+| `win-sys` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Set by the VPN service itself, not by a connection's config | RISKY: Not supported on macOS (Windows or Linux only) |
+| `service` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Set by the VPN service itself, not by a connection's config | RISKY: Not supported on macOS (Windows or Linux only) |
+| `cryptoapicert` | RISKY: Not supported on macOS (Windows or Linux only) | SAFE: one argument, `THUMB:<hex>` (bytes optionally separated by spaces) or `SUBJ:`, `ISSUER:`, `SELECT:` with text | RISKY: Not supported on macOS (Windows or Linux only) |
+| `allow-nonadmin` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Set by the VPN service itself, not by a connection's config | RISKY: Not supported on macOS (Windows or Linux only) |
+| `setcon` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on Windows (Linux only) | not in the platform tier (an unknown directive; revisited in the Linux phase) |
+| `msg-channel` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Set by the VPN service itself, not by a connection's config | RISKY: Not supported on macOS (Windows or Linux only) |
+| `rdns-internal` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Set by the VPN service itself, not by a connection's config | RISKY: Not supported on macOS (Windows or Linux only) |
+| `dhcp-internal` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Set by the VPN service itself, not by a connection's config | RISKY: Not supported on macOS (Windows or Linux only) |
+
+The reason is the text the Risky settings panel shows. On Windows the VPN service sets the service-owned directives itself, so a connection's config must not; they still need an acknowledgement rather than being FORBIDDEN until the review decides.
 
 **`user` / `group`.** OpenVPN drops root after the tunnel is set up. MacVPN's up hook (DNS) has already run as root, but afterwards: the down hook runs as the unprivileged user and cannot restore DNS (MacVPN's `mvpn down` restores it as root from the saved `dns-backup` when you disconnect, also after openvpn has exited); a restart after `ping-restart` or a network change cannot reopen the tun device or re-read the password files unless the config has `persist-tun` (and, before OpenVPN 2.7, `persist-key`). MacVPN does not add these automatically. If OpenVPN exits on its own (for example `ping-exit`), DNS stays on the VPN servers until MacVPN disconnects the connection. Note also that macOS has `nobody` and `nogroup`, but the manual recommends a dedicated user.
 
@@ -126,6 +143,8 @@ A MacVPN az OpenVPN config minden direktíváját három szintbe sorolja (`OpenV
 - **SAFE (biztonságos):** engedett, argumentum-ellenőrzéssel (pl. `remap-usr1`, `setenv CONFIG_VERSION "2.0.4"`, `machine-readable-output`, `pull-filter`, `dns`, `persist-*`, `data-ciphers*`). A `setenv` bármely shell-névvel SAFE, kivéve a fenti tiltólistát (ezek az értékek a root DNS hookhoz, a `mvpn hook ovpn-dns`-hez jutnak; a hook ezen felül csak az engedélyezett változókat olvassa).
 - **RISKY (kockázatos):** nem lépi át a root jogosultsági határt, de a kapcsolat vagy a rendszer viselkedését befolyásolja (pl. `user`, `group`, `route-noexec`, `ifconfig-noexec`, szerveroldali és Windows-only opciók), és **minden ismeretlen direktíva**. A szerkesztő sárga **Kockázatos beállítások** paneljén soronként rövid indoklással jelenik meg; mentéshez és csatlakozáshoz be kell jelölni: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. A tudomásulvétel név szerinti, és pontosan a mentéskori halmazra szól: egy új kockázatos direktíva új tudomásulvételt kér. A root oldalon `--accept-risky` adja át.
 - **FORBIDDEN (tiltott):** soha, tudomásulvétellel sem: script hookok, kódbetöltés (`plugin`, `pkcs11-*` a `pkcs11-id`-vel együtt), `config`, `cd`, `chroot` (a MacVPN hookjai és jelszófájljai utána nem érhetők el), napló és vezérlés (`log`, `syslog`, `echo`, `management*`, …), root fájl-hozzáférés, `[inline]` nélküli fájlhivatkozás (köztük `askpass <fájl>`), tiltólistás `setenv`.
+
+**Platformszint:** az egy-egy operációs rendszerhez tartozó direktívák (`win-sys`, `service`, `cryptoapicert`, …) külön táblában vannak (`platform_reasons(os)`), és a validátor mindig annak az OS-nek a tábláját használja, amelyre fordították. A MacVPN a macOS-oszlopot használja, az 1.4 óta változatlanul; a Windows- és Linux-oszlop vázlat (lásd a fenti táblázatot).
 
 **OpenVPN 2.7:** a telepített 2.7.8 `--help` mind a 234 opciója kifejezetten besorolt (rögzített lista: `Tests/Fixtures/openvpn/`); a `dns` minden formája SAFE, a `dns-updown` tiltott. A `script-security 0|1` SAFE (a MacVPN `--script-security 2`-je felülírja), a 2/3 tiltott.
 

@@ -1,0 +1,15 @@
+{
+  "clients" : [
+    {
+      "allowed" : [
+        "C0DE0000-0000-4000-8000-000000000001",
+        "8F1C2D3E-0000-4000-8000-000000000001"
+      ],
+      "created" : "2026-09-21T14:13:20Z",
+      "executable" : "\/Applications\/Acme Remote.app\/Contents\/MacOS\/Acme Remote",
+      "id" : "C0DE0000-0000-4000-8000-000000000030",
+      "name" : "Acme Remote",
+      "tokenSha256" : "92e95a7bf60ea06644c597dae6d8144890a5f9f5bdd1aa90b11115bbadc67f5c"
+    }
+  ]
+}

@@ -70,6 +70,7 @@ fn decodable_fixtures() -> Vec<(String, String, Connection)> {
 // --- Connections ------------------------------------------------------------------------------------------------
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn every_swift_fixture_round_trips_with_its_exact_meta_json() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -95,6 +96,7 @@ fn every_swift_fixture_round_trips_with_its_exact_meta_json() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn connections_survive_a_reopen_and_are_listed_by_name() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -110,6 +112,7 @@ fn connections_survive_a_reopen_and_are_listed_by_name() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_row_columns_are_stored_as_specified() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -126,6 +129,7 @@ fn the_row_columns_are_stored_as_specified() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn saving_without_a_config_keeps_the_stored_one() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -142,6 +146,7 @@ fn saving_without_a_config_keeps_the_stored_one() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_new_connection_saved_without_a_config_has_an_empty_one() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -151,6 +156,7 @@ fn a_new_connection_saved_without_a_config_has_an_empty_one() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_config_of_an_unknown_connection_is_an_error() {
     let tmp = TempDir::new();
     let (_dir, vault) = new_vault(&tmp);
@@ -158,6 +164,7 @@ fn the_config_of_an_unknown_connection_is_an_error() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_one_megabyte_inline_block_round_trips() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -173,6 +180,7 @@ fn a_one_megabyte_inline_block_round_trips() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn new_connections_are_appended_to_their_folder_and_keep_their_position() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -207,6 +215,7 @@ fn new_connections_are_appended_to_their_folder_and_keep_their_position() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_cascades_to_secrets_link_ranking_and_pin() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -248,6 +257,7 @@ fn delete_cascades_to_secrets_link_ranking_and_pin() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn deleting_an_unknown_connection_is_fine() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -266,6 +276,7 @@ fn secret_fields_have_the_keychain_raw_values() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn secrets_round_trip_as_blobs() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -292,6 +303,7 @@ fn secrets_round_trip_as_blobs() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_empty_value_deletes_the_secret() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -305,6 +317,7 @@ fn an_empty_value_deletes_the_secret() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn secrets_keyed_by_a_system_vpn_service_id_work() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -319,6 +332,7 @@ fn secrets_keyed_by_a_system_vpn_service_id_work() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_secrets_only_touches_its_item_and_delete_all_clears_everything() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -353,6 +367,7 @@ fn the_colour_palette_round_trips() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_stored_colour_is_read_and_an_unknown_one_is_none() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -376,6 +391,7 @@ fn a_stored_colour_is_read_and_an_unknown_one_is_none() {
 // --- Newer database ---------------------------------------------------------------------------------------------
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn every_write_is_refused_on_a_newer_database() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -404,6 +420,7 @@ fn every_write_is_refused_on_a_newer_database() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn debug_output_of_a_stored_connection_has_no_config() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -416,6 +433,7 @@ fn debug_output_of_a_stored_connection_has_no_config() {
 // --- One transaction for many writes, raw records and counts (plan B Task 13: the migration) --------------------
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn writes_through_one_transaction_commit_together_or_not_at_all() {
     use macvpn_core::ranking::ConnectionRanking;
     let tmp = TempDir::new();
@@ -451,6 +469,7 @@ fn writes_through_one_transaction_commit_together_or_not_at_all() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_raw_record_is_the_stored_meta_json_and_config_bytes() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -464,6 +483,7 @@ fn the_raw_record_is_the_stored_meta_json_and_config_bytes() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn is_empty_sees_every_table() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);

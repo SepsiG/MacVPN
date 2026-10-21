@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use macvpn_app_core::deps::SystemService;
+use macvpn_app_core::deps::SystemVpn;
 use macvpn_app_core::prompt::PromptBroker;
 use macvpn_app_core::{ManagerSnapshot, RowState, TrayIcon, ViewModel};
 use macvpn_core::date::Date;
@@ -39,6 +39,7 @@ fn tray_icon_priority_auth_then_failure_then_active() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn view_model_rows_follow_the_order_and_availability() {
     let f = Fixture::new(AppLanguage::En);
     let wg = Connection::new("Home WG", VPNKind::Wireguard);
@@ -46,14 +47,14 @@ fn view_model_rows_follow_the_order_and_availability() {
     f.store.save(&wg, Some("x")).unwrap();
     f.store.save(&ovpn, Some("remote x\n")).unwrap();
     let svc = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
-    f.root.respond(
+    f.helper.respond(
         "status",
         Ok(&format!(
             r#"[{{"id":"{}","kind":"openvpn","state":"connected","iface":"utun4","ip":"10.8.0.2","since":1800000000}}]"#,
             uuid_string(&ovpn.id)
         )),
     );
-    f.native.set_list(Ok(vec![SystemService::new(svc, "Corp", "IKEv2", "Disconnecting")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(svc, "Corp", "IKEv2", "Disconnecting")]));
     let m = f.manager();
     m.refresh();
     m.pin(svc);
@@ -86,6 +87,7 @@ fn view_model_rows_follow_the_order_and_availability() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn held_by_labels_follow_the_lease_holders() {
     let f = Fixture::new(AppLanguage::En);
     let a = Connection::new("Office", VPNKind::Openvpn);
@@ -115,6 +117,7 @@ fn held_by_labels_follow_the_lease_holders() {
 
 /// The paired apps reach the UI without their token hash (and the token never exists here).
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn rows_carry_the_server_host_only_for_the_search() {
     let f = Fixture::new(AppLanguage::En);
     let mut native = Connection::new("Branch", VPNKind::L2tp);
@@ -213,6 +216,7 @@ impl macvpn_app_core::deps::ConnectionRepository for CountingStore {
 /// The view model is built from what the reload (after a save, an import, a catalog apply, the unlock) left: no
 /// config is read while building it, however often it is built.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn building_the_view_model_reads_no_config() {
     let f = Fixture::new(AppLanguage::En);
     for i in 0..5 {
@@ -392,12 +396,13 @@ fn broker_keeps_one_prompt_per_connection() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn manager_prompt_through_broker_and_dismissed_on_disconnect() {
     let f = Fixture::new(AppLanguage::En);
     let mut c = Connection::new("S", VPNKind::Strongswan);
     c.otp.enabled = true;
     f.store.save(&c, Some("x")).unwrap();
-    f.root.respond("status", Ok("[]"));
+    f.helper.respond("status", Ok("[]"));
     let m = f.manager();
     let broker = Arc::new(PromptBroker::new());
     {
@@ -416,7 +421,7 @@ fn manager_prompt_through_broker_and_dismissed_on_disconnect() {
     connecting.join().unwrap();
     assert!(broker.pending().is_empty());
     assert_eq!(m.state(&uuid_string(&c.id)), ConnectionState::Disconnected);
-    assert!(!f.root.lines().iter().any(|l| l.starts_with("up ")));
+    assert!(!f.helper.lines().iter().any(|l| l.starts_with("up ")));
 }
 
 // MARK: - L10n
@@ -442,6 +447,7 @@ fn manager_texts_are_in_the_table() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn catalog_connections_carry_the_team_badge() {
     use macvpn_app_core::catalog::CatalogBadge;
     let f = Fixture::new(AppLanguage::En);

@@ -1,4 +1,5 @@
-//! The open / save panels as sheets on an app window (`macvpn_platform_mac::dialogs`), awaited from a command.
+//! The open / save panels as sheets on an app window (the platform's
+//! [`FilePanels`](macvpn_platform_api::FilePanels)), awaited from a command.
 //! The chosen paths stay here: no command takes or returns a file path, so the web view can neither name a file
 //! to read or write nor learn where the user's files are.
 
@@ -7,6 +8,7 @@ use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use tauri::{AppHandle, Manager};
 
+use crate::platform;
 use crate::state::AppState;
 
 /// One panel at a time; released when the panel's answer arrives.
@@ -46,10 +48,14 @@ pub async fn choose_files(
     let target = window.clone();
     window
         .run_on_main_thread(move || {
-            let ns_window = target.ns_window().unwrap_or(std::ptr::null_mut());
-            macvpn_platform_mac::dialogs::choose_files(ns_window, multiple, move |paths| {
+            let done: Box<dyn FnOnce(Vec<PathBuf>)> = Box::new(move |paths| {
                 let _ = tx.send(paths);
             });
+            match platform::native_window(&target) {
+                Some(native) => platform::get().file_panels().choose_files(native, multiple, done),
+                // No window: as a cancelled panel.
+                None => done(Vec::new()),
+            }
         })
         .map_err(|e| e.to_string())?;
     receive(rx).await
@@ -69,10 +75,16 @@ pub async fn choose_save_path(
     let target = window.clone();
     window
         .run_on_main_thread(move || {
-            let ns_window = target.ns_window().unwrap_or(std::ptr::null_mut());
-            macvpn_platform_mac::dialogs::choose_save_path(ns_window, &file_name, message.as_deref(), move |path| {
+            let done: Box<dyn FnOnce(Option<PathBuf>)> = Box::new(move |path| {
                 let _ = tx.send(path);
             });
+            match platform::native_window(&target) {
+                Some(native) => {
+                    platform::get().file_panels().choose_save_path(native, &file_name, message.as_deref(), done);
+                }
+                // No window: as a cancelled panel.
+                None => done(None),
+            }
         })
         .map_err(|e| e.to_string())?;
     receive(rx).await

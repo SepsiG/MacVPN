@@ -1,4 +1,5 @@
 //! Port of `NativeProfileStagingTests.swift` (the legacy profile removal test lives with the core store tests).
+#![cfg(target_os = "macos")]
 
 mod common;
 

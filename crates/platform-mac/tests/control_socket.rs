@@ -1,12 +1,13 @@
 //! The control API socket: the private directory, the bind rules (stale socket, single instance, modes), the
 //! peer identity and the random source.
+#![cfg(target_os = "macos")]
 #![allow(unsafe_code)]
 
 mod common;
 
 use common::{Scratch, chmod, mode, short_scratch};
 use macvpn_platform_mac::control_socket::{
-    self, LOCK_NAME, SOCKET_NAME, bind, peer, prepare_dir, random_32, same_user,
+    self, LOCK_NAME, SOCKET_NAME, bind, is_already_closed, peer, prepare_dir, random_32, same_user,
 };
 use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
@@ -186,6 +187,19 @@ fn same_user_compares_with_getuid() {
     if getuid() != 0 {
         assert!(!same_user(0));
     }
+}
+
+#[test]
+fn already_closed_is_einval_enotconn_or_econnreset() {
+    for errno in [libc::EINVAL, libc::ENOTCONN, libc::ECONNRESET] {
+        assert!(is_already_closed(&std::io::Error::from_raw_os_error(errno)), "{errno}");
+    }
+    for errno in [libc::EPIPE, libc::EBADF, libc::EAGAIN, libc::ETIMEDOUT] {
+        assert!(!is_already_closed(&std::io::Error::from_raw_os_error(errno)), "{errno}");
+    }
+    // Only the OS error counts, not a kind std made up.
+    assert!(!is_already_closed(&std::io::Error::from(ErrorKind::InvalidInput)));
+    assert!(!is_already_closed(&std::io::Error::from(ErrorKind::ConnectionReset)));
 }
 
 #[test]

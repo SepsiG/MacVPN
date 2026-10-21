@@ -28,14 +28,14 @@ use super::keys::Dek;
 use super::schema::{MIGRATIONS, Migration};
 use super::tree::TreeError;
 use crate::date::Date;
+use crate::fsx::{self, FileOwner};
 use crate::store::write_private;
 use rusqlite::config::DbConfig;
 use rusqlite::{Connection, ErrorCode, OpenFlags, OptionalExtension, TransactionBehavior};
 use std::fmt;
-use std::fs::{self, DirBuilder, OpenOptions};
+use std::fs;
 use std::io::{self, ErrorKind};
 use std::ops::Deref;
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
 
@@ -191,15 +191,9 @@ impl Vault {
     pub fn create_with_migrations(dir: &Path, dek: &Dek, migrations: &[Migration]) -> Result<Vault, VaultError> {
         let dir_uid = prepare_dir(dir)?;
         let path = dir.join(VAULT_FILE);
-        let file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .custom_flags(libc::O_NOFOLLOW)
-            .open(&path)?;
+        let file = fsx::create_new_rw(&path, fsx::Access::Private)?;
         // The new file belongs to this process's user: the directory must too.
-        let own_uid = file.metadata()?.uid();
+        let own_uid = fsx::owner(&file.metadata()?)?;
         drop(file);
         let result = (|| {
             if dir_uid != own_uid {
@@ -235,7 +229,8 @@ impl Vault {
         let dir_uid = prepare_dir(dir)?;
         let path = dir.join(VAULT_FILE);
         let meta = fs::symlink_metadata(&path)?;
-        if !meta.file_type().is_file() || meta.uid() != dir_uid || meta.mode() & 0o7777 != 0o600 {
+        if !meta.file_type().is_file() || fsx::owner(&meta)? != dir_uid || !fsx::has_access(&meta, fsx::Access::Private)
+        {
             return Err(VaultError::Io(io::Error::new(
                 ErrorKind::PermissionDenied,
                 format!("{} must be a regular 0600 file of this user", path.display()),
@@ -477,32 +472,6 @@ fn not_ours(dir: &Path) -> VaultError {
 
 /// Creates `dir` (0700) if missing, refuses anything but a real directory (a symlink included), tightens its mode
 /// to 0700, and returns its owner.
-fn prepare_dir(dir: &Path) -> io::Result<u32> {
-    if let Some(parent) = dir.parent()
-        && !parent.as_os_str().is_empty()
-    {
-        fs::create_dir_all(parent)?;
-    }
-    match DirBuilder::new().mode(0o700).create(dir) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
-        Err(e) => return Err(e),
-    }
-    let not_a_dir = || io::Error::new(ErrorKind::NotADirectory, format!("{} is not a real directory", dir.display()));
-    if !fs::symlink_metadata(dir)?.file_type().is_dir() {
-        return Err(not_a_dir());
-    }
-    let handle = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_DIRECTORY)
-        .open(dir)
-        .map_err(|e| if e.raw_os_error() == Some(libc::ELOOP) { not_a_dir() } else { e })?;
-    let meta = handle.metadata()?;
-    if !meta.file_type().is_dir() {
-        return Err(not_a_dir());
-    }
-    if meta.mode() & 0o7777 != 0o700 {
-        handle.set_permissions(fs::Permissions::from_mode(0o700))?;
-    }
-    Ok(meta.uid())
+fn prepare_dir(dir: &Path) -> io::Result<FileOwner> {
+    fsx::ensure_private_dir(dir)
 }

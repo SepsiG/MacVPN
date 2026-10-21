@@ -1,5 +1,6 @@
 //! Port of `NativeVPNTests.swift` (the start-option tests are in the core: `native::start_options`; the
 //! controller-level ones are here).
+#![cfg(target_os = "macos")]
 
 use macvpn_core::l10n::{AppLanguage, with_language};
 use macvpn_core::models::{ConnectionState, Secrets, parse_uuid};

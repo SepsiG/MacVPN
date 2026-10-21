@@ -1,30 +1,18 @@
 //! Port of `ConnectionStore.swift`: `<base>/<UUID>/meta.json` and `config`.
 //!
-//! The root layer reads the same path: `~/Library/Application Support/MacVPN/connections/<UUID>/config`.
+//! The root layer reads the same path: `<data dir>/connections/<UUID>/config`, where the data dir is the app's data
+//! directory (`Product::data_dir`).
 //! Directories are 0700, files 0600, written via an `O_EXCL` temp file + fsync + rename + directory fsync.
 
 use crate::collation;
+use crate::fsx::{self, Access, Follow, OpenFor};
 use crate::l10n::{self, Arg};
 use crate::models::{Connection, uuid_string};
 use crate::swift_json;
-use std::fs::{self, DirBuilder, File, OpenOptions};
+use std::fs;
 use std::io::{self, Write};
-use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
-
-/// The user data root below a home directory: `<home>/Library/Application Support/MacVPN`.
-///
-/// Swift uses `FileManager.homeDirectoryForCurrentUser` (the password database, not `$HOME`); the caller passes
-/// that home directory (the platform layer resolves it).
-pub fn application_support_directory(home: &Path) -> PathBuf {
-    home.join("Library/Application Support/MacVPN")
-}
-
-/// `<home>/Library/Application Support/MacVPN/connections`.
-pub fn default_base_dir(home: &Path) -> PathBuf {
-    application_support_directory(home).join("connections")
-}
 
 /// An error with a user-facing (localized) message.
 #[derive(Debug)]
@@ -40,10 +28,11 @@ impl std::fmt::Display for RemovalError {
 
 impl std::error::Error for RemovalError {}
 
-/// Deletes the user data (on uninstall). Only a real (non-symlink) directory named `MacVPN`; a missing one is fine.
-pub fn remove_application_support_directory(dir: &Path) -> Result<(), Box<dyn std::error::Error>> {
+/// Deletes the user data (on uninstall): the app's data directory (`Product::data_dir`). Only a real (non-symlink)
+/// directory named `expected_name` (the product's name); a missing one is fine.
+pub fn remove_user_data(dir: &Path, expected_name: &str) -> Result<(), Box<dyn std::error::Error>> {
     let display = dir.to_string_lossy();
-    if dir.file_name().and_then(|n| n.to_str()) != Some("MacVPN") {
+    if dir.file_name().and_then(|n| n.to_str()) != Some(expected_name) {
         return Err(Box::new(RemovalError { message: l10n::tr("Cannot delete: %@", &[Arg::Str(&display)]) }));
     }
     let meta = match fs::symlink_metadata(dir) {
@@ -66,6 +55,11 @@ pub struct ConnectionStore {
 }
 
 impl ConnectionStore {
+    /// `<data dir>/connections`: `data_dir` is the app's data directory (`Product::data_dir`).
+    pub fn default_base_dir(data_dir: &Path) -> PathBuf {
+        data_dir.join("connections")
+    }
+
     pub fn new(base_dir: impl Into<PathBuf>) -> Self {
         ConnectionStore { base_dir: base_dir.into() }
     }
@@ -106,8 +100,7 @@ impl ConnectionStore {
     /// `config == None`: the existing config file stays unchanged.
     pub fn save(&self, connection: &Connection, config: Option<&str>) -> io::Result<()> {
         let dir = self.directory(&connection.id);
-        DirBuilder::new().recursive(true).mode(0o700).create(&dir)?;
-        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
+        fsx::create_private_dir_all(&dir)?;
         let json = swift_json::to_pretty_sorted(&connection.to_json()).map_err(io::Error::other)?;
         write_private(json.as_bytes(), &self.meta_path(&connection.id))?;
         if let Some(config) = config {
@@ -147,25 +140,7 @@ impl ConnectionStore {
 /// Temp file created 0600 (`O_EXCL`, `O_NOFOLLOW`), fsync, then rename and an fsync of the directory: never a
 /// wider-permission state, and no empty / truncated file after a power loss.
 pub fn write_private(data: &[u8], path: &Path) -> io::Result<()> {
-    let dir = path.parent().unwrap_or(Path::new("."));
-    let tmp = dir.join(format!(".tmp-{}", uuid_string(&Uuid::new_v4())));
-    let result = (|| {
-        let mut file =
-            OpenOptions::new().write(true).create_new(true).mode(0o600).custom_flags(libc::O_NOFOLLOW).open(&tmp)?;
-        file.write_all(data)?;
-        file.sync_all()?;
-        drop(file);
-        fs::rename(&tmp, path)
-    })();
-    if let Err(e) = result {
-        let _ = fs::remove_file(&tmp);
-        return Err(e);
-    }
-    // Durability of the rename; if the directory cannot be opened, the write still succeeded.
-    if let Ok(d) = File::open(dir) {
-        let _ = d.sync_all();
-    }
-    Ok(())
+    fsx::atomic_write(path, data, Access::Private)
 }
 
 /// Deletes a file after overwriting its contents in place with zeros of the same length and an `fsync` (the
@@ -174,7 +149,8 @@ pub fn write_private(data: &[u8], path: &Path) -> io::Result<()> {
 /// - A symlink is only unlinked (never followed; its target is not touched).
 /// - The file is opened with `O_NOFOLLOW | O_NONBLOCK` and checked with `fstat` on the open descriptor: anything
 ///   that is not a regular file (a directory, a FIFO, a device) is refused and left in place.
-/// - A file with more than one hard link is only unlinked: the other name is not ours to overwrite.
+/// - A file with more than one hard link is only unlinked: the other name is not ours to overwrite. Where the link
+///   count is unknown (Windows in phase 1, see `fsx::hard_links`) every file is treated so.
 /// - A missing file is fine (a resumed cleanup).
 ///
 /// Best effort against later recovery: on APFS (copy-on-write) or an SSD the old blocks may survive the
@@ -187,12 +163,8 @@ pub fn shred_file(path: &Path) -> io::Result<()> {
         Err(e) => return Err(e),
     };
     if !meta.file_type().is_symlink() {
-        let mut file = OpenOptions::new().write(true).custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK).open(path)?;
-        let opened = file.metadata()?;
-        if !opened.file_type().is_file() {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "not a regular file"));
-        }
-        if opened.nlink() <= 1 {
+        let (mut file, opened) = fsx::open_regular(path, OpenFor::Write, Follow::No, false)?;
+        if fsx::hard_links(&opened) <= 1 {
             let mut left = opened.len();
             let zeros = [0u8; 64 * 1024];
             while left > 0 {
@@ -204,10 +176,8 @@ pub fn shred_file(path: &Path) -> io::Result<()> {
         }
     }
     fs::remove_file(path)?;
-    if let Some(dir) = path.parent()
-        && let Ok(d) = File::open(dir)
-    {
-        let _ = d.sync_all();
+    if let Some(dir) = path.parent() {
+        fsx::sync_dir(dir);
     }
     Ok(())
 }
@@ -217,7 +187,7 @@ pub(crate) fn ensure_private_parent(path: &Path) -> io::Result<()> {
     if let Some(dir) = path.parent()
         && !dir.exists()
     {
-        DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+        fsx::create_missing_private_dirs(dir)?;
     }
     Ok(())
 }

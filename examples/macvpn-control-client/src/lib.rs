@@ -41,9 +41,9 @@ use std::collections::VecDeque;
 use std::fmt;
 use std::io::{self, BufRead, BufReader, ErrorKind, Write};
 use std::net::Shutdown;
-use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
+use transport::Stream;
 
 /// The protocol version this client was written for (`hello` replies with `{"ok":true,"api":1}`).
 pub const API_VERSION: u64 = 1;
@@ -274,8 +274,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 /// State events that arrive meanwhile are kept for [`Client::next_event`] (or, during [`Client::up`], handed to
 /// its callback). The type is not `Sync`; to end a session from another thread, use [`Client::closer`].
 pub struct Client {
-    stream: UnixStream,
-    reader: BufReader<UnixStream>,
+    stream: Stream,
+    reader: BufReader<Stream>,
     next_id: u64,
     events: VecDeque<StateEvent>,
     /// The `reason` of the `closing` event, once MacVPN sent it.
@@ -286,7 +286,7 @@ impl Client {
     /// Connects to the socket. Send `pair` or `hello` right away: MacVPN closes a connection that has not
     /// authenticated within 5 seconds. Prefer [`Client::open`], which does both.
     pub fn connect(path: &Path) -> Result<Client> {
-        let stream = UnixStream::connect(path)?;
+        let stream = transport::connect(path)?;
         stream.set_write_timeout(Some(Duration::from_secs(5)))?;
         let reader = BufReader::new(stream.try_clone()?);
         Ok(Client { stream, reader, next_id: 1, events: VecDeque::new(), closing: None })
@@ -467,12 +467,77 @@ impl Client {
 }
 
 /// Closes a [`Client`]'s socket from another thread (see [`Client::closer`]).
-pub struct Closer(UnixStream);
+pub struct Closer(Stream);
 
 impl Closer {
     /// The `Client`'s pending and future reads end (`Ok(None)` / `Error::Closed`), and MacVPN ends the leases.
     pub fn close(&self) {
         let _ = self.0.shutdown(Shutdown::Both);
+    }
+}
+
+// MARK: - Transport
+
+/// The socket under a [`Client`]: a Unix domain socket. The Windows client (a named pipe) comes with WinVPN; until
+/// then [`Client::connect`] returns `ErrorKind::Unsupported` there.
+#[cfg(unix)]
+mod transport {
+    use std::io;
+    use std::path::Path;
+
+    pub(crate) type Stream = std::os::unix::net::UnixStream;
+
+    pub(crate) fn connect(path: &Path) -> io::Result<Stream> {
+        Stream::connect(path)
+    }
+}
+
+#[cfg(not(unix))]
+mod transport {
+    use std::io::{self, ErrorKind, Read, Write};
+    use std::net::Shutdown;
+    use std::path::Path;
+    use std::time::Duration;
+
+    /// No value exists: [`connect`] always fails, so no `Client` is ever built on this platform.
+    pub(crate) enum Stream {}
+
+    pub(crate) fn connect(_path: &Path) -> io::Result<Stream> {
+        Err(io::Error::new(ErrorKind::Unsupported, "the named pipe client comes with WinVPN"))
+    }
+
+    impl Stream {
+        pub(crate) fn try_clone(&self) -> io::Result<Stream> {
+            match *self {}
+        }
+
+        pub(crate) fn set_read_timeout(&self, _timeout: Option<Duration>) -> io::Result<()> {
+            match *self {}
+        }
+
+        pub(crate) fn set_write_timeout(&self, _timeout: Option<Duration>) -> io::Result<()> {
+            match *self {}
+        }
+
+        pub(crate) fn shutdown(&self, _how: Shutdown) -> io::Result<()> {
+            match *self {}
+        }
+    }
+
+    impl Read for Stream {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            match *self {}
+        }
+    }
+
+    impl Write for Stream {
+        fn write(&mut self, _buf: &[u8]) -> io::Result<usize> {
+            match *self {}
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            match *self {}
+        }
     }
 }
 
@@ -607,6 +672,7 @@ mod tests {
         assert_eq!((code, wire.as_str(), message), (ErrorCode::Failed, "locked", None));
     }
 
+    #[cfg(unix)]
     #[test]
     fn the_closing_event_is_kept_and_unknown_events_are_ignored() {
         use std::os::unix::net::UnixStream;

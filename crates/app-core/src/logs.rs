@@ -103,25 +103,11 @@ impl LogBuffer {
 
 // MARK: - Native debug log collection
 
-/// The `log stream` predicate (the native VPN daemons and NetworkExtension).
-pub const PREDICATE: &str =
-    r#"process IN {"racoon","pppd","neagent","nesessionmanager"} OR subsystem == "com.apple.networkextension""#;
 /// The collection's upper limit.
 pub const NATIVE_LOG_MAX_SECONDS: f64 = 60.0;
 
-/// A running `log stream`.
-pub trait StreamHandle: Send {
-    fn stop(&self);
-}
-
-/// Starts `log stream --style compact --predicate <PREDICATE>`; its lines and its end come through the callbacks.
-pub trait LogStreamSpawner: Send + Sync {
-    fn spawn(
-        &self,
-        on_lines: Box<dyn FnMut(Vec<String>) + Send>,
-        on_exit: Box<dyn FnOnce() + Send>,
-    ) -> Result<Box<dyn StreamHandle>, String>;
-}
+/// The system's log stream: defined in `macvpn-platform-api` and re-exported here (their old home).
+pub use macvpn_platform_api::{LogStreamSpawner, StreamHandle};
 
 #[derive(Default)]
 struct CollectorState {
@@ -188,7 +174,7 @@ impl NativeLogCollector {
             s.total = 0;
             let header = format!("═══ {} {} ═══", (self.timestamp)(self.clock.now()), l10n::tr("native debug", &[]));
             s.push(header);
-            s.push(format!("$ log stream --style compact --predicate '{PREDICATE}'"));
+            s.push(format!("$ {}", self.spawner.command_line()));
             s.generation
         };
         let output = Arc::downgrade(&self.state);

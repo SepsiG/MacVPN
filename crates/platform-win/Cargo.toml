@@ -1,0 +1,23 @@
+[package]
+name = "macvpn-platform-win"
+description = "MacVPN platform layer for Windows, phase 1: a stub that answers \"not supported\" everywhere"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "macvpn_platform_win"
+
+[lints]
+workspace = true
+
+# Phase 1: core and platform-api (no `windows-sys`); compiles and is tested on every OS. `uuid` and `zeroize` only
+# name the types of the trait signatures (already platform-api's dependencies, same versions).
+[dependencies]
+# `vault` for the `KeyStore`, `Entropy` and `LegacyKeychain` it returns.
+macvpn-core = { path = "../core", features = ["vault"] }
+macvpn-platform-api = { path = "../platform-api" }
+uuid = "1.26.1"
+zeroize = "1.9.1"

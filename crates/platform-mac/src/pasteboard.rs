@@ -17,40 +17,39 @@ pub const CONCEALED_TYPE: &str = "org.nspasteboard.ConcealedType";
 /// Clipboard managers do not record it (it is about to go).
 pub const TRANSIENT_TYPE: &str = "org.nspasteboard.TransientType";
 
-/// What a secret write left: the pasteboard's change count after it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Written(pub isize);
+/// What a secret write left: the pasteboard's change count after it (platform-api's mark).
+pub use macvpn_platform_api::ClipboardMark;
 
 /// Whether the pasteboard still holds what was `written` (`current` is its change count now).
-pub fn still_holds(written: Written, current: isize) -> bool {
+pub fn still_holds(written: ClipboardMark, current: isize) -> bool {
     written.0 == current
 }
 
 /// Puts `text` on the general pasteboard as a concealed, transient, this-Mac-only string.
-pub fn write_secret(text: &str) -> Result<Written, String> {
+pub fn write_secret(text: &str) -> Result<ClipboardMark, String> {
     write_secret_to(&NSPasteboard::generalPasteboard(), text)
 }
 
 /// Empties the general pasteboard if it still holds what was `written` (`true`: it did).
-pub fn clear_if_unchanged(written: Written) -> bool {
+pub fn clear_if_unchanged(written: ClipboardMark) -> bool {
     clear_if_unchanged_on(&NSPasteboard::generalPasteboard(), written)
 }
 
-fn write_secret_to(board: &NSPasteboard, text: &str) -> Result<Written, String> {
+fn write_secret_to(board: &NSPasteboard, text: &str) -> Result<ClipboardMark, String> {
     board.prepareForNewContentsWithOptions(NSPasteboardContentsOptions::CurrentHostOnly);
     let written = board.setString_forType(&NSString::from_str(text), &NSString::from_str(STRING_TYPE))
         && [CONCEALED_TYPE, TRANSIENT_TYPE]
             .iter()
             .all(|marker| board.setString_forType(&NSString::from_str(""), &NSString::from_str(marker)));
     if written {
-        Ok(Written(board.changeCount()))
+        Ok(ClipboardMark(board.changeCount()))
     } else {
         board.clearContents();
         Err("the text could not be put on the clipboard".into())
     }
 }
 
-fn clear_if_unchanged_on(board: &NSPasteboard, written: Written) -> bool {
+fn clear_if_unchanged_on(board: &NSPasteboard, written: ClipboardMark) -> bool {
     if still_holds(written, board.changeCount()) {
         board.clearContents();
         true
@@ -73,9 +72,9 @@ mod tests {
 
     #[test]
     fn only_the_same_change_count_is_ours() {
-        assert!(still_holds(Written(7), 7));
-        assert!(!still_holds(Written(7), 8));
-        assert!(!still_holds(Written(7), 6));
+        assert!(still_holds(ClipboardMark(7), 7));
+        assert!(!still_holds(ClipboardMark(7), 8));
+        assert!(!still_holds(ClipboardMark(7), 6));
     }
 
     /// The secret is a plain string marked concealed and transient; clearing it works only while it is unchanged.

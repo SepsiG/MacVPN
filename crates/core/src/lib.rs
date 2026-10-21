@@ -12,6 +12,7 @@ pub mod control;
 pub mod credentials;
 pub mod date;
 pub mod exporter;
+pub mod fsx;
 pub mod importer;
 pub mod l10n;
 pub mod log;
@@ -28,11 +29,14 @@ pub mod swift_base64;
 pub mod swift_json;
 pub mod swift_str;
 pub mod system_otp;
+pub mod target_os;
 pub mod update;
 pub mod url;
 pub mod validators;
 #[cfg(feature = "vault")]
 pub mod vault;
+
+pub use target_os::TargetOs;
 
 /// The MacVPN version this crate belongs to.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

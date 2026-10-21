@@ -1,5 +1,6 @@
 //! The core hooks (CoreFoundation collation, preferred languages), the user database, the curl HTTP client's
 //! redirect policy (with a recorded curl), and the text-table coverage of this crate's messages.
+#![cfg(target_os = "macos")]
 
 use macvpn_core::collation;
 use macvpn_core::l10n;
@@ -148,10 +149,19 @@ fn every_message_is_in_the_text_table() {
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
     let re = regex::Regex::new(r#"(?s)(?:l10n::tr|tr1)\(\s*"((?:[^"\\]|\\.)*)""#).unwrap();
     let mut keys = Vec::new();
-    for entry in std::fs::read_dir(&src).unwrap() {
-        let text = std::fs::read_to_string(entry.unwrap().path()).unwrap();
-        for m in re.captures_iter(&text) {
-            keys.push(m[1].replace("\\\"", "\"").replace("\\n", "\n"));
+    // `src` and its submodule directories (`api/`).
+    let mut dirs = vec![src];
+    while let Some(dir) = dirs.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                dirs.push(path);
+                continue;
+            }
+            let text = std::fs::read_to_string(&path).unwrap();
+            for m in re.captures_iter(&text) {
+                keys.push(m[1].replace("\\\"", "\"").replace("\\n", "\n"));
+            }
         }
     }
     // Keys passed through variables (the login item notes) are checked in their own tests.

@@ -1,22 +1,22 @@
-//! The control server over a real Unix socket in a short temp directory, with a fake host whose connections
-//! follow a script, and a fake transport (the peer identity is set by the test). The harness is in
-//! `control_support`.
+//! The control server over a real Unix socket in a short temp directory and over TCP loopback (every test runs
+//! over both, see `over_both!`), with a fake host whose connections follow a script, and a fake transport (the
+//! peer identity is set by the test). The harness is in `control_support`.
 
 mod common;
 mod control_support;
 
 use macvpn_app_core::ConnectionItem;
 use macvpn_app_core::control::{
-    ControlHost, ControlLimits, ControlOptions, ControlRelay, ControlServer, PairingAnswer, PairingRequest, StopMode,
+    Accepted, ControlHost, ControlLimits, ControlOptions, ControlRelay, ControlServer, ControlTransport, PairingAnswer,
+    PairingRequest, PeerUser, StopMode,
 };
-use macvpn_app_core::deps::SystemService;
+use macvpn_app_core::deps::SystemVpn;
 use macvpn_app_core::manager::{auth_cancelled_reason, auth_timeout_reason};
 use macvpn_core::control::protocol::ErrorCode;
 use macvpn_core::control::registry::Registry;
 use macvpn_core::models::{Connection, ConnectionState, VPNKind, uuid_string};
 use serde_json::json;
 use std::io::{BufRead, Write};
-use std::os::unix::net::UnixStream;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
@@ -26,9 +26,8 @@ use control_support::*;
 
 // MARK: - Pairing and hello
 
-#[test]
-fn pair_approved_then_token_works_in_hello() {
-    let h = Harness::new();
+fn pair_approved_then_token_works_in_hello(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let token = h.pair(&[&key]);
@@ -56,18 +55,16 @@ fn pair_approved_then_token_works_in_hello() {
     assert!(Registry::load(&h.dir.0).unwrap().clients()[0].last_used.is_some());
 }
 
-#[test]
-fn approved_keys_are_limited_to_the_offered_ones() {
-    let h = Harness::new();
+fn approved_keys_are_limited_to_the_offered_ones(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.pair(&[&key, "00000000-0000-0000-0000-000000000000"]);
     assert_eq!(h.server().clients()[0].allowed, [key]);
 }
 
-#[test]
-fn pair_denied_three_times_blocks_pairing() {
-    let h = Harness::new();
+fn pair_denied_three_times_blocks_pairing(t: Kind) {
+    let h = Harness::over(t);
     for answer in [PairingAnswer::Denied, PairingAnswer::TimedOut, PairingAnswer::Denied] {
         h.host.answers.lock().unwrap().push_back(answer);
         let mut c = h.connect();
@@ -84,9 +81,8 @@ fn pair_denied_three_times_blocks_pairing() {
     assert!(!Registry::path(&h.dir.0).exists(), "nothing to save");
 }
 
-#[test]
-fn a_second_pairing_while_one_is_pending_is_busy() {
-    let h = Harness::new();
+fn a_second_pairing_while_one_is_pending_is_busy(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.hold_pairing.store(true, Ordering::SeqCst);
@@ -102,9 +98,9 @@ fn a_second_pairing_while_one_is_pending_is_busy() {
     assert_eq!(first.read()["ok"], true);
 }
 
-#[test]
-fn wrong_token_is_unauthorized_after_the_delay() {
-    let h = Harness::with_limits(ControlLimits { hello_failure_delay: Duration::from_secs(1), ..fast_limits() });
+fn wrong_token_is_unauthorized_after_the_delay(t: Kind) {
+    let h =
+        Harness::over_with_limits(t, ControlLimits { hello_failure_delay: Duration::from_secs(1), ..fast_limits() });
     assert_eq!(ControlLimits::default().hello_failure_delay, Duration::from_secs(1));
     h.pair(&[]);
     let mut c = h.connect();
@@ -119,10 +115,9 @@ fn wrong_token_is_unauthorized_after_the_delay() {
 
 /// A token that is not 43 base64url characters fails exactly like a wrong one: `unauthorized` after the same
 /// delay, the connection closed, and "hello failed" in the audit. The reply never says which part was wrong.
-#[test]
-fn a_malformed_token_fails_like_a_wrong_one() {
+fn a_malformed_token_fails_like_a_wrong_one(t: Kind) {
     let delay = Duration::from_millis(300);
-    let h = Harness::with_limits(ControlLimits { hello_failure_delay: delay, ..fast_limits() });
+    let h = Harness::over_with_limits(t, ControlLimits { hello_failure_delay: delay, ..fast_limits() });
     h.pair(&[]);
     let long = "A".repeat(44);
     let padded = format!("{}=", "A".repeat(42));
@@ -150,9 +145,8 @@ fn a_malformed_token_fails_like_a_wrong_one() {
     c.expect_closed();
 }
 
-#[test]
-fn another_executable_path_is_unauthorized() {
-    let h = Harness::new();
+fn another_executable_path_is_unauthorized(t: Kind) {
+    let h = Harness::over(t);
     let token = h.pair(&[]);
     h.transport.set_executable(Some("/Users/dev/build/Remote Desktop"));
     let mut c = h.connect();
@@ -166,9 +160,8 @@ fn another_executable_path_is_unauthorized() {
     assert_eq!(c.read(), json!({"ok":false,"error":"unauthorized"}));
 }
 
-#[test]
-fn a_moved_executable_is_flagged_until_a_good_hello() {
-    let h = Harness::new();
+fn a_moved_executable_is_flagged_until_a_good_hello(t: Kind) {
+    let h = Harness::over(t);
     let token = h.pair(&[]);
     let id = h.server().clients()[0].id;
     assert!(h.server().path_changes().is_empty());
@@ -199,29 +192,29 @@ fn a_moved_executable_is_flagged_until_a_good_hello() {
     assert!(h.server().path_changes().is_empty());
 }
 
-#[test]
-fn a_peer_of_another_user_is_closed_at_once() {
-    let h = Harness::new();
-    h.transport.same_user.store(false, Ordering::SeqCst);
+fn a_peer_of_another_user_is_closed_at_once(t: Kind) {
+    let h = Harness::over(t);
+    h.transport.peer.same_user.store(false, Ordering::SeqCst);
     let mut c = h.connect();
     c.send(json!({"op":"pair","name":"x"}));
     c.expect_closed();
     assert_eq!(h.host.asks.load(Ordering::SeqCst), 0);
-    assert!(h.host.logs().iter().any(|l| l.contains("another user")));
+    // The 1.4.0 audit line, word for word.
+    let line = format!("closed a connection from another user ({}, pid 4242)", peer_user(t));
+    assert!(h.host.logs().contains(&line), "{:?}", h.host.logs());
+    assert!(h.server().holders().is_empty());
 }
 
-#[test]
-fn requests_before_hello_are_unauthorized() {
-    let h = Harness::new();
+fn requests_before_hello_are_unauthorized(t: Kind) {
+    let h = Harness::over(t);
     let mut c = h.connect();
     c.send(json!({"id":3,"op":"list"}));
     assert_eq!(c.read(), json!({"id":3,"ok":false,"error":"unauthorized"}));
     c.expect_closed();
 }
 
-#[test]
-fn malformed_and_unknown_requests_get_their_codes() {
-    let h = Harness::new();
+fn malformed_and_unknown_requests_get_their_codes(t: Kind) {
+    let h = Harness::over(t);
     let mut c = h.authed(&[]);
     c.send(json!({"id":4,"op":"reboot"}));
     assert_eq!(c.read(), json!({"id":4,"ok":false,"error":"unsupported"}));
@@ -240,15 +233,14 @@ fn malformed_and_unknown_requests_get_their_codes() {
 
 // MARK: - list / up / down
 
-#[test]
-fn list_shows_only_the_allowed_connections_in_order() {
-    let h = Harness::new();
+fn list_shows_only_the_allowed_connections_in_order(t: Kind) {
+    let h = Harness::over(t);
     let (a, item_a) = managed("Alpha");
     let (b, item_b) = managed("Beta");
     h.host.add(item_a);
     h.host.add(item_b);
-    h.host.add(ConnectionItem::System(SystemService::new(SYSTEM_KEY, "Office L2TP", "L2TP", "Connected")));
-    h.host.add(ConnectionItem::System(SystemService::new("not-a-uuid", "Odd", "VPN", "Disconnected")));
+    h.host.add(ConnectionItem::System(SystemVpn::new(SYSTEM_KEY, "Office L2TP", "L2TP", "Connected")));
+    h.host.add(ConnectionItem::System(SystemVpn::new("not-a-uuid", "Odd", "VPN", "Disconnected")));
     h.host.set(SYSTEM_KEY, connected());
     let mut c = h.authed(&[SYSTEM_KEY, &a, "not-a-uuid"]);
     c.send(json!({"id":1,"op":"list"}));
@@ -262,9 +254,8 @@ fn list_shows_only_the_allowed_connections_in_order() {
     assert!(!c.read_nothing_pending(&b));
 }
 
-#[test]
-fn up_streams_progress_then_replies_connected() {
-    let h = Harness::new();
+fn up_streams_progress_then_replies_connected(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(
@@ -287,9 +278,8 @@ fn up_streams_progress_then_replies_connected() {
     assert_eq!(h.server().holder_names(), ["Remote Desktop"]);
 }
 
-#[test]
-fn up_checks_allowlist_existence_and_setup() {
-    let h = Harness::new();
+fn up_checks_allowlist_existence_and_setup(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     let (other, other_item) = managed("Other");
     h.host.add(item);
@@ -314,15 +304,14 @@ fn up_checks_allowlist_existence_and_setup() {
 /// `setup_required` only for a connection that needs Homebrew and the root layer to start: a system VPN and a
 /// native L2TP / Cisco connection start without them, and a connection that is already up (or already coming up
 /// for another lease) is joined without any setup check.
-#[test]
-fn setup_required_only_when_the_connect_needs_the_setup() {
-    let h = Harness::new();
+fn setup_required_only_when_the_connect_needs_the_setup(t: Kind) {
+    let h = Harness::over(t);
     let (openvpn, item) = managed("Office");
     h.host.add(item);
     let l2tp_conn = Connection::new("Branch", VPNKind::L2tp);
     let l2tp = uuid_string(&l2tp_conn.id);
     h.host.add(ConnectionItem::Managed(l2tp_conn));
-    h.host.add(ConnectionItem::System(SystemService::new(SYSTEM_KEY, "Office IKEv2", "IKEv2", "Disconnected")));
+    h.host.add(ConnectionItem::System(SystemVpn::new(SYSTEM_KEY, "Office IKEv2", "IKEv2", "Disconnected")));
     let (up_already, up_item) = managed("Already up");
     h.host.add(up_item);
     h.host.set(&up_already, connected());
@@ -358,9 +347,8 @@ fn setup_required_only_when_the_connect_needs_the_setup() {
     assert_eq!(h.host.count(&format!("disconnect {up_already}")), 0);
 }
 
-#[test]
-fn down_releases_and_disconnects() {
-    let h = Harness::new();
+fn down_releases_and_disconnects(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -378,9 +366,8 @@ fn down_releases_and_disconnects() {
 
 /// Locked (1.2): `pair`, `hello`, `list`, `up` and `status` answer `locked`; the session and its lease stay, and
 /// `down` still releases; after the unlock `hello` works again.
-#[test]
-fn locked_refuses_everything_but_down() {
-    let h = Harness::new();
+fn locked_refuses_everything_but_down(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let token = h.pair(&[&key]);
@@ -416,9 +403,8 @@ fn locked_refuses_everything_but_down() {
     assert_eq!(again.read()["connections"][0]["id"], key.as_str());
 }
 
-#[test]
-fn client_eof_disconnects() {
-    let h = Harness::new();
+fn client_eof_disconnects(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -429,9 +415,8 @@ fn client_eof_disconnects() {
     wait_until("the lease end log", || h.host.logs().iter().any(|l| l.contains("ended: connection closed")));
 }
 
-#[test]
-fn client_killed_mid_connect_disconnects() {
-    let h = Harness::new();
+fn client_killed_mid_connect_disconnects(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(&key, vec![Step::State(ConnectionState::Connecting), Step::Pause, Step::State(connected())]);
@@ -444,9 +429,8 @@ fn client_killed_mid_connect_disconnects() {
     h.host.resume(&key);
 }
 
-#[test]
-fn two_clients_disconnect_only_after_both_close() {
-    let h = Harness::new();
+fn two_clients_disconnect_only_after_both_close(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let token = h.pair(&[&key]);
@@ -466,9 +450,8 @@ fn two_clients_disconnect_only_after_both_close() {
     wait_until("the disconnect", || h.host.count(&format!("disconnect {key}")) == 1);
 }
 
-#[test]
-fn a_second_client_joins_a_connect_in_progress() {
-    let h = Harness::new();
+fn a_second_client_joins_a_connect_in_progress(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(&key, vec![Step::State(ConnectionState::Connecting), Step::Pause, Step::State(connected())]);
@@ -486,9 +469,8 @@ fn a_second_client_joins_a_connect_in_progress() {
     assert_eq!(h.host.count(&format!("connect {key}")), 1);
 }
 
-#[test]
-fn a_preexisting_connection_is_not_disconnected() {
-    let h = Harness::new();
+fn a_preexisting_connection_is_not_disconnected(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.set(&key, connected());
@@ -502,9 +484,8 @@ fn a_preexisting_connection_is_not_disconnected() {
     assert!(h.host.calls().is_empty(), "{:?}", h.host.calls());
 }
 
-#[test]
-fn a_connecting_key_without_a_lease_is_busy() {
-    let h = Harness::new();
+fn a_connecting_key_without_a_lease_is_busy(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -518,9 +499,8 @@ fn a_connecting_key_without_a_lease_is_busy() {
     assert!(h.server().holders().is_empty());
 }
 
-#[test]
-fn a_synchronous_connect_error_fails_and_ends_the_lease() {
-    let h = Harness::new();
+fn a_synchronous_connect_error_fails_and_ends_the_lease(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.sync_errors.lock().unwrap().insert(key.clone(), ErrorCode::UnknownConnection);
@@ -534,9 +514,8 @@ fn a_synchronous_connect_error_fails_and_ends_the_lease() {
     assert_eq!(h.host.count(&format!("connect {key}")), 2);
 }
 
-#[test]
-fn a_failed_connect_replies_failed_and_a_later_up_reconnects() {
-    let h = Harness::new();
+fn a_failed_connect_replies_failed_and_a_later_up_reconnects(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(
@@ -558,9 +537,8 @@ fn a_failed_connect_replies_failed_and_a_later_up_reconnects() {
     wait_until("the disconnect", || h.host.count(&format!("disconnect {key}")) == 1);
 }
 
-#[test]
-fn mfa_timeout_and_cancel_get_their_codes() {
-    let h = Harness::new();
+fn mfa_timeout_and_cancel_get_their_codes(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -587,9 +565,8 @@ fn mfa_timeout_and_cancel_get_their_codes() {
     }
 }
 
-#[test]
-fn up_waits_for_credentials_then_connects() {
-    let h = Harness::new();
+fn up_waits_for_credentials_then_connects(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(
@@ -608,9 +585,8 @@ fn up_waits_for_credentials_then_connects() {
     assert_eq!(reply, json!({"id":2,"ok":true,"state":"connected"}));
 }
 
-#[test]
-fn cancelled_credentials_get_their_code_and_release_the_lease() {
-    let h = Harness::new();
+fn cancelled_credentials_get_their_code_and_release_the_lease(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -663,9 +639,8 @@ fn cancelled_credentials_get_their_code_and_release_the_lease() {
     }
 }
 
-#[test]
-fn user_disconnect_ends_the_lease_without_reconnect() {
-    let h = Harness::new();
+fn user_disconnect_ends_the_lease_without_reconnect(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -682,9 +657,8 @@ fn user_disconnect_ends_the_lease_without_reconnect() {
     assert!(h.host.logs().iter().any(|l| l.contains("ended: disconnected by the user")));
 }
 
-#[test]
-fn user_disconnect_during_up_answers_it() {
-    let h = Harness::new();
+fn user_disconnect_during_up_answers_it(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(&key, vec![Step::State(ConnectionState::Connecting), Step::Pause]);
@@ -698,9 +672,8 @@ fn user_disconnect_during_up_answers_it() {
     h.host.resume(&key);
 }
 
-#[test]
-fn a_drop_is_reported_to_the_holders() {
-    let h = Harness::new();
+fn a_drop_is_reported_to_the_holders(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -711,9 +684,8 @@ fn a_drop_is_reported_to_the_holders() {
     assert!(h.server().holders().is_empty());
 }
 
-#[test]
-fn status_subscribes_to_the_allowed_connections() {
-    let h = Harness::new();
+fn status_subscribes_to_the_allowed_connections(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     let (other, other_item) = managed("Other");
     h.host.add(item);
@@ -729,9 +701,8 @@ fn status_subscribes_to_the_allowed_connections() {
     assert_eq!(c.read(), json!({"event":"state","connection":key,"state":"disconnected"}));
 }
 
-#[test]
-fn revoke_closes_the_socket_and_disconnects() {
-    let h = Harness::new();
+fn revoke_closes_the_socket_and_disconnects(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let token = h.pair(&[&key]);
@@ -750,9 +721,8 @@ fn revoke_closes_the_socket_and_disconnects() {
 
 // MARK: - Limits
 
-#[test]
-fn the_ninth_client_is_refused() {
-    let h = Harness::with_limits(ControlLimits { auth_timeout: Duration::from_secs(30), ..fast_limits() });
+fn the_ninth_client_is_refused(t: Kind) {
+    let h = Harness::over_with_limits(t, ControlLimits { auth_timeout: Duration::from_secs(30), ..fast_limits() });
     let clients: Vec<TestClient> = (0..8).map(|_| h.connect()).collect();
     // The accept thread registers them in order; wait for all eight before the ninth.
     let mut probe = clients;
@@ -766,9 +736,8 @@ fn the_ninth_client_is_refused() {
     drop(probe);
 }
 
-#[test]
-fn a_silent_client_is_closed_after_the_auth_timeout() {
-    let h = Harness::new();
+fn a_silent_client_is_closed_after_the_auth_timeout(t: Kind) {
+    let h = Harness::over(t);
     let started = Instant::now();
     let mut c = h.connect();
     c.expect_closed();
@@ -776,10 +745,9 @@ fn a_silent_client_is_closed_after_the_auth_timeout() {
     wait_until("the log line", || h.host.logs().iter().any(|l| l.contains("no pair or hello in time")));
 }
 
-#[test]
-fn a_connection_that_says_nothing_and_closes_is_not_logged() {
+fn a_connection_that_says_nothing_and_closes_is_not_logged(t: Kind) {
     // A long deadline: only the close can end the silent connection.
-    let h = Harness::with_limits(ControlLimits { auth_timeout: Duration::from_secs(30), ..fast_limits() });
+    let h = Harness::over_with_limits(t, ControlLimits { auth_timeout: Duration::from_secs(30), ..fast_limits() });
     let before = h.host.logs().len();
     let c = h.connect();
     c.close();
@@ -793,9 +761,8 @@ fn a_connection_that_says_nothing_and_closes_is_not_logged() {
     assert_eq!(logs.len() - before, 1, "{logs:?}");
 }
 
-#[test]
-fn a_flood_is_closed() {
-    let h = Harness::new();
+fn a_flood_is_closed(t: Kind) {
+    let h = Harness::over(t);
     let mut c = h.authed(&[]);
     let burst: String = (0..40).map(|n| format!("{{\"id\":{n},\"op\":\"list\"}}\n")).collect();
     c.send_raw(&burst);
@@ -813,9 +780,8 @@ fn a_flood_is_closed() {
 
 // MARK: - Stop, quit, registry
 
-#[test]
-fn stop_closes_everything_and_removes_the_socket() {
-    let mut h = Harness::new();
+fn stop_closes_everything_and_removes_the_socket(t: Kind) {
+    let mut h = Harness::over(t);
     let (key, item) = managed("Office");
     let (slow, slow_item) = managed("Slow");
     h.host.add(item);
@@ -846,19 +812,18 @@ fn stop_closes_everything_and_removes_the_socket() {
     // The leases ended before stop returned.
     assert_eq!(h.host.count(&format!("disconnect {key}")), 1);
     resumer.join().unwrap();
-    assert!(UnixStream::connect(h.socket()).is_err());
+    assert!(h.try_connect().is_err());
     // It can be started again.
     h.start(fast_limits());
     assert!(h.socket().exists());
 }
 
-#[test]
-fn a_registry_that_cannot_be_read_stops_the_start_and_is_kept() {
+fn a_registry_that_cannot_be_read_stops_the_start_and_is_kept(t: Kind) {
     let dir = Scratch::new();
     std::fs::create_dir(Registry::path(&dir.0)).unwrap();
     let mut options = ControlOptions::new(dir.0.join("control"), dir.0.clone());
     options.limits = fast_limits();
-    let result = ControlServer::start(options, Arc::new(FakeHost::default()), FakeTransport::new());
+    let result = ControlServer::start(options, Arc::new(FakeHost::default()), FakeTransport::over(t));
     assert!(result.is_err());
     assert!(Registry::path(&dir.0).is_dir());
     assert!(!dir.0.join("control/macvpn.sock").exists());
@@ -868,8 +833,8 @@ fn a_registry_that_cannot_be_read_stops_the_start_and_is_kept() {
 
 /// The connect gap: the lease's connect has not reached the manager yet when the lease ends. The disconnect must
 /// wait for it, otherwise the connect starts afterwards and the VPN comes up with no lease.
-fn connect_gap(end: impl FnOnce(&Harness, &mut TestClient, &str)) {
-    let h = Harness::new();
+fn connect_gap(t: Kind, end: impl FnOnce(&Harness, &mut TestClient, &str)) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.script(&key, vec![Step::Pause, Step::State(ConnectionState::Connecting), Step::State(connected())]);
@@ -886,23 +851,20 @@ fn connect_gap(end: impl FnOnce(&Harness, &mut TestClient, &str)) {
     assert!(h.server().holders().is_empty());
 }
 
-#[test]
-fn down_of_the_key_in_the_connect_gap_leaves_nothing_up() {
-    connect_gap(|_, c, key| {
+fn down_of_the_key_in_the_connect_gap_leaves_nothing_up(t: Kind) {
+    connect_gap(t, |_, c, key| {
         c.send(json!({"id":2,"op":"down","connection":key}));
     });
 }
 
-#[test]
-fn close_in_the_connect_gap_leaves_nothing_up() {
-    connect_gap(|_, c, _| {
+fn close_in_the_connect_gap_leaves_nothing_up(t: Kind) {
+    connect_gap(t, |_, c, _| {
         let _ = c.stream.shutdown(std::net::Shutdown::Both);
     });
 }
 
-#[test]
-fn a_dripping_client_is_closed_at_the_auth_deadline() {
-    let h = Harness::new();
+fn a_dripping_client_is_closed_at_the_auth_deadline(t: Kind) {
+    let h = Harness::over(t);
     let mut c = h.connect();
     let started = Instant::now();
     let mut closed = false;
@@ -923,9 +885,9 @@ fn a_dripping_client_is_closed_at_the_auth_deadline() {
     c.expect_closed();
 }
 
-#[test]
-fn the_server_times_the_pairing_window_out() {
-    let h = Harness::with_limits(ControlLimits { pairing_timeout: Duration::from_millis(200), ..fast_limits() });
+fn the_server_times_the_pairing_window_out(t: Kind) {
+    let h =
+        Harness::over_with_limits(t, ControlLimits { pairing_timeout: Duration::from_millis(200), ..fast_limits() });
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.hold_pairing.store(true, Ordering::SeqCst);
@@ -945,9 +907,8 @@ fn the_server_times_the_pairing_window_out() {
     assert!(h.host.logs().iter().any(|l| l.contains("timed out")));
 }
 
-#[test]
-fn a_client_gone_before_the_approval_is_not_paired() {
-    let h = Harness::new();
+fn a_client_gone_before_the_approval_is_not_paired(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     h.host.hold_pairing.store(true, Ordering::SeqCst);
@@ -962,9 +923,8 @@ fn a_client_gone_before_the_approval_is_not_paired() {
     assert!(!Registry::path(&h.dir.0).exists());
 }
 
-#[test]
-fn a_duplicate_pending_up_is_busy_and_pending_ups_are_capped() {
-    let h = Harness::new();
+fn a_duplicate_pending_up_is_busy_and_pending_ups_are_capped(t: Kind) {
+    let h = Harness::over(t);
     let keys: Vec<String> = (0..17)
         .map(|n| {
             let (key, item) = managed(&format!("C{n:02}"));
@@ -991,9 +951,8 @@ fn a_duplicate_pending_up_is_busy_and_pending_ups_are_capped() {
     assert_eq!(c.reply_to(100).1["ok"], true);
 }
 
-#[test]
-fn stop_detach_keeps_the_connections_up() {
-    let mut h = Harness::new();
+fn stop_detach_keeps_the_connections_up(t: Kind) {
+    let mut h = Harness::over(t);
     let (key, item) = managed("Office");
     let (slow, slow_item) = managed("Slow");
     h.host.add(item);
@@ -1019,10 +978,9 @@ fn stop_detach_keeps_the_connections_up() {
 
 /// Turning the setting off: every authenticated client, idle or holding a lease, gets the `closing` event before
 /// the close, not just an end of file.
-#[test]
-fn stop_tells_every_authenticated_client_why_it_closes() {
+fn stop_tells_every_authenticated_client_why_it_closes(t: Kind) {
     for (mode, reason) in [(StopMode::EndLeases, "disabled"), (StopMode::Detach, "app_quitting")] {
-        let mut h = Harness::new();
+        let mut h = Harness::over(t);
         let (key, item) = managed("Office");
         h.host.add(item);
         let mut holder = h.authed(&[&key]);
@@ -1048,9 +1006,8 @@ fn stop_tells_every_authenticated_client_why_it_closes() {
     }
 }
 
-#[test]
-fn stop_ends_the_accept_thread_without_the_socket_file() {
-    let mut h = Harness::new();
+fn stop_ends_the_accept_thread_without_the_socket_file(t: Kind) {
+    let mut h = Harness::over(t);
     std::fs::remove_file(h.socket()).unwrap();
     let mut server = h.server.take().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
@@ -1062,12 +1019,11 @@ fn stop_ends_the_accept_thread_without_the_socket_file() {
 }
 
 /// The relay is registered on the manager once; a server is plugged in and out of it.
-#[test]
-fn the_relay_forwards_manager_changes_to_the_current_server() {
+fn the_relay_forwards_manager_changes_to_the_current_server(t: Kind) {
     let f = common::Fixture::new(macvpn_core::l10n::AppLanguage::En);
     let c = Connection::new("WG", VPNKind::Wireguard);
     f.store.save(&c, Some("x")).unwrap();
-    f.root.respond(
+    f.helper.respond(
         "status",
         Ok(&format!(
             r#"[{{"id":"{}","kind":"wireguard","state":"connected","iface":null,"ip":null,"since":null}}]"#,
@@ -1076,7 +1032,7 @@ fn the_relay_forwards_manager_changes_to_the_current_server() {
     );
     let m = f.manager();
     let relay = ControlRelay::attach(&m);
-    let h = Harness::new();
+    let h = Harness::over(t);
     let key = h.host.add(ConnectionItem::Managed(c.clone()));
     *h.host.notifier.lock().unwrap() = None;
     relay.set(Some(h.server().notifier()));
@@ -1087,7 +1043,7 @@ fn the_relay_forwards_manager_changes_to_the_current_server() {
     assert_eq!(client.read()["state"], "connecting");
     assert_eq!(client.read()["state"], "connected");
     relay.set(None);
-    f.root.respond("status", Ok("[]"));
+    f.helper.respond("status", Ok("[]"));
     m.refresh();
     assert!(!client.read_nothing_pending(&key));
 }
@@ -1096,9 +1052,8 @@ fn the_relay_forwards_manager_changes_to_the_current_server() {
 
 /// `setup_ready_for` takes the app's setup lock, so `up` never asks it under the server's mutex: a state change
 /// (which takes that mutex) started from inside `setup_ready_for` finishes at once.
-#[test]
-fn up_asks_the_setup_outside_the_server_lock() {
-    let h = Harness::new();
+fn up_asks_the_setup_outside_the_server_lock(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -1122,9 +1077,8 @@ fn up_asks_the_setup_outside_the_server_lock() {
 /// The 1.1.0 review's deadlock: the view model held the setup's read guard and asked the server (its mutex),
 /// `up` held the server's mutex and read the setup, and a queued writer (a system check) kept the new reader out.
 /// Now `up` reads the setup without the mutex, so all three finish.
-#[test]
-fn up_and_a_setup_reader_asking_the_server_do_not_deadlock_with_a_queued_writer() {
-    let h = Harness::new();
+fn up_and_a_setup_reader_asking_the_server_do_not_deadlock_with_a_queued_writer(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let mut c = h.authed(&[&key]);
@@ -1172,9 +1126,8 @@ fn up_and_a_setup_reader_asking_the_server_do_not_deadlock_with_a_queued_writer(
 
 /// A peer path with a control or format character could forge audit lines or reorder text in the pairing window:
 /// `pair` is `denied` and `hello` is `unauthorized` (the generic replies), and the log shows the path escaped.
-#[test]
-fn a_peer_path_with_control_or_format_characters_cannot_pair_or_hello() {
-    let h = Harness::new();
+fn a_peer_path_with_control_or_format_characters_cannot_pair_or_hello(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     // A normal path pairs and says hello.
@@ -1215,9 +1168,8 @@ fn a_peer_path_with_control_or_format_characters_cannot_pair_or_hello() {
     assert_eq!(h.server().clients().len(), 1);
 }
 
-#[test]
-fn forget_keys_prunes_the_allowlists_and_saves_them() {
-    let h = Harness::new();
+fn forget_keys_prunes_the_allowlists_and_saves_them(t: Kind) {
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     let (other, other_item) = managed("Other");
     h.host.add(item);
@@ -1237,10 +1189,10 @@ fn forget_keys_prunes_the_allowlists_and_saves_them() {
     assert!(!empty.exists());
 }
 
-#[test]
-fn forget_keys_keeps_the_pruned_allowlist_even_when_saving_fails() {
+#[cfg(unix)]
+fn forget_keys_keeps_the_pruned_allowlist_even_when_saving_fails(t: Kind) {
     use std::os::unix::fs::PermissionsExt;
-    let h = Harness::new();
+    let h = Harness::over(t);
     let (key, item) = managed("Office");
     h.host.add(item);
     let _c = h.authed(&[&key]);
@@ -1250,3 +1202,183 @@ fn forget_keys_keeps_the_pruned_allowlist_even_when_saving_fails() {
     assert!(result.is_err(), "the failed save is reported");
     assert!(h.server().clients()[0].allowed.is_empty(), "fails closed: the key is gone from memory");
 }
+
+// MARK: - Transport
+
+#[test]
+fn a_peer_user_displays_as_in_the_audit_log() {
+    assert_eq!(PeerUser::Uid(501).to_string(), "uid 501");
+    assert_eq!(PeerUser::Sid("S-1-5-21-1-2-3-1001".into()).to_string(), "sid S-1-5-21-1-2-3-1001");
+}
+
+/// The stream's `peer_connected`: true while the client waits, false once it has closed.
+fn peer_connected_follows_the_client(t: Kind) {
+    let dir = Scratch::new();
+    let transport = FakeTransport::over(t);
+    let endpoint = transport.bind(&dir.0.join("control")).unwrap();
+    let h = Harness { dir, host: Arc::new(FakeHost::default()), transport, server: None };
+    let client = h.try_connect().unwrap();
+    let stream = loop {
+        match endpoint.listener.accept(Duration::from_millis(5)).unwrap() {
+            Accepted::Client { stream, peer } => {
+                assert_eq!(peer.unwrap().pid, 4242);
+                break stream;
+            }
+            Accepted::Idle => {}
+        }
+    };
+    assert!(stream.peer_connected());
+    assert!(stream.peer_connected(), "the check consumes nothing it needs");
+    drop(client);
+    wait_until("the close", || !stream.peer_connected());
+}
+
+/// `stop` removes the endpoint's `socket_file`; an endpoint without one (a named pipe) has nothing removed.
+fn stop_removes_only_the_endpoints_socket_file(t: Kind) {
+    let mut h = Harness::over(t);
+    assert_eq!(h.server().socket_file(), Some(h.socket().as_path()));
+    h.server.as_mut().unwrap().stop(StopMode::EndLeases);
+    assert!(!h.socket().exists());
+
+    let transport = FakeTransport::over(Kind::Loopback);
+    let mut h = Harness { dir: Scratch::new(), host: Arc::new(FakeHost::default()), transport, server: None };
+    h.transport.socket_file.store(false, Ordering::SeqCst);
+    h.start(fast_limits());
+    assert_eq!(h.server().socket_file(), None);
+    let addr = h.transport.addr.lock().unwrap().unwrap().to_string();
+    assert_eq!(h.server().endpoint(), addr);
+    assert!(h.host.logs().contains(&format!("listening on {addr}")));
+    // A file at the old socket path is not the server's.
+    std::fs::write(h.socket(), "").unwrap();
+    h.server.as_mut().unwrap().stop(StopMode::EndLeases);
+    assert!(h.socket().exists());
+    assert!(!h.host.logs().iter().any(|l| l.contains("could not remove")), "{:?}", h.host.logs());
+}
+
+#[cfg(unix)]
+#[test]
+fn the_unix_endpoint_is_displayed_as_its_path() {
+    let h = Harness::new();
+    let path = h.socket().display().to_string();
+    assert_eq!(h.server().endpoint(), path);
+    assert!(h.host.logs().contains(&format!("listening on {path}")));
+}
+
+/// Every test above runs over the Unix socket (Unix only) and over TCP loopback (every OS).
+macro_rules! over_both {
+    ($($(#[$attr:meta])* $name:ident),* $(,)?) => {
+        #[cfg(unix)]
+        mod unix {
+            use super::*;
+            $( $(#[$attr])* #[test] fn $name() { super::$name(Kind::Unix) } )*
+        }
+        mod loopback {
+            use super::*;
+            $( $(#[$attr])* #[test] fn $name() { super::$name(Kind::Loopback) } )*
+        }
+    };
+}
+
+over_both!(
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    pair_approved_then_token_works_in_hello,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    approved_keys_are_limited_to_the_offered_ones,
+    pair_denied_three_times_blocks_pairing,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_second_pairing_while_one_is_pending_is_busy,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    wrong_token_is_unauthorized_after_the_delay,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_malformed_token_fails_like_a_wrong_one,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    another_executable_path_is_unauthorized,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_moved_executable_is_flagged_until_a_good_hello,
+    a_peer_of_another_user_is_closed_at_once,
+    requests_before_hello_are_unauthorized,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    malformed_and_unknown_requests_get_their_codes,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    list_shows_only_the_allowed_connections_in_order,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    up_streams_progress_then_replies_connected,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    up_checks_allowlist_existence_and_setup,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    setup_required_only_when_the_connect_needs_the_setup,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    down_releases_and_disconnects,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    locked_refuses_everything_but_down,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    client_eof_disconnects,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    client_killed_mid_connect_disconnects,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    two_clients_disconnect_only_after_both_close,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_second_client_joins_a_connect_in_progress,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_preexisting_connection_is_not_disconnected,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_connecting_key_without_a_lease_is_busy,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_synchronous_connect_error_fails_and_ends_the_lease,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_failed_connect_replies_failed_and_a_later_up_reconnects,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    mfa_timeout_and_cancel_get_their_codes,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    up_waits_for_credentials_then_connects,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    cancelled_credentials_get_their_code_and_release_the_lease,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    user_disconnect_ends_the_lease_without_reconnect,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    user_disconnect_during_up_answers_it,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_drop_is_reported_to_the_holders,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    status_subscribes_to_the_allowed_connections,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    revoke_closes_the_socket_and_disconnects,
+    the_ninth_client_is_refused,
+    a_silent_client_is_closed_after_the_auth_timeout,
+    a_connection_that_says_nothing_and_closes_is_not_logged,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_flood_is_closed,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    stop_closes_everything_and_removes_the_socket,
+    a_registry_that_cannot_be_read_stops_the_start_and_is_kept,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    down_of_the_key_in_the_connect_gap_leaves_nothing_up,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    close_in_the_connect_gap_leaves_nothing_up,
+    a_dripping_client_is_closed_at_the_auth_deadline,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    the_server_times_the_pairing_window_out,
+    a_client_gone_before_the_approval_is_not_paired,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_duplicate_pending_up_is_busy_and_pending_ups_are_capped,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    stop_detach_keeps_the_connections_up,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    stop_tells_every_authenticated_client_why_it_closes,
+    stop_ends_the_accept_thread_without_the_socket_file,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    the_relay_forwards_manager_changes_to_the_current_server,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    up_asks_the_setup_outside_the_server_lock,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    up_and_a_setup_reader_asking_the_server_do_not_deadlock_with_a_queued_writer,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    a_peer_path_with_control_or_format_characters_cannot_pair_or_hello,
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    forget_keys_prunes_the_allowlists_and_saves_them,
+    #[cfg(unix)]
+    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    forget_keys_keeps_the_pruned_allowlist_even_when_saving_fails,
+    peer_connected_follows_the_client,
+    stop_removes_only_the_endpoints_socket_file
+);

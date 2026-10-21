@@ -33,7 +33,7 @@ fn release(version: &str, published: Option<f64>, signed: bool) -> Release {
         notes: String::new(),
         page_url: None,
         published_at: published.map(date),
-        dmg: asset(format!("MacVPN-{version}.dmg")),
+        package: asset(format!("MacVPN-{version}.dmg")),
         checksum: asset(format!("MacVPN-{version}.dmg.sha256")),
         signature: signed.then(|| asset(format!("MacVPN-{version}.dmg.sig"))),
     }

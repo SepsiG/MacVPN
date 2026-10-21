@@ -22,11 +22,10 @@
 
 use super::entropy::Entropy;
 use super::keys::{KdfParams, derive_kek};
+use crate::fsx::{self, Follow, OpenFor};
 use chacha20poly1305::aead::AeadInOut;
 use chacha20poly1305::{KeyInit, Tag, XChaCha20Poly1305, XNonce};
-use std::fs::OpenOptions;
 use std::io::Read;
-use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use zeroize::Zeroizing;
 
@@ -165,15 +164,7 @@ pub(crate) enum ReadError {
 /// (`O_NONBLOCK`), only a regular file, and at most `cap` bytes (read through `take`, so a file that grows while it
 /// is read cannot exhaust memory).
 pub(crate) fn read_sealed_file(path: &Path, cap: usize) -> Result<Vec<u8>, ReadError> {
-    let file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
-        .open(path)
-        .map_err(|_| ReadError::CannotRead)?;
-    let meta = file.metadata().map_err(|_| ReadError::CannotRead)?;
-    if !meta.file_type().is_file() {
-        return Err(ReadError::CannotRead);
-    }
+    let (file, meta) = fsx::open_regular(path, OpenFor::Read, Follow::No, false).map_err(|_| ReadError::CannotRead)?;
     if meta.len() > cap as u64 {
         return Err(ReadError::TooLarge);
     }

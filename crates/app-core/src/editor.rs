@@ -19,14 +19,10 @@
 //! saved, and the secret store refuses it as well (`SecretWriter::set`). The credential itself changes only in
 //! the Credentials section or through the credential prompt's "Save" (`SecretWriter::save_prompted`).
 
-use crate::deps::{
-    Clock, ConnectionRepository, ProfileInstaller, SecretField, SecretReader, SecretWriter, SystemService,
-};
+use crate::deps::{Clock, ConnectionRepository, NativeProfiles, SecretField, SecretReader, SecretWriter, SystemVpn};
 use crate::manager::ConnectionManager;
-use macvpn_core::exporter;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::mfa;
-use macvpn_core::mobileconfig;
 use macvpn_core::models::{
     Connection, NativeSettings, OTPSeparator, OTPSetting, Secrets, VPNKind, ValidationIssue, uuid_string,
 };
@@ -282,7 +278,7 @@ pub struct EditorDeps {
     pub store: Arc<dyn ConnectionRepository>,
     pub secrets: Arc<dyn SecretReader>,
     pub secret_writer: Arc<dyn SecretWriter>,
-    pub profiles: Arc<dyn ProfileInstaller>,
+    pub profiles: Arc<dyn NativeProfiles>,
     pub clock: Arc<dyn Clock>,
 }
 
@@ -459,23 +455,23 @@ pub fn save_native(
     updated.native_service_name = Some(name.to_string());
     updated.otp = otp;
     let service_existed = deps.manager.installed_native_ids().contains(&c.id);
-    let data = match mobileconfig::generate(&updated, &profile_psk) {
-        Ok(data) => data,
-        Err(e) => return Some(e.message()),
+    let profile = match deps.profiles.build(&updated, &profile_psk) {
+        Ok(profile) => profile,
+        Err(e) => return Some(e),
     };
     if let Err(e) = deps.store.save(&updated, None) {
         return Some(e.to_string());
     }
     deps.store_secrets(&secrets, &c.id);
     deps.manager.reload();
-    deps.profiles.install(&c.id, &data, &exporter::file_name(&updated), service_existed).err()
+    deps.profiles.install(&c.id, &profile.data, &profile.file_name, service_existed).err()
 }
 
 /// The PSK / password of a system VPN in MacVPN's secret store (L2TP / Cisco IPsec with a UUID service ID only). An
 /// empty field deletes the item, a `None` field keeps it. `None`: saved; otherwise the error.
 pub fn save_system_secrets(
     deps: &EditorDeps,
-    s: &SystemService,
+    s: &SystemVpn,
     psk: Option<&str>,
     password: Option<&str>,
     otp: OTPSetting,
@@ -501,7 +497,7 @@ pub fn save_system_secrets(
     None
 }
 
-pub fn forget_system_secrets(deps: &EditorDeps, s: &SystemService) {
+pub fn forget_system_secrets(deps: &EditorDeps, s: &SystemVpn) {
     let Some(id) = s.secret_id() else { return };
     deps.secret_writer.delete_all(&id);
     deps.manager.set_system_otp(OTPSetting::default(), &s.id);
@@ -513,7 +509,7 @@ pub fn forget_system_secrets(deps: &EditorDeps, s: &SystemService) {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Target {
     Connection(Connection),
-    System(SystemService),
+    System(SystemVpn),
 }
 
 /// One editor's state (the Swift `…Draft` objects).

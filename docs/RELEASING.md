@@ -37,8 +37,13 @@ Goal: even if the maintainer's GitHub account (or CI) is compromised, no update 
 
 The flow is: **tag → CI builds a draft → `scripts/sign-release.sh vX.Y.Z` on the maintainer's Mac → published.**
 
-1. Merge everything for the release into `main`. CI (`.github/workflows/ci.yml`) must be green.
-2. If the root layer (`crates/mvpn`) changed, bump `crates/mvpn/VERSION` (MacVPN 1.2.0, 1.3.0 and 1.4.x ship root layer **8**: the config goes to `mvpn` on stdin; 1.1 had 7). A new root version makes every user re-run **Authorize** with the admin password: say so in the release notes. Set the version (`X.Y.Z`) in `app/src-tauri/tauri.conf.json`, in `[workspace.package]` of `Cargo.toml` (then `cargo check` to update `Cargo.lock`) and in `app/ui/package.json` (`npm install --package-lock-only` updates the lock file). The three must agree (`scripts/build-dmg.sh` fails otherwise) and equal the tag (the workflow fails otherwise; it no longer rewrites the version). Before tagging, run the local-only checks: the smoke test in both languages (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`, see `app/README.md`) and `docs/manual-test-checklist.md`.
+1. Merge everything for the release into `main`. CI (`.github/workflows/ci.yml`) must be green: the macOS jobs and, from 1.5.0, the Windows jobs (`windows`, `windows-node`), which compile, lint and test the workspace for Windows.
+2. If the root layer (`crates/helper`) changed, bump `crates/helper/VERSION` (MacVPN 1.2.0 to 1.5.0 ship root layer **8**: the config goes to `mvpn` on stdin; 1.1 had 7). A new root version makes every user re-run **Authorize** with the admin password: say so in the release notes. Set the version (`X.Y.Z`) in `app/src-tauri/tauri.conf.json`, in `[workspace.package]` of `Cargo.toml` (then `cargo check` to update `Cargo.lock`) and in `app/ui/package.json` (`npm install --package-lock-only` updates the lock file). The three must agree (`scripts/build-dmg.sh` fails otherwise) and equal the tag (the workflow fails otherwise; it no longer rewrites the version). Before tagging, run the local-only checks:
+   - the smoke test in both languages (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`, see `app/README.md`);
+   - `scripts/check-windows.sh` (the part of the Windows compile check that runs on a Mac; the rest is the CI Windows job);
+   - `scripts/bundle-baseline.sh dist/MacVPN.app` after `scripts/build-dmg.sh`: the built bundle compared with the previous release's baseline (`scripts/bundle-baseline/1.4.0/`; `BUNDLE_BASELINE_DIR` picks another one). Only the sizes of the two binaries may differ, unless the release says why;
+   - `node scripts/l10n-baseline.mjs --check`: every macOS text is unchanged, unless the release changes a text on purpose;
+   - `docs/manual-test-checklist.md`.
 3. Tag the commit on `main` and push the tag:
    ```
    git checkout main && git pull
@@ -94,10 +99,14 @@ Team catalogs add file formats that other MacVPN installations read, so a releas
 | Full backup payload | `crates/core/src/vault/backup.rs` | 2 | v1 backups are migrated on restore; a 1.2 app refuses a v2 backup ("made by a newer MacVPN"). |
 
 Release checks for 1.3.0 and later:
-- The root layer does not change for team catalogs (`crates/mvpn/VERSION` stays 8). The `scripts/build-dmg.sh` release gate fails if the `mvpn` binary contains `MVPNCAT1` or `macvpn-catalog-v1` (catalog code must never reach the root binary).
+- The root layer does not change for team catalogs (`crates/helper/VERSION` stays 8). The `scripts/build-dmg.sh` release gate fails if the `mvpn` binary contains `MVPNCAT1` or `macvpn-catalog-v1` (catalog code must never reach the root binary).
 - Document types (from 1.4.0): `.ovpn` and `.sstp` (both Default) open in MacVPN through imported UTIs (`local.macvpn.ovpn`, `local.macvpn.sstp`) that conform to `public.data` and `public.item`, never to a text type (plain text is a "safe" download type Safari may open by itself; a downloaded, quarantined file is imported only after a confirmation), `.macvpncatalog` (Owner) through its exported UTI `local.macvpn.catalog` and opens **Add team catalog…** with the file preselected (the fingerprint step stays mandatory), and `.conf` is listed only under "Open With" (Alternate, by the extension, no type declared). `.macvpnadminkey`, `.macvpnbackup` and `.mobileconfig` are never claimed. `scripts/build-dmg.sh` checks these keys in the built `Info.plist`. The 1.0–1.3 updaters' `verify_bundle` reads only the bundle ID and the version from `Info.plist`, so the new keys do not affect an update.
 - The 1.3.0 release notes say: every team member needs 1.3.0 to subscribe or publish; the vault moves to schema v2 on the first launch (a backup copy is made; 1.2 can still read the vault, read-only, but cannot edit it or restore a backup into it, so there is no way back to editing in 1.2); MacVPN never uploads a catalog; HTTPS catalogs are fetched without a proxy.
 - Run the 1.3.0 section of `docs/manual-test-checklist.md` on the DMG: two Macs, a file share and an HTTPS host.
+
+## Release 1.5.0
+
+1.5.0 restructures the workspace for a future Windows version (see [`docs/architecture.md`](architecture.md)); MacVPN itself does not change. Its release notes say: internal restructuring for WinVPN; no change for MacVPN users; the root layer is unchanged (still 8), so no **Authorize** step and no admin password is needed. Only `MacVPN-1.5.0.dmg` (with its `.sha256` and `.sig`) is published; there is no Windows asset yet.
 
 ## Licences and third-party notices
 
@@ -108,6 +117,7 @@ Every release must ship the licence texts of what it bundles:
   - **SQLCipher** (from 1.2.0, statically linked into the app for the vault): its BSD-style licence in full, with the copyright notice of **Zetetic LLC**. Clause 2 of that licence requires binary redistributions to reproduce the copyright notice, the list of conditions and the disclaimer in the documentation or other materials provided with the distribution; `THIRD-PARTY-NOTICES.txt` in the bundle is how MacVPN meets it. SQLite itself is public domain (no notice required, but list it).
   - Every Rust crate linked into the app or `mvpn` and every JS package bundled into the web view, with its licence expression and the licence files it ships. The list is generated, not written by hand: `node scripts/third-party-notices.mjs` (after `cargo fetch --locked` and `npm ci` in `app/ui`) rewrites the file from `cargo metadata` and `node_modules`; `--check` only compares. Regenerate it whenever a dependency changes and review the diff.
 - The release notes mention the licence files only when they change.
+- From 1.5.0 `Cargo.lock` also holds crates that only a Windows build links (`openssl-src`, `openssl-sys`, for SQLCipher on Windows). The generator leaves them out: the file lists what the macOS release bundles.
 
 ## Repository settings (not code)
 

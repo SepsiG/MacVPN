@@ -1,0 +1,23 @@
+{
+  "assets": [
+    {
+      "browser_download_url": "https://github.com/SepsiG/MacVPN/releases/download/v1.4.0/MacVPN-1.4.0.dmg",
+      "name": "MacVPN-1.4.0.dmg"
+    },
+    {
+      "browser_download_url": "https://github.com/SepsiG/MacVPN/releases/download/v1.4.0/MacVPN-1.4.0.dmg.sha256",
+      "name": "MacVPN-1.4.0.dmg.sha256"
+    },
+    {
+      "browser_download_url": "https://github.com/SepsiG/MacVPN/releases/download/v1.4.0/MacVPN-1.4.0.dmg.sig",
+      "name": "MacVPN-1.4.0.dmg.sig"
+    }
+  ],
+  "body": "## What's new\n- The team catalog file has its own slot.",
+  "draft": false,
+  "html_url": "https://github.com/SepsiG/MacVPN/releases/tag/v1.4.0",
+  "name": "MacVPN 1.4.0",
+  "prerelease": false,
+  "published_at": "2026-09-21T21:33:20Z",
+  "tag_name": "v1.4.0"
+}

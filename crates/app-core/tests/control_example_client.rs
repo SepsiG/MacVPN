@@ -1,6 +1,8 @@
 //! The example client (`examples/macvpn-control-client`) against the real control server: the reusable `Client`
 //! and `Lease` walk through pair → hello → list → up → drop → disconnect over a real socket, with the fake host
-//! and transport of `control_support`.
+//! and transport of `control_support`. Unix only: the example client speaks the Unix socket (its Windows client
+//! comes with phase 2).
+#![cfg(unix)]
 
 mod control_support;
 

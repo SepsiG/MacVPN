@@ -229,17 +229,10 @@ pub const UPDATE_CHECK_INTERVAL: f64 = 24.0 * 60.0 * 60.0;
 /// The scheduler wakes this often to see whether a check is due.
 pub const UPDATE_SCHEDULER_WAKE: Duration = Duration::from_secs(3600);
 
-/// Persistent preferences (the app's `UserDefaults`).
-pub trait PreferenceStore: Send + Sync {
-    fn bool(&self, key: &str) -> Option<bool>;
-    fn set_bool(&self, key: &str, value: bool);
-    fn date(&self, key: &str) -> Option<Date>;
-    fn set_date(&self, key: &str, value: Date);
-    fn string(&self, key: &str) -> Option<String>;
-    fn set_string(&self, key: &str, value: &str);
-    /// Every key of the app's domain (uninstall with the user data: the Swift `removePersistentDomain`).
-    fn remove_all(&self);
-}
+/// Persistent preferences (the app's `UserDefaults`): a platform trait, defined in `macvpn-platform-api` and
+/// re-exported here (its old home).
+pub use macvpn_platform_api::PreferenceStore;
+pub use macvpn_platform_api::prefs::MemoryPreferences;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct UpdatePreferences {
@@ -307,78 +300,14 @@ impl UpdateOffers {
     }
 }
 
-/// An in-memory [`PreferenceStore`] (tests, and runs without a bundle).
-#[derive(Debug, Default)]
-pub struct MemoryPreferences {
-    values: Mutex<std::collections::HashMap<String, PreferenceValue>>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum PreferenceValue {
-    Bool(bool),
-    Date(Date),
-    String(String),
-}
-
-impl MemoryPreferences {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    fn get(&self, key: &str) -> Option<PreferenceValue> {
-        self.values.lock().unwrap_or_else(PoisonError::into_inner).get(key).cloned()
-    }
-
-    fn put(&self, key: &str, value: PreferenceValue) {
-        self.values.lock().unwrap_or_else(PoisonError::into_inner).insert(key.to_string(), value);
-    }
-}
-
-impl PreferenceStore for MemoryPreferences {
-    fn bool(&self, key: &str) -> Option<bool> {
-        match self.get(key)? {
-            PreferenceValue::Bool(b) => Some(b),
-            _ => None,
-        }
-    }
-
-    fn set_bool(&self, key: &str, value: bool) {
-        self.put(key, PreferenceValue::Bool(value));
-    }
-
-    fn date(&self, key: &str) -> Option<Date> {
-        match self.get(key)? {
-            PreferenceValue::Date(d) => Some(d),
-            _ => None,
-        }
-    }
-
-    fn set_date(&self, key: &str, value: Date) {
-        self.put(key, PreferenceValue::Date(value));
-    }
-
-    fn string(&self, key: &str) -> Option<String> {
-        match self.get(key)? {
-            PreferenceValue::String(s) => Some(s),
-            _ => None,
-        }
-    }
-
-    fn set_string(&self, key: &str, value: &str) {
-        self.put(key, PreferenceValue::String(value.to_string()));
-    }
-
-    fn remove_all(&self) {
-        self.values.lock().unwrap_or_else(PoisonError::into_inner).clear();
-    }
-}
-
 // MARK: - Help
 
-/// The user guide for the language (the core `UserGuide`), and only if it is an `https://github.com/` URL made of
+/// The user guide for the language (the core `UserGuide`; MacVPN's repo and stem until the app passes the selected
+/// product), and only if it is an `https://github.com/` URL made of
 /// plain path characters: the only kind of address the app hands to `open`.
 pub fn user_guide_url(repo: Option<&str>, language: macvpn_core::l10n::AppLanguage) -> Option<String> {
-    let url = macvpn_core::update::UserGuide::url(repo, &[language.raw_value()]);
+    let product = &macvpn_platform_api::MACVPN;
+    let url = macvpn_core::update::UserGuide::url(repo, product.repo, product.user_guide_stem, &[language.raw_value()]);
     is_safe_github_url(&url).then_some(url)
 }
 

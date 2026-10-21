@@ -1,4 +1,5 @@
 //! Port of `MvpnClientTests.swift` (the status JSON tests are also in the core: `status::parse_status`).
+#![cfg(target_os = "macos")]
 
 use macvpn_core::date::Date;
 use macvpn_core::l10n::AppLanguage;

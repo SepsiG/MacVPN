@@ -5,7 +5,8 @@
   // focuses it, Up / Down move through the results, Return opens the highlighted one, Escape clears the field and
   // then leaves it. The footer's sections stay reachable while searching.
   import { api, type Choice, type FolderColor, type Kind, type Row, type TreeRow } from '../api';
-  import { tr } from '../l10n.svelte';
+  import { i18n, tr } from '../l10n.svelte';
+  import { isPrimaryShortcut } from '../keys';
   import Icon, { type IconName } from '../Icon.svelte';
   import FolderTree from '../folders/FolderTree.svelte';
   import { treeOf } from '../folders/tree';
@@ -126,8 +127,8 @@
 <svelte:window
   onkeydown={(e) => {
     if (e.key === 'Escape') menuOpen = false;
-    // Cmd+F: the search field (this window's only find).
-    if (e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'f') {
+    // Cmd+F (Ctrl+F on Windows and Linux): the search field (this window's only find).
+    if (isPrimaryShortcut(e, 'f', i18n.platform.os)) {
       e.preventDefault();
       searchField?.focus();
       searchField?.select();

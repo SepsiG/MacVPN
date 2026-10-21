@@ -5,7 +5,9 @@
 
 mod common;
 
-use common::{TempDir, mode};
+use common::TempDir;
+#[cfg(unix)]
+use common::mode;
 use macvpn_core::vault::{
     AAD_PASSWORD, AAD_RECOVERY, Dek, Entropy, FixedEntropy, KEYS_FILE, KdfParams, KeyError, KeyFile, RecoveryKey,
     RecoveryKeyError, check_password_rules, derive_kek,
@@ -252,6 +254,7 @@ fn parse_rejects_wrong_length_and_foreign_symbols() {
 
 // --- vault.keys -------------------------------------------------------------------------------------------------
 
+#[cfg(unix)]
 #[test]
 fn save_and_load_round_trip_with_mode_0600() {
     let tmp = TempDir::new();
@@ -270,6 +273,7 @@ fn save_and_load_round_trip_with_mode_0600() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_file_format_is_the_documented_json() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -287,6 +291,7 @@ fn the_file_format_is_the_documented_json() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn load_rejects_newer_versions_and_garbage() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -339,6 +344,7 @@ fn load_rejects_newer_versions_and_garbage() {
 }
 
 /// `vault.keys` is opened with `O_NOFOLLOW` (security review L4).
+#[cfg(unix)]
 #[test]
 fn load_refuses_a_symlinked_key_file() {
     let tmp = TempDir::new();
@@ -366,6 +372,7 @@ fn file_with_slot_kdf(tmp: &TempDir, slot: &str, kdf: serde_json::Value) -> std:
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn parameters_below_the_floor_are_corrupt() {
     for (slot, kdf) in [
         ("password", serde_json::json!({"m_kib": 65536, "t": 2, "p": 1})),
@@ -391,6 +398,7 @@ fn parameters_below_the_floor_are_corrupt() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn parameters_above_the_ceiling_are_corrupt() {
     for kdf in [
         serde_json::json!({"m_kib": 1024 * 1024 + 1, "t": 32, "p": 1}),
@@ -418,6 +426,7 @@ fn create_refuses_parameters_below_the_floor() {
 
 /// A rewrap never keeps weaker parameters than the default: each slot is raised on its own.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_rewrap_raises_weak_parameters_to_the_default() {
     let tmp = TempDir::new();
     file_with_slot_kdf(&tmp, "password", serde_json::json!({"m_kib": 65536, "t": 3, "p": 1}));

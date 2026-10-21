@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Generates THIRD-PARTY-NOTICES.txt (repo root) from what the release bundles: the SQLCipher notice and the SQLite
 // public-domain note, then every Rust crate linked into the app or mvpn (normal dependencies, both macOS targets,
-// from `cargo metadata --locked`) and every JS package bundled into the web view (the UI's runtime dependencies and
+// from `cargo metadata --locked`, without the crates only a Windows build brings in) and every JS package bundled into the web view (the UI's runtime dependencies and
 // the Svelte runtime), each with its licence expression and the licence files it ships (LICENSE*, LICENCE*, COPYING*,
 // NOTICE*), read from ~/.cargo/registry and app/ui/node_modules. Identical texts are printed once, after the list of
 // the packages that ship them. Sorted throughout and free of local paths, so every machine produces the same file.
@@ -18,8 +18,9 @@ import { fileURLToPath } from 'node:url';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const OUT = join(ROOT, 'THIRD-PARTY-NOTICES.txt');
 const UI = join(ROOT, 'app', 'ui');
-const ROOT_PACKAGES = ['macvpn-app', 'mvpn'];
+const ROOT_PACKAGES = ['macvpn-app', 'macvpn-helper'];
 const TARGETS = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
+const OTHER_TARGETS = ['x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'];
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-._].*)?$/i;
 const RULE = '='.repeat(100);
 
@@ -36,8 +37,35 @@ function normalize(text) {
   return text.replace(/\r\n?/g, '\n').replace(/[ \t]+$/gm, '').replace(/^\n+|\n+$/g, '') + '\n';
 }
 
+/// `name version` of every crate in the normal dependency tree of the root packages for `target`, from `cargo tree`,
+/// which applies resolver 3's per-target features.
+function treeCrates(target) {
+  const roots = ROOT_PACKAGES.flatMap((name) => ['-p', name]);
+  const tree = execFileSync(
+    'cargo',
+    ['tree', '--locked', '-e', 'normal', '--target', target, ...roots, '--prefix', 'none', '-f', '{p}'],
+    { cwd: ROOT, maxBuffer: 256 * 1024 * 1024, encoding: 'utf8' },
+  );
+  const set = new Set();
+  for (const line of tree.split('\n')) {
+    // `name vX.Y.Z`, then `(path)` for a workspace member, `(proc-macro)`, `(*)` for a repeated subtree.
+    const [name, version] = line.trim().split(/\s+/);
+    if (name && version?.startsWith('v')) set.add(`${name} ${version.slice(1)}`);
+  }
+  return set;
+}
+
+/// The crates that only a Windows build links (`openssl-sys`, which SQLCipher uses on Windows only). `cargo metadata
+/// --filter-platform` unifies features across all targets, so its macOS walk below would list them; they are taken
+/// out by name and version.
+function otherTargetsOnly() {
+  const macos = new Set(TARGETS.flatMap((t) => [...treeCrates(t)]));
+  return new Set(OTHER_TARGETS.flatMap((t) => [...treeCrates(t)]).filter((c) => !macos.has(c)));
+}
+
 /// The crates linked into the shipped binaries: normal dependencies from the root packages, for both targets.
 function crates() {
+  const excluded = otherTargetsOnly();
   const found = new Map();
   for (const target of TARGETS) {
     const meta = JSON.parse(
@@ -62,7 +90,7 @@ function crates() {
     }
     for (const id of seen) {
       const p = packages.get(id);
-      if (members.has(id)) continue;
+      if (members.has(id) || excluded.has(`${p.name} ${p.version}`)) continue;
       found.set(`${p.name} ${p.version}`, {
         name: p.name,
         version: p.version,

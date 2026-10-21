@@ -6,7 +6,7 @@ mod common;
 use common::*;
 use macvpn_app_core::app::{Poller, Tick, poll_interval};
 use macvpn_app_core::connections::ConnectionsModel;
-use macvpn_app_core::deps::{Clock, ManualClock, SystemService};
+use macvpn_app_core::deps::{Clock, ManualClock, SystemVpn};
 use macvpn_app_core::editor::{EditorDeps, EditorFields, SystemFields, TextFields};
 use macvpn_app_core::live::{Debouncer, LIVE_DEBOUNCE, LIVE_MAX_WAIT, LiveReload};
 use macvpn_core::date::Date;
@@ -221,7 +221,7 @@ fn window() -> Window {
         store: fx.store.clone(),
         secrets: fx.secrets.clone(),
         secret_writer: fx.secrets.clone(),
-        profiles: Arc::new(MockProfiles::default()),
+        profiles: Arc::new(MobileconfigProfiles::default()),
         clock: clock_at(1_000_000.0),
     };
     Window { model: Arc::new(ConnectionsModel::new(deps)), fx, manager }
@@ -230,7 +230,7 @@ fn window() -> Window {
 impl Window {
     /// The system services macOS lists now, then a refresh and the window's update (the app's on-change path).
     fn list(&self, ids: &[&str]) {
-        let services = ids.iter().map(|id| SystemService::new(id, "Company", "L2TP", "Disconnected")).collect();
+        let services = ids.iter().map(|id| SystemVpn::new(id, "Company", "L2TP", "Disconnected")).collect();
         self.fx.native.set_list(Ok(services));
         self.manager.refresh();
         self.model.system_services_changed();
@@ -314,7 +314,7 @@ fn a_removed_vpn_can_forget_its_secrets() {
 fn a_removed_selection_without_an_editor_is_still_marked() {
     let w = window();
     // IKEv2: no editor (no stored secrets), but the detail is shown.
-    w.fx.native.set_list(Ok(vec![SystemService::new(SERVICE, "Corp", "IKEv2", "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SERVICE, "Corp", "IKEv2", "Disconnected")]));
     w.manager.refresh();
     w.model.system_services_changed();
     w.model.select(Some(SERVICE.into()));
@@ -328,6 +328,7 @@ fn a_removed_selection_without_an_editor_is_still_marked() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_managed_connection_is_never_marked_removed() {
     let w = window();
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -411,7 +412,7 @@ fn hooked_window() -> (Window, Arc<Hooked>) {
     let manager = fx.manager_with(macvpn_app_core::Dependencies::new(
         fx.store.clone(),
         secrets.clone(),
-        fx.root.clone(),
+        fx.helper.clone(),
         fx.native.clone(),
     ));
     let deps = EditorDeps {
@@ -419,7 +420,7 @@ fn hooked_window() -> (Window, Arc<Hooked>) {
         store: fx.store.clone(),
         secrets: secrets.clone(),
         secret_writer: secrets.clone(),
-        profiles: Arc::new(MockProfiles::default()),
+        profiles: Arc::new(MobileconfigProfiles::default()),
         clock: clock_at(1_000_000.0),
     };
     (Window { model: Arc::new(ConnectionsModel::new(deps)), fx, manager }, secrets)
@@ -466,9 +467,10 @@ fn a_removal_during_an_editor_load_is_kept() {
 /// A service that a managed connection takes over leaves the system list but is still listed by macOS: the
 /// selection is not marked removed.
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_service_that_becomes_managed_is_not_removed() {
     let w = window();
-    w.fx.native.set_list(Ok(vec![SystemService::new(SERVICE, "Office L2TP", "L2TP", "Disconnected")]));
+    w.fx.native.set_list(Ok(vec![SystemVpn::new(SERVICE, "Office L2TP", "L2TP", "Disconnected")]));
     w.manager.refresh();
     w.model.system_services_changed();
     w.model.select(Some(SERVICE.into()));

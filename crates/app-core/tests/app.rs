@@ -5,7 +5,7 @@ mod common;
 
 use common::*;
 use macvpn_app_core::app::*;
-use macvpn_app_core::deps::{Clock, ManualClock, SystemService};
+use macvpn_app_core::deps::{Clock, ManualClock, SystemVpn};
 use macvpn_core::date::Date;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::models::{Connection, ConnectionState, VPNKind, uuid_string};
@@ -37,29 +37,30 @@ fn active_connections_ask() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn disconnect_and_quit_stops_managed_and_system_connections() {
     let f = Fixture::new(AppLanguage::En);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
     f.store.save(&c, Some("remote x\n")).unwrap();
     let svc = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
-    f.root.respond(
+    f.helper.respond(
         "status",
         Ok(&format!(
             r#"[{{"id":"{}","kind":"openvpn","state":"connected","iface":null,"ip":null,"since":null}}]"#,
             uuid_string(&c.id)
         )),
     );
-    f.native.set_list(Ok(vec![SystemService::new(svc, "Corp", "IKEv2", "Connected")]));
+    f.native.set_list(Ok(vec![SystemVpn::new(svc, "Corp", "IKEv2", "Connected")]));
     let m = f.manager();
     m.refresh();
     assert!(m.has_active());
     assert!(!resolve_active_connections(&m, ActiveConnectionsAnswer::Cancel));
     assert!(f.native.stops().is_empty());
     assert!(resolve_active_connections(&m, ActiveConnectionsAnswer::KeepRunning));
-    assert!(!f.root.lines().iter().any(|l| l.starts_with("down ")));
-    f.root.respond("status", Ok("[]"));
+    assert!(!f.helper.lines().iter().any(|l| l.starts_with("down ")));
+    f.helper.respond("status", Ok("[]"));
     assert!(resolve_active_connections(&m, ActiveConnectionsAnswer::DisconnectAndQuit));
-    assert!(f.root.lines().contains(&down_line(VPNKind::Openvpn, &c.id)));
+    assert!(f.helper.lines().contains(&down_line(VPNKind::Openvpn, &c.id)));
     assert_eq!(f.native.stops(), [svc]);
     assert_eq!(m.state(&uuid_string(&c.id)), ConnectionState::Disconnected);
 }
@@ -163,10 +164,11 @@ fn poller_wait_wakes_and_stops() {
 }
 
 #[test]
+#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn poller_loop_refreshes_the_manager_until_stopped() {
     let f = Fixture::new(AppLanguage::En);
     f.store.save(&Connection::new("Iroda", VPNKind::Openvpn), Some("remote x\n")).unwrap();
-    f.root.respond("status", Ok("[]"));
+    f.helper.respond("status", Ok("[]"));
     let m = f.manager();
     let poller = Arc::new(Poller::new());
     let thread = {
@@ -177,12 +179,12 @@ fn poller_loop_refreshes_the_manager_until_stopped() {
         })
     };
     // Ordered by the recorded calls, not by fixed sleeps (a busy runner stretches those).
-    f.root.wait_for_call("status", 1);
+    f.helper.wait_for_call("status", 1);
     poller.wake();
-    f.root.wait_for_call("status", 2);
+    f.helper.wait_for_call("status", 2);
     poller.stop();
     thread.join().unwrap();
-    let statuses = f.root.lines().iter().filter(|l| *l == "status").count();
+    let statuses = f.helper.lines().iter().filter(|l| *l == "status").count();
     assert_eq!(statuses, 2, "the first refresh and the woken one");
 }
 
@@ -252,7 +254,7 @@ fn release(version: &str, published: Option<f64>, signed: bool) -> Release {
         notes: String::new(),
         page_url: None,
         published_at: published.map(date),
-        dmg: asset(format!("MacVPN-{version}.dmg")),
+        package: asset(format!("MacVPN-{version}.dmg")),
         checksum: asset(format!("MacVPN-{version}.dmg.sha256")),
         signature: signed.then(|| asset(format!("MacVPN-{version}.dmg.sig"))),
     }

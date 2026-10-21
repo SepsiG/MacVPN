@@ -1,4 +1,5 @@
 //! CFPreferences round trips in a throwaway domain (never `local.macvpn`), and the bundle Info.plist reader.
+#![cfg(target_os = "macos")]
 
 use macvpn_core::date::Date;
 use macvpn_core::update::{InfoValue, UpdateChecker};
