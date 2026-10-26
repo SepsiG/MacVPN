@@ -1,20 +1,7 @@
-//! The texts of the Windows platform: what WinVPN cannot do yet, the WinVPN Service's rows (the literals are the
-//! l10n keys).
+//! The texts of the Windows platform: the WinVPN Service's rows, the RAS engine's own, the app's notes (the
+//! literals are the l10n keys).
 
 use macvpn_core::l10n::{self, Arg};
-
-/// A connect, disconnect or MFA answer.
-pub fn engine_later() -> String {
-    l10n::tr("The VPN engine comes in a later version of WinVPN.", &[])
-}
-
-/// System Status.
-pub fn engine_note() -> String {
-    l10n::tr(
-        "The VPN engine comes in a later version of WinVPN. You can already create, import, edit, export and back up connections.",
-        &[],
-    )
-}
 
 /// The reason Windows shows while the quit questions hold up a logoff or shutdown.
 pub fn closing() -> String {
@@ -54,9 +41,10 @@ pub fn service_running(version: &str) -> String {
     l10n::tr("Running (version %@)", &[Arg::Str(version)])
 }
 
-/// The note under the engine rows, and the answer of every native kind (2c).
-pub fn native_later() -> String {
-    l10n::tr("Native Windows VPNs (L2TP, IKEv2, SSTP, Cisco IPsec) come in a later version of WinVPN.", &[])
+/// The RAS engine's answer to every L2TP/IPsec, IKEv2 and SSTP request when WinVPN's data folder (its private
+/// phonebook, profiles and logs) cannot be found: neither `%LOCALAPPDATA%` nor the user's profile is known.
+pub fn data_folder_missing() -> String {
+    l10n::tr("WinVPN's data folder could not be found.", &[])
 }
 
 /// System Status' OpenVPN row: the version and each installed driver with its version (`OpenVPN DCO 2.8.13.0,

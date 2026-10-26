@@ -49,22 +49,24 @@ test('the page background fills the rounded popover to its edges', () => {
   assert.match(base, /background: var\(--background\);/);
 });
 
-test('an idle row says "Missing tool", or the engine note when the platform has none', () => {
-  const missing = (type: string) => `${type} · Missing tool`;
-  assert.deepEqual(idleLine({ available: true, typeLabel: 'OpenVPN' }, missing), { type: 'OpenVPN', status: null });
-  assert.deepEqual(idleLine({ available: false, typeLabel: 'OpenVPN' }, missing), {
-    type: 'OpenVPN · Missing tool',
-    status: null,
-  });
-  assert.deepEqual(idleLine({ available: false, typeLabel: 'L2TP', unavailableReason: 'Later.' }, missing), {
+test('an idle row shows its reason, or only its type until the setup check gave one (never "Missing tool")', () => {
+  assert.deepEqual(idleLine({ available: true, typeLabel: 'OpenVPN' }), { type: 'OpenVPN', status: null });
+  // Before the first setup check the backend has no reason yet: a neutral line, not a guess.
+  assert.deepEqual(idleLine({ available: false, typeLabel: 'OpenVPN' }), { type: 'OpenVPN', status: null });
+  assert.deepEqual(idleLine({ available: false, typeLabel: 'L2TP', unavailableReason: 'Later.' }), {
     type: 'L2TP',
     status: 'Later.',
   });
+  // The 1.x fallback is gone from the sources (its key stays in the table only for the frozen 1.4.0 baseline).
+  for (const file of ['./status.ts', './format.ts']) {
+    const source = readFileSync(new URL(file, import.meta.url), 'utf8');
+    assert.ok(!source.includes('Missing tool'), file);
+  }
 });
 
 test('an unavailable row links System Status when its engine can be installed', () => {
   const row = { available: false, typeLabel: 'OpenVPN', unavailableReason: 'Not installed: OpenVPN', setupLink: true };
-  assert.deepEqual(idleLine(row, (t) => `${t} · Missing tool`), { type: 'OpenVPN', status: 'Not installed: OpenVPN' });
+  assert.deepEqual(idleLine(row), { type: 'OpenVPN', status: 'Not installed: OpenVPN' });
   assert.equal(engineLink(row), true);
   assert.equal(engineLink({ ...row, setupLink: undefined }), false);
   assert.equal(engineLink({ ...row, available: true }), false);

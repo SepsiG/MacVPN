@@ -27,8 +27,8 @@ pub struct SetupReport {
     /// The WinVPN Service's engine (WinVPN 2b): the service, OpenVPN and WireGuard rows, which decide whether
     /// OpenVPN and WireGuard can start. `None` (macOS): the fields above decide.
     pub engine: Option<EngineReport>,
-    /// The kinds this platform offers only in a later version, with the localized reason (WinVPN: the native VPNs,
-    /// 2c). Empty on macOS.
+    /// The kinds this platform offers only in a later version, with the localized reason (WinVPN 2b had the native
+    /// VPNs here). Empty on macOS, and on Windows since 2.0.
     pub later_kinds: Vec<(VPNKind, String)>,
     /// The packages of the package manager that have a newer version (macOS: the Homebrew formulae of
     /// `SetupChecker::BREW_PACKAGES` that `brew outdated` lists, pinned ones left out), checked only when nothing is
@@ -309,8 +309,8 @@ pub trait SystemSetup: Send + Sync {
     fn engine_note(&self) -> Option<String> {
         None
     }
-    /// The note under the engine rows (WinVPN 2b: "Native Windows VPNs … come in a later version of WinVPN.",
-    /// localized). `None` (macOS): no engine rows.
+    /// The note under the engine rows (WinVPN 2b had one: the native VPNs came later). `None`: no note (macOS, and
+    /// WinVPN since 2.0).
     fn later_note(&self) -> Option<String> {
         None
     }

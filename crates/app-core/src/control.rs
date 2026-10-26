@@ -104,16 +104,19 @@ pub trait ControlHost: Send + Sync {
     fn locked(&self) -> bool {
         false
     }
-    /// The platform has no VPN engine yet (WinVPN 2a): the localized answer to every connect ("The VPN engine comes
-    /// in a later version of WinVPN."). An `up` that would start a connection, of any type, is then `failed` with
-    /// it as the message, and nothing starts. Asked like [`Self::setup_ready_for`] (never with the server's mutex
-    /// held; it must return quickly). `None` (macOS): connects as usual.
+    /// The platform's VPN engine is missing (WinVPN: the WinVPN Service is not installed, not of this version or
+    /// not reachable; `SetupReport::engine_missing`): its localized reason. Only the default
+    /// [`Self::start_refusal`] asks it: an `up` that would start a connection is then `failed` with it as the
+    /// message, and nothing starts. The app overrides [`Self::start_refusal`] with the per-kind decision (the RAS
+    /// kinds and the system VPNs need no WinVPN Service). Asked like [`Self::setup_ready_for`] (never with the
+    /// server's mutex held; it must return quickly). `None` (macOS): connects as usual.
     fn engine_missing(&self) -> Option<String> {
         None
     }
-    /// The connection `key`'s kind comes in a later version on this platform (WinVPN 2b: the native VPNs): the
+    /// The connection `key`'s kind is not offered on this platform yet (`SetupReport::later_reason`): the
     /// localized reason, and an `up` that would start it is `failed` with it as the message. Asked like
-    /// [`Self::engine_missing`]. `None` (macOS, and every other kind): connects as usual.
+    /// [`Self::engine_missing`], by the default [`Self::start_refusal`] only. `None` (macOS, and every other kind):
+    /// connects as usual.
     fn later_reason(&self, _key: &str) -> Option<String> {
         None
     }

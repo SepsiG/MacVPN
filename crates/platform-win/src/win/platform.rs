@@ -447,15 +447,15 @@ impl SystemSetup for WinPlatform {
         Err(unsupported("package manager"))
     }
 
-    /// The OpenVPN row's "Install" / "Repair" / "Update" (`openvpn_install`), else the WireGuard row's "Update"
-    /// (fix4: the WinVPN Service updates wireguard-nt itself); the sandbox runs no installer.
+    /// The engine row whose button was clicked (`engine::tools_target`): the OpenVPN row's "Install" / "Repair" /
+    /// "Update" (`openvpn_install`), or the WireGuard row's "Update" (fix4: the WinVPN Service updates wireguard-nt
+    /// itself); the sandbox runs no installer.
     fn install_tools(&self, report: &SetupReport, output: &mut dyn FnMut(&str)) -> Result<(), PlatformError> {
         if self.sandbox.is_some() {
             output("(sandbox: the OpenVPN installer is not run)\n");
             return Ok(());
         }
-        let engine = report.engine.as_ref();
-        if engine.is_some_and(|e| e.openvpn.action.is_none() && e.wireguard.action == Some("update")) {
+        if engine::tools_target(report) == engine::ToolsTarget::WireGuard {
             output(&format!("{}\n", wireguard_update::updating()));
             let result = ServiceClient::production().wireguard_update();
             output(&format!("{}\n", result.as_ref().unwrap_or_else(|e| e)));

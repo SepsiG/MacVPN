@@ -699,6 +699,13 @@
         "windows"
       ]
     },
+    "WinVPN's data folder could not be found.": {
+      "hu": "A WinVPN adatmappája nem található.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
     "The server did not answer or closed the connection.": {
       "hu": "A szerver nem válaszolt, vagy lezárta a kapcsolatot.",
       "scope": "platform",
@@ -2806,13 +2813,6 @@
       "hu": "Név és fájl",
       "scope": "app"
     },
-    "Native Windows VPNs (L2TP, IKEv2, SSTP, Cisco IPsec) come in a later version of WinVPN.": {
-      "hu": "A Windows saját VPN-jei (L2TP, IKEv2, SSTP, Cisco IPsec) a WinVPN egy későbbi verziójában érkeznek.",
-      "scope": "core",
-      "only": [
-        "windows"
-      ]
-    },
     "Native connections only have a log when connected in debug mode.": {
       "hu": "Natív kapcsolatnál csak debug csatlakozáskor van napló.",
       "scope": "app"
@@ -3971,20 +3971,6 @@
     "The SSTP password must not contain quotation marks, backslashes or control characters": {
       "hu": "Az SSTP jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter",
       "scope": "core"
-    },
-    "The VPN engine comes in a later version of WinVPN.": {
-      "hu": "A VPN-motor a WinVPN egy későbbi verziójában érkezik.",
-      "scope": "platform",
-      "only": [
-        "windows"
-      ]
-    },
-    "The VPN engine comes in a later version of WinVPN. You can already create, import, edit, export and back up connections.": {
-      "hu": "A VPN-motor a WinVPN egy későbbi verziójában érkezik. Kapcsolatokat már most is létrehozhatsz, importálhatsz, szerkeszthetsz, exportálhatsz és menthetsz.",
-      "scope": "app",
-      "only": [
-        "windows"
-      ]
     },
     "The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:": {
       "hu": "A VPN szerver weboldalon kér bejelentkezést. Csak akkor nyisd meg, ha te indítottad ezt a kapcsolatot, és megbízol ebben a címben:",

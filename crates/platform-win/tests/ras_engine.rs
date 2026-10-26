@@ -15,7 +15,7 @@ use macvpn_core::ras::policy::{
     DhGroup, EspCipher, EspIntegrity, IkeCipher, IkeIntegrity, WINDOWS_DEFAULT_FOR_STRONGSWAN, WindowsPolicy,
 };
 use macvpn_platform_api::SystemVpn;
-use macvpn_platform_win::{RasEngineForTests, ras_engine_for_tests};
+use macvpn_platform_win::{RasEngineForTests, ras_engine_for_tests, ras_engine_without_data_for_tests};
 use macvpn_winsys::ras::{self as wras, Phonebook};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -106,6 +106,27 @@ fn sstp_config(cert: &str) -> String {
 
 fn log_text(engine: &RasEngineForTests, id: &Uuid) -> String {
     String::from_utf8_lossy(&TempData::file_bytes(&engine.log_path(id))).into_owned()
+}
+
+/// fix 2.0.1: without WinVPN's data folder (no `%LOCALAPPDATA%`, no profile) the engine says so, not that the
+/// native VPNs come in a later version.
+#[test]
+fn without_a_data_folder_the_engine_says_so() {
+    let engine = ras_engine_without_data_for_tests();
+    macvpn_core::l10n::with_language(macvpn_core::l10n::AppLanguage::En, || {
+        let e = install(&engine, &l2tp(UNREACHABLE, true)).unwrap_err();
+        assert_eq!(e, macvpn_platform_win::pure::texts::data_folder_missing());
+        assert!(e.starts_with("WinVPN's data folder") && !e.contains("later"), "{e}");
+        let up = engine.helper().up(
+            VPNKind::Sstp,
+            &Uuid::new_v4(),
+            sstp_config("system").as_bytes(),
+            &secrets(),
+            false,
+            &[],
+        );
+        assert_eq!(up.unwrap_err(), e);
+    });
 }
 
 #[test]

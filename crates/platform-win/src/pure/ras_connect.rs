@@ -170,6 +170,31 @@ pub fn error_context(plan: &RasEntryPlan, config: &[u8]) -> ErrorContext {
     ErrorContext::for_plan(plan, custom_ca)
 }
 
+/// The answer to a RAS request of a kind the `RasEngine` does not run (never sent there: the `HelperClient` sends
+/// only [`is_helper_kind`] kinds, and only native connections get a profile). Not localized: an internal error.
+fn not_a_ras_kind(kind: VPNKind) -> String {
+    format!("Internal error: WinVPN does not run {} connections through the Windows VPN client.", kind.display_name())
+}
+
+/// The plan of an IKEv2 or SSTP `up` (the `HelperClient`'s kinds) from its config; any other kind is an internal
+/// error.
+pub fn helper_plan(kind: VPNKind, config: &[u8]) -> Result<RasEntryPlan, String> {
+    match kind {
+        VPNKind::Strongswan => ras::plan_ikev2(config),
+        VPNKind::Sstp => ras::plan_sstp(config),
+        _ => return Err(not_a_ras_kind(kind)),
+    }
+    .map_err(|u| u.to_string())
+}
+
+/// The plan `NativeProfiles::build` saves for `connection` (L2TP/IPsec; Cisco IPsec gets its reason); a kind the
+/// RAS engine does not run is an internal error.
+pub fn profile_plan(connection: &Connection) -> Result<RasEntryPlan, ras::Unsupported> {
+    ras::plan_for(connection, b"").unwrap_or_else(|| {
+        Err(ras::Unsupported { reasons: vec![not_a_ras_kind(connection.kind)], invalid_config: true })
+    })
+}
+
 /// The connection kind a RAS strategy belongs to (an entry found after a relaunch).
 pub fn kind_of(strategy: Strategy) -> VPNKind {
     match strategy {
@@ -210,9 +235,9 @@ pub fn timestamp((y, mo, d, h, mi, s): (i32, u32, u32, u32, u32, u32)) -> String
     format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}")
 }
 
-/// System Status with the RAS engine: L2TP, IKEv2 and SSTP no longer come "later" and follow the Windows VPN
-/// client row (green: built into Windows; the Windows services RAS needs are read by the system VPN list's task),
-/// whatever the WinVPN Service's state. Cisco IPsec keeps its own answer.
+/// System Status with the RAS engine: L2TP, IKEv2 and SSTP follow the Windows VPN client row (green: built into
+/// Windows; the Windows services RAS needs are read by the system VPN list's task), whatever the WinVPN Service's
+/// state; none of them comes "later" (since 2.0 nothing does). Cisco IPsec keeps its own answer.
 pub fn complete_report(report: &mut SetupReport) {
     report.later_kinds.retain(|(kind, _)| !matches!(kind, VPNKind::L2tp | VPNKind::Strongswan | VPNKind::Sstp));
     report.ras = Some(EngineRow { ok: true, usable: true, detail: l10n::tr("Built into Windows", &[]), action: None });

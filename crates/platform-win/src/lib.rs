@@ -292,6 +292,14 @@ pub fn ras_engine_with_system_books_for_tests(
     RasEngineForTests(std::sync::Arc::new(win::ras_engine::RasEngine::with_system(Some(data), system)))
 }
 
+/// Tests only: the RAS engine when WinVPN's data folder cannot be found (no `%LOCALAPPDATA%`, no profile).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn ras_engine_without_data_for_tests() -> RasEngineForTests {
+    let system = win::system_vpns::SystemVpns::for_test(Vec::new(), None);
+    RasEngineForTests(std::sync::Arc::new(win::ras_engine::RasEngine::with_system(None, system)))
+}
+
 /// Tests only: the WinVPN Service's client as the app uses it, over a test pipe.
 #[cfg(windows)]
 #[doc(hidden)]

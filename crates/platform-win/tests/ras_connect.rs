@@ -203,3 +203,71 @@ fn system_status_has_the_windows_vpn_client_row() {
         assert!(!report.is_available(VPNKind::Openvpn));
     });
 }
+
+/// fix 2.0.1: since 2.0 no path of System Status says a kind comes "in a later version of WinVPN": the full check
+/// (the service's rows, the Windows VPN client row, a disabled RAS service) of every service state gives each kind
+/// its 2.0 answer.
+#[test]
+fn no_kind_comes_later_in_any_service_state() {
+    use macvpn_core::service_proto::{EngineFacts, OpenVpnFacts, SERVICE_VERSION, WireGuardFacts};
+    use macvpn_platform_win::pure::engine::{self, Reach};
+    use macvpn_platform_win::pure::openvpn_install::Upgrade;
+    use macvpn_platform_win::pure::system_vpn;
+    use macvpn_platform_win::pure::wireguard_update::Offer;
+    en(|| {
+        let facts = EngineFacts {
+            service_version: SERVICE_VERSION,
+            problem: None,
+            openvpn: OpenVpnFacts {
+                version: Some("2.7.8".into()),
+                path: None,
+                dco: Some("2.8.13.0".into()),
+                tap_windows6: Some("9.27.0.0".into()),
+                problem: None,
+            },
+            wireguard: WireGuardFacts { dll_version: Some("0.10.1".into()), problem: None },
+        };
+        let reaches =
+            [Reach::Absent, Reach::Unreachable("The WinVPN Service is not reachable.".into()), Reach::Facts(facts)];
+        for reach in reaches {
+            for disabled in [false, true] {
+                let mut report = engine::report(reach.clone(), "2.7.8", &Upgrade::Unknown, &Offer::Unknown);
+                rc::complete_report(&mut report);
+                system_vpn::apply_ras_row(&mut report, |name| disabled && name == "RasMan");
+                assert!(report.later_kinds.is_empty(), "{reach:?}");
+                for kind in VPNKind::ALL {
+                    let texts = [report.unavailable_text(kind), report.start_refusal(Some(kind))];
+                    for text in texts.into_iter().flatten() {
+                        assert!(!text.contains("later"), "{reach:?} {disabled} {kind:?}: {text}");
+                    }
+                }
+                for kind in [VPNKind::L2tp, VPNKind::Strongswan, VPNKind::Sstp] {
+                    assert_eq!(report.is_available(kind), !disabled, "{reach:?} {kind:?}");
+                }
+            }
+        }
+    });
+}
+
+/// fix 2.0.1: the RAS plans of the kinds the `RasEngine` does not run (never asked for: the `HelperClient` sends
+/// only IKEv2 and SSTP to it, and only native connections get a profile) are internal errors, never "later".
+#[test]
+fn the_plans_of_kinds_ras_does_not_run_are_internal_errors() {
+    en(|| {
+        for kind in [VPNKind::Openvpn, VPNKind::Wireguard, VPNKind::L2tp, VPNKind::Cisco] {
+            let e = rc::helper_plan(kind, b"").unwrap_err();
+            assert!(e.starts_with("Internal error:") && !e.contains("later"), "{kind:?}: {e}");
+        }
+        let sstp = "server=vpn.example.com\nport=443\nuser=alice\ncert=system\nroute_all=yes\npeer_dns=yes\n";
+        assert_eq!(rc::helper_plan(VPNKind::Sstp, sstp.as_bytes()).unwrap().strategy, Strategy::Sstp);
+        assert!(rc::helper_plan(VPNKind::Strongswan, b"nonsense").is_err());
+        for kind in [VPNKind::Openvpn, VPNKind::Wireguard] {
+            let reasons = rc::profile_plan(&Connection::new("Other", kind)).unwrap_err().reasons;
+            assert_eq!(reasons.len(), 1);
+            assert!(reasons[0].starts_with("Internal error:") && !reasons[0].contains("later"), "{kind:?}");
+        }
+        assert!(rc::profile_plan(&l2tp("vpn.example.com", "alice", true)).is_ok());
+        let cisco = rc::profile_plan(&Connection::new("Cisco", VPNKind::Cisco)).unwrap_err().reasons;
+        assert!(!cisco.iter().any(|r| r.contains("later")), "{cisco:?}");
+    });
+}

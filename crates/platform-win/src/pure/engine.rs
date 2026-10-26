@@ -8,9 +8,28 @@ use crate::pure::cisco;
 use crate::pure::openvpn_install::Upgrade;
 use crate::pure::texts;
 use crate::pure::wireguard_update::Offer;
-use macvpn_core::models::VPNKind;
 use macvpn_core::service_proto::{EngineFacts, SERVICE_VERSION, Version};
 use macvpn_platform_api::{EngineReport, EngineRow, PackageIndexUpdate, SetupReport};
+
+/// The engine one click of System Status' engine buttons runs (`SystemSetup::install_tools`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolsTarget {
+    /// The OpenVPN row's "Install" / "Repair" / "Update" (`openvpn_install`).
+    OpenVpn,
+    /// The WireGuard row's "Update" (fix4: the WinVPN Service updates wireguard-nt itself).
+    WireGuard,
+}
+
+/// Each engine row has its own button (OpenVPN's and WireGuard's update are two clicks, each with its own
+/// confirmation and busy rule): the OpenVPN row's button sends the report as it is, the WireGuard row's without the
+/// OpenVPN action (app `setup_install_tools`). So the OpenVPN row's action when there is one, else the WireGuard
+/// row's "Update"; without either, OpenVPN (its installer answers).
+pub fn tools_target(report: &SetupReport) -> ToolsTarget {
+    match &report.engine {
+        Some(e) if e.openvpn.action.is_none() && e.wireguard.action == Some("update") => ToolsTarget::WireGuard,
+        _ => ToolsTarget::OpenVpn,
+    }
+}
 
 /// What the app learned about the service.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -20,12 +39,6 @@ pub enum Reach {
     /// The pipe exists but no trusted answer came (the localized reason).
     Unreachable(String),
     Facts(EngineFacts),
-}
-
-/// The kinds that come in a later version of WinVPN (2c: native RAS, until the RAS engine), each with the reason.
-/// Cisco IPsec is not among them: Windows cannot run it at all (option A, `cisco::unsupported_kinds`).
-fn later() -> Vec<(VPNKind, String)> {
-    [VPNKind::L2tp, VPNKind::Strongswan, VPNKind::Sstp].map(|k| (k, texts::native_later())).to_vec()
 }
 
 /// The OpenVPN data-channel drivers System Status lists (decision 4: DCO and TAP-Windows6; no Wintun).
@@ -67,7 +80,6 @@ pub fn index_refresh(reach: &Reach, sandbox: bool) -> PackageIndexUpdate {
 pub fn report(reach: Reach, recommended_openvpn: &str, upgrade: &Upgrade, wireguard: &Offer) -> SetupReport {
     let missing = |reason: String| SetupReport {
         engine_missing: Some(reason),
-        later_kinds: later(),
         ras_unsupported_kinds: cisco::unsupported_kinds(),
         ..SetupReport::unknown()
     };
@@ -118,10 +130,10 @@ pub fn report(reach: Reach, recommended_openvpn: &str, upgrade: &Upgrade, wiregu
             detail: p.clone(),
             action: Some(if older(v) { "update" } else { "repair" }),
         },
-        // No problem and no readable version: not a fact the row can be green on.
-        (None, None) => {
-            EngineRow { ok: false, usable: false, detail: texts::service_unreachable(), action: Some("install") }
-        }
+        // No problem and no readable version: not a fact the row can be green on, nor "not installed" (only a row
+        // that offers "install" is: OpenVPN's optional state, `SetupReport::is_complete`). Nothing to install or
+        // repair from here: "Not ready", and the report is incomplete.
+        (None, None) => EngineRow { ok: false, usable: false, detail: texts::service_unreachable(), action: None },
     };
     let wireguard = match (&f.wireguard.problem, &f.wireguard.dll_version) {
         (None, Some(v)) => match wireguard {
@@ -149,7 +161,6 @@ pub fn report(reach: Reach, recommended_openvpn: &str, upgrade: &Upgrade, wiregu
             openvpn,
             wireguard,
         }),
-        later_kinds: later(),
         ras_unsupported_kinds: cisco::unsupported_kinds(),
         ..SetupReport::unknown()
     }

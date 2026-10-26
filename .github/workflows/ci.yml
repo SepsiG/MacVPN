@@ -175,7 +175,8 @@ jobs:
       # `ras_engine`, `system_vpns`, `ras_sweep`, `admin_steps` (private phonebooks in temp folders and the PSK store:
       # a standard user's calls, no dial), the pure `ras_pure`, `ras_connect`, `ras_editor`, `system_vpns_pure`, core
       # `ras_plan`, helper `ras_logoff`. The dial tests need an interactive logon session (`desktop:`) and the CA
-      # trust test a UAC prompt: they stay ignored (scripts/ignored-everywhere.txt; the 2c checklist runs them).
+      # trust test a UAC prompt: they stay ignored (scripts/ignored-everywhere.txt; docs/manual-test-checklist.md
+      # runs them at the desktop).
       - name: cargo test (the Windows test set, the app included)
         run: CI=1 cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper -p macvpn-winsys -p macvpn-control-client -p macvpn-app --lib --tests --no-fail-fast
       - name: Ignored tests are the same on every OS

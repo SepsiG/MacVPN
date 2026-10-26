@@ -34,7 +34,7 @@ use macvpn_core::mfa::AuthResponseKind;
 use macvpn_core::models::{Connection, Secrets, VPNKind};
 use macvpn_core::native::NativeKind;
 use macvpn_core::ras::policy::{DhGroup, EspCipher, EspIntegrity, IkeCipher, IkeIntegrity};
-use macvpn_core::ras::{self as core_ras, Auth, DefaultRoute, RasEntryPlan, Strategy, WindowsPolicy, names};
+use macvpn_core::ras::{Auth, DefaultRoute, RasEntryPlan, Strategy, WindowsPolicy, names};
 use macvpn_core::status::RootStatus;
 use macvpn_platform_api::{HelperClient, NativeController, NativeProfile, NativeProfiles, NativeSupport, SystemVpn};
 use macvpn_winsys::ras as wras;
@@ -142,7 +142,7 @@ impl RasEngine {
     pub(crate) fn with_system(data: Option<&Path>, system: SystemVpns) -> RasEngine {
         let ready = match data {
             Some(data) => Inner::open(data).map(Arc::new),
-            None => Err(texts::native_later()),
+            None => Err(texts::data_folder_missing()),
         };
         RasEngine { ready, system }
     }
@@ -171,12 +171,7 @@ impl RasEngine {
         debug: bool,
     ) -> Result<(), String> {
         let inner = self.inner()?;
-        let plan = match kind {
-            VPNKind::Strongswan => core_ras::plan_ikev2(config),
-            VPNKind::Sstp => core_ras::plan_sstp(config),
-            _ => return Err(texts::native_later()),
-        }
-        .map_err(|u| u.to_string())?;
+        let plan = rc::helper_plan(kind, config)?;
         inner.connect(id, kind, &plan, config, secrets, debug)
     }
 
@@ -784,9 +779,7 @@ impl NativeProfiles for RasEngine {
     /// The connection's profile: its L2TP plan (no secret; the PSK is stored in Windows at each connect), or the
     /// reasons Windows cannot run it, which [`Self::install`] answers (Cisco IPsec: the connection is still saved).
     fn build(&self, connection: &Connection, _psk: &str) -> Result<NativeProfile, String> {
-        let plan = core_ras::plan_for(connection, b"").unwrap_or_else(|| {
-            Err(core_ras::Unsupported { reasons: vec![texts::native_later()], invalid_config: true })
-        });
+        let plan = rc::profile_plan(connection);
         Ok(NativeProfile { data: rc::encode_profile(&plan), file_name: format!("{}.ras", connection.id) })
     }
 

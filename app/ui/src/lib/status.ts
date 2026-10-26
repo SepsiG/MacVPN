@@ -6,7 +6,7 @@ import { tr } from './l10n.svelte';
 export type Tone = 'on' | 'busy' | 'fail' | 'off';
 
 export interface StatusLine {
-  /// The VPN type ("OpenVPN"), or with "Missing tool" when the tool is not installed (`idleLine`).
+  /// The VPN type ("OpenVPN").
   type: string;
   /// The state's text (IP and uptime, the failure, …), if any.
   status: string | null;
@@ -29,7 +29,7 @@ export function statusLine(row: Row, now: number): StatusLine {
     case 'awaitingAuth':
       return { type: row.typeLabel, status: tr('Waiting for authentication'), tone: 'busy' };
     default:
-      return { ...idleLine(row, (type) => tr('%@ · Missing tool', type)), tone: 'off' };
+      return { ...idleLine(row), tone: 'off' };
   }
 }
 

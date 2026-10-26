@@ -265,6 +265,7 @@ jobs:
         run: |
           ls -l dist
           FILES=(dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256)
+          TITLE="MacVPN $GITHUB_REF_NAME"
           (cd dist && shasum -a 256 -c MacVPN-*.dmg.sha256)
           NOTES="Ez a kiadás csak a karbantartó offline Ed25519 aláírása (MacVPN-X.Y.Z.dmg.sig) után kerül közzétételre; a 0.2.2-es és újabb appok aláírás nélküli frissítést nem telepítenek. / This release is published only after offline signing by the maintainer (Ed25519, MacVPN-X.Y.Z.dmg.sig); apps from 0.2.2 on do not install unsigned updates. Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. Frissítés után a macOS egyszer rákérdezhet, hogy a MacVPN hozzáférhet-e a Keychainben tárolt saját elemeihez (az ad-hoc aláírás miatt): a „Mindig engedélyezés” gombot csak akkor válaszd, ha a kérdés a MacVPN-től jön (a név és az útvonal alapján, pl. /Applications/MacVPN.app). / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway. After an update macOS may ask once whether MacVPN may access its own items in the Keychain (because of the ad-hoc signature): click Always Allow only if the prompt is from MacVPN (check the name and the path, e.g. /Applications/MacVPN.app)."
           if [ "${WINVPN_MSI_IN_RELEASE:-}" = true ]; then
@@ -275,11 +276,12 @@ jobs:
             done
             (cd dist && sha256sum -c WinVPN-*.msi.sha256)
             FILES+=(dist/WinVPN-*.msi dist/WinVPN-*.msi.sha256)
+            TITLE="MacVPN $GITHUB_REF_NAME + WinVPN $GITHUB_REF_NAME"
             NOTES+=" WinVPN: a WinVPN-X.Y.Z-x64.msi és a WinVPN-X.Y.Z-arm64.msi nincs Authenticode-dal aláírva: a SmartScreen egyszer figyelmeztet („További információ” → „Futtatás mindenképp”). A telepítést rendszergazda végzi. A frissítéseket ugyanazok az offline Ed25519 aláírások védik (WinVPN-X.Y.Z-<arch>.msi.sig). / WinVPN: WinVPN-X.Y.Z-x64.msi and WinVPN-X.Y.Z-arm64.msi are not Authenticode-signed: SmartScreen warns once (More info → Run anyway). They are installed by an administrator. Updates are protected by the same offline Ed25519 signatures (WinVPN-X.Y.Z-<arch>.msi.sig). A WinVPN telepíti a WinVPN szolgáltatást (OpenVPN- és WireGuard-kapcsolatok) és a WireGuard aláírt wireguard.dll-jét; az OpenVPN Community-t szükség esetén a Rendszerállapotban telepítheted. / WinVPN installs the WinVPN Service (connects OpenVPN and WireGuard) and the signed wireguard.dll from WireGuard; OpenVPN Community is installed from System Status when needed."
           fi
           gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
-            --title "MacVPN $GITHUB_REF_NAME" \
+            --title "$TITLE" \
             --notes "$NOTES"

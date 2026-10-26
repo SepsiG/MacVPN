@@ -27,8 +27,8 @@ export type Row = RowState & {
   storedSecrets: boolean;
   pinned: boolean;
   available: boolean;
-  /// Why the row is unavailable when it is not a missing tool: the platform has no VPN engine yet (WinVPN 2a), shown
-  /// instead of "Missing tool". Absent on macOS.
+  /// Why the row cannot start, once the setup check ran ("Not installed: OpenVPN", "Not ready: …", the engine's or
+  /// the platform's reason). Absent when the row is available, and before the first setup check.
   unavailableReason?: string;
   /// The row is unavailable because its engine is missing and System Status can install it: its status line ends
   /// with the "System Status" link. Absent otherwise.

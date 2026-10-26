@@ -57,7 +57,7 @@ pub struct EngineRowsView {
     /// "update" / none: the WireGuard row's button (the WinVPN Service updates wireguard-nt itself).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wireguard_action: Option<&'static str>,
-    /// The note under the rows: native Windows VPNs come later.
+    /// The note under the rows (`SystemSetup::later_note`): empty since WinVPN 2.0 (the native Windows VPNs ship).
     pub later_note: String,
 }
 

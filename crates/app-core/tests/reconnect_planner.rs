@@ -393,3 +393,62 @@ fn an_unidentified_start_is_not_reconnected() {
         })]
     );
 }
+
+/// "k" started by the control API under a lease (the app brackets the lease's connect), up at home when the
+/// system slept.
+fn lease_slept_planner() -> Planner {
+    let mut p = Planner::default();
+    p.lease_connect_began("k");
+    p.connect_started("k", fingerprint(&home()), false);
+    p.lease_connect_ended("k");
+    p.connected("k", VpnNetworks::default());
+    p.sleep(&["k".to_string()], fingerprint(&home()));
+    p.wake(t0(), &["k".to_string()]);
+    p
+}
+
+#[test]
+fn a_connection_a_lease_started_is_not_reconnected_after_a_drop_at_wake() {
+    // The drop ends its leases; the controlling app may be gone after the wake: nothing brings it back.
+    let mut p = lease_slept_planner();
+    p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::ServerNotResponding);
+    assert!(!p.due(t0().adding(10.0)));
+    assert!(p.evaluate(t0().adding(10.0), &home(), &on, false).is_empty());
+}
+
+#[test]
+fn a_connection_a_lease_started_is_not_reconnected_after_a_network_change() {
+    let mut p = Planner::default();
+    p.lease_connect_began("k");
+    p.connect_started("k", fingerprint(&home()), false);
+    p.connected("k", VpnNetworks::default());
+    p.lease_connect_ended("k");
+    p.network_changed(t0());
+    p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::NetworkLost);
+    assert!(!p.due(t0().adding(10.0)));
+}
+
+#[test]
+fn the_users_own_connect_after_a_lease_makes_it_reconnectable_again() {
+    let mut p = lease_slept_planner();
+    p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::ServerNotResponding);
+    // The user connects it from the menu: it is the user's connection now.
+    p.connect_started("k", fingerprint(&home()), false);
+    p.connected("k", VpnNetworks::default());
+    p.network_changed(t0().adding(20.0));
+    p.dropped("k", "Office VPN", t0().adding(21.0), FailureKind::NetworkLost);
+    assert_eq!(p.evaluate(t0().adding(25.0), &home(), &on, false), vec![Action::Connect("k".into())]);
+}
+
+#[test]
+fn a_refused_lease_connect_leaves_no_mark() {
+    // The lease's connect never started (setup required, locked): the user's later connect is the user's.
+    let mut p = Planner::default();
+    p.lease_connect_began("k");
+    p.lease_connect_ended("k");
+    p.connect_started("k", fingerprint(&home()), false);
+    p.connected("k", VpnNetworks::default());
+    p.network_changed(t0());
+    p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::NetworkLost);
+    assert_eq!(p.evaluate(t0().adding(5.0), &home(), &on, false), vec![Action::Connect("k".into())]);
+}

@@ -29,7 +29,7 @@ test('format subset', () => {
 test('translate uses the app scope only', () => {
   assert.equal(translate(table, 'hu', MACOS, 'Quit MacVPN', []), table['Quit MacVPN'].hu);
   assert.equal(translate(table, 'en', MACOS, 'Quit MacVPN', []), 'Quit MacVPN');
-  assert.equal(translate(table, 'hu', MACOS, '%@ · Missing tool', ['OpenVPN']), `OpenVPN · ${table['%@ · Missing tool'].hu.slice(5)}`);
+  assert.equal(translate(table, 'hu', MACOS, '%@ · System VPN', ['Corp']), `Corp · ${table['%@ · System VPN'].hu.slice(5)}`);
   assert.equal(translate(table, 'hu', MACOS, 'not a key', []), 'not a key');
 });
 

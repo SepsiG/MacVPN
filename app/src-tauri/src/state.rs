@@ -132,8 +132,8 @@ impl AppState {
             self.broker.pending(),
             setup.is_complete(),
         );
-        // Without a VPN engine (WinVPN 2a) every row that needs it says so, instead of "Missing tool" (WinVPN 2c:
-        // the native kinds and the system VPNs run without the WinVPN Service).
+        // Without a VPN engine (WinVPN: no usable WinVPN Service) every row that needs it says so (the native kinds
+        // and the system VPNs run without the service).
         vm.set_engine_missing_where(setup.engine_missing.as_deref(), &|kind| setup.needs_service(kind));
         // The kinds that come later (WinVPN: the native VPNs) say so on their rows.
         vm.set_later_kinds(&setup.later_kinds);

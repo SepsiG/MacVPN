@@ -33,6 +33,8 @@ pub enum Event {
     /// `ConnectionEvent::Failed` (key, the manager's reason).
     Failed(String, String),
     UserDisconnected(String),
+    /// The control API's connect for a lease began (`true`) or returned (`false`); see [`Reconnect::lease_connect`].
+    LeaseConnect(String, bool),
     /// The connection was deleted.
     Forget(String),
     /// The system is about to sleep: the connected managed keys.
@@ -74,6 +76,16 @@ impl Reconnect {
     /// posts one "could not reconnect" at the end).
     pub fn is_attempting(&self, key: &str) -> bool {
         self.planner().is_attempting(key)
+    }
+
+    /// Runs `connect`, the control API's connect of `key` for a lease. The events around it go through the same
+    /// channel as the manager's, in order: the `Started` it causes (sent on this thread, from the state listener)
+    /// falls between them, so the planner marks the connection as the lease's and never reconnects it.
+    pub fn lease_connect<R>(&self, key: &str, connect: impl FnOnce() -> R) -> R {
+        self.send(Event::LeaseConnect(key.to_string(), true));
+        let result = connect();
+        self.send(Event::LeaseConnect(key.to_string(), false));
+        result
     }
 
     /// Quitting: the network watcher stops.
@@ -209,6 +221,8 @@ fn handle(state: &Arc<AppState>, e: Event) {
             actions.into_iter().for_each(|a| act(state, a));
         }
         Event::UserDisconnected(key) => r.planner().user_disconnected(&key),
+        Event::LeaseConnect(key, true) => r.planner().lease_connect_began(&key),
+        Event::LeaseConnect(key, false) => r.planner().lease_connect_ended(&key),
         Event::Forget(key) => r.planner().forget(&key),
         Event::Sleep(connected) => {
             let fp = snapshot(state).as_ref().and_then(fingerprint);
@@ -272,6 +286,75 @@ pub fn event(r: &Reconnect, e: &ConnectionEvent) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use macvpn_app_core::reconnect::fingerprint;
+    use macvpn_platform_api::Gateway;
+    use std::io;
+    use uuid::Uuid;
+
+    struct NoConfigs;
+    impl ConnectionRepository for NoConfigs {
+        fn list(&self) -> io::Result<Vec<Connection>> {
+            Ok(vec![])
+        }
+        fn save(&self, _: &Connection, _: Option<&str>) -> io::Result<()> {
+            Ok(())
+        }
+        fn load_config(&self, _: &Uuid) -> io::Result<String> {
+            Ok(String::new())
+        }
+        fn delete(&self, _: &Uuid) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// The control API's connect for a lease: the `Started` its state listener sends on the same thread lands
+    /// between the bracket's events, so the planner (fed in channel order, as `handle` does) never reconnects it.
+    #[test]
+    fn a_lease_connect_is_bracketed_and_its_drop_is_not_reconnected() {
+        let r = Reconnect::new(Arc::new(NoConfigs));
+        let rx = r.rx.lock().unwrap().take().unwrap();
+        let answer = r.lease_connect("k", || {
+            r.send(Event::Started("k".into()));
+            42
+        });
+        assert_eq!(answer, 42);
+        let home = NetworkSnapshot {
+            gateway: Some(Gateway {
+                ip: "192.168.1.1".parse().unwrap(),
+                mac: Some([2, 0, 0, 0, 0, 1]),
+                interface: "en0".into(),
+                ssid: None,
+            }),
+            connected: vec![macvpn_core::netaddr::IpPrefix::parse("192.168.1.0/24").unwrap()],
+        };
+        let mut order = Vec::new();
+        let mut p = Planner::default();
+        while let Ok(e) = rx.try_recv() {
+            match e {
+                Event::LeaseConnect(key, true) => {
+                    order.push("began");
+                    p.lease_connect_began(&key);
+                }
+                Event::LeaseConnect(key, false) => {
+                    order.push("ended");
+                    p.lease_connect_ended(&key);
+                }
+                Event::Started(key) => {
+                    order.push("started");
+                    p.connect_started(&key, fingerprint(&home), false);
+                }
+                _ => order.push("other"),
+            }
+        }
+        assert_eq!(order, ["began", "started", "ended"]);
+        let t0 = Date::from_time_interval_since_1970(1_800_000_000.0);
+        p.connected("k", VpnNetworks::default());
+        p.network_changed(t0);
+        p.dropped("k", "Lab", t0.adding(1.0), macvpn_app_core::failure_reason::FailureKind::NetworkLost);
+        assert!(!p.due(t0.adding(30.0)), "a connection a lease started is never reconnected");
+    }
+
     /// The connection logs are read through the manager's helper (`AppState::helper`): in a smoke run that is the
     /// stand-in, so nothing asks the real root helper or the installed WinVPN Service. The platform's own helper
     /// is only built once, in `main.rs`.

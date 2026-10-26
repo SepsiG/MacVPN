@@ -139,6 +139,11 @@ pub struct Planner {
     fingerprints: HashMap<String, Fingerprint>,
     networks: HashMap<String, VpnNetworks>,
     user_off: HashSet<String>,
+    /// A lease's connect is running (between [`Planner::lease_connect_began`] and [`Planner::lease_connect_ended`]).
+    lease_connecting: HashSet<String>,
+    /// Started by the control API under a lease: they belong to their leases and are never reconnected (a drop
+    /// ends the leases, and the controlling app may be gone), until the user connects them again.
+    leased: HashSet<String>,
     up_at_sleep: HashSet<String>,
     slept: bool,
     woke_at: Option<Date>,
@@ -165,12 +170,29 @@ fn reached(now: Date, at: Option<Date>) -> bool {
 }
 
 impl Planner {
+    /// The control API starts `key` for a lease (the app calls this before the lease's connect and
+    /// [`Self::lease_connect_ended`] after it returned): a [`Self::connect_started`] in between is the lease's.
+    pub fn lease_connect_began(&mut self, key: &str) {
+        self.lease_connecting.insert(key.to_string());
+    }
+
+    /// The lease's connect returned (started or refused).
+    pub fn lease_connect_ended(&mut self, key: &str) {
+        self.lease_connecting.remove(key);
+    }
+
     /// The connection left `disconnected`/`failed` for `connecting`; `fp` is the physical network now.
     /// `by_planner`: our own attempt (nothing changes then). A user's connect cancels a candidate and arms the
-    /// connection again after a user disconnect.
+    /// connection again after a user disconnect. A lease's connect (see [`Self::lease_connect_began`]) marks the
+    /// connection as the lease's: it is never reconnected until the user connects it.
     pub fn connect_started(&mut self, key: &str, fp: Option<Fingerprint>, by_planner: bool) {
         if by_planner {
             return;
+        }
+        if self.lease_connecting.contains(key) {
+            self.leased.insert(key.to_string());
+        } else {
+            self.leased.remove(key);
         }
         self.user_off.remove(key);
         self.candidates.remove(key);
@@ -186,7 +208,9 @@ impl Planner {
         self.candidates.remove(key);
     }
 
-    /// The user (or a lease end, or quitting) disconnected it: never reconnected until the user connects it again.
+    /// The user disconnected it (also quitting with "Disconnect and Quit", a cancelled sign-in of our attempt, or a
+    /// surviving tunnel on its own network): never reconnected until the user connects it again. A lease end
+    /// (`DisconnectCause::Lease`) does not come here; a connection a lease started is never reconnected anyway.
     pub fn user_disconnected(&mut self, key: &str) {
         self.user_off.insert(key.to_string());
         self.candidates.remove(key);
@@ -197,6 +221,8 @@ impl Planner {
         self.fingerprints.remove(key);
         self.networks.remove(key);
         self.user_off.remove(key);
+        self.lease_connecting.remove(key);
+        self.leased.remove(key);
         self.up_at_sleep.remove(key);
         self.candidates.remove(key);
     }
@@ -239,9 +265,14 @@ impl Planner {
         }
     }
 
-    /// A connected connection was found down (`ConnectionEvent::Dropped`), with its log's category.
+    /// A connected connection was found down (`ConnectionEvent::Dropped`), with its log's category. One a lease
+    /// started is not a candidate: the drop ended its leases (the control API's rule), so nothing brings it back.
     pub fn dropped(&mut self, key: &str, name: &str, now: Date, kind: FailureKind) {
-        if self.user_off.contains(key) || !kind.worth_retrying() || self.candidates.contains_key(key) {
+        if self.user_off.contains(key)
+            || self.leased.contains(key)
+            || !kind.worth_retrying()
+            || self.candidates.contains_key(key)
+        {
             return;
         }
         let within = |at: Option<Date>, window: f64| at.is_some_and(|t| now.time_interval_since(t) <= window);

@@ -5,7 +5,8 @@
 //!   and goes down when the last lease ends (`down`, socket close, crash, revoke).
 //! - A connection that was already up without a lease is "pre-existing": no lease end ever brings it down.
 //! - A manual disconnect by the user, or the connection dropping, ends every lease on it at once; the holders are
-//!   told, and nothing reconnects on its own.
+//!   told. Auto-reconnect (2.0) never brings back a connection started for leases (the app marks the lease's
+//!   connect for its planner); a pre-existing one follows the user's "Reconnect Automatically" without a lease.
 //!
 //! The table only decides; the server performs the returned [`LeaseAction`].
 //!
@@ -98,8 +99,8 @@ impl LeaseTable {
         self.entries.remove(key).map(|e| e.holders.into_iter().collect()).unwrap_or_default()
     }
 
-    /// `key` dropped (failed or went down by itself): like a manual disconnect, the holders are notified and
-    /// nothing reconnects.
+    /// `key` dropped (failed or went down by itself): like a manual disconnect, the holders are notified and the
+    /// leases end (no lease is taken again on its own).
     pub fn on_dropped(&mut self, key: &str) -> Vec<SessionId> {
         self.on_user_disconnect(key)
     }

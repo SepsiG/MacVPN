@@ -344,7 +344,8 @@ impl ControlHost for Host {
     fn connect(&self, key: &str) -> Result<(), ErrorCode> {
         let state = self.app().ok_or(ErrorCode::AppQuitting)?;
         let report = state.setup.read().unwrap_or_else(PoisonError::into_inner).clone();
-        connect_key(&state.manager, &report, key)
+        // Marked as the lease's: auto-reconnect never brings it back (a drop ends its leases).
+        state.reconnect.lease_connect(key, || connect_key(&state.manager, &report, key))
     }
 
     fn disconnect(&self, key: &str) {
@@ -424,8 +425,9 @@ pub fn setup_ready_for(report: &SetupReport, item: &ConnectionItem) -> bool {
 
 /// A lease's connect, the same way as a manual one (the `connect` command): a managed connection needs its
 /// type's tools (`setup_required` otherwise, nothing starts); a system VPN starts with its stored secrets. Blocks
-/// until the manager's call returns. Without a VPN engine (WinVPN 2a) nothing starts: `failed` (the server's `up`
-/// has already answered with the engine's text, `ControlHost::engine_missing`).
+/// until the manager's call returns. A start [`start_refusal`] refuses (WinVPN: no usable WinVPN Service for a
+/// kind it runs, Cisco IPsec) does not start: `failed` (the server's `up` has already answered with that reason,
+/// `ControlHost::start_refusal`).
 pub fn connect_key(manager: &ConnectionManager, report: &SetupReport, key: &str) -> Result<(), ErrorCode> {
     let Some(item) = manager.item(key) else { return Err(ErrorCode::UnknownConnection) };
     // Refused outright (the server's `up` has answered with the reason): see [`start_refusal`].

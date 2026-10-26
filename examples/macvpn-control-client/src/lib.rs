@@ -661,8 +661,9 @@ impl Lease {
     }
 
     /// Waits for the next change of the held connection. A `disconnected` or `failed` state means the lease has
-    /// ended (the user disconnected in MacVPN, or the VPN dropped); MacVPN does not reconnect on its own, so
-    /// decide whether to call [`Client::up`] again. `Ok(None)`: the socket closed ([`Lease::closing_reason`] tells
+    /// ended (the user disconnected in MacVPN, or the VPN dropped). MacVPN never reconnects a connection it started
+    /// for leases (its "Reconnect Automatically" may bring back only a connection the user started, and even then
+    /// the lease stays ended), so decide whether to call [`Client::up`] again. `Ok(None)`: the socket closed ([`Lease::closing_reason`] tells
     /// whether MacVPN said why).
     pub fn next_change(&mut self) -> Result<Option<StateEvent>> {
         while let Some(event) = self.client.next_event()? {

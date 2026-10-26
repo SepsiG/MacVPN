@@ -16,15 +16,15 @@ export function versionLabel(version: string, product = 'MacVPN'): string {
   return `${product} ${version}`;
 }
 
-/// An idle row's type and status: the type; "<type> · Missing tool" (`missingTool`) when its tool is missing; or,
-/// while the platform has no VPN engine (WinVPN 2a), the type with that reason as the status, never "Missing tool".
-export function idleLine(
-  row: { available: boolean; typeLabel: string; unavailableReason?: string },
-  missingTool: (type: string) => string,
-): { type: string; status: string | null } {
-  if (row.available) return { type: row.typeLabel, status: null };
-  if (row.unavailableReason) return { type: row.typeLabel, status: row.unavailableReason };
-  return { type: missingTool(row.typeLabel), status: null };
+/// An idle row's type and status: the type, with the backend's reason as the status when the row cannot start
+/// ("Not installed: OpenVPN", "Not ready: …", the engine's or the platform's reason). Before the first setup check
+/// there is no reason yet: only the type, never a guessed one.
+export function idleLine(row: { available: boolean; typeLabel: string; unavailableReason?: string }): {
+  type: string;
+  status: string | null;
+} {
+  if (row.available || !row.unavailableReason) return { type: row.typeLabel, status: null };
+  return { type: row.typeLabel, status: row.unavailableReason };
 }
 
 /// The row is unavailable and System Status can install or repair its engine ("… – System Status").

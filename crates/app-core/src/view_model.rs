@@ -112,11 +112,11 @@ pub struct RowView {
     /// A system VPN whose PSK / password MacVPN can keep (L2TP / Cisco IPsec).
     pub stored_secrets: bool,
     pub pinned: bool,
-    /// False: a tool for the type is missing ("Missing tool"), or the platform has no VPN engine yet.
+    /// False: the type cannot start with this setup (or the setup check has not run yet).
     pub available: bool,
-    /// Why the row is unavailable when it is not a missing tool: the platform's answer while it has no VPN engine
-    /// (WinVPN 2a: "The VPN engine comes in a later version of WinVPN."), shown instead of "Missing tool". Absent from
-    /// the JSON when `None`, so MacVPN's view model stays byte-identical.
+    /// Why the row cannot start, once the setup check ran: `SetupReport::unavailable_text` ("Not installed: …",
+    /// "Not ready: …"), the engine's or the platform's reason. `None` while it is available and before the first
+    /// setup check (the UI then shows the type only). Absent from the JSON when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub unavailable_reason: Option<String>,
     /// The row's engine can be installed or repaired in System Status: the UI links "System Status" after the
@@ -580,7 +580,7 @@ impl ViewModel {
     }
 
     /// The platform has no VPN engine yet (`SetupReport::engine_missing`): every row, of every type, is
-    /// unavailable with `reason` (instead of "Missing tool"), and its switch cannot be used. `None`: unchanged.
+    /// unavailable with `reason`, and its switch cannot be used. `None`: unchanged.
     pub fn set_engine_missing(&mut self, reason: Option<&str>) {
         self.set_engine_missing_where(reason, &|_| true);
     }

@@ -85,8 +85,8 @@ fn view_model_rows_follow_the_order_and_availability() {
     assert_eq!(json["logRequest"], serde_json::Value::Null);
 }
 
-/// Without a VPN engine (WinVPN 2a) every row, of every type, is unavailable with the engine's answer instead of
-/// "Missing tool"; with an engine (macOS) the rows and their JSON are unchanged.
+/// Without a VPN engine (WinVPN: no usable WinVPN Service) every row, of every type, is unavailable with the
+/// engine's answer; with an engine (macOS) the rows and their JSON are unchanged.
 #[test]
 fn without_an_engine_every_row_carries_the_engine_note() {
     let f = Fixture::new(AppLanguage::En);

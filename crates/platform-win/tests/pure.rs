@@ -55,8 +55,6 @@ fn dates_have_the_macos_formats() {
 #[test]
 fn the_not_yet_texts_are_translated() {
     l10n::with_language(AppLanguage::Hu, || {
-        assert_ne!(texts::engine_later(), "The VPN engine comes in a later version of WinVPN.");
-        assert!(texts::engine_note().contains("WinVPN"));
         assert_eq!(texts::closing(), "A WinVPN bezárása…");
         assert_eq!(texts::startup_disabled(), "Kikapcsolva: Gépház → Alkalmazások → Indítás.");
         assert!(texts::uninstall_in_settings().starts_with("A WinVPN-t a Windowsban távolíthatod el"));
@@ -219,10 +217,8 @@ mod engine_report {
         assert_eq!(r.engine_missing, None);
         assert!(r.is_complete());
         assert!(r.is_available(VPNKind::Openvpn) && r.is_available(VPNKind::Wireguard));
-        for kind in [VPNKind::L2tp, VPNKind::Strongswan, VPNKind::Sstp] {
-            assert!(!r.is_available(kind));
-            assert_eq!(r.later_reason(kind), Some(texts::native_later().as_str()));
-        }
+        // WinVPN 2.0: no kind comes "later" (the native kinds follow the Windows VPN client row).
+        assert!(r.later_kinds.is_empty());
         // Cisco IPsec (2c Task 12, option A): never available on Windows, with its own reason.
         assert!(!r.is_available(VPNKind::Cisco));
         assert_eq!(r.later_reason(VPNKind::Cisco), None);
@@ -339,6 +335,37 @@ mod engine_report {
         assert_eq!(update_check_for(&Reach::Facts(degraded)), None);
     }
 
+    /// fix 2.0.1: a service that names no problem and no readable version is not "not installed" (OpenVPN's
+    /// optional state, which keeps the report complete): the row is "Not ready" without an action, and the report
+    /// is incomplete (the "!" mark, System Status opens at launch).
+    #[test]
+    fn an_unreadable_openvpn_version_is_not_ready_and_incomplete() {
+        l10n::with_language(AppLanguage::En, || {
+            for version in [None, Some("2.7"), Some("x")] {
+                let mut f = facts(None, None);
+                f.openvpn.version = version.map(String::from);
+                let r = report(Reach::Facts(f), PINNED, &Upgrade::Unknown, &Offer::Unknown);
+                let row = &r.engine.as_ref().unwrap().openvpn;
+                assert_eq!((row.ok, row.usable, row.action), (false, false, None), "{version:?}");
+                assert!(!r.is_complete(), "{version:?}");
+                assert_eq!(
+                    r.unavailable_text(VPNKind::Openvpn).as_deref(),
+                    Some("Not ready: OpenVPN Community"),
+                    "{version:?}"
+                );
+            }
+            // Truly not installed stays optional.
+            let r = report(
+                Reach::Facts(facts(Some("OpenVPN Community is not installed."), None)),
+                PINNED,
+                &Upgrade::Unknown,
+                &Offer::Unknown,
+            );
+            assert!(r.is_complete());
+            assert_eq!(r.unavailable_text(VPNKind::Openvpn).as_deref(), Some("Not installed: OpenVPN Community"));
+        });
+    }
+
     #[test]
     fn facts_without_a_problem_or_a_version_fail_closed() {
         // No problem but no (readable) version: never green.
@@ -370,7 +397,7 @@ mod engine_report {
             let r = report(reach, PINNED, &Upgrade::Unknown, &Offer::Unknown);
             assert!(r.engine_missing.is_some() && r.engine.is_none());
             assert!(!r.is_available(VPNKind::Openvpn) && !r.is_available(VPNKind::Wireguard));
-            assert!(r.later_reason(VPNKind::L2tp).is_some());
+            assert!(r.later_kinds.is_empty());
             assert_eq!(r.start_refusal(Some(VPNKind::Cisco)), Some(cisco::unsupported()));
         }
         assert_eq!(
@@ -435,9 +462,31 @@ mod engine_report {
         });
         l10n::with_language(AppLanguage::En, || {
             assert_eq!(texts::service_running("1"), "Running (version 1)");
-            assert!(texts::native_later().starts_with("Native Windows VPNs"));
         });
     }
+    /// fix 2.0.1: OpenVPN and wireguard-nt both offering "Update" are two buttons, one per row (Setup.svelte). The
+    /// OpenVPN row's button sends the report as it is: OpenVPN; the WireGuard row's sends it without the OpenVPN
+    /// action (app `setup_install_tools`): wireguard-nt. Neither click runs the other row's update.
+    #[test]
+    fn each_engine_rows_button_runs_its_own_update() {
+        use macvpn_platform_win::pure::engine::{ToolsTarget, tools_target};
+        let mut f = facts(None, None);
+        f.openvpn.version = Some("2.7.7".into());
+        let both = Offer::Available { installed: "0.10.1".into(), available: "0.11.0".into() };
+        let r = report(Reach::Facts(f), PINNED, &offer("2.7.8"), &both);
+        let e = r.engine.as_ref().unwrap();
+        assert_eq!((e.openvpn.action, e.wireguard.action), (Some("update"), Some("update")));
+        assert_eq!(tools_target(&r), ToolsTarget::OpenVpn);
+        let mut wireguard_button = r.clone();
+        wireguard_button.engine.as_mut().unwrap().openvpn.action = None;
+        assert_eq!(tools_target(&wireguard_button), ToolsTarget::WireGuard);
+        // Only OpenVPN's action, or none (the installer answers): OpenVPN.
+        let mut openvpn_only = r.clone();
+        openvpn_only.engine.as_mut().unwrap().wireguard.action = None;
+        assert_eq!(tools_target(&openvpn_only), ToolsTarget::OpenVpn);
+        assert_eq!(tools_target(&macvpn_platform_api::SetupReport::unknown()), ToolsTarget::OpenVpn);
+    }
+
     #[test]
     fn the_wireguard_row_offers_the_services_update_and_stays_green() {
         let f = facts(None, None);

@@ -156,7 +156,8 @@ fn hold(connection: &str) -> Result<ExitCode, Error> {
     while let Some(event) = client.next_event()? {
         print_event(&event);
         // `disconnected` / `failed` of the held connection: the user disconnected it in MacVPN, or it dropped.
-        // Either way the lease has ended, and MacVPN does not reconnect on its own.
+        // Either way the lease has ended. MacVPN never reconnects a connection it started for leases; one the
+        // user started may come back through "Reconnect Automatically", but without this lease.
         if event.connection == connection && event.state.is_down() {
             eprintln!("The VPN went down; the lease has ended.");
             return Ok(ExitCode::FAILURE);
