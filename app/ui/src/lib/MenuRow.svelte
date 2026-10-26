@@ -1,7 +1,8 @@
 <script lang="ts">
   // One connection of the menu as a card: the type's icon bubble with the state badge, the name (with the pin),
   // the type and state line, and the switch. Its effective folder colour (spec 3) is a slim bar on the left edge.
-  import type { FolderColor, Row } from './api';
+  import { api, type FolderColor, type Row } from './api';
+  import { engineLink } from './format';
   import { colorToken } from './folders/tree';
   import { tr } from './l10n.svelte';
   import { statusLine, statusText } from './status';
@@ -37,6 +38,15 @@
     </div>
     <div class="subtitle" title={statusText(line)}>
       <span class="type">{line.type}</span>{#if line.status}<span class="dot" aria-hidden="true">·</span><span class="status">{line.status}</span>{/if}
+      {#if engineLink(row)}
+        <span class="sep" aria-hidden="true"> – </span><button
+          class="link"
+          onclick={(e) => {
+            e.stopPropagation();
+            api.openWindow('setup').catch(console.error);
+          }}>{tr('System Status')}</button
+        >
+      {/if}
     </div>
     {#if row.catalog?.pendingRemoval}
       <div class="removal">{tr('Removed from the team catalog — disappears after you disconnect')}</div>
@@ -167,6 +177,26 @@
   }
   .on .status {
     color: var(--state-on-text);
+  }
+  /* "… – System Status": the engine is missing, System Status installs it. */
+  .sep {
+    flex: none;
+    white-space: pre;
+  }
+  .link {
+    flex: none;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    font: inherit;
+    font-weight: 500;
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  .link:hover {
+    text-decoration: underline;
   }
   .busy .status {
     color: var(--state-busy-text);

@@ -1,10 +1,15 @@
 <script lang="ts">
   // L2TP / Cisco IPsec: the form whose save generates and opens the configuration profile (the Swift
-  // `NativeConfigForm`).
-  import type { NativeFields } from '../api';
+  // `NativeConfigForm`). WinVPN (the backend's `platform` notes): saving writes the Windows VPN entry at once
+  // ("Save", nothing to approve), and a Cisco IPsec connection, which Windows cannot run, shows why and offers
+  // **Make an L2TP/IPsec Copy**.
+  import { api, type NativeFields, type Notice } from '../api';
   import Icon from '../Icon.svelte';
   import { tr } from '../l10n.svelte';
   import CredentialSelector from './CredentialSelector.svelte';
+  import Modal from './Modal.svelte';
+  import PlatformNotes from './PlatformNotes.svelte';
+  import { nativeSaveLabel, nativeSaveNote, nativeSavedText } from './ras';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
   import SecretField from './SecretField.svelte';
@@ -16,11 +21,31 @@
   const view = $derived(session.view);
   /// A team catalog's connection: read-only (its profile is installed from the detail's "Install profile").
   const readOnly = $derived(view?.readOnly ?? null);
+  const platform = $derived(view?.platform);
+
+  /// "Make an L2TP/IPsec Copy": the copy is selected (its editor opens); a failed entry write is reported.
+  let copyFailure = $state<Notice | null>(null);
+  async function makeCopy() {
+    await session.flush();
+    try {
+      const failure = await api.makeL2tpCopy(session.id);
+      if (failure) copyFailure = { title: tr('Make an L2TP/IPsec Copy'), message: failure };
+    } catch (e) {
+      copyFailure = { title: tr('Make an L2TP/IPsec Copy'), message: String(e) };
+    }
+  }
 </script>
 
 <div class="form">
   {#if readOnly}
     <p class="readonly-note" role="note"><Icon name="lock" /><span>{readOnly}</span></p>
+  {/if}
+  <PlatformNotes {platform} part="reasons" />
+  {#if platform?.l2tpCopy}
+    <div class="row">
+      <span class="spacer"></span>
+      <button onclick={() => makeCopy().catch(console.error)}>{tr('Make an L2TP/IPsec Copy')}</button>
+    </div>
   {/if}
   <fieldset class="lock" disabled={readOnly !== null}>
     <section>
@@ -51,19 +76,21 @@
     </section>
   </fieldset>
   <section>
-    <p class="note">
-      {tr('Saving creates and opens a configuration profile. Approve it in System Settings → General → Device Management (Profiles). After each change it has to be approved again. The password is not in the profile: MacVPN passes it when connecting (from System Settings, macOS asks for it).')}
-    </p>
+    <p class="note">{nativeSaveNote(platform, tr)}</p>
     {#if view?.error}
       <p class="error">{view.error}</p>
     {/if}
     <div class="footer">
       <Status
         dirty={view?.dirty ?? false}
-        savedText={view?.saved ? tr('Profile opened, approve it in System Settings.') : null}
+        savedText={view?.saved ? nativeSavedText(platform, tr) : null}
       />
       <span class="spacer"></span>
-      <button class="primary" disabled={readOnly !== null} onclick={() => session.save().catch(console.error)}>{tr('Save and Install Profile')}</button>
+      <button class="primary" disabled={readOnly !== null} onclick={() => session.save().catch(console.error)}>{nativeSaveLabel(platform, tr)}</button>
     </div>
   </section>
 </div>
+
+{#if copyFailure}
+  <Modal title={copyFailure.title} message={copyFailure.message} buttons={[{ label: tr('OK'), kind: 'primary', action: () => (copyFailure = null) }]} />
+{/if}

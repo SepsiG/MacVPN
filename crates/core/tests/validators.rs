@@ -5,7 +5,7 @@ mod common;
 use common::*;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::models::ValidationIssue;
-use macvpn_core::validators::{OpenVPNValidator, StrongSwanValidator};
+use macvpn_core::validators::{ConfigValidator, OpenVPNValidator, StrongSwanValidator};
 
 const GOOD_OVPN: &str = "client
 dev tun
@@ -125,6 +125,45 @@ fn strongswan_extracts_names() {
     hu();
     let names = StrongSwanValidator::names(GOOD_SWAN);
     assert_eq!(names, Some(("office".to_string(), "office-net".to_string())));
+}
+
+#[test]
+fn strongswan_lists_the_named_sections_two_levels_deep() {
+    let text = "connections {\n  a {\n    remote {\n      id = x\n    }\n    children {\n      a-net {\n      }\n    }\n  }\n  b {\n    children {\n      c {\n      }\n    }\n  }\n}\nsecrets {\n  ike-1 {\n    secret = \"s\"\n  }\n}\npools {\n  p { addrs = 10.0.0.0/24 }\n}\nauthorities {\n  ca1 {\n    cacert = ca.pem\n  }\n}\n";
+    assert_eq!(
+        StrongSwanValidator::section_names(text),
+        ["connections.a", "connections.b", "secrets.ike-1", "pools.p", "authorities.ca1"]
+    );
+}
+
+#[test]
+fn strongswan_remote_ids_are_the_concrete_ids_of_every_remote_round() {
+    let conf = |remote: &str| {
+        format!(
+            "connections {{\n  a {{\n{remote}    children {{\n      n {{\n      }}\n    }}\n  }}\n  b {{\n    remote {{\n      id = other.example\n    }}\n    children {{\n      m {{\n      }}\n    }}\n  }}\n}}\n"
+        )
+    };
+    let ids = |remote: &str| StrongSwanValidator::remote_ids(&conf(remote), "a");
+    assert_eq!(ids("    remote {\n      id = vpn.example.com\n    }\n"), ["vpn.example.com"]);
+    assert_eq!(ids("    remote {\n      id = \"C=CH, O=Lab, CN=vpn\"\n    }\n"), ["C=CH, O=Lab, CN=vpn"]);
+    assert_eq!(
+        ids("    remote-1 {\n      id = b.example\n    }\n    remote-2 {\n      id = a.example\n    }\n"),
+        ["a.example", "b.example"]
+    );
+    // No id, a wildcard, %any, a subnet / range or a multi-word value: no concrete id (charon looks the secret up
+    // with %any or a pattern, so binding it would break the single connection).
+    for remote in [
+        "    remote {\n      auth = psk\n    }\n",
+        "",
+        "    remote {\n      id = *.example.com\n    }\n",
+        "    remote {\n      id = %any\n    }\n",
+        "    remote {\n      id = 10.0.0.0/24\n    }\n",
+        "    remote {\n      id = 10.0.0.1-10.0.0.9\n    }\n",
+        "    remote {\n      id = C=CH, CN=x\n    }\n",
+        "    remote-1 {\n      id = a.example\n    }\n    remote-2 {\n      auth = eap\n    }\n",
+    ] {
+        assert!(ids(remote).is_empty(), "{remote}");
+    }
 }
 
 // MARK: Hardening regressions
@@ -366,4 +405,63 @@ fn validator_for_kind() {
     assert!(validator(VPNKind::Cisco).is_none());
     assert_eq!(validator(VPNKind::Openvpn).unwrap().validate("client\n").len(), 1);
     let _ = OpenVPNValidator;
+}
+
+#[test]
+fn wireguard_on_windows() {
+    use macvpn_core::target_os::TargetOs;
+    use macvpn_core::validators::WireGuardValidator;
+    lang(AppLanguage::En);
+    let base = "[Interface]\nPrivateKey = bWFjdnBuLXRlc3QtcHJpdmF0ZS1rZXktMzJieXRlcyE=\nAddress = 10.0.0.2/32\n";
+    let peer = "[Peer]\nPublicKey = bWFjdnBuLXRlc3QtcHVibGljLS1rZXktMzJieXRlcyE=\nAllowedIPs = 0.0.0.0/0\n";
+    let w = |extra: &str| WireGuardValidator.validate_for(TargetOs::Windows, &format!("{base}{extra}{peer}"));
+    let m = |extra: &str| WireGuardValidator.validate_for(TargetOs::MacOs, &format!("{base}{extra}{peer}"));
+    assert_eq!(w(""), []);
+    assert_eq!(w("FwMark = 51820\n")[0].message, "Not supported on Windows: fwmark");
+    assert_eq!(w("Table = off\n"), []);
+    assert_eq!(w("Table = auto\n"), []);
+    assert_eq!(w("Table = 1234\n")[0].message, "Not supported on Windows: table");
+    // macOS keeps every value it accepted.
+    assert_eq!(m("FwMark = 51820\n"), []);
+    assert_eq!(m("Table = 1234\n"), []);
+}
+
+// Parser limits (security review 2.0.0 part 2, P2-M1): deep nesting is an error, not a stack overflow.
+
+fn on_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new().stack_size(512 * 1024).spawn(f).unwrap().join().unwrap()
+}
+
+#[test]
+fn strongswan_deep_nesting_is_an_error_without_stack_growth() {
+    let deep = format!("{GOOD_SWAN}\n{}\n{}", "a {\n".repeat(100_000), "}\n".repeat(100_000));
+    let inline = format!("{GOOD_SWAN}\n{}{}", "a { ".repeat(100_000), "} ".repeat(100_000));
+    let (issues, inline_issues, names) = on_small_stack(move || {
+        lang(AppLanguage::En);
+        let names = StrongSwanValidator::section_names(&deep);
+        (StrongSwanValidator.validate(&deep), StrongSwanValidator.validate(&inline), names)
+    });
+    assert_eq!(lines(&issues), [10]);
+    assert_eq!(issues[0].message, "Section not allowed");
+    assert_eq!(lines(&inline_issues), [10]);
+    assert_eq!(names, ["connections.office"]);
+}
+
+#[test]
+fn json_deep_nesting_is_an_error_without_stack_growth() {
+    // The parser recurses but stops at 512 levels (as Foundation does). 512 levels take about 1 MiB in a debug build
+    // (under 256 KiB in release), so this runs on a thread with Rust's default 2 MiB stack: 100,000 levels would
+    // overflow it many times over.
+    let results = std::thread::Builder::new().stack_size(2 * 1024 * 1024).spawn(|| {
+        let ok = format!("{}{}", "[".repeat(512), "]".repeat(512));
+        let deep = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+        let objects = "{\"a\":".repeat(100_000);
+        (
+            macvpn_core::swift_json::parse(ok.as_bytes()).is_ok(),
+            macvpn_core::swift_json::parse(deep.as_bytes()).is_err(),
+            macvpn_core::swift_json::parse(objects.as_bytes()).is_err(),
+        )
+    });
+    let results = results.unwrap().join().unwrap();
+    assert_eq!(results, (true, true, true));
 }

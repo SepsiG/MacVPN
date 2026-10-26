@@ -1,0 +1,8 @@
+# The standard IKE ports (UDP 500 and 4500) for clients other than the lab host's own IKE client (Windows' RAS,
+# another Mac). up.sh adds this file unless --no-ike-standard-ports is given: macOS' own IKE daemons on the lab
+# host need these ports themselves (README, "Testing MacVPN on the Mac that runs the lab").
+services:
+  ipsec:
+    ports:
+      - "${LAB_BIND:?set by up.sh}:500:500/udp"
+      - "${LAB_BIND:?set by up.sh}:4500:4500/udp"

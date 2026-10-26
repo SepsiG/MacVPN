@@ -1,5 +1,5 @@
 //! Thin, audited wrappers around the libc calls `std` does not offer (the user database, `mkdtemp`, `poll`,
-//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, `getxattr`, and the close-on-exec sweep for children).
+//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, `getxattr`, `getifaddrs`, and the close-on-exec sweep for children).
 //!
 //! Every function here is a direct call with plain integer arguments or with buffers whose length is passed
 //! alongside; none of them keeps a pointer past the call. Everything else in the crate is safe Rust.
@@ -223,4 +223,83 @@ pub fn local_time(t: i64) -> Option<(i32, u32, u32, u32, u32, u32)> {
         tm.tm_min as u32,
         tm.tm_sec as u32,
     ))
+}
+
+/// The leading one bits of `mask` (the bytes from the netmask's address offset; missing bytes count as zero): the
+/// prefix length of a contiguous netmask; a non-contiguous one stops at its first zero bit.
+fn mask_len(mask: &[u8], width: usize) -> u8 {
+    let mut len = 0u8;
+    for i in 0..width {
+        let ones = mask.get(i).copied().unwrap_or(0).leading_ones() as u8;
+        len += ones;
+        if ones < 8 {
+            break;
+        }
+    }
+    len
+}
+
+/// The `sa_len` bytes of a `sockaddr` (BSD trims netmasks to their significant bytes).
+///
+/// # Safety
+/// `sa` is non-null and points to a `sockaddr` whose first `sa_len` bytes are readable for `'a`.
+unsafe fn sockaddr_bytes<'a>(sa: *const libc::sockaddr) -> &'a [u8] {
+    // SAFETY: (caller) `sa` is a readable sockaddr; `sa_len` is its first byte, read without a reference to the
+    // whole struct (it may be shorter than `sockaddr`).
+    let len = usize::from(unsafe { std::ptr::read(sa.cast::<u8>()) });
+    // SAFETY: (caller) the first `len` bytes are readable for `'a`.
+    unsafe { std::slice::from_raw_parts(sa.cast::<u8>(), len) }
+}
+
+/// `getifaddrs`: the IPv4 and IPv6 prefixes of the interfaces that are up and not loopback, with their interface
+/// names (`en0`, `utun4`, …). An address without a netmask, or with an empty one, is left out. Read-only.
+pub fn interface_prefixes() -> Vec<(String, macvpn_core::netaddr::IpPrefix)> {
+    use macvpn_core::netaddr::IpPrefix;
+    use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
+
+    let mut head: *mut libc::ifaddrs = std::ptr::null_mut();
+    // SAFETY: `head` is a valid out pointer; on success the list is ours until `freeifaddrs` below.
+    if unsafe { libc::getifaddrs(&mut head) } != 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut cursor = head;
+    while !cursor.is_null() {
+        // SAFETY: a non-null node of the list `getifaddrs` returned, alive until `freeifaddrs`.
+        let entry = unsafe { &*cursor };
+        cursor = entry.ifa_next;
+        let flags = entry.ifa_flags as i32;
+        if flags & libc::IFF_UP == 0
+            || flags & libc::IFF_LOOPBACK != 0
+            || entry.ifa_name.is_null()
+            || entry.ifa_addr.is_null()
+            || entry.ifa_netmask.is_null()
+        {
+            continue;
+        }
+        // SAFETY: non-null, NUL-terminated, alive until `freeifaddrs`.
+        let name = unsafe { CStr::from_ptr(entry.ifa_name) }.to_string_lossy().into_owned();
+        // SAFETY: both are non-null sockaddrs of the list, `sa_len` bytes each, alive until `freeifaddrs` (the
+        // slices are not used past this iteration).
+        let (addr, mask) = unsafe { (sockaddr_bytes(entry.ifa_addr), sockaddr_bytes(entry.ifa_netmask)) };
+        // The address's family decides (a netmask's own `sa_family` may be 0); `[sa_len, sa_family, …]`.
+        let prefix = match addr.get(1).map(|f| i32::from(*f)) {
+            Some(libc::AF_INET) if addr.len() >= 8 && mask.len() > 4 => {
+                let ip = Ipv4Addr::new(addr[4], addr[5], addr[6], addr[7]);
+                IpPrefix::new(IpAddr::V4(ip), mask_len(&mask[4..], 4))
+            }
+            Some(libc::AF_INET6) if addr.len() >= 24 && mask.len() > 8 => {
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(&addr[8..24]);
+                IpPrefix::new(IpAddr::V6(Ipv6Addr::from(octets)), mask_len(&mask[8..], 16))
+            }
+            _ => None,
+        };
+        if let Some(prefix) = prefix.filter(|p| p.len > 0) {
+            out.push((name, prefix));
+        }
+    }
+    // SAFETY: the list `getifaddrs` returned, freed once; no reference into it outlives this point.
+    unsafe { libc::freeifaddrs(head) };
+    out
 }

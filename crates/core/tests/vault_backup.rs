@@ -197,7 +197,6 @@ fn sealed(payload: &BackupPayload) -> Vec<u8> {
 // MARK: - collect
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn collect_takes_everything_but_the_paired_clients() {
     let tmp = TempDir::new();
     let vault = filled_vault(&tmp, "a");
@@ -250,7 +249,6 @@ fn collect_takes_everything_but_the_paired_clients() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn debug_output_of_a_payload_shows_no_secret() {
     let tmp = TempDir::new();
     let vault = filled_vault(&tmp, "a");
@@ -263,7 +261,6 @@ fn debug_output_of_a_payload_shows_no_secret() {
 // MARK: - the container
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn seal_and_open_round_trip_a_full_payload() {
     let tmp = TempDir::new();
     let vault = filled_vault(&tmp, "a");
@@ -379,7 +376,6 @@ fn a_file_over_the_cap_is_too_large() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_sealed_bytes_hold_no_plaintext() {
     let tmp = TempDir::new();
     let vault = filled_vault(&tmp, "a");
@@ -427,7 +423,6 @@ fn a_failed_write_leaves_no_partial_file() {
 /// process cannot change its own environment without `unsafe`), then scans every file in the scratch directory and
 /// in the target directory for the canary connection name and config line.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn no_plaintext_reaches_a_temporary_file() {
     const CHILD: &str = "MACVPN_BACKUP_TEMP_CHILD";
     if let Some(target) = std::env::var_os(CHILD) {
@@ -591,7 +586,6 @@ fn assert_common_merge_result(vault: &Vault) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn plan_restore_counts_new_items_conflicts_and_what_replace_loses() {
     let tmp = TempDir::new();
     let vault = existing_vault(&tmp);
@@ -622,7 +616,6 @@ fn plan_restore_counts_new_items_conflicts_and_what_replace_loses() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn merge_overwrite_takes_the_backup_copy_of_every_conflict() {
     let tmp = TempDir::new();
     let mut vault = existing_vault(&tmp);
@@ -656,7 +649,6 @@ fn merge_overwrite_takes_the_backup_copy_of_every_conflict() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn merge_keep_existing_only_adds_what_is_missing() {
     let tmp = TempDir::new();
     let mut vault = existing_vault(&tmp);
@@ -689,7 +681,6 @@ fn merge_keep_existing_only_adds_what_is_missing() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn merge_keep_both_copies_each_conflict_under_a_new_id() {
     let tmp = TempDir::new();
     let mut vault = existing_vault(&tmp);
@@ -740,7 +731,6 @@ fn merge_keep_both_copies_each_conflict_under_a_new_id() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn keep_both_unbinds_a_native_copy_from_the_installed_service() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp, "v");
@@ -765,7 +755,6 @@ fn keep_both_unbinds_a_native_copy_from_the_installed_service() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn replace_clears_everything_but_the_paired_clients() {
     let tmp = TempDir::new();
     let mut vault = existing_vault(&tmp);
@@ -786,7 +775,6 @@ fn replace_clears_everything_but_the_paired_clients() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_fresh_restore_reproduces_the_backed_up_vault() {
     let tmp = TempDir::new();
     let source = filled_vault(&tmp, "source");
@@ -800,7 +788,6 @@ fn a_fresh_restore_reproduces_the_backed_up_vault() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failing_restore_changes_nothing() {
     let tmp = TempDir::new();
     let mut vault = existing_vault(&tmp);
@@ -946,7 +933,6 @@ fn crafted() -> Vec<(&'static str, BackupPayload, InvalidBackup)> {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_crafted_payload_is_refused_on_seal_open_merge_and_replace() {
     let tmp = TempDir::new();
     let mut vault = existing_vault(&tmp);
@@ -976,7 +962,6 @@ fn a_crafted_payload_is_refused_on_seal_open_merge_and_replace() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn every_crafted_case_differs_from_a_valid_payload_in_that_place_only() {
     // The base payload of `crafted` is itself valid and restorable, so each refusal above is for its one change.
     let tmp = TempDir::new();
@@ -996,7 +981,6 @@ fn every_crafted_case_differs_from_a_valid_payload_in_that_place_only() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn keep_both_credential_names_never_exceed_64_characters() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp, "v");
@@ -1081,7 +1065,6 @@ fn own_login(vault: &Vault, item: &str) -> (Option<String>, Option<String>) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_restored_link_leaves_the_item_no_own_username_or_password() {
     // The PoC: a system VPN with its own username and password **and** a link, and a connection likewise.
     let mut p = BackupPayload::empty(now(), "1.2.0", prefs());
@@ -1113,7 +1096,6 @@ fn a_restored_link_leaves_the_item_no_own_username_or_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_overwrite_merge_onto_an_already_linked_system_vpn_keeps_the_invariant() {
     // The vault: SVC-1 linked to a shared credential. The backup (made while SVC-1 used its own fields): SVC-1's
     // own username and password, no link.
@@ -1161,7 +1143,6 @@ fn an_overwrite_merge_onto_an_already_linked_system_vpn_keeps_the_invariant() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn without_overwrite_a_link_is_not_added_to_an_item_with_its_own_login() {
     let mut p = BackupPayload::empty(now(), "1.2.0", prefs());
     p.credentials = vec![credential(id(100), "Office AD", "alice", Some("shared"))];
@@ -1199,7 +1180,6 @@ fn acknowledged(vault: &Vault, name: &str) -> Vec<String> {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_merge_keeps_acknowledged_risky_directives_only_for_the_same_connection_and_config() {
     let setup = |tmp: &TempDir| {
         let mut vault = new_vault(tmp, "v");
@@ -1370,7 +1350,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn collect_leaves_catalog_rows_out_but_keeps_the_user_state() {
         let tmp = TempDir::new();
         let vault = catalog_vault(&tmp, "a");
@@ -1398,7 +1377,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn catalog_data_round_trips_and_its_key_material_is_only_in_the_sealed_file() {
         let tmp = TempDir::new();
         let vault = catalog_vault(&tmp, "a");
@@ -1486,7 +1464,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn merge_never_lowers_an_applied_or_published_version() {
         for (vault_version, backup_version) in [(5u64, 3u64), (3, 5)] {
             for mode in [ConflictMode::Overwrite, ConflictMode::KeepExisting, ConflictMode::KeepBoth] {
@@ -1512,7 +1489,6 @@ mod catalogs {
     /// holds the catalog's connections and folders as ordinary items under the same ids. They are skipped in every
     /// mode (no overwrite, no "(backup)" copy, no secret or link onto them) and reported; the rest is restored.
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn a_merge_skips_the_items_a_team_catalog_owns() {
         let folder = local_id(cat(), CatalogItemKind::Folder, id(50));
         for mode in [ConflictMode::Overwrite, ConflictMode::KeepExisting, ConflictMode::KeepBoth] {
@@ -1566,7 +1542,6 @@ mod catalogs {
     /// An older backup never lowers a catalog's rollback floor, with Replace as with a merge (the reviewer's `j_`):
     /// the vault's v5 stays when the backup says v3, the backup's v5 is taken over the vault's v3.
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn replace_never_lowers_an_applied_version() {
         for (vault_version, backup_version) in [(5u64, 3u64), (3, 5)] {
             let tmp = TempDir::new();
@@ -1594,7 +1569,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn an_admin_key_role_is_replaced_only_with_overwrite() {
         for (mode, expected) in [(ConflictMode::Overwrite, admin(1)), (ConflictMode::KeepExisting, admin(3))] {
             let tmp = TempDir::new();
@@ -1608,7 +1582,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn an_offline_backup_key_is_backed_up_and_still_announced_after_a_restore() {
         let tmp = TempDir::new();
         let mut source = catalog_vault(&tmp, "a");
@@ -1629,7 +1602,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn a_restore_with_another_backup_key_is_not_refused_by_an_offline_one() {
         for mode in [ConflictMode::Overwrite, ConflictMode::KeepExisting, ConflictMode::KeepBoth] {
             let tmp = TempDir::new();
@@ -1650,7 +1622,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn an_offline_backup_key_in_the_backup_is_merged_like_a_role_holder() {
         let offline = |p: &mut BackupPayload| {
             p.offline_backup_key = Some(BackupOfflineKey { public: admin(2).public(), created: now() });
@@ -1693,7 +1664,6 @@ mod catalogs {
     /// Replace keeps this Mac's offline backup key when the backup has no backup key of its own; a backup that
     /// carries one (online or offline) replaces it.
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn replace_keeps_this_macs_offline_backup_key_unless_the_backup_has_one() {
         let setup = || {
             let tmp = TempDir::new();
@@ -1723,7 +1693,6 @@ mod catalogs {
     /// publisher's keys and publications, like the paired clients; the subscriptions are replaced, and the plan
     /// names what goes.
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn replace_with_a_backup_without_catalog_data_keeps_the_publisher_side() {
         let tmp = TempDir::new();
         let mut vault = catalog_vault(&tmp, "a");
@@ -1752,7 +1721,6 @@ mod catalogs {
     /// A backup with its own admin keys and publications wins for that role and that catalog (a publication's
     /// version is never lowered); what the backup does not carry stays.
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn replace_takes_the_backups_admin_keys_and_publications_where_it_has_them() {
         let tmp = TempDir::new();
         let mut vault = new_vault(&tmp, "v");
@@ -1780,7 +1748,6 @@ mod catalogs {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn restore_then_reapply_recreates_the_items_with_the_user_state_attached() {
         let tmp = TempDir::new();
         let source = catalog_vault(&tmp, "a");

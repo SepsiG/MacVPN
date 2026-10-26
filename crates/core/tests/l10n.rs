@@ -169,6 +169,31 @@ fn windows_variant_in_both_languages() {
     );
 }
 
+/// G-9: "Remove WinVPN from This Account…" reuses the uninstaller's texts with WinVPN's wording.
+#[test]
+fn the_account_cleanup_texts_on_windows() {
+    let title = "MacVPN has been uninstalled";
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::En, title, &[]), "WinVPN has been removed from this account");
+    assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::Hu, title, &[]), "A WinVPN eltávolítva erről a fiókról");
+    let next = "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).";
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::En, next, &[]),
+        "Now uninstall WinVPN in Settings → Apps → Installed apps (opened for you): the WinVPN Service and the program files go with it."
+    );
+    assert!(l10n::tr_for(WINDOWS, AppLanguage::Hu, next, &[]).starts_with("Most távolítsd el a WinVPN-t a Gépház"));
+    let data = "~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items";
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::En, data, &[]),
+        r"AppData\Local\WinVPN with the vault, and in Credential Manager the vault key (local.winvpn.vault)"
+    );
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::Hu, data, &[]),
+        r"AppData\Local\WinVPN a széffel, és a Hitelesítőadat-kezelőben a széf kulcsa (local.winvpn.vault)"
+    );
+    // macOS keeps its texts (the 1.4.0 baseline test pins them all).
+    assert_eq!(l10n::tr_for(TextPlatform::MACOS, AppLanguage::En, title, &[]), title);
+}
+
 #[test]
 fn product_name_replaced_without_a_variant() {
     assert_eq!(l10n::tr_for(WINDOWS, AppLanguage::En, "Quit MacVPN", &[]), "Quit WinVPN");

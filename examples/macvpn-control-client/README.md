@@ -1,6 +1,6 @@
 # macvpn-control-client
 
-A minimal Rust client for MacVPN's local control API. It needs only `std` and `serde_json`, and it is written to be copied into another app (the first user is a Remote Desktop app). The protocol, the security model and the error codes are described in [`docs/control-api.md`](../../docs/control-api.md) ([magyarul](../../docs/control-api.hu.md)).
+A minimal Rust client for MacVPN's local control API. It needs only `std` and `serde_json` (on Windows also `macvpn-winsys`, see [Windows](#windows)), and it is written to be copied into another app (the first user is a Remote Desktop app). The protocol, the security model and the error codes are described in [`docs/control-api.md`](../../docs/control-api.md) ([magyarul](../../docs/control-api.hu.md)).
 
 - [`src/lib.rs`](src/lib.rs): the reusable part. Copy this file.
   - `Client`: one socket connection. It has `pair`, `open` (connect + `hello`), `list`, `up` with an event callback, `down`, `status`, `next_event`, `closer` to end the connection from another thread, and `closing_reason` (why MacVPN closed it: `disabled` or `app_quitting`).
@@ -8,7 +8,7 @@ A minimal Rust client for MacVPN's local control API. It needs only `std` and `s
   - `State`, `ErrorCode`: an unknown state counts as "in progress", an unknown error code as `failed`.
 - [`src/main.rs`](src/main.rs): a small command line tool built on it, for trying the API out.
 
-The transport is a Unix domain socket (macOS). The crate compiles for Windows too, but there `Client::connect` returns `io::ErrorKind::Unsupported`: the named pipe client comes with WinVPN.
+The transport is a Unix domain socket on macOS and WinVPN's named pipe on Windows ([Windows](#windows)).
 
 ## Before you start
 
@@ -65,6 +65,16 @@ drop(vpn); // or vpn.release()? to wait until MacVPN has disconnected
 
 The full integration how-to, with the Keychain code and the session lifetime pattern, is in [`docs/control-api.md`](../../docs/control-api.md#9-how-to-integrate-a-rust-app).
 
+## Windows
+
+WinVPN listens on a per-user named pipe, `\\.\pipe\WinVPN-control-<your user SID>` (`default_endpoint()` returns it; the pipe name goes wherever a socket path goes: `Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`).
+
+- The client opens the pipe with **identification-level** impersonation only (`SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION`): WinVPN can read who the client is, but can never act as it.
+- Before anything is sent, the client checks that the process serving the pipe runs as **the same user** (`GetNamedPipeServerProcessId` and its token). Another user's pipe (a squatter that took the name first) is refused with `io::ErrorKind::PermissionDenied` before anything is sent: the squatter can identify the client while it connects (its SID, groups and privileges, at identification level), but it can never act as the client and receives no data (no bearer token, no request).
+- WinVPN's pipe admits only this user's local logons (not an SSH or other network logon of the same user) and no remote clients. As on macOS, the pairing pins the client's executable path, and the token belongs in the user's own secret store (Credential Manager), never in a plain file.
+
+These Win32 calls live in `macvpn-winsys` (`crates/winsys`), the one audited implementation MacVPN itself uses. Depend on it, or copy the crate along with `src/lib.rs`: `pipe.rs` needs `sid.rs`, `security.rs`, `util.rs` and `file.rs` (the DACL reader) from `crates/winsys/src`, and the `windows-sys` features listed in `crates/winsys/Cargo.toml`.
+
 ## Tests
 
-`crates/app-core/tests/control_example_client.rs` runs this `Client` and `Lease` against the real control server with a fake VPN host: pair, hello, list, up, drop, disconnect, and the error paths.
+`crates/app-core/tests/control_example_client.rs` runs this `Client` and `Lease` against the real control server with a fake VPN host (over a Unix socket on macOS, a named pipe on Windows): pair, hello, list, up, drop, disconnect, and the error paths. On Windows, `crates/platform-win/tests/control_pipe.rs` also runs it against WinVPN's real pipe transport, with the real peer identity.

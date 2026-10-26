@@ -20,7 +20,7 @@ pub use adapters::{
 };
 pub use control::{Transport, UnixControlListener, UnixControlStream};
 pub use services::{
-    MacClipboard, MacDownloadMark, MacFilePanels, MacLifecycle, MacNotifier, MacSetup, MacShell, MacSystem,
+    MacClipboard, MacDownloadMark, MacFilePanels, MacLifecycle, MacNetwork, MacNotifier, MacSetup, MacShell, MacSystem,
     MacSystemVpnWatch, MacUpdater, MacWindows,
 };
 
@@ -36,8 +36,8 @@ use macvpn_platform_api::prefs::MemoryPreferences;
 use macvpn_platform_api::{
     AppLifecycle, AuthStateReader, CatalogFetcher, ControlTransport, DownloadMark, Entropy, FilePanels, HelperClient,
     KeyStore, LegacyKeychain, LegacySecrets, LogStreamSpawner, LoginItems, MACVPN, NativeController, NativeProfiles,
-    Notifier, Platform, PreferenceStore, Product, ReleaseSource, SecretClipboard, Shell, SystemInfo, SystemSetup,
-    SystemVpnWatch, Updater, WindowChrome,
+    NetworkProbe, Notifier, Platform, PreferenceStore, Product, ReleaseSource, SecretClipboard, Shell, SystemInfo,
+    SystemSetup, SystemVpnWatch, Updater, WindowChrome,
 };
 use std::path::Path;
 use std::sync::{Arc, Mutex};
@@ -54,6 +54,8 @@ struct Sandbox {
 pub struct MacPlatform {
     sandbox: Option<Sandbox>,
     setup: MacSetup,
+    /// The physical network probe and watch (inert in the sandbox).
+    network: MacNetwork,
     /// The staged native profiles, tracked until their service is listed (shared by every
     /// [`MacPlatform::native_profiles`] and [`MacPlatform::staged_profiles`]).
     staged: Arc<Mutex<StagedProfiles>>,
@@ -70,6 +72,7 @@ impl MacPlatform {
         });
         MacPlatform {
             setup: MacSetup { sandbox: sandbox.is_some() },
+            network: MacNetwork::new(sandbox.is_some()),
             sandbox,
             staged: Arc::new(Mutex::new(StagedProfiles::default())),
         }
@@ -135,6 +138,11 @@ impl Platform for MacPlatform {
 
     fn download_mark(&self) -> &dyn DownloadMark {
         &MacDownloadMark
+    }
+
+    /// The physical network (auto-reconnect); the sandbox has none.
+    fn network(&self) -> &dyn NetworkProbe {
+        &self.network
     }
 
     fn system_vpn_watch(&self) -> &dyn SystemVpnWatch {

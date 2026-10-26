@@ -334,15 +334,24 @@ impl HttpsUrl {
     }
 }
 
-/// An absolute path of at most [`MAX_PATH_BYTES`] without control characters (`~/` is expanded by the caller).
+/// An absolute path of this OS (macOS: `/…`; Windows: `C:\…` or a UNC share `\\server\share\…`) of at most
+/// [`MAX_PATH_BYTES`] without control characters (`~/` is expanded by the caller). Windows' device and verbatim
+/// paths (`\\.\…`, `\\?\…`: a pipe, a raw volume) are refused (only Windows parses them as such).
 pub fn parse_file_source(input: &str) -> Result<PathBuf, SourceError> {
+    use std::path::{Component, Prefix};
     if input.len() > MAX_PATH_BYTES {
         return Err(SourceError::TooLong);
     }
     if input.chars().any(char::is_control) {
         return Err(SourceError::BadPath);
     }
-    if !input.starts_with('/') {
+    let path = Path::new(input);
+    if let Some(Component::Prefix(p)) = path.components().next()
+        && !matches!(p.kind(), Prefix::Disk(_) | Prefix::UNC(..))
+    {
+        return Err(SourceError::BadPath);
+    }
+    if !path.is_absolute() {
         return Err(SourceError::NotAbsolute);
     }
     Ok(PathBuf::from(input))

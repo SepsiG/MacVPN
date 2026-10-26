@@ -24,7 +24,7 @@
 //! a token, a subscription string or catalog content. The log has events only, by catalog id.
 
 use crate::catalog_schedule::{MAX_JITTER, RefreshTrigger, SCHEDULER_WAKE, is_due, next_attempt};
-use crate::deps::{CatalogFetcher, Clock, FetchOutcome, FetchRequest};
+use crate::deps::{CatalogFetcher, Clock, FetchOutcome, FetchRequest, NativeProfiles};
 use crate::manager::{ConnectionItem, ConnectionManager};
 use crate::notify::{self, NotificationContent};
 use crate::vault::VaultLifecycle;
@@ -413,6 +413,8 @@ struct Hooks {
     notify: Option<Notifier>,
     log: Option<Logger>,
     forget_keys: Option<KeyPruner>,
+    profiles: Option<Arc<dyn NativeProfiles>>,
+    after_apply: Option<Arc<dyn Fn() + Send + Sync>>,
 }
 
 pub struct CatalogService {
@@ -503,6 +505,25 @@ impl CatalogService {
         self.hooks.write().unwrap_or_else(PoisonError::into_inner).forget_keys = Some(Arc::new(f));
     }
 
+    /// The native profiles: a removed connection's profile is removed with it ([`NativeProfiles::remove`]; nothing
+    /// on macOS), as when the user deletes a connection.
+    pub fn set_native_profiles(&self, profiles: Arc<dyn NativeProfiles>) {
+        self.hooks.write().unwrap_or_else(PoisonError::into_inner).profiles = Some(profiles);
+    }
+
+    /// Runs after every applied catalog (a subscribe, a refresh that applied a version) and a "Duplicate as
+    /// personal connection", once the manager has reloaded: WinVPN installs the native profiles of the added and changed connections there
+    /// ([`crate::connections::ConnectionsModel::install_native_profiles`]; nothing where macOS approves each).
+    pub fn set_after_apply(&self, f: impl Fn() + Send + Sync + 'static) {
+        self.hooks.write().unwrap_or_else(PoisonError::into_inner).after_apply = Some(Arc::new(f));
+    }
+
+    fn applied(&self) {
+        if let Some(after) = self.hooks().after_apply {
+            after();
+        }
+    }
+
     /// Runs right before an apply's transaction (tests: a connection that comes up meanwhile).
     #[cfg(feature = "test-support")]
     pub fn set_before_apply(&self, f: impl Fn() + Send + Sync + 'static) {
@@ -545,9 +566,14 @@ impl CatalogService {
         }
     }
 
+    /// After `removed` left the vault (an apply, a pending removal, an unsubscribe): their keys leave the control
+    /// API's allowlists and their profiles are removed.
     fn forget(&self, removed: &[Uuid]) {
         if removed.is_empty() {
             return;
+        }
+        if let Some(profiles) = self.hooks().profiles {
+            removed.iter().for_each(|id| profiles.remove(id));
         }
         if let Some(forget) = self.hooks().forget_keys {
             let keys: Vec<String> = removed.iter().map(uuid_string).collect();
@@ -710,6 +736,7 @@ impl CatalogService {
             plan.summary.added
         ));
         self.deps.manager.reload();
+        self.applied();
         Ok(plan.summary)
     }
 
@@ -862,6 +889,7 @@ impl CatalogService {
         ));
         self.forget(&removed);
         self.deps.manager.reload();
+        self.applied();
         self.update_pending_keys();
         if let Some(text) = update_text(&next.name, &s) {
             let moved = moved_servers(catalog_id, &opened.payload, &servers_before);
@@ -1020,6 +1048,7 @@ impl CatalogService {
     pub fn duplicate(&self, local_id: Uuid, name: &str) -> Result<Uuid, VaultError> {
         let id = self.deps.vault.with(|v| v.duplicate_catalog_connection(local_id, name))?;
         self.deps.manager.reload();
+        self.applied();
         Ok(id)
     }
 

@@ -32,7 +32,7 @@ zeroize = "1.9.1"
 [target.'cfg(target_os = "macos")'.dependencies]
 macvpn-platform-mac = { path = "../../crates/platform-mac" }
 
-[target.'cfg(not(target_os = "macos"))'.dependencies]
+[target.'cfg(windows)'.dependencies]
 macvpn-platform-win = { path = "../../crates/platform-win" }
 
 [dev-dependencies]

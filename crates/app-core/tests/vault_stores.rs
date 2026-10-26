@@ -140,7 +140,6 @@ fn client(name: &str) -> PairedClient {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn each_store_round_trips_while_unlocked() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -166,7 +165,6 @@ fn each_store_round_trips_while_unlocked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn each_store_fails_as_specified_while_locked() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -199,7 +197,6 @@ fn each_store_fails_as_specified_while_locked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn lock_keeps_a_redacted_active_connection_and_unlock_brings_the_names_back() {
     let f = Fixture::new();
     let up = f.add("Office", VPNKind::Openvpn);
@@ -249,7 +246,6 @@ fn lock_keeps_a_redacted_active_connection_and_unlock_brings_the_names_back() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_manager_built_while_locked_reads_the_ranking_at_the_first_reload() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -267,7 +263,6 @@ fn a_manager_built_while_locked_reads_the_ranking_at_the_first_reload() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_editors_import_export_and_delete_refuse_while_locked() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -293,7 +288,6 @@ fn the_editors_import_export_and_delete_refuse_while_locked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_view_model_while_locked_contains_no_name() {
     let f = Fixture::new();
     let up = f.add("Seeded Office", VPNKind::Openvpn);
@@ -350,7 +344,6 @@ fn the_view_model_while_locked_contains_no_name() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn lock_drops_the_folders_and_the_credentials_and_unlock_brings_them_back() {
     let f = Fixture::new();
     let c = f.add("Seeded Office", VPNKind::Openvpn);
@@ -395,7 +388,6 @@ fn lock_drops_the_folders_and_the_credentials_and_unlock_brings_them_back() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn reload_all_reads_what_a_restore_wrote() {
     let f = Fixture::new();
     let c = f.add("Office", VPNKind::Openvpn);
@@ -415,7 +407,6 @@ fn reload_all_reads_what_a_restore_wrote() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_legacy_mode_offers_no_folder_editing() {
     let f = Fixture::new();
     let m = f.manager();
@@ -441,7 +432,6 @@ fn show_lock_now_follows_auto_unlock_and_the_preference() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_legacy_mode_reads_the_old_storage_and_refuses_writes() {
     AppLanguage::set_thread_override(Some(AppLanguage::En));
     let tmp = TempDir::new();

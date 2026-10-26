@@ -10,7 +10,7 @@ use macvpn_core::update::Release;
 use macvpn_platform_api::UpdateOutcome;
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::{AppHandle, State};
+use tauri::{AppHandle, State, Window};
 
 use crate::state::AppState;
 
@@ -20,7 +20,8 @@ pub const UPDATE_WINDOW: &str = "update";
 
 /// "Download and Install". The stages and a failure appear in the view model; on success the app quits.
 #[tauri::command]
-pub async fn update_install(app: AppHandle, state: Shared<'_>) -> Result<(), String> {
+pub async fn update_install(app: AppHandle, window: Window, state: Shared<'_>) -> Result<(), String> {
+    crate::guard::only(&window, "update_install", UPDATE_WINDOW)?;
     if state.updates.available().is_none() || state.updates.is_installing() {
         return Err("nothing to install".into());
     }

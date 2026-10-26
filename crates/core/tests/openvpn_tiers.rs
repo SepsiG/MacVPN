@@ -7,7 +7,7 @@ use common::*;
 use macvpn_core::l10n::{self, AppLanguage};
 use macvpn_core::target_os::TargetOs;
 use macvpn_core::validators::openvpn::{
-    self, FORBIDDEN, REASON_LISTENS, REASON_PLATFORM, REASON_PLATFORM_WINDOWS, REASON_SERVICE_OWNED, REASON_UNKNOWN,
+    self, FORBIDDEN, FORBIDDEN_WINDOWS, REASON_LISTENS, REASON_PLATFORM, REASON_PLATFORM_WINDOWS, REASON_UNKNOWN,
     RISKY_REASONS, platform_reasons,
 };
 use macvpn_core::validators::{OpenVPNTier, OpenVPNValidation, OpenVPNValidator, RiskyFinding};
@@ -49,6 +49,7 @@ fn has_explicit_tier(name: &str) -> bool {
         || RISKY_REASONS.contains_key(name)
         || platform_reasons(TargetOs::host()).contains_key(name)
         || FORBIDDEN.contains(name)
+        || (TargetOs::host() == TargetOs::Windows && FORBIDDEN_WINDOWS.contains(name))
 }
 
 // MARK: The user's examples
@@ -102,10 +103,13 @@ fn notable_decisions() {
     for d in ["chroot", "echo", "pkcs11-id", "syslog", "capath", "genkey", "dns-updown", "iproute", "script-security"] {
         assert_eq!(tier(d), OpenVPNTier::Forbidden, "{d}");
     }
-    for d in
-        ["user", "group", "route-noexec", "ifconfig-noexec", "win-sys", "service", "mode", "allow-recursive-routing"]
-    {
+    for d in ["user", "group", "route-noexec", "ifconfig-noexec", "mode", "allow-recursive-routing"] {
         assert_eq!(tier(d), OpenVPNTier::Risky, "{d}");
+    }
+    // The WinVPN Service runs OpenVPN as SYSTEM: forbidden there, acknowledgeable elsewhere.
+    let platform = if TargetOs::host() == TargetOs::Windows { OpenVPNTier::Forbidden } else { OpenVPNTier::Risky };
+    for d in ["win-sys", "service"] {
+        assert_eq!(tier(d), platform, "{d}");
     }
     for d in ["askpass", "pkcs12", "dns", "machine-readable-output", "register-dns", "block-outside-dns", "disable-dco"]
     {
@@ -124,6 +128,7 @@ fn documentation_lists_every_directive() {
         names.extend(platform_reasons(os).keys());
     }
     names.extend(FORBIDDEN.iter());
+    names.extend(FORBIDDEN_WINDOWS.iter());
     for name in names {
         assert!(doc.contains(&format!("`{name}`")), "{name}");
     }
@@ -217,6 +222,30 @@ fn risky_arguments_cannot_smuggle_files() {
     }
 }
 
+/// Security review L-9: on Windows `C:name` is a path relative to drive C's current folder (as SYSTEM: `C:\name`),
+/// and `name:stream` an alternate data stream; a RISKY argument with a `:` is refused there, except an IPv6
+/// address or prefix. macOS keeps its rule (a `:` is no path there).
+#[test]
+fn risky_arguments_cannot_name_a_drive_on_windows() {
+    en();
+    let w = TargetOs::Windows;
+    for arg in ["C:name", "c:x", "D:", "Z:x.y", "a:b", "x.txt:stream", "\"C:my file\"", "host:1194"] {
+        let r = check_for(w, &format!("future-option {arg}"), &["future-option"]);
+        assert_eq!(lines(&r.issues), [4], "{arg}");
+        assert_eq!(r.risky, [], "{arg}");
+        assert_eq!(lines(&check_for(w, &format!("user {arg}"), &["user"]).issues), [4], "{arg}");
+        // macOS: unchanged (no drive letters, no streams).
+        assert_eq!(check_for(TargetOs::MacOs, &format!("future-option {arg}"), &["future-option"]).issues, [], "{arg}");
+    }
+    for arg in ["2001:db8::1", "::1", "fe80::1", "2001:db8::/32", "plain", "10.0.0.0/24", "3"] {
+        let r = check_for(w, &format!("future-option {arg}"), &["future-option"]);
+        assert_eq!(r.issues, [], "{arg}");
+    }
+    assert!(OpenVPNValidator::is_harmless_argument_for(TargetOs::MacOs, "C:name"));
+    assert!(!OpenVPNValidator::is_harmless_argument_for(w, "C:name"));
+    assert!(OpenVPNValidator::is_harmless_argument_for(w, "2001:db8::1"));
+}
+
 #[test]
 fn risky_is_not_allowed_in_connection_block() {
     en();
@@ -255,7 +284,8 @@ fn setenv_accepts_any_shell_name() {
         "setenv FORWARD_COMPATIBLE 1",
         "setenv opt remap-usr1 SIGTERM",
     ] {
-        assert_eq!(ovpn_all(&format!("{BASE}{line}\n")), [], "{line}");
+        // macOS: any shell name (Windows has its own allowlist, tested separately).
+        assert_eq!(check_for(TargetOs::MacOs, line, &[]).all_issues(), [], "{line}");
     }
 }
 
@@ -703,7 +733,7 @@ fn hint_and_hungarian_reason() {
 /// directive: `name<TAB>tier<TAB>reason key` (`-` when not risky), sorted by name.
 fn tier_lines() -> Vec<String> {
     let macos = TargetOs::MacOs;
-    let mut names: Vec<&str> = OpenVPNValidator::allowed().into_iter().collect();
+    let mut names: Vec<&str> = OpenVPNValidator::allowed_for(macos).into_iter().collect();
     names.extend(RISKY_REASONS.keys());
     names.extend(platform_reasons(macos).keys());
     names.extend(FORBIDDEN.iter());
@@ -766,29 +796,65 @@ fn macos_platform_tier_is_the_1_4_table() {
 fn windows_platform_tier() {
     en();
     let w = TargetOs::Windows;
-    let r = check_for(w, "win-sys env", &[]);
-    assert_eq!(r.issues, []);
-    assert_eq!(r.risky[0].reason_key, REASON_SERVICE_OWNED);
-    for d in ["service", "msg-channel", "win-sys", "allow-nonadmin", "rdns-internal", "dhcp-internal"] {
-        assert_eq!(OpenVPNValidator::tier_for(w, d), OpenVPNTier::Risky, "{d}");
-        assert_eq!(platform_reasons(w).get(d), Some(&REASON_SERVICE_OWNED), "{d}");
+    // As SYSTEM these would run programs from a chosen folder or hand OpenVPN a control channel: never allowed.
+    for d in [
+        "win-sys",
+        "service",
+        "msg-channel",
+        "allow-nonadmin",
+        "rdns-internal",
+        "dhcp-internal",
+        "windows-driver",
+        "cryptoapicert",
+    ] {
+        assert_eq!(OpenVPNValidator::tier_for(w, d), OpenVPNTier::Forbidden, "{d}");
+        let r = check_for(w, &format!("{d} x"), &[d]);
+        assert_eq!(r.issues.len(), 1, "{d}");
+        assert!(r.issues[0].message.starts_with(&format!("Forbidden directive: {d}")), "{d}");
+        assert_eq!(r.risky, [], "{d}");
     }
+    // Acknowledging does not help, inside a <connection> block neither, nor through setenv opt.
+    assert_eq!(check_for(w, "setenv opt win-sys env", &["win-sys"]).issues.len(), 1);
+    // TAP-Windows6 is installed (decision 4): what DCO cannot run is SAFE on Windows as on macOS; the service picks
+    // the driver (Task 10).
+    for good in [
+        "dev tap",
+        "dev-type tap",
+        "comp-lzo yes",
+        "compress lz4-v2",
+        "cipher AES-256-CBC",
+        "fragment 1300",
+        "disable-dco",
+    ] {
+        assert_eq!(check_for(w, good, &[]).all_issues(), [], "{good}");
+    }
+    // dev-node stays forbidden everywhere (an adapter chosen by name).
+    assert_eq!(OpenVPNValidator::tier_for(w, "dev-node"), OpenVPNTier::Forbidden);
+    // setcon stays refused with its reason (Linux only), as before.
     let r = check_for(w, "setcon x", &[]);
-    assert_eq!(r.issues, []);
     assert_eq!(r.risky[0].reason_key, REASON_PLATFORM_WINDOWS);
-    assert_eq!(OpenVPNValidator::tier_for(w, "cryptoapicert"), OpenVPNTier::Safe);
-    assert!(!platform_reasons(w).contains_key("cryptoapicert"));
-    let r = check_for(w, "cryptoapicert \"THUMB:aa bb\"", &[]);
-    assert_eq!((r.issues.clone(), r.risky.clone()), (vec![], vec![]));
-    for good in ["\"SUBJ:Peter Runestig\"", "\"ISSUER:Sample CA\"", "\"SELECT:THUMB:aa\"", "THUMB:f649244101b4"] {
-        assert_eq!(check_for(w, &format!("cryptoapicert {good}"), &[]).all_issues(), [], "{good}");
+    assert_eq!(platform_reasons(w).keys().copied().collect::<Vec<_>>(), ["setcon"]);
+    // The Windows-only SAFE options keep working.
+    for good in ["block-outside-dns", "register-dns", "route-method ipapi", "ip-win32 dynamic", "dhcp-renew"] {
+        assert_eq!(check_for(w, good, &[]).all_issues(), [], "{good}");
     }
-    for bad in ["x", "\"THUMB:\"", "\"thumb:aa\"", "\"THUMB:zz\"", "\"SUBJ:\"", "\"THUMB:aa\" extra", ""] {
-        let r = check_for(w, &format!("cryptoapicert {bad}"), &["cryptoapicert"]);
-        assert_eq!(lines(&r.issues), [4], "{bad}");
-        assert_eq!(r.risky, [], "{bad}");
+    assert!(
+        check_for(w, "cryptoapicert \"THUMB:aa bb\"", &[]).issues[0]
+            .message
+            .starts_with("Forbidden directive: cryptoapicert")
+    );
+}
+
+#[test]
+fn the_macos_and_linux_tiers_are_unchanged_by_the_windows_one() {
+    en();
+    for os in [TargetOs::MacOs, TargetOs::Linux] {
+        for d in ["win-sys", "service", "msg-channel", "allow-nonadmin", "rdns-internal", "dhcp-internal"] {
+            assert_eq!(OpenVPNValidator::tier_for(os, d), OpenVPNTier::Risky, "{os:?} {d}");
+        }
+        assert_eq!(OpenVPNValidator::tier_for(os, "windows-driver"), OpenVPNTier::Safe, "{os:?}");
     }
-    assert_eq!(check_for(w, "cryptoapicert x", &[]).issues[0].message, "Invalid argument: cryptoapicert",);
+    assert_eq!(OpenVPNValidator::tier_for(TargetOs::MacOs, "cryptoapicert"), OpenVPNTier::Risky);
 }
 
 #[test]
@@ -832,5 +898,129 @@ fn host_entry_points_equal_the_per_os_ones() {
     }
     for d in &corpus {
         assert_eq!(tier(d), OpenVPNValidator::tier_for(host, d), "{d}");
+    }
+}
+
+// MARK: Parser limits (security review 2.0.0 part 2, P2-M1)
+
+/// Runs `f` on a thread with a small stack: a validator that recursed per nesting level would overflow it (and a
+/// Rust stack overflow aborts the whole test binary, not just the test).
+fn on_small_stack<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    std::thread::Builder::new().stack_size(512 * 1024).spawn(f).unwrap().join().unwrap()
+}
+
+#[test]
+fn nested_setenv_opt_is_refused() {
+    en();
+    // OpenVPN unwraps `setenv opt` once (options.c, `add_option`: `p += 2`); a second one is refused here.
+    for body in ["setenv opt setenv opt verb 3", "setenv opt SETENV OPT verb 3", "setenv opt --setenv opt verb"] {
+        let r = check(body, &[]);
+        assert_eq!(lines(&r.issues), [4], "{body}");
+        assert_eq!(r.issues[0].message, "setenv not allowed: opt – delete the line or comment it out (#)", "{body}");
+    }
+    let deep = format!("{}verb 3", "setenv opt ".repeat(7));
+    assert_eq!(lines(&check(&deep, &[]).issues), [4]);
+    // One level stays as before: the inner directive is checked like a top-level one, a plain setenv too.
+    assert_eq!(check("setenv opt verb 3", &[]).all_issues(), []);
+    assert_eq!(check("setenv opt setenv UV_ROLE x", &[]).all_issues(), []);
+    assert_eq!(lines(&check("setenv opt setenv PATH x", &[]).issues), [4]);
+}
+
+#[test]
+fn a_hundred_thousand_setenv_opt_levels_fail_fast_without_stack_growth() {
+    let text = format!("{BASE}{}verb 3\n", "setenv opt ".repeat(100_000));
+    let started = std::time::Instant::now();
+    let issues = on_small_stack(move || {
+        en();
+        OpenVPNValidator.validate_full_for(TargetOs::MacOs, &text, &HashSet::new()).issues
+    });
+    assert_eq!(lines(&issues), [4]);
+    assert!(started.elapsed() < std::time::Duration::from_secs(5));
+    // The same on Windows, and in a <connection> block.
+    let text = format!("{BASE}<connection>\nremote b 1\n{}verb 3\n</connection>\n", "setenv opt ".repeat(100_000));
+    let issues = on_small_stack(move || {
+        en();
+        OpenVPNValidator.validate_full_for(TargetOs::Windows, &text, &HashSet::new()).issues
+    });
+    assert_eq!(lines(&issues), [6]);
+}
+
+#[test]
+fn a_line_has_at_most_sixteen_tokens() {
+    en();
+    // OpenVPN's MAX_PARMS (16, the directive included); `parse_line` silently drops the rest.
+    let ok = format!("ignore-unknown-option{}", " a".repeat(15));
+    assert_eq!(check(&ok, &[]).all_issues(), []);
+    let r = check(&format!("{ok} b"), &[]);
+    assert_eq!(lines(&r.issues), [4]);
+    assert_eq!(r.issues[0].message, "Wrong number of arguments: ignore-unknown-option");
+    // RISKY and unknown directives, and setenv opt, count the same way.
+    assert_eq!(lines(&check(&format!("user{}", " a".repeat(16)), &["user"]).issues), [4]);
+    assert_eq!(lines(&check(&format!("setenv opt user{}", " a".repeat(14)), &["user"]).issues), [4]);
+    assert_eq!(check(&format!("setenv opt user{}", " a".repeat(13)), &["user"]).all_issues(), []);
+}
+
+#[test]
+fn a_line_longer_than_openvpn_reads_at_once_is_refused() {
+    en();
+    // OpenVPN reads a line into a 256-byte buffer (OPTION_LINE_SIZE; 255 bytes and the NUL in an inline block) and
+    // reads the rest of a longer line as a new line. In an inline block, that rest could close the block and the
+    // lines after it would be directives to OpenVPN but block content to the validator.
+    let smuggle = format!("<ca>\n{}</ca>\nscript-security 2\nup evil.sh\n</ca>", "A".repeat(255));
+    let r = check(&smuggle, &[]);
+    assert_eq!(lines(&r.issues), [5]);
+    assert_eq!(r.issues[0].message, "Line too long");
+    // Every line counts: a comment, a directive, a <connection> block line; CRLF line ends do not.
+    for long in [format!("#{}", "x".repeat(255)), format!("verb 3{}", " ".repeat(250)), "x".repeat(300)] {
+        assert_eq!(lines(&check(&long, &[]).issues), [4], "{}", long.len());
+    }
+    let conn = format!("<connection>\nremote b 1\n# {}\n</connection>", "x".repeat(254));
+    assert_eq!(lines(&check(&conn, &[]).issues), [6]);
+    for fits in [format!("#{}", "x".repeat(254)), format!("<ca>\n{}\n</ca>", "A".repeat(255))] {
+        assert_eq!(check(&fits, &[]).all_issues(), [], "{}", fits.len());
+        assert_eq!(check(&fits.replace('\n', "\r\n"), &[]).all_issues(), []);
+    }
+    // A long line costs one issue, not one per 255 bytes, and Hungarian has its own text.
+    lang(AppLanguage::Hu);
+    let r = check(&"x".repeat(10_000), &[]);
+    assert_eq!(r.issues.len(), 1);
+    assert_ne!(r.issues[0].message, "Line too long");
+}
+
+// MARK: setenv on Windows (security review 2.0.0 part 2, P2-I3)
+
+#[test]
+fn windows_setenv_takes_only_the_allowlisted_names() {
+    en();
+    let w = TargetOs::Windows;
+    // OpenVPN runs route.exe and netsh.exe as SYSTEM with its env set as their whole environment.
+    for name in
+        ["SystemRoot", "SYSTEMROOT", "windir", "ComSpec", "__COMPAT_LAYER", "TEMP", "ProgramData", "X", "COR_PROFILER"]
+    {
+        let r = check_for(w, &format!("setenv {name} C:/x"), &[]);
+        assert_eq!(lines(&r.issues), [4], "{name}");
+        assert_eq!(r.issues[0].message, format!("setenv not allowed: {name} – delete the line or comment it out (#)"));
+        assert_eq!(lines(&check_for(w, &format!("setenv opt setenv {name} x"), &[]).issues), [4], "{name}");
+        // macOS keeps its denylist only.
+        assert_eq!(check_for(TargetOs::MacOs, &format!("setenv {name} x"), &[]).all_issues(), [], "{name}");
+    }
+    for good in [
+        "setenv UV_ROLE admin",
+        "setenv uv_x",
+        "setenv IV_GUI_VER \"WinVPN 2.0\"",
+        "setenv FORWARD_COMPATIBLE 1",
+        "setenv PUSH_PEER_INFO",
+        "setenv SERVER_POLL_TIMEOUT 4",
+        "setenv REMOTE_RANDOM_HOSTNAME",
+        "setenv CLIENT_CERT 0",
+        "setenv CONFIG_VERSION \"2.0.4\"",
+        "setenv opt block-outside-dns",
+        "setenv opt setenv UV_X 1",
+    ] {
+        assert_eq!(check_for(w, good, &[]).all_issues(), [], "{good}");
+    }
+    // A bare prefix is not an allowed name.
+    for bare in ["setenv UV_ x", "setenv IV_", "setenv UV x"] {
+        assert_eq!(lines(&check_for(w, bare, &[]).issues), [4], "{bare}");
     }
 }

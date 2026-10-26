@@ -67,6 +67,9 @@
       checks.previewCounts = !!preview?.textContent.includes(t('2 connections', '2 kapcsolat'));
       checks.subscribeGated = $('.sheet button.subscribe')?.disabled === true;
       checks.noKeyInDom = !document.documentElement.outerHTML.includes('__TEAM_KEY__') && !$('.sheet input.team-key');
+      // Without a preview, the sheet's error names the cause in the result.
+      const error = $('.sheet .form-error')?.textContent.trim();
+      if (!preview && error) checks[`error:${error.slice(0, 120).replace(/\s+/g, '_')}`] = false;
     } else if (phase === 'subscribe') {
       $('.sheet .compared input').click();
       await sleep(100);

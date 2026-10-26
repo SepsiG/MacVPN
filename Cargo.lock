@@ -1998,7 +1998,7 @@ checksum = "f9f8bd3e56ce4dfc153cf470fffbfa98c7620958b312ca5c3a4b8d5181fd13c6"
 
 [[package]]
 name = "macvpn-app"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
  "macvpn-app-core",
  "macvpn-core",
@@ -2015,13 +2015,14 @@ dependencies = [
 
 [[package]]
 name = "macvpn-app-core"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
  "libc",
  "macvpn-app-core",
  "macvpn-control-client",
  "macvpn-core",
  "macvpn-platform-api",
+ "macvpn-winsys",
  "regex",
  "serde",
  "serde_json",
@@ -2031,14 +2032,15 @@ dependencies = [
 
 [[package]]
 name = "macvpn-control-client"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
+ "macvpn-winsys",
  "serde_json",
 ]
 
 [[package]]
 name = "macvpn-core"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
  "argon2",
  "base64 0.23.1",
@@ -2047,6 +2049,7 @@ dependencies = [
  "idna",
  "libc",
  "macvpn-core",
+ "macvpn-winsys",
  "plist",
  "regex",
  "rusqlite",
@@ -2061,28 +2064,33 @@ dependencies = [
 
 [[package]]
 name = "macvpn-helper"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
+ "base64 0.23.1",
  "libc",
  "macvpn-core",
+ "macvpn-winsys",
+ "miniz_oxide 0.9.1",
  "regex",
  "uuid",
+ "windows-sys 0.61.2",
  "zeroize",
 ]
 
 [[package]]
 name = "macvpn-platform-api"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
  "macvpn-core",
  "serde",
+ "serde_json",
  "uuid",
  "zeroize",
 ]
 
 [[package]]
 name = "macvpn-platform-mac"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
  "block2",
  "core-foundation",
@@ -2102,18 +2110,33 @@ dependencies = [
  "plist",
  "regex",
  "security-framework-sys",
+ "serde_json",
  "uuid",
  "zeroize",
 ]
 
 [[package]]
 name = "macvpn-platform-win"
-version = "1.5.0"
+version = "2.0.0"
 dependencies = [
+ "ed25519-dalek",
+ "macvpn-app-core",
+ "macvpn-control-client",
  "macvpn-core",
  "macvpn-platform-api",
+ "macvpn-winsys",
  "uuid",
+ "windows",
+ "windows-sys 0.61.2",
  "zeroize",
+]
+
+[[package]]
+name = "macvpn-winsys"
+version = "2.0.0"
+dependencies = [
+ "uuid",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

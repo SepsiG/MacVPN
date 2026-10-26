@@ -168,6 +168,14 @@ impl ControlApp {
         self.slot().server.is_some()
     }
 
+    /// The running server's endpoint as its "listening on …" line shows it (the Windows smoke run hands the pipe's
+    /// name to its test client; debug builds only). macOS' smoke run looks at the socket file instead.
+    #[cfg(debug_assertions)]
+    #[allow(dead_code)]
+    pub fn endpoint(&self) -> Option<String> {
+        self.slot().server.as_ref().map(|s| s.endpoint().to_string())
+    }
+
     /// The quit proceeds: no start from now on (`stop_for_quit` sets it under `ops`; `terminate` also sets it at
     /// once, so a start that comes later is refused).
     pub fn begin_quit(&self) {
@@ -352,6 +360,17 @@ impl ControlHost for Host {
         setup_ready_for(&state.setup.read().unwrap_or_else(PoisonError::into_inner), &item)
     }
 
+    fn start_refusal(&self, key: &str) -> Option<String> {
+        let state = self.app()?;
+        let setup = state.setup.read().unwrap_or_else(PoisonError::into_inner).clone();
+        match state.manager.item(key) {
+            Some(item) => start_refusal(&setup, &state.manager, &item),
+            // A key that vanished meanwhile: the connect itself answers `unknown_connection`, unless nothing can
+            // start at all.
+            None => setup.start_refusal(None),
+        }
+    }
+
     fn ask_pairing(&self, request: PairingRequest) -> PairingAnswer {
         let Some(state) = self.app() else { return PairingAnswer::Denied };
         let broker = state.control.pairing.clone();
@@ -376,6 +395,22 @@ impl ControlHost for Host {
     }
 }
 
+/// Why a start of `item` is refused outright, the same for a manual connect (the `connect` command) and a lease's
+/// `up`: the setup's answer (`SetupReport::start_refusal`: no VPN engine, a later kind; WinVPN 2c: a missing WinVPN
+/// Service refuses neither the native kinds nor the system VPNs), then a connection the platform cannot connect
+/// with its settings (`ConnectionManager::unsupported_reason`, WinVPN 2c). `None` (macOS with an engine): the
+/// setup check ([`setup_ready_for`]) decides.
+pub fn start_refusal(report: &SetupReport, manager: &ConnectionManager, item: &ConnectionItem) -> Option<String> {
+    let kind = match item {
+        ConnectionItem::Managed(c) => Some(c.kind),
+        ConnectionItem::System(_) => None,
+    };
+    report.start_refusal(kind).or_else(|| match item {
+        ConnectionItem::Managed(_) => manager.unsupported_reason(&item.id()),
+        ConnectionItem::System(_) => None,
+    })
+}
+
 /// Whether `item` can be started with this setup, decided as for a manual connect (the `connect` command): a
 /// managed connection needs its type to be available (`SetupReport::is_available`: Homebrew, a current root
 /// layer, `sudo -n` and the type's tools; a native L2TP / Cisco connection needs none of them), and a system VPN
@@ -389,9 +424,14 @@ pub fn setup_ready_for(report: &SetupReport, item: &ConnectionItem) -> bool {
 
 /// A lease's connect, the same way as a manual one (the `connect` command): a managed connection needs its
 /// type's tools (`setup_required` otherwise, nothing starts); a system VPN starts with its stored secrets. Blocks
-/// until the manager's call returns.
+/// until the manager's call returns. Without a VPN engine (WinVPN 2a) nothing starts: `failed` (the server's `up`
+/// has already answered with the engine's text, `ControlHost::engine_missing`).
 pub fn connect_key(manager: &ConnectionManager, report: &SetupReport, key: &str) -> Result<(), ErrorCode> {
     let Some(item) = manager.item(key) else { return Err(ErrorCode::UnknownConnection) };
+    // Refused outright (the server's `up` has answered with the reason): see [`start_refusal`].
+    if start_refusal(report, manager, &item).is_some() {
+        return Err(ErrorCode::Failed);
+    }
     if !setup_ready_for(report, &item) {
         return Err(ErrorCode::SetupRequired);
     }
@@ -604,14 +644,21 @@ pub fn validate_allowed_keys(keys: &[String], listed: &[String]) -> Result<Vec<S
 
 /// "Allow other apps to control VPNs".
 #[tauri::command]
-pub async fn control_set_enabled(state: Shared<'_>, on: bool) -> Result<(), String> {
+pub async fn control_set_enabled(window: tauri::Window, state: Shared<'_>, on: bool) -> Result<(), String> {
+    crate::guard::only(&window, "control_set_enabled", crate::manage::MANAGE_WINDOW)?;
     let shared = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || set_enabled(&shared, on)).await.map_err(|e| e.to_string())
 }
 
 /// A paired app's allowed connections (the checkboxes of its card).
 #[tauri::command]
-pub async fn control_set_allowed(state: Shared<'_>, client_id: String, keys: Vec<String>) -> Result<(), String> {
+pub async fn control_set_allowed(
+    window: tauri::Window,
+    state: Shared<'_>,
+    client_id: String,
+    keys: Vec<String>,
+) -> Result<(), String> {
+    crate::guard::only(&window, "control_set_allowed", crate::manage::MANAGE_WINDOW)?;
     let id = parse_client_id(&client_id)?;
     let listed: Vec<String> = state.manager.ordered_items().iter().map(ConnectionItem::id).collect();
     let keys = validate_allowed_keys(&keys, &listed)?;
@@ -625,7 +672,8 @@ pub async fn control_set_allowed(state: Shared<'_>, client_id: String, keys: Vec
 
 /// Revoke (after the UI's confirmation): the app is unpaired and its open connections are closed at once.
 #[tauri::command]
-pub async fn control_revoke(state: Shared<'_>, client_id: String) -> Result<(), String> {
+pub async fn control_revoke(window: tauri::Window, state: Shared<'_>, client_id: String) -> Result<(), String> {
+    crate::guard::only(&window, "control_revoke", crate::manage::MANAGE_WINDOW)?;
     let id = parse_client_id(&client_id)?;
     let shared = state.inner().clone();
     tauri::async_runtime::spawn_blocking(move || edit(&shared, id, |server| server.revoke(id), |r| r.revoke(id)))
@@ -730,6 +778,12 @@ mod tests {
             bundled_root_version: Some("7".into()),
             sudo_works: true,
             missing_root_files: vec![],
+            engine_missing: None,
+            engine: None,
+            later_kinds: Vec::new(),
+            outdated_packages: Vec::new(),
+            ras: None,
+            ras_unsupported_kinds: Vec::new(),
         };
         let managed = |kind| ConnectionItem::Managed(Connection::new("C", kind));
         let openvpn = managed(VPNKind::Openvpn);
@@ -792,8 +846,8 @@ mod tests {
         append_audit(&dir, "one", 64).unwrap();
         append_audit(&dir, "two", 64).unwrap();
         let path = dir.join(AUDIT_FILE);
-        assert!(fsx::has_access(&fs::metadata(&path).unwrap(), Access::Private), "0600");
-        assert!(fsx::has_access(&fs::metadata(&dir).unwrap(), Access::Private), "0700");
+        assert!(fsx::has_access(&fsx::stat_path(&path, Follow::Yes).unwrap(), Access::Private), "0600");
+        assert!(fsx::has_access(&fsx::stat_path(&dir, Follow::Yes).unwrap(), Access::Private), "0700");
         assert_eq!(fs::read_to_string(&path).unwrap(), "one\ntwo\n");
         // Past the cap: the file moves to audit.log.1 (one old file kept).
         append_audit(&dir, &"x".repeat(60), 64).unwrap();
@@ -1046,6 +1100,12 @@ mod tests {
             bundled_root_version: Some("7".into()),
             sudo_works: true,
             missing_root_files: vec![],
+            engine_missing: None,
+            engine: None,
+            later_kinds: Vec::new(),
+            outdated_packages: Vec::new(),
+            ras: None,
+            ras_unsupported_kinds: Vec::new(),
         }
     }
 
@@ -1059,12 +1119,53 @@ mod tests {
         // The SSTP tool is missing: nothing starts.
         assert_eq!(connect_key(&m, &ready(), &sstp_key), Err(ErrorCode::SetupRequired));
         assert_eq!(connect_key(&m, &SetupReport::unknown(), &wg_key), Err(ErrorCode::SetupRequired));
+        // Without a VPN engine nothing starts, whatever the type.
+        let no_engine = SetupReport { engine_missing: Some("Later.".into()), ..ready() };
+        assert_eq!(connect_key(&m, &no_engine, &wg_key), Err(ErrorCode::Failed));
+        // A kind that comes later fails the same way (WinVPN: the native VPNs).
+        let later = SetupReport { later_kinds: vec![(VPNKind::Sstp, "Later.".into())], ..ready() };
+        assert_eq!(connect_key(&m, &later, &sstp_key), Err(ErrorCode::Failed));
         assert!(calls.take().is_empty());
         assert_eq!(connect_key(&m, &ready(), &wg_key), Ok(()));
         assert_eq!(calls.take(), [format!("up wireguard {wg_key} debug=false")]);
         // A system VPN starts through the native controller.
         assert_eq!(connect_key(&m, &ready(), B), Ok(()));
         assert_eq!(calls.take(), [format!("start {B}")]);
+    }
+
+    /// WinVPN 2c (G-4): with the Windows VPN client usable, a missing WinVPN Service refuses only OpenVPN and
+    /// WireGuard: an IKEv2 connection and a system VPN reach the manager; a connection the platform cannot connect
+    /// with its settings is refused.
+    #[test]
+    fn a_missing_service_does_not_refuse_ras_kinds_or_system_vpns() {
+        struct NoTls;
+        impl macvpn_app_core::deps::NativeSupport for NoTls {
+            fn unsupported_reason(&self, c: &Connection, _: &[u8]) -> Option<String> {
+                (c.name == "TLS").then(|| "Not on Windows.".to_string())
+            }
+        }
+        let wg = Connection::new("Lab", VPNKind::Wireguard);
+        let ikev2 = Connection::new("Branch", VPNKind::Strongswan);
+        let tls = Connection::new("TLS", VPNKind::Strongswan);
+        let (wg_key, ikev2_key, tls_key) = (uuid_string(&wg.id), uuid_string(&ikev2.id), uuid_string(&tls.id));
+        let (m, calls) = manager(vec![wg, ikev2, tls]);
+        m.set_native_support(Arc::new(NoTls));
+        m.reload();
+        let row = macvpn_platform_api::EngineRow { ok: true, usable: true, detail: String::new(), action: None };
+        let report = SetupReport { engine_missing: Some("No service.".into()), ras: Some(row), ..ready() };
+        assert_eq!(connect_key(&m, &report, &wg_key), Err(ErrorCode::Failed));
+        assert_eq!(connect_key(&m, &report, &tls_key), Err(ErrorCode::Failed));
+        let item = m.item(&tls_key).unwrap();
+        assert_eq!(start_refusal(&report, &m, &item).as_deref(), Some("Not on Windows."));
+        assert!(calls.take().is_empty());
+        assert_eq!(connect_key(&m, &report, &ikev2_key), Ok(()));
+        assert_eq!(calls.take(), [format!("up strongswan {ikev2_key} debug=false")]);
+        assert_eq!(connect_key(&m, &report, B), Ok(()));
+        assert_eq!(calls.take(), [format!("start {B}")]);
+        // macOS / WinVPN before 2c: no RAS row, the engine-missing text refuses the system VPN too.
+        let old = SetupReport { ras: None, ..report };
+        assert_eq!(connect_key(&m, &old, B), Err(ErrorCode::Failed));
+        assert_eq!(connect_key(&m, &old, &ikev2_key), Err(ErrorCode::Failed));
     }
 
     #[test]

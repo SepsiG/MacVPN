@@ -27,6 +27,14 @@ export type Row = RowState & {
   storedSecrets: boolean;
   pinned: boolean;
   available: boolean;
+  /// Why the row is unavailable when it is not a missing tool: the platform has no VPN engine yet (WinVPN 2a), shown
+  /// instead of "Missing tool". Absent on macOS.
+  unavailableReason?: string;
+  /// The row is unavailable because its engine is missing and System Status can install it: its status line ends
+  /// with the "System Status" link. Absent otherwise.
+  setupLink?: boolean;
+  /// "Reconnect Automatically" of a managed connection (the detail's switch). Absent for system VPNs.
+  autoReconnect?: boolean;
   switchOn: boolean;
   switchEnabled: boolean;
   /// The paired apps holding the connection through the control API.
@@ -35,7 +43,13 @@ export type Row = RowState & {
   catalog?: CatalogBadge | null;
   /// A source connection the user publishes: "Published in “…” (vN)" per publication.
   published?: import('./catalog/publishApi').PublishedBadge[];
+  /// A failure whose text names an administrator step (WinVPN 2c): the failure banner offers its button. Absent on
+  /// macOS.
+  adminAction?: AdminAction;
 };
+
+/// The administrator steps an error offers (WinVPN 2c; each runs after a UAC confirmation).
+export type AdminAction = 'allow-l2tp-behind-nat' | 'trust-ca-in-windows';
 
 /// The folder and connection colour palette (spec 3): the `--folder-<id>` tokens.
 export type FolderColor =
@@ -167,12 +181,36 @@ export interface SetupView {
   tools: CheckRow | null;
   root: CheckRow | null;
   canInstallTools: boolean;
+  /** 'update': the green tools row offers "Update" (`brew upgrade` of the outdated formulae). Absent otherwise. */
+  toolsAction?: 'update';
   brewOutput: string;
   brewRunning: boolean;
   installingRoot: boolean;
   installError: string | null;
   upgradeNotice: string | null;
   uninstalling: boolean;
+  /** The platform's note when it has no VPN engine yet (WinVPN 2a): shown instead of the rows. Absent on macOS. */
+  engineNote?: string;
+  /** The app is uninstalled through the system (WinVPN: Settings → Apps): this note and "Open Installed Apps…" replace "Uninstall". Absent on macOS. */
+  systemUninstall?: string;
+  /** WinVPN: "Remove WinVPN from This Account…" (the in-app clean-up) next to the system uninstall note. Absent on macOS. */
+  accountCleanup?: boolean;
+  /** The WinVPN Service, OpenVPN and WireGuard rows (WinVPN 2b), shown instead of the Homebrew, tools and root rows. Absent on macOS. */
+  engine?: EngineRowsView;
+  /** The Windows VPN client row (WinVPN 2c: L2TP/IPsec, IKEv2, SSTP), also without the WinVPN Service. Absent on macOS. */
+  ras?: CheckRow;
+}
+
+export interface EngineRowsView {
+  service: CheckRow;
+  openvpn: CheckRow;
+  wireguard: CheckRow;
+  /** The OpenVPN row's button: installs, repairs (a missing driver) or updates OpenVPN Community. */
+  openvpnAction?: 'install' | 'repair' | 'update';
+  /** The WireGuard row's button: the WinVPN Service updates wireguard-nt to the newest official version. */
+  wireguardAction?: 'update';
+  /** The note under the rows: native Windows VPNs come later. */
+  laterNote: string;
 }
 
 export interface QuitQuestion {
@@ -224,9 +262,13 @@ export interface ManageView {
   question: QuestionView | null;
   editorsEpoch: number;
   kinds: Choice<Kind>[];
+  /// No kind can be added (every engine is missing): the "New" menu's note. Absent otherwise.
+  kindsNote?: string;
   logFilters: Choice<LogFilter>[];
   /// The selected system VPN was removed from macOS: its detail stays, read-only.
   selectedRemoved: boolean;
+  /// Deleting a native connection removes its profile too (WinVPN: its Windows VPN entry). Absent on macOS.
+  nativeDeleteRemovesProfile?: boolean;
 }
 
 export interface Otp {
@@ -321,6 +363,39 @@ export interface EditorView {
   credential: string | null;
   /// A team catalog's connection: "Managed by the team catalog “…”". Read-only except the risky settings' checkbox.
   readOnly?: string | null;
+  /// What the platform says about the draft's settings (WinVPN 2c). Absent on macOS.
+  platform?: EditorPlatformView;
+}
+
+/// [`EditorView.platform`]: Windows' view of a connection's settings (WinVPN 2c).
+export interface EditorPlatformView {
+  /// Why Windows cannot connect these settings (the yellow note; saving still works: the config stays valid).
+  reasons: string[];
+  /// IKEv2: "On Windows: EAP-MSCHAPv2 · AES-256, SHA-256, DH group 14; … · split tunnel" (grey).
+  summary: string | null;
+  /// Settings Windows ignores; the connection still runs (grey).
+  warnings: string[];
+  /// SSTP: why "No verification" cannot be chosen (the option is disabled with this title).
+  insecureCert: string | null;
+  /// The editor offers "Trust This CA in Windows…" (SSTP with a custom CA, IKEv2).
+  trustCa: boolean;
+  /// SSTP custom CA: Windows trusts it ("Trusted by Windows"); null: unknown or no CA.
+  caTrusted: boolean | null;
+  /// Cisco IPsec: "Make an L2TP/IPsec Copy".
+  l2tpCopy: boolean;
+  /// L2TP / Cisco: "Save" writes the Windows VPN entry at once (no profile to approve).
+  noInstallStep: boolean;
+  /// System VPN: the note under the PSK.
+  pskNote: string | null;
+}
+
+/// The confirmation before "Trust This CA in Windows…" (validity in Unix seconds).
+export interface CaConfirmView {
+  subject: string;
+  notBefore: number;
+  notAfter: number;
+  sha256: string;
+  warning: string;
 }
 
 export interface Report {
@@ -489,6 +564,10 @@ export interface ViewModel {
   setupComplete: boolean;
   update: UpdateView;
   loginItem: LoginItemView | null;
+  /// The Appearance setting; absent until the app sets it.
+  appearance?: 'system' | 'light' | 'dark';
+  /// The "Connection Notifications" switch; absent where notifications cannot be posted.
+  connectionNotifications?: boolean;
   manage: ManageView;
   setup: SetupView;
   quit: QuitQuestion | null;
@@ -537,6 +616,9 @@ export const api = {
   checkForUpdates: () => invoke<CheckNowResult>('check_for_updates'),
   setUpdateOption: (option: 'autoCheck' | 'delayUpdates', on: boolean) => invoke<void>('set_update_option', { option, on }),
   setLaunchAtLogin: (on: boolean) => invoke<Notice | null>('set_launch_at_login', { on }),
+  setAppearance: (mode: 'system' | 'light' | 'dark') => invoke<void>('set_appearance', { mode }),
+  setConnectionNotifications: (on: boolean) => invoke<void>('set_connection_notifications', { on }),
+  setAutoReconnect: (id: string, on: boolean) => invoke<void>('set_auto_reconnect', { id, on }),
   openLoginItemsSettings: () => invoke<void>('open_login_items_settings'),
   openUserGuide: () => invoke<void>('open_user_guide'),
   // The Connections window.
@@ -556,15 +638,25 @@ export const api = {
   exportCheck: (id: string) => invoke<Report | null>('export_check', { id }),
   exportConnection: (id: string, withKeys: boolean) => invoke<Notice | null>('export_connection', { id, withKeys }),
   deleteConnection: (id: string) => invoke<void>('delete_connection', { id }),
+  // The native VPNs on Windows (WinVPN 2c): each administrator step answers its done message or rejects with why not.
+  /// The CA of an SSTP connection (`pick` false) or of a PEM file picked now (IKEv2): null when the panel was cancelled.
+  rasCaSummary: (id: string, pick: boolean) => invoke<CaConfirmView | null>('ras_ca_summary', { id, pick }),
+  rasTrustCa: (id: string) => invoke<string>('ras_trust_ca', { id }),
+  rasAllowL2tpNat: () => invoke<string>('ras_allow_l2tp_nat'),
+  /// The copy is made and selected; a string: its Windows VPN entry could not be written.
+  makeL2tpCopy: (id: string) => invoke<string | null>('make_l2tp_copy', { id }),
   logSubscribe: (id: string | null) => invoke<LogEvent | null>('log_subscribe', { id }),
   logCopy: (filter: LogFilter, search: string) => invoke<void>('log_copy', { filter, search }),
   logSave: () => invoke<Notice | null>('log_save'),
   // System Status.
   setupCheck: () => invoke<void>('setup_check'),
   setupInstallHomebrew: () => invoke<Notice | null>('setup_install_homebrew'),
-  setupInstallTools: () => invoke<void>('setup_install_tools'),
+  // `engine`: WinVPN's WireGuard row (its "Update"); without it the OpenVPN row's action (or Homebrew's tools).
+  setupInstallTools: (engine?: 'wireguard') =>
+    engine ? invoke<void>('setup_install_tools', { engine }) : invoke<void>('setup_install_tools'),
   setupInstallRoot: () => invoke<void>('setup_install_root'),
   setupUninstall: (removeUserData: boolean) => invoke<UninstallResult>('setup_uninstall', { removeUserData }),
+  setupOpenSystemUninstall: () => invoke<void>('setup_open_system_uninstall'),
   quitAfterUninstall: () => invoke<QuitReply>('quit_after_uninstall'),
   closeWindow: (name: WindowName) => invoke<void>('close_window', { name }),
   // Update.

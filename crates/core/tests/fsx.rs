@@ -95,23 +95,23 @@ fn set_access_and_has_access() {
     let tmp = TempDir::new();
     let path = tmp.path().join("f");
     let file = fsx::create_new(&path, Access::Private).unwrap();
-    assert!(fsx::has_access(&fs::metadata(&path).unwrap(), Access::Private));
-    assert!(!fsx::has_access(&fs::metadata(&path).unwrap(), Access::Shared));
+    assert!(fsx::has_access(&fsx::stat_path(&path, Follow::Yes).unwrap(), Access::Private));
+    assert!(!fsx::has_access(&fsx::stat_path(&path, Follow::Yes).unwrap(), Access::Shared));
     fsx::set_access(&file, Access::Shared).unwrap();
     assert_eq!(mode(&path), 0o644);
-    assert!(fsx::has_access(&fs::metadata(&path).unwrap(), Access::Shared));
+    assert!(fsx::has_access(&fsx::stat_path(&path, Follow::Yes).unwrap(), Access::Shared));
     fs::set_permissions(&path, fs::Permissions::from_mode(0o4600)).unwrap();
-    assert!(!fsx::has_access(&fs::metadata(&path).unwrap(), Access::Private), "special bits count");
+    assert!(!fsx::has_access(&fsx::stat_path(&path, Follow::Yes).unwrap(), Access::Private), "special bits count");
     fsx::set_access(&file, Access::Private).unwrap();
     assert_eq!(mode(&path), 0o600);
 
     let dir = tmp.path().join("d");
     fs::create_dir(&dir).unwrap();
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
-    assert!(fsx::has_access(&fs::metadata(&dir).unwrap(), Access::Private));
+    assert!(fsx::has_access(&fsx::stat_path(&dir, Follow::Yes).unwrap(), Access::Private));
     fs::set_permissions(&dir, fs::Permissions::from_mode(0o755)).unwrap();
-    assert!(!fsx::has_access(&fs::metadata(&dir).unwrap(), Access::Private));
-    assert!(fsx::has_access(&fs::metadata(&dir).unwrap(), Access::Shared));
+    assert!(!fsx::has_access(&fsx::stat_path(&dir, Follow::Yes).unwrap(), Access::Private));
+    assert!(fsx::has_access(&fsx::stat_path(&dir, Follow::Yes).unwrap(), Access::Shared));
 }
 
 // --- directories ----------------------------------------------------------------------------------------------
@@ -171,7 +171,7 @@ fn ensure_private_dir_creates_the_directory_and_returns_its_owner() {
     assert_eq!(mode(&dir), 0o700);
     let file = dir.join("f");
     drop(fsx::create_new(&file, Access::Private).unwrap());
-    assert_eq!(owner, fsx::owner(&fs::metadata(&file).unwrap()).unwrap());
+    assert_eq!(owner, fsx::owner(&fsx::stat_path(&file, Follow::Yes).unwrap()).unwrap());
     assert_eq!(owner, FileOwner::from_uid(fs::metadata(&file).unwrap().uid()));
     assert_ne!(owner, FileOwner::from_uid(fs::metadata(&file).unwrap().uid() + 1));
 }
@@ -265,9 +265,37 @@ fn file_id_tells_files_apart() {
     let b = tmp.path().join("b");
     fs::write(&a, "").unwrap();
     fs::write(&b, "").unwrap();
-    let id_a = fsx::file_id(&fs::metadata(&a).unwrap()).unwrap();
-    assert_eq!(Some(id_a), fsx::file_id(&fs::File::open(&a).unwrap().metadata().unwrap()));
-    assert_ne!(Some(id_a), fsx::file_id(&fs::metadata(&b).unwrap()));
+    let id_a = fsx::file_id(&fsx::stat_path(&a, Follow::Yes).unwrap()).unwrap();
+    assert_eq!(Some(id_a), fsx::file_id(&fsx::stat(&fs::File::open(&a).unwrap()).unwrap()));
+    assert_ne!(Some(id_a), fsx::file_id(&fsx::stat_path(&b, Follow::Yes).unwrap()));
+}
+
+#[test]
+fn stat_path_follows_only_when_asked() {
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let real = tmp.path().join("real");
+    fs::write(&real, b"x").unwrap();
+    let link = tmp.path().join("link");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+    assert!(fsx::stat_path(&link, Follow::No).unwrap().file_type().is_symlink());
+    let followed = fsx::stat_path(&link, Follow::Yes).unwrap();
+    assert!(followed.file_type().is_file());
+    assert_eq!(followed.ino(), fs::metadata(&real).unwrap().ino());
+}
+
+#[test]
+fn stat_of_an_open_file_is_its_fstat() {
+    let tmp = TempDir::new();
+    fs::create_dir_all(tmp.path()).unwrap();
+    let path = tmp.path().join("f");
+    fs::write(&path, b"abc").unwrap();
+    let file = fs::File::open(&path).unwrap();
+    let stat = fsx::stat(&file).unwrap();
+    assert_eq!(stat.len(), 3);
+    assert_eq!(stat.ino(), file.metadata().unwrap().ino());
+    assert_eq!(fsx::owner(&stat).unwrap(), FileOwner::from_uid(stat.uid()));
+    assert_eq!(fsx::hard_links(&stat), 1);
 }
 
 // --- atomic_write ---------------------------------------------------------------------------------------------

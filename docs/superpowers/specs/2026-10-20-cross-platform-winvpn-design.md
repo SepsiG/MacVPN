@@ -31,6 +31,8 @@
 | Repository and versions | **same repo, same version number.** One release carries `MacVPN-X.Y.Z.dmg` and `WinVPN-X.Y.Z-x64.msi` / `-arm64.msi`, each with `.sha256` and `.sig` |
 | Architecture | **platform layers behind one app** (section 3) |
 
+*Note (2c, 2026-10-25):* "Cisco-style IPsec through the Windows RAS client" is not possible: Windows has no IKEv1-XAUTH client (its IKE service speaks IKEv1 only for L2TP/IPsec and transport-mode policies), and no maintained, redistributable, signed engine exists (2c plan, "Cisco IPsec on Windows"). The maintainer chose **option A**: Cisco IPsec connections are kept on Windows (editable, exportable, in backups and catalogs) but cannot connect; they show a reason and offer **Make an L2TP/IPsec Copy**, and New hides Cisco IPsec. IKEv2 with a pre-shared key is not supported either (the Windows IKEv2 client dials no PSK form; 2c spike).
+
 ## 3. Architecture
 
 ```
@@ -59,7 +61,7 @@ app/ui/          one UI. OS-specific wording comes from l10n keys with per-OS va
 - name: MacVPN / WinVPN
 - bundle or app id: `local.macvpn` / a Windows AppUserModelID
 - icons
-- the data directory: `~/Library/Application Support/MacVPN` / `%APPDATA%\WinVPN`
+- the data directory: `~/Library/Application Support/MacVPN` / `%LOCALAPPDATA%\WinVPN` (per machine, not roaming: decided 2026-10-21)
 - the update asset name
 - the help URLs
 
@@ -86,11 +88,15 @@ It comes from per-OS Tauri config files (`tauri.macos.conf.json`, `tauri.windows
 - **Files:** state and logs live in `C:\ProgramData\WinVPN`, readable only by SYSTEM and Administrators. The user's own log lines reach the app through the service, as on macOS.
 - **Versioning:** the service has a VERSION like root layer 8. The app checks it, and the MSI updates it.
 
+*As planned in 2b* (`docs/superpowers/plans/2026-10-22-winvpn-2b-service-openvpn-wireguard.md`): the pipe's DACL gives INTERACTIVE only `FILE_GENERIC_READ | FILE_WRITE_DATA` (never `FILE_CREATE_PIPE_INSTANCE`, `WRITE_DAC` or `WRITE_OWNER`), denies NETWORK, and the first instance is created with `FILE_FLAG_FIRST_PIPE_INSTANCE`; the client refuses a pipe not owned by SYSTEM before it sends anything (squatters get nothing). The envelope is `service_proto` (`mvpn`'s argument list + the root layer 8 frame; `SERVICE_VERSION` 1). Debug builds have a `console` test mode on a user-owned pipe, for tests over SSH as a standard user. The data directory is refused (degraded mode, every engine answers why) when it exists with another owner or DACL: a standard user cannot pre-create it. Logoff takes the user's connections down (`WTS_SESSION_LOGOFF`); locking and user switching keep them. In 2c the service also hangs up a logged-off user's WinVPN RAS connections, and wireguard-nt and OpenVPN Community are updated at runtime without a WinVPN release (2b decisions 4 and 6 as amended).
+
 ### 4.2 Native VPNs (no service needed)
 
 - **Start and stop:** IKEv2, L2TP/IPsec, SSTP and Cisco-style IPsec use RAS phonebook entries in the user's own phonebook. They start through `RasDial` and stop through `RasHangUp` in the user context. This is the counterpart of SCNetworkConnection plus `.mobileconfig`.
 - **Credentials:** RAS dial parameters supply them at connect time, so nothing is stored in the phonebook. This matches the macOS rule that MacVPN's copies live in the vault.
 - **Live list:** a change watcher on the phonebook file plus RAS connection notifications, the counterpart of the SCPreferences watcher.
+
+*As planned in 2c* (`docs/superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md`, "Resolved points"): WinVPN's own connections live in a **WinVPN-private phonebook per user** (`%LOCALAPPDATA%\WinVPN\ras\WinVPN.pbk`), not in the user's default phonebook: no collision with the user's entries, no administrator, not shown in Settings → VPN. Entry names are `WinVPN-<UUID>` from the connection ID only. The password is passed at dial time only; the L2TP **PSK** has no dial-time field, so it is written to Windows' RAS credential store (`RasSetCredentialsW`) for WinVPN's own entry just before each connect and cleared before the entry is deleted. The IKEv2 IPsec policy is written as the phonebook keys Windows itself uses (`NumCustomPolicy`, `CustomIPSecPolicies`). The user's own Windows VPNs are listed as **system VPNs** (GUID ids, live list from phonebook-folder watchers plus the manager's poll; the RAS connection event is only a hint). The WinVPN Service hangs up a logged-off user's WinVPN RAS connections as a safety net. Administrator steps (trusting a CA, L2TP behind NAT) go through UAC from the app, never through the service.
 
 ### 4.3 Platform mapping
 
@@ -117,6 +123,8 @@ It comes from per-OS Tauri config files (`tauri.macos.conf.json`, `tauri.windows
 - **macOS:** unchanged (Homebrew).
 - **Linux, later:** apt / dnf through the same "dependency checker" trait.
 
+*As planned in 2b* (decision 4 as amended 2026-10-24): OpenVPN Community 2.7 with the **DCO and TAP-Windows6** drivers (no Wintun, no GUI, no `OpenVPN.Service`); the service chooses the driver per connection from the validated config (DCO, or TAP-Windows6 for what DCO cannot run), never from `windows-driver`. winget is trusted as Microsoft's package source and checked afterwards (the drivers); without it, or when it misses a driver, the **newest official MSI** from openvpn.net is used, checked by its Authenticode signer `OpenVPN Inc.`, with the hash-pinned MSI only as the minimum and offline fallback. OpenVPN's Interactive Service is disabled after installs WinVPN made. wireguard-nt is updated by the service at runtime (signer `WireGuard LLC`, never older than the bundled DLL).
+
 ## 5. Data compatibility
 
 - The vault, the full backup, the per-connection export and the team catalog use the same formats on every OS.
@@ -124,6 +132,8 @@ It comes from per-OS Tauri config files (`tauri.macos.conf.json`, `tauri.windows
   - L2TP/Cisco native settings become RAS entries.
   - strongSwan configs are translated to native IKEv2 where they are supported. Otherwise the connection is kept, but marked "not supported on Windows" with the reason.
 - **The OpenVPN platform tiers** (`REASON_PLATFORM`) become per-OS. Directives that are Windows-only become allowed on Windows, and the macOS-only ones are refused there.
+
+*Note (2c):* a connection Windows cannot run keeps its data and gets a **per-connection Windows reason** (`NativeSupport::unsupported_reason`, from `macvpn_core::ras`): greyed row, yellow editor note, refused start; it stays fully usable on macOS through the same backup or catalog. L2TP entries are written at restore, import and catalog apply without an approval step; IKEv2 and SSTP entries at the first connect.
 
 ## 6. UI
 
@@ -156,11 +166,11 @@ It comes from per-OS Tauri config files (`tauri.macos.conf.json`, `tauri.windows
   the product or the asset name, and both products share one repo, version line and keys. Before the first signed
   WinVPN asset: keep `macvpn-update-v1` byte for byte for MacVPN; WinVPN gets its own domain that includes the asset
   name, e.g. `winvpn-update-v1\n<asset>\n<version>\n<sha256>\n` (or separate keys). Tests: MacVPN rejects a
-  WinVPN-domain signature; WinVPN rejects the x64 signature for the arm64 asset.
+  WinVPN-domain signature; WinVPN rejects the x64 signature for the arm64 asset. Done in 2a (`9e0d292`).
 - **Importer paths.** `importer::read_inline_data` joins referenced-file paths with `/` as strings and compares the
   canonical path with the base folder as text. On Windows canonical paths are `\\?\C:\…`, so referenced files
   (e.g. `cert user.pem`) resolve to `MissingFile` / `OutsideBaseDirectory`; 24 importer tests are
-  `cfg_attr(windows, ignore)` for it.
+  `cfg_attr(windows, ignore)` for it. Done in 2a (`6661686`).
 
 ## 8. Testing
 
@@ -181,6 +191,7 @@ It comes from per-OS Tauri config files (`tauri.macos.conf.json`, `tauri.windows
    - MacVPN behaviour is unchanged, and every existing test stays green.
    - The workspace also compiles (`cargo check`) for the Windows targets with a stub platform.
 2. **WinVPN core.** `platform-win`, the WinVPN Service, native RAS VPNs, WireGuard, OpenVPN with automatic install, the vault key in Credential Manager, the tray and popover, notifications, file panels and associations, and the MSI.
+   *Note:* phase 2 ran as 2a (foundations: the platform, the vault key, the tray, the MSI; no engine), **2b** (the WinVPN Service, OpenVPN, WireGuard, the updater, HTTPS catalogs) and **2c** (native RAS VPNs, system VPNs, Cisco option A, the parity audit and its gaps).
 3. **Release 2.0.0.** MacVPN and WinVPN together, after an independent security review and manual testing on Windows.
 4. **Linux.** A `platform-linux` crate on the same base: NetworkManager for native types, wg-quick/OpenVPN, the Secret Service for the vault key, and apt/dnf for dependencies.
 

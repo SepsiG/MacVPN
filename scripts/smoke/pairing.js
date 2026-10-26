@@ -35,7 +35,8 @@
     document.querySelector('.pairing .name')?.textContent === 'smoke-client' &&
     pairing.name === 'smoke-client' &&
     path === pairing.executable &&
-    path.startsWith('/') &&
+    // An absolute path: `/…` on macOS, `C:\…` on Windows.
+    /^(\/|[A-Za-z]:\\)/.test(path) &&
     allow.disabled &&
     ![...document.querySelectorAll('.pairing input[type=checkbox]')].some((c) => c.checked) &&
     !!(await waitFor(fits, 5000));

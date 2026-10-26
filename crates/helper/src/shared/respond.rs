@@ -6,6 +6,11 @@ use zeroize::Zeroizing;
 /// The longest input that can still be valid (two lines of 300 bytes and their line ends).
 pub const STDIN_MAX: u64 = 604;
 
+/// The localized message of a [`parse`] rejection.
+pub fn message(key: &'static str) -> String {
+    crate::shared::l10n::tr(key, &[])
+}
+
 /// The parsed answer; `Err(key)` is the message of the rejection.
 pub fn parse(data: &[u8]) -> Result<(String, Zeroizing<Vec<u8>>), &'static str> {
     const INVALID: &str = "Invalid response";

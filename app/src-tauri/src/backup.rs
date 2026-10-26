@@ -168,6 +168,7 @@ pub fn show(app: &AppHandle, name: &str) -> Result<(), String> {
             .maximizable(false)
             .center()
             .visible(false)
+            .use_https_scheme(crate::navigation::uses_https_scheme())
             .on_navigation(crate::navigation::is_allowed)
             .build()
             .map_err(|e| e.to_string())?,
@@ -182,8 +183,8 @@ fn display_name(path: &std::path::Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
 }
 
-/// The save panel for the new backup, with `MacVPN-backup-<date>.macvpnbackup`. The path stays here; the window
-/// gets the file name (`None`: cancelled).
+/// The save panel for the new backup, with `<product>-backup-<date>.macvpnbackup` (`MacVPN-backup-…` on macOS).
+/// The path stays here; the window gets the file name (`None`: cancelled).
 #[tauri::command]
 pub async fn backup_choose_destination(
     app: AppHandle,
@@ -192,7 +193,9 @@ pub async fn backup_choose_destination(
 ) -> Result<Option<String>, String> {
     allow(window.label(), &[BACKUP_WINDOW])?;
     state.backup.require()?;
-    let name = default_file_name(&crate::platform::get().system().local_date(Date::now().time_interval_since_1970()));
+    let platform = crate::platform::get();
+    let today = platform.system().local_date(Date::now().time_interval_since_1970());
+    let name = default_file_name(platform.product().name, &today);
     #[cfg(debug_assertions)]
     if let Some(path) = crate::platform::smoke_backup_file(&state) {
         state.backup.pick(BACKUP_WINDOW, path.clone());
@@ -291,7 +294,8 @@ pub async fn restore_apply(
         let _running = Running::start(&shared.backup.running)?;
         let known = shared.manager.listed_service_ids();
         let prefs = AppPreferences { state: shared.clone(), service: service.clone(), app: None };
-        let outcome = service.apply(RESTORE_WINDOW, choice, &known, Date::now(), &prefs)?;
+        let mut outcome = service.apply(RESTORE_WINDOW, choice, &known, Date::now(), &prefs)?;
+        install_restored_profiles(&shared, &service, RESTORE_WINDOW, &mut outcome);
         restored(&shared);
         Ok(outcome)
     })
@@ -312,7 +316,8 @@ pub async fn restore_fresh_apply(window: Window, state: Shared<'_>) -> Result<Re
         let _running = Running::start(&shared.backup.running)?;
         let known = shared.manager.listed_service_ids();
         let prefs = AppPreferences { state: shared.clone(), service: service.clone(), app: None };
-        let outcome = service.apply_fresh(FRESH_WINDOW, &known, Date::now(), &prefs)?;
+        let mut outcome = service.apply_fresh(FRESH_WINDOW, &known, Date::now(), &prefs)?;
+        install_restored_profiles(&shared, &service, FRESH_WINDOW, &mut outcome);
         crate::vault::after_fresh_restore(&shared);
         Ok(outcome)
     })
@@ -320,12 +325,29 @@ pub async fn restore_fresh_apply(window: Window, state: Shared<'_>) -> Result<Re
     .map_err(|e| e.to_string())?
 }
 
+/// WinVPN 2c Task 13: where installing a native profile needs no approval, the restored L2TP connections get their
+/// system profile (the Windows VPN entry) right away; a refused one (Cisco IPsec on Windows) shows its reason in
+/// "After a restore". Nothing on macOS (each is reinstalled and approved one by one).
+fn install_restored_profiles(state: &AppState, service: &BackupService, label: &str, outcome: &mut RestoreOutcome) {
+    let installer = state.connections.deps().profiles.clone();
+    if installer.needs_approval() {
+        return;
+    }
+    let installed = state.manager.installed_native_ids();
+    if let Ok(list) = service.install_profiles_without_approval(label, installer.as_ref(), |id| installed.contains(id))
+    {
+        outcome.native_profiles = list;
+    }
+}
+
 /// After a restore: everything is read from the vault again (the ranking, the OTP settings and the folders too);
-/// open editors are dropped (they hold what the restore replaced); the windows get the new state.
+/// open editors are dropped (they hold what the restore replaced); the windows get the new state. WinVPN: the
+/// profiles of connections the restore replaced are removed.
 fn restored(state: &Arc<AppState>) {
     state.manager.reload_all();
     state.connections.vault_locked();
     state.connections.system_services_changed();
+    crate::vault::sync_native_profiles(state);
     state.publisher.mark();
 }
 
@@ -505,8 +527,9 @@ mod tests {
         let date = crate::platform::get().system().local_date(1_792_400_000.0);
         assert_eq!(date.len(), 10, "{date}");
         assert!(date.starts_with("2026-"), "{date}");
-        let name = default_file_name(&date);
-        assert!(name.starts_with("MacVPN-backup-2026-") && name.ends_with(".macvpnbackup"), "{name}");
+        let name = default_file_name(crate::platform::get().product().name, &date);
+        let own = if cfg!(windows) { "WinVPN-backup-2026-" } else { "MacVPN-backup-2026-" };
+        assert!(name.starts_with(own) && name.ends_with(".macvpnbackup"), "{name}");
         assert_eq!(
             display_name(std::path::Path::new("/Users/x/Desktop/MacVPN-backup.macvpnbackup")),
             "MacVPN-backup.macvpnbackup"

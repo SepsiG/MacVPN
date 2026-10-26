@@ -290,9 +290,44 @@ impl OpenQueue {
     }
 }
 
+/// What a launch without files does while the app already runs (WinVPN started again from the Start menu, a
+/// shortcut or Explorer: the second instance forwards an empty list). macOS has no such launch: a click on the Dock
+/// icon (`Reopen`) brings the open windows forward and opens none, and stays so.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ShowYourself {
+    /// A real window (Connections, System Status, Update, Backup, Restore) is open: they come forward.
+    BringForward,
+    /// Only the tray runs and the vault is open: the Connections window opens (otherwise the launch would show
+    /// nothing at all).
+    Connections,
+    /// Only the tray runs and the vault is closed (locked, not created, or its create window in progress): its
+    /// unlock or create window comes forward, as for an opened file.
+    Vault,
+}
+
+/// The decision of [`ShowYourself`]. `real_window_open`: one of the real windows exists (shown or minimized);
+/// `vault_ready`: the vault is open and no create window is in progress.
+pub fn show_yourself(real_window_open: bool, vault_ready: bool) -> ShowYourself {
+    match (real_window_open, vault_ready) {
+        (true, _) => ShowYourself::BringForward,
+        (false, true) => ShowYourself::Connections,
+        (false, false) => ShowYourself::Vault,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A second launch without files never ends with nothing visible: an open window comes forward, else the
+    /// Connections window opens, or the vault's window while the vault is closed.
+    #[test]
+    fn a_launch_without_files_always_shows_a_window() {
+        assert_eq!(show_yourself(true, true), ShowYourself::BringForward);
+        assert_eq!(show_yourself(true, false), ShowYourself::BringForward);
+        assert_eq!(show_yourself(false, true), ShowYourself::Connections);
+        assert_eq!(show_yourself(false, false), ShowYourself::Vault);
+    }
 
     /// An absolute path on every OS (`/s/a.ovpn` is not absolute on Windows, and the queue takes absolute paths only).
     fn p(s: &str) -> PathBuf {

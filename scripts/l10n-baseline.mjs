@@ -6,6 +6,9 @@
 //
 //   node scripts/l10n-baseline.mjs           writes the baseline
 //   node scripts/l10n-baseline.mjs --check   exits 1 when the table no longer resolves to the baseline
+//   node scripts/l10n-baseline.mjs --os windows
+//                                            prints (writes nothing) the WinVPN text of every key shown on Windows,
+//                                            EN and HU, sorted: for reviewing the Windows wording, not a gate
 //
 // Keys added after 1.4.0 (new texts) are not in the baseline: --check counts them but does not compare them.
 //
@@ -37,6 +40,30 @@ function baseline() {
     out[key] = { en: resolve(entry, key, 'en', OS), hu: resolve(entry, key, 'hu', OS) };
   }
   return JSON.stringify(out, null, 2) + '\n';
+}
+
+/// The text WinVPN shows for every key Windows shows (`only` absent or naming windows): the variant or base text,
+/// then MacVPN → WinVPN (core `l10n::tr_for`). Sorted like the baseline.
+function windowsTexts() {
+  const table = JSON.parse(readFileSync(TABLE, 'utf8'));
+  const out = {};
+  for (const key of Object.keys(table.strings).sort()) {
+    const entry = table.strings[key];
+    if (entry.only !== undefined && !entry.only.includes('windows')) continue;
+    const rename = (text) => text.replaceAll('MacVPN', 'WinVPN');
+    out[key] = { en: rename(resolve(entry, key, 'en', 'windows')), hu: rename(resolve(entry, key, 'hu', 'windows')) };
+  }
+  return JSON.stringify(out, null, 2) + '\n';
+}
+
+const osIndex = process.argv.indexOf('--os');
+if (osIndex !== -1) {
+  if (process.argv[osIndex + 1] !== 'windows') {
+    console.error('--os takes windows');
+    process.exit(2);
+  }
+  process.stdout.write(windowsTexts());
+  process.exit(0);
 }
 
 const text = baseline();

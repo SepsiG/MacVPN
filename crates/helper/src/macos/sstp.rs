@@ -532,7 +532,8 @@ fn read_mask_file(path: &std::path::Path) -> Option<crate::shared::mask::Masker>
 }
 
 /// `mvpn mask-stream <id>` (internal): reads the secrets of `$RUN_BASE/<id>/mask` once, deletes the file, then
-/// masks stdin into stdout line by line until EOF. Not reachable through sudo (see `main`).
+/// masks stdin into stdout (the user's log) line by line until EOF, keeping the log under its cap. Not reachable
+/// through sudo (see `main`).
 pub fn mask_stream(s: &crate::macos::paths::Settings, id: &str) -> i32 {
     if !crate::shared::cli::is_uuid(id) {
         return 2;
@@ -540,7 +541,30 @@ pub fn mask_stream(s: &crate::macos::paths::Settings, id: &str) -> i32 {
     let path = s.run_dir(id).join("mask");
     let masker = read_mask_file(&path).unwrap_or_default();
     fsx::remove_file(&path);
-    masker.stream(std::io::stdin().lock(), std::io::stdout().lock());
+    // stdout is the user's log (opened with O_APPEND): it is rolled before a line would take it over its cap, as
+    // sstpc and pppd run (and write) for the whole session.
+    // pppd's own log (pppd also writes its lines here, through sstpc) is cut to its cap too, also when the app does
+    // not poll the status.
+    let log = s.log_file(id);
+    let pppd_log = s.run_dir(id).join("pppd.log");
+    let lock = s.run_base.join(format!(".{id}.lock"));
+    let mut out = std::io::stdout().lock();
+    masker.stream_lines(std::io::stdin().lock(), crate::shared::mask::MAX_LINE, |l| {
+        crate::macos::log::make_room(&log, s.log_max, l.len() as u64);
+        if fsx::size(&pppd_log).is_some_and(|n| n > crate::macos::log::ROOT_LOG_MAX)
+            && crate::macos::lock::try_take(&lock)
+        {
+            crate::macos::log::flush_root_log(
+                &crate::macos::log::Log::capped(log.clone(), s.log_max),
+                &pppd_log,
+                "[pppd] ",
+                true,
+                &crate::shared::mask::Masker::default(),
+            );
+            crate::macos::lock::release_try(&lock);
+        }
+        std::io::Write::write_all(&mut out, l).and_then(|_| std::io::Write::flush(&mut out)).is_ok()
+    });
     0
 }
 

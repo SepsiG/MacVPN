@@ -302,11 +302,15 @@ impl UpdateOffers {
 
 // MARK: - Help
 
-/// The user guide for the language (the core `UserGuide`; MacVPN's repo and stem until the app passes the selected
-/// product), and only if it is an `https://github.com/` URL made of
-/// plain path characters: the only kind of address the app hands to `open`.
-pub fn user_guide_url(repo: Option<&str>, language: macvpn_core::l10n::AppLanguage) -> Option<String> {
-    let product = &macvpn_platform_api::MACVPN;
+/// The running product's user guide for the language (the core `UserGuide` with `Product::repo` as the fallback
+/// repo and `Product::user_guide_stem`: MacVPN `docs/user-guide.<lang>.md`, WinVPN
+/// `docs/winvpn-user-guide.<lang>.md`), and only if it is an `https://github.com/` URL made of plain path
+/// characters: the only kind of address the app hands to `open`.
+pub fn user_guide_url(
+    product: &macvpn_platform_api::Product,
+    repo: Option<&str>,
+    language: macvpn_core::l10n::AppLanguage,
+) -> Option<String> {
     let url = macvpn_core::update::UserGuide::url(repo, product.repo, product.user_guide_stem, &[language.raw_value()]);
     is_safe_github_url(&url).then_some(url)
 }

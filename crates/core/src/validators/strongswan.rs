@@ -28,7 +28,7 @@ use std::sync::LazyLock;
 
 /// Section types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Context {
+pub(crate) enum Context {
     Root,
     Connections,
     Conn,
@@ -232,7 +232,7 @@ pub struct StrongSwanValidator;
 impl ConfigValidator for StrongSwanValidator {
     fn validate(&self, text: &str) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
-        let mut stack: Vec<(Context, i64)> = Vec::new();
+        let mut stack: Vec<Section> = Vec::new();
         let (mut has_connections, mut has_children) = (false, false);
         for (line_no, raw_line) in numbered_lines(text) {
             if has_control_character(raw_line) {
@@ -261,7 +261,7 @@ impl ConfigValidator for StrongSwanValidator {
             }
         }
         for open in stack.iter().rev() {
-            issues.push(ValidationIssue::new(open.1, l10n::tr("Unclosed section", &[])));
+            issues.push(ValidationIssue::new(open.line, l10n::tr("Unclosed section", &[])));
         }
         if !has_connections {
             issues.push(ValidationIssue::new(0, l10n::tr("Missing connections block", &[])));
@@ -273,8 +273,24 @@ impl ConfigValidator for StrongSwanValidator {
     }
 }
 
+/// An open section: its type, the line that opened it and its name (`connections`, a connection's name,
+/// `local-1`, …).
+pub(crate) struct Section {
+    pub(crate) context: Context,
+    pub(crate) line: i64,
+    pub(crate) name: String,
+}
+
+/// What the scanner reports to a visitor, with the open sections (innermost last).
+pub(crate) enum Visit<'v> {
+    /// The innermost section was just opened (an allowed one; rejected sections are not reported).
+    Open,
+    /// An accepted `key = value` of the innermost section: the key and the value items.
+    Key(&'v str, &'v [String]),
+}
+
 /// See [`LineScanner::on_key`].
-type KeyVisitor<'a> = dyn FnMut(Context, &str, &[String]) + 'a;
+type KeyVisitor<'a> = dyn FnMut(&[Section], Visit<'_>) + 'a;
 
 /// Byte-level processing of one line (comment removed, even quotes, no backslash); the first error is kept.
 struct LineScanner<'a> {
@@ -282,7 +298,7 @@ struct LineScanner<'a> {
     line: i64,
     i: usize,
     error: Option<String>,
-    /// Called with every accepted `key = value` (its section's context, the key and the value items).
+    /// Called with every allowed section opened and every accepted `key = value`.
     on_key: Option<&'a mut KeyVisitor<'a>>,
 }
 
@@ -313,7 +329,7 @@ impl LineScanner<'_> {
         String::from_utf8_lossy(&self.bytes[start..end]).into_owned()
     }
 
-    fn run(&mut self, stack: &mut Vec<(Context, i64)>, has_connections: &mut bool, has_children: &mut bool) {
+    fn run(&mut self, stack: &mut Vec<Section>, has_connections: &mut bool, has_children: &mut bool) {
         loop {
             self.skip_space();
             let Some(c) = self.current() else { return };
@@ -334,7 +350,7 @@ impl LineScanner<'_> {
             let name = self.text(start, self.i);
             let lower = ascii_lowercased(&name);
             self.skip_space();
-            let context = stack.last().map_or(Context::Root, |s| s.0);
+            let context = stack.last().map_or(Context::Root, |s| s.context);
             let forbidden_message = if swift_str::eq(&lower, "include") {
                 Some(l10n::tr("Forbidden: include", &[]))
             } else if FORBIDDEN_KEYS.iter().any(|k| swift_str::eq(k, &lower)) {
@@ -372,7 +388,12 @@ impl LineScanner<'_> {
                         l10n::tr("Section not allowed", &[])
                     });
                 }
-                stack.push((sub, self.line));
+                stack.push(Section { context: sub, line: self.line, name });
+                if sub != Context::Rejected
+                    && let Some(on_key) = self.on_key.as_mut()
+                {
+                    on_key(stack, Visit::Open);
+                }
                 continue;
             }
             // name = value
@@ -396,7 +417,7 @@ impl LineScanner<'_> {
                 return;
             };
             if key_ok && let Some(on_key) = self.on_key.as_mut() {
-                on_key(context, &name, &items);
+                on_key(stack, Visit::Key(&name, &items));
             }
             if items.iter().any(|item| swift_str::contains(&ascii_lowercased(item), "file:")) {
                 self.fail(l10n::tr("Forbidden: file: URI", &[]));
@@ -455,7 +476,7 @@ impl LineScanner<'_> {
 
     /// After an error only the braces are tracked in the rest of the line (outside quotes), so the structure does
     /// not slip.
-    fn recover(&mut self, stack: &mut Vec<(Context, i64)>) {
+    fn recover(&mut self, stack: &mut Vec<Section>) {
         let mut in_quote = false;
         while let Some(c) = self.current() {
             self.i += 1;
@@ -466,7 +487,7 @@ impl LineScanner<'_> {
                 continue;
             }
             if c == 0x7B {
-                stack.push((Context::Rejected, self.line));
+                stack.push(Section { context: Context::Rejected, line: self.line, name: String::new() });
             }
             if c == 0x7D {
                 stack.pop();
@@ -480,13 +501,23 @@ impl StrongSwanValidator {
     /// [`ConfigValidator::validate`]; keys in rejected sections are skipped).
     pub(crate) fn local_auth_values(text: &str) -> Vec<String> {
         let mut values = Vec::new();
-        let mut stack: Vec<(Context, i64)> = Vec::new();
-        let (mut has_connections, mut has_children) = (false, false);
-        let mut collect = |context: Context, key: &str, items: &[String]| {
-            if context == Context::Local && key == "auth" {
+        Self::visit(text, &mut |path: &[Section], event: Visit<'_>| {
+            if let Visit::Key("auth", items) = event
+                && path.last().is_some_and(|s| s.context == Context::Local)
+            {
                 values.push(items.join(" "));
             }
-        };
+        });
+        values
+    }
+
+    /// Calls `visit` with every allowed section opened and every accepted `key = value` of the text, parsed like
+    /// [`ConfigValidator::validate`] (comments removed; lines with an error, rejected sections and their keys are
+    /// skipped). Meant for an already validated text.
+    pub(crate) fn visit(text: &str, visit: &mut dyn FnMut(&[Section], Visit<'_>)) {
+        let mut stack: Vec<Section> = Vec::new();
+        let (mut has_connections, mut has_children) = (false, false);
+        let mut forward = |path: &[Section], event: Visit<'_>| visit(path, event);
         for (line_no, raw_line) in numbered_lines(text) {
             if has_control_character(raw_line)
                 || raw_line.as_bytes().contains(&0x5C)
@@ -499,10 +530,65 @@ impl StrongSwanValidator {
                 continue;
             }
             let mut scanner =
-                LineScanner { bytes: line.as_bytes(), line: line_no, i: 0, error: None, on_key: Some(&mut collect) };
+                LineScanner { bytes: line.as_bytes(), line: line_no, i: 0, error: None, on_key: Some(&mut forward) };
             scanner.run(&mut stack, &mut has_connections, &mut has_children);
         }
-        values
+    }
+
+    /// `<section>.<name>` of every named section directly under `connections`, `secrets`, `pools` and
+    /// `authorities`, in order (parsed like [`Self::visit`]). These names are global in charon: two configs loaded
+    /// together must not share one (strongSwan's settings parser merges sections of the same name).
+    pub fn section_names(text: &str) -> Vec<String> {
+        let mut names = Vec::new();
+        Self::visit(text, &mut |path: &[Section], event: Visit<'_>| {
+            if let (Visit::Open, [top, named]) = (event, path)
+                && matches!(
+                    top.context,
+                    Context::Connections | Context::Secrets | Context::Pools | Context::Authorities
+                )
+            {
+                names.push(format!("{}.{}", top.name, named.name));
+            }
+        });
+        names
+    }
+
+    /// The remote identities of connection `conn` (sorted, unique) if each of its `remote…` sections names one
+    /// concrete identity (one value, no `*`, no `%…`, no subnet or address range); empty otherwise. charon looks a
+    /// secret up with the configured remote id (or the one the peer sent, which must match it), so a secret may
+    /// be bound to exactly these ids; with a wildcard or no id it is looked up with `%any` or a pattern.
+    pub fn remote_ids(text: &str, conn: &str) -> Vec<String> {
+        static RANGE: LazyLock<Regex> =
+            LazyLock::new(|| Regex::new("^[0-9A-Fa-f:.]+-[0-9A-Fa-f:.]+$").expect("valid pattern"));
+        let concrete = |v: &str| {
+            !v.is_empty() && !v.contains('*') && !v.starts_with('%') && !v.contains('/') && !RANGE.is_match(v)
+        };
+        let mut rounds: Vec<Option<String>> = Vec::new();
+        Self::visit(text, &mut |path: &[Section], event: Visit<'_>| {
+            let [_, c, r] = path else { return };
+            if c.context != Context::Conn || c.name != conn || r.context != Context::Remote {
+                return;
+            }
+            match event {
+                Visit::Open => rounds.push(None),
+                Visit::Key("id", items) => {
+                    if let Some(last) = rounds.last_mut() {
+                        *last = match items {
+                            [one] if concrete(one) => Some(one.clone()),
+                            _ => None,
+                        };
+                    }
+                }
+                Visit::Key(..) => {}
+            }
+        });
+        if rounds.is_empty() || rounds.iter().any(Option::is_none) {
+            return Vec::new();
+        }
+        let mut ids: Vec<String> = rounds.into_iter().flatten().collect();
+        ids.sort();
+        ids.dedup();
+        ids
     }
 
     /// The first connection and the first child name (for `swanctl --initiate --child`).

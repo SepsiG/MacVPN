@@ -73,14 +73,21 @@ Step by step: [How-to guide](docs/how-to.en.md). Already using MacVPN 1.2? See [
 ### Documentation
 - How-to guide: [English](docs/how-to.en.md), [Hungarian](docs/how-to.hu.md)
 - User guide: [English](docs/user-guide.en.md), [Hungarian](docs/user-guide.hu.md) (the menu's **Help** opens it)
+- WinVPN user guide (Windows): [English](docs/winvpn-user-guide.en.md), [Hungarian](docs/winvpn-user-guide.hu.md); WinVPN How-to: [English](docs/winvpn-how-to.en.md), [Hungarian](docs/winvpn-how-to.hu.md)
 - [OpenVPN directive policy](docs/openvpn-directives.md)
 - Control API for other apps on the same Mac: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
 
 ### Security note
 Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. A team catalog is signed and encrypted, but everyone with the team key can read it, and whoever holds the admin key decides what your team connects to: see the [team catalog security model](docs/user-guide.en.md#1611-security-model). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
 
+### WinVPN
+WinVPN is the same app for Windows 10 and 11 (x64 and ARM64), built from this repository and released together with MacVPN from 2.0.0. It connects OpenVPN and WireGuard through the **WinVPN Service** that its MSI installs (OpenVPN Community is installed from System Status; wireguard-nt is bundled), and **L2TP/IPsec, IKEv2 and SSTP** through Windows' own VPN client from the user's account; the user's own Windows VPNs appear as system VPNs. Everything else matches MacVPN: the vault (its auto-unlock key in Windows Credential Manager), the notification-area popover and windows, MFA and credential prompts, debug mode and the live log, import, export, backup, file and HTTPS team catalogs, the control API over a named pipe, and signed self-updates. **Cisco IPsec** connections are kept but cannot connect on Windows (Make an L2TP/IPsec Copy), and IKEv2 with a pre-shared key is not supported by Windows. Its data is in `%LOCALAPPDATA%\WinVPN`.
+
+- **Installers:** `WinVPN-x.y.z-x64.msi` and `WinVPN-x.y.z-arm64.msi`, not Authenticode-signed (SmartScreen warns once); an administrator installs them. From 2.0.0 they are attached to the releases; `scripts/build-msi.sh` builds them in Git Bash on Windows (see [`docs/architecture.md`](docs/architecture.md#the-winvpn-msis)).
+- **Guide:** [WinVPN user guide](docs/winvpn-user-guide.en.md) ([magyarul](docs/winvpn-user-guide.hu.md)).
+
 ### Development
-MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript). Since 1.5 the workspace is split into shared logic and a thin platform layer per operating system, so the same code can later ship as WinVPN on Windows; MacVPN is the only product so far. Start with [`docs/architecture.md`](docs/architecture.md): the crates, the `cfg` and `unsafe` rules, the per-OS texts and how a platform plugs in.
+MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript). Since 1.5 the workspace is split into shared logic and a thin platform layer per operating system; the same code ships as WinVPN on Windows (a preview, see above). Start with [`docs/architecture.md`](docs/architecture.md): the crates, the `cfg` and `unsafe` rules, the per-OS texts and how a platform plugs in.
 
 **Toolchain.** `rust-toolchain.toml` pins the exact Rust version (currently 1.99.1) with clippy, rustfmt, both macOS targets and both Windows targets (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`, for the compile check). `rustup` uses it automatically inside the repository; if it is not installed yet, run `rustup toolchain install` there. CI and the release workflow use Node.js 26.8.2 (`app/ui/package.json` needs at least 22.12).
 
@@ -93,17 +100,18 @@ MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
 - `scripts/test-root.sh`: black-box tests of the root binary (dry run, no root needed)
 - `cd app/ui && npm ci && npm test && npm run build`: UI tests (language rule, l10n coverage) and the UI build
 - `scripts/check-l10n.sh`: every text (UI and Rust) has a Hungarian translation
-- `scripts/check-windows.sh`: `cargo check` of `macvpn-core` (without the vault), `macvpn-helper` and the control client for both Windows targets, from the Mac. The full Windows check (the vault, platform-api, platform-win, app-core and the app, which need an MSVC toolchain for their C code) runs only in CI: the `windows` and `windows-node` jobs in `.github/workflows/ci.yml`
-- `crates/app-core/tests/cfg_rule.rs` (part of `cargo test`): an OS `cfg` only in the platform places, `unsafe` only in the platform crates and the helper
+- `scripts/check-windows.sh`: `cargo check` of `macvpn-core` (without the vault), `macvpn-helper` and the control client for both Windows targets, from the Mac. The full Windows check (the vault, platform-api, platform-win, winsys, app-core and the app, which need an MSVC toolchain for their C code) runs in CI (the `windows` and `windows-node` jobs in `.github/workflows/ci.yml`) and on a Windows test machine through `scripts/win-remote.sh` (`test`, `run '…'`), see [Checking Windows](docs/architecture.md#checking-windows)
+- `scripts/check-ignored.sh`: no test is ignored on one OS only (the list is `scripts/ignored-everywhere.txt`)
+- `crates/app-core/tests/cfg_rule.rs` (part of `cargo test`): an OS `cfg` only in the platform places, `unsafe` only in the platform crates, `crates/winsys` and the helper
 - `node scripts/l10n-baseline.mjs --check` and `scripts/bundle-baseline.sh dist/MacVPN.app`: the macOS texts and the built bundle compared with the 1.4.0 baseline
 - `scripts/smoke-manage.sh`: smoke test of the real windows in a sandbox; run it with `SMOKE_LANG=en` and `SMOKE_LANG=hu`
 - `scripts/test-sign-release.sh`: the release signing script, dry run with a throwaway key
-- Manual GUI checklist: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md)
+- Manual GUI checklist: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md) (with WinVPN sections for a Windows desktop)
 
 **Repository layout.**
 - `crates/core`: platform-independent logic (models, the vault behind the `vault` feature, validators, import/export, MFA, update checks, ranking), the safe file operations (`fsx`, its only OS-specific module) and the EN/HU text table `crates/core/l10n/strings.json`
 - `crates/platform-api`: the traits every platform implements, the shared types and the product identity (`Product`)
-- `crates/platform-mac`: the macOS platform (Keychain for the vault key, native VPN, login item, dialogs, installers, updater); `crates/platform-win`: the Windows platform, a stub that answers "not supported" for now
+- `crates/platform-mac`: the macOS platform (Keychain for the vault key, native VPN, login item, dialogs, installers, updater); `crates/platform-win`: the Windows platform (Credential Manager for the vault key, notification-area icon, file dialogs, toasts, launch at login, the control pipe; no VPN engine yet); `crates/winsys`: the Win32 calls core and platform-win share (SIDs, ACLs, file identity, randomness, named pipes)
 - `crates/helper`: the root binary `mvpn` (`/usr/local/libexec/macvpn/mvpn`, root layer version in `crates/helper/VERSION`): shared protocol logic in `src/shared`, the macOS backend in `src/macos`
 - `crates/app-core`: the app logic without a UI
 - `app/src-tauri`: the Tauri app (its `src/platform` module picks the platform crate); `app/ui`: its web UI
@@ -188,14 +196,21 @@ Lépésről lépésre: [Hogyan használd](docs/how-to.hu.md). Az 1.2-t használo
 ### Dokumentáció
 - Hogyan használd: [magyar](docs/how-to.hu.md), [angol](docs/how-to.en.md)
 - Felhasználói útmutató: [magyar](docs/user-guide.hu.md), [angol](docs/user-guide.en.md) (a menü **Súgó** pontja ezt nyitja meg)
+- A WinVPN felhasználói útmutatója (Windows): [magyar](docs/winvpn-user-guide.hu.md), [angol](docs/winvpn-user-guide.en.md); WinVPN – Hogyan csináld: [magyar](docs/winvpn-how-to.hu.md), [angol](docs/winvpn-how-to.en.md)
 - [OpenVPN direktíva-szabályok](docs/openvpn-directives.md) (angolul, magyar összefoglalóval)
 - Vezérlő API más appoknak ugyanazon a Macen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
 
 ### Biztonsági megjegyzés
 A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. A csapatkatalógus alá van írva és titkosítva van, de akinél megvan a csapatkulcs, elolvashatja, és aki az aláírókulcsot birtokolja, az dönti el, mihez csatlakozik a csapatod: lásd [a csapatkatalógusok biztonsági modelljét](docs/user-guide.hu.md#1611-biztonsági-modell). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
 
+### WinVPN
+A WinVPN ugyanez az app Windows 10-re és 11-re (x64 és ARM64), ugyanebből a repóból, a 2.0.0-tól a MacVPN-nel együtt kiadva. Az OpenVPN- és WireGuard-kapcsolatokat az MSI által telepített **WinVPN szolgáltatáson** keresztül építi fel (az OpenVPN Communityt a Rendszerállapot telepíti, a wireguard-nt a csomag része), az **L2TP/IPsec, IKEv2 és SSTP** kapcsolatokat pedig a Windows saját VPN-kliensével, a felhasználó fiókjából; a felhasználó saját Windows VPN-jei rendszer VPN-ként jelennek meg. Minden más olyan, mint a MacVPN-ben: a széf (az automatikus feloldás kulcsa a Windows Hitelesítőadat-kezelőjében), a popover és az ablakok az értesítési területen, MFA és hitelesítőadat-bekérés, debug mód és élő napló, import, export, mentés, fájl- és HTTPS-alapú csapatkatalógusok, a vezérlő API névvel ellátott csövön, és aláírt önfrissítés. A **Cisco IPsec** kapcsolatok megmaradnak, de Windowson nem csatlakoznak (L2TP/IPsec másolat készítése), a PSK-s IKEv2-t pedig a Windows nem támogatja. Az adatai a `%LOCALAPPDATA%\WinVPN` mappában vannak.
+
+- **Telepítők:** `WinVPN-x.y.z-x64.msi` és `WinVPN-x.y.z-arm64.msi`, Authenticode-aláírás nélkül (a SmartScreen egyszer figyelmeztet); rendszergazda telepíti őket. A 2.0.0-tól a kiadások mellett vannak; a Windowson futó Git Bashben a `scripts/build-msi.sh` készíti el őket (lásd [`docs/architecture.md`](docs/architecture.md#the-winvpn-msis), angolul).
+- **Útmutató:** [WinVPN felhasználói útmutató](docs/winvpn-user-guide.hu.md) ([angolul](docs/winvpn-user-guide.en.md)).
+
 ### Fejlesztés
-A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). Az 1.5 óta a workspace közös logikára és operációs rendszerenként egy vékony platformrétegre oszlik, hogy ugyanaz a kód később WinVPN néven Windowson is megjelenhessen; egyelőre a MacVPN az egyetlen termék. Kezdd a [`docs/architecture.md`](docs/architecture.md) leírással (angolul): a crate-ek, a `cfg` és az `unsafe` szabályai, az operációs rendszerenkénti szövegek, és hogyan csatlakozik egy új platform.
+A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). Az 1.5 óta a workspace közös logikára és operációs rendszerenként egy vékony platformrétegre oszlik; ugyanez a kód Windowson WinVPN néven fut (előzetes változat, lásd fent). Kezdd a [`docs/architecture.md`](docs/architecture.md) leírással (angolul): a crate-ek, a `cfg` és az `unsafe` szabályai, az operációs rendszerenkénti szövegek, és hogyan csatlakozik egy új platform.
 
 **Eszközök.** A `rust-toolchain.toml` rögzíti a pontos Rust verziót (jelenleg 1.99.1) a clippyvel, a rustfmt-vel, mindkét macOS és mindkét Windows targettel (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`, a fordítási ellenőrzéshez). A repón belül a `rustup` automatikusan ezt használja; ha még nincs telepítve, futtasd ott: `rustup toolchain install`. A CI és a kiadási workflow Node.js 26.8.2-t használ (az `app/ui/package.json` legalább 22.12-t kér).
 
@@ -208,17 +223,18 @@ A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). Az 1.5 
 - `scripts/test-root.sh`: a root bináris fekete dobozos tesztje (dry-run, nem kell root)
 - `cd app/ui && npm ci && npm test && npm run build`: a felület tesztjei (nyelvválasztás, lokalizáció-lefedettség) és buildje
 - `scripts/check-l10n.sh`: minden szövegnek (felület és Rust) van magyar fordítása
-- `scripts/check-windows.sh`: a `macvpn-core` (széf nélkül), a `macvpn-helper` és a vezérlő kliens `cargo check`-je mindkét Windows targetre, a Macen. A teljes Windows-ellenőrzés (a széf, a platform-api, a platform-win, az app-core és az app, amelyek C kódjához MSVC eszközlánc kell) csak a CI-ban fut: a `.github/workflows/ci.yml` `windows` és `windows-node` jobja
-- `crates/app-core/tests/cfg_rule.rs` (a `cargo test` része): operációsrendszer-függő `cfg` csak a platformrétegben, `unsafe` csak a platform crate-ekben és a helperben
+- `scripts/check-windows.sh`: a `macvpn-core` (széf nélkül), a `macvpn-helper` és a vezérlő kliens `cargo check`-je mindkét Windows targetre, a Macen. A teljes Windows-ellenőrzés (a széf, a platform-api, a platform-win, a winsys, az app-core és az app, amelyek C kódjához MSVC eszközlánc kell) a CI-ban fut (a `.github/workflows/ci.yml` `windows` és `windows-node` jobja), és egy windowsos tesztgépen a `scripts/win-remote.sh`-val (`test`, `run '…'`), lásd [Checking Windows](docs/architecture.md#checking-windows) (angolul)
+- `scripts/check-ignored.sh`: egyetlen teszt sincs csak az egyik operációs rendszeren kihagyva (a lista: `scripts/ignored-everywhere.txt`)
+- `crates/app-core/tests/cfg_rule.rs` (a `cargo test` része): operációsrendszer-függő `cfg` csak a platformrétegben, `unsafe` csak a platform crate-ekben, a `crates/winsys`-ban és a helperben
 - `node scripts/l10n-baseline.mjs --check` és `scripts/bundle-baseline.sh dist/MacVPN.app`: a macOS-es szövegek és a kész app összevetése az 1.4.0-s alapállapottal
 - `scripts/smoke-manage.sh`: a valódi ablakok smoke tesztje egy sandboxban; futtasd `SMOKE_LANG=en` és `SMOKE_LANG=hu` mellett is
 - `scripts/test-sign-release.sh`: a kiadás-aláíró script próbafuttatása eldobható kulccsal
-- Kézi GUI tesztlista: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md)
+- Kézi GUI tesztlista: [`docs/manual-test-checklist.md`](docs/manual-test-checklist.md) (WinVPN-részekkel a windowsos asztali ellenőrzésekhez)
 
 **A repó felépítése.**
 - `crates/core`: platformfüggetlen logika (modellek, a `vault` feature mögötti széf, validátorok, import/export, MFA, frissítés-ellenőrzés, rangsor), a biztonságos fájlműveletek (`fsx`, az egyetlen operációsrendszer-függő modulja) és az EN/HU szövegtábla, a `crates/core/l10n/strings.json`
 - `crates/platform-api`: a trait-ek, amelyeket minden platform megvalósít, a közös típusok és a termékazonosság (`Product`)
-- `crates/platform-mac`: a macOS-platform (Keychain a széfkulcsnak, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők, frissítő); `crates/platform-win`: a Windows-platform, egyelőre csonk, amely mindenre azt feleli, hogy „nem támogatott”
+- `crates/platform-mac`: a macOS-platform (Keychain a széfkulcsnak, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők, frissítő); `crates/platform-win`: a Windows-platform (a Hitelesítőadat-kezelő a széfkulcsnak, ikon az értesítési területen, fájlpárbeszédek, értesítések, indítás bejelentkezéskor, a vezérlő cső; VPN-motor még nincs); `crates/winsys`: a core és a platform-win közös Win32-hívásai (SID-ek, ACL-ek, fájlazonosítás, véletlenszámok, named pipe-ok)
 - `crates/helper`: az `mvpn` root bináris (`/usr/local/libexec/macvpn/mvpn`, a root réteg verziója a `crates/helper/VERSION`-ben): a közös protokollogika az `src/shared`, a macOS-backend az `src/macos` alatt
 - `crates/app-core`: az app logikája felület nélkül
 - `app/src-tauri`: a Tauri app (az `src/platform` modulja választja ki a platform crate-et); `app/ui`: a webes felülete

@@ -37,3 +37,8 @@ regex = "1.13.1"
 [target.'cfg(unix)'.dev-dependencies]
 # The FIFO test of import_export opens the FIFO with O_NONBLOCK to release its writer.
 libc = "0.2.191"
+
+[target.'cfg(windows)'.dev-dependencies]
+# The control server suite over a real named pipe (`Kind::Pipe` in `tests/control_support`). A binding crate, not a
+# platform crate: app-core still depends on no platform.
+macvpn-winsys = { path = "../winsys" }

@@ -1,0 +1,31 @@
+{
+  "identifier": "menu",
+  "description": "The menu popover (menu, local content only): its rows (connect, disconnect, open a window), the Settings section (updates, launch at login, appearance, notifications, the user guide, Back Up / Restore, the vault's Lock Now and automatic unlock) and Quit; the view model, the platform (its texts) and listening to events. Nothing that changes the machine or deletes data.",
+  "windows": [
+    "menu"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view-model",
+    "allow-get-platform",
+    "allow-connect",
+    "allow-disconnect",
+    "allow-open-window",
+    "allow-set-menu-height",
+    "allow-quit",
+    "allow-check-for-updates",
+    "allow-set-update-option",
+    "allow-set-launch-at-login",
+    "allow-set-appearance",
+    "allow-set-connection-notifications",
+    "allow-open-login-items-settings",
+    "allow-open-user-guide",
+    "allow-vault-show",
+    "allow-vault-lock-now",
+    "allow-vault-auto-unlock-off",
+    "allow-vault-set-show-lock-now",
+    "allow-folder-set-collapsed",
+    "allow-backup-show-window"
+  ]
+}

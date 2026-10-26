@@ -119,17 +119,44 @@ fn redirect_targets() {
 
 #[test]
 fn file_source_paths() {
-    assert_eq!(
-        parse_file_source("/Volumes/Team/team.macvpncatalog"),
-        Ok(PathBuf::from("/Volumes/Team/team.macvpncatalog"))
-    );
     assert_eq!(parse_file_source("team.macvpncatalog").err(), Some(SourceError::NotAbsolute));
     assert_eq!(parse_file_source("~/team.macvpncatalog").err(), Some(SourceError::NotAbsolute));
     assert_eq!(parse_file_source("").err(), Some(SourceError::NotAbsolute));
     assert_eq!(parse_file_source("/a\0b").err(), Some(SourceError::BadPath));
     assert_eq!(parse_file_source("/a\nb").err(), Some(SourceError::BadPath));
+}
+
+/// macOS (and Linux): an absolute path starts with `/`.
+#[cfg(unix)]
+#[test]
+fn file_source_paths_on_unix() {
+    assert_eq!(
+        parse_file_source("/Volumes/Team/team.macvpncatalog"),
+        Ok(PathBuf::from("/Volumes/Team/team.macvpncatalog"))
+    );
+    assert_eq!(parse_file_source(r"C:\Team\team.macvpncatalog").err(), Some(SourceError::NotAbsolute));
     assert_eq!(parse_file_source(&format!("/{}", "a".repeat(1024))).err(), Some(SourceError::TooLong));
     assert!(parse_file_source(&format!("/{}", "a".repeat(1023))).is_ok());
+}
+
+/// Windows: a drive path or a UNC share; a path relative to a drive or to the current drive's root is not absolute.
+/// Found by the Windows smoke run (every file source was refused: the check wanted a leading `/`).
+#[cfg(windows)]
+#[test]
+fn file_source_paths_on_windows() {
+    assert_eq!(parse_file_source(r"C:\Team\team.macvpncatalog"), Ok(PathBuf::from(r"C:\Team\team.macvpncatalog")));
+    assert!(parse_file_source(r"\\fileserver\team\team.macvpncatalog").is_ok());
+    assert_eq!(parse_file_source(r"C:team.macvpncatalog").err(), Some(SourceError::NotAbsolute));
+    assert_eq!(parse_file_source(r"\Team\team.macvpncatalog").err(), Some(SourceError::NotAbsolute));
+    assert_eq!(parse_file_source("/Volumes/Team/team.macvpncatalog").err(), Some(SourceError::NotAbsolute));
+    // Device and verbatim paths (a pipe, a raw volume) are never a catalog file.
+    for device in
+        [r"\\.\pipe\x", r"\\?\C:\team.macvpncatalog", "//./pipe/x", r"\\?\UNC\fileserver\team\t.macvpncatalog"]
+    {
+        assert_eq!(parse_file_source(device).err(), Some(SourceError::BadPath), "{device}");
+    }
+    assert_eq!(parse_file_source(&format!(r"C:\{}", "a".repeat(1022))).err(), Some(SourceError::TooLong));
+    assert!(parse_file_source(&format!(r"C:\{}", "a".repeat(1021))).is_ok());
 }
 
 #[test]

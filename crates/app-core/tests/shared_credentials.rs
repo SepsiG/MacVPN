@@ -92,7 +92,6 @@ fn pw(s: &str) -> Option<Zeroizing<String>> {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_linked_connection_connects_with_the_credentials_username_and_password() {
     let f = Fixture::new();
     let c = f.openvpn("Office");
@@ -116,7 +115,6 @@ fn a_linked_connection_connects_with_the_credentials_username_and_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_linked_native_connection_passes_the_credential_as_auth_name_and_keeps_its_psk() {
     let f = Fixture::new();
     let mut c = Connection::new("Office L2TP", VPNKind::L2tp);
@@ -139,7 +137,6 @@ fn a_linked_native_connection_passes_the_credential_as_auth_name_and_keeps_its_p
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_credential_without_a_password_is_asked_for_and_saved_into_the_credential() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -176,7 +173,6 @@ fn a_credential_without_a_password_is_asked_for_and_saved_into_the_credential() 
 /// The manager end to end: the prompt for a linked credential without a password names the credential, its
 /// "Save" goes into the credential (through `save_prompted`), and the second linked connection asks nothing.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_prompt_names_the_credential_and_its_save_updates_it() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -236,7 +232,6 @@ fn the_prompt_names_the_credential_and_its_save_updates_it() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_while_linked_lists_the_items_and_copy_into_connections_unlinks_them() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -267,7 +262,6 @@ fn delete_while_linked_lists_the_items_and_copy_into_connections_unlinks_them() 
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_from_connection_links_the_chosen_matches() {
     let f = Fixture::new();
     let source = f.openvpn("Source");
@@ -289,7 +283,6 @@ fn create_from_connection_links_the_chosen_matches() {
 /// Review M3: an imported file never links itself to a shared credential. A matching name only asks, naming the
 /// server the file would send the shared password to; the default is the connection's own fields.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_never_links_by_itself_and_asks_with_the_remote_host() {
     let f = Fixture::new();
     let cred = f.creds.create("Office AD", "alice", pw("pw")).unwrap();
@@ -330,7 +323,6 @@ fn import_never_links_by_itself_and_asks_with_the_remote_host() {
 /// Review M4: an editor's write (`SecretWriter::set`) to a linked connection never changes the shared credential
 /// the other connections use; only the credential prompt's `save_prompted` does.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_editor_write_to_a_linked_item_is_refused_and_logged_without_the_value() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -353,7 +345,6 @@ fn an_editor_write_to_a_linked_item_is_refused_and_logged_without_the_value() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
     let f = Fixture::new();
     let one = f.openvpn("One");
@@ -416,7 +407,6 @@ fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn names_are_unique() {
     let f = Fixture::new();
     f.creds.create("Office AD", "alice", None).unwrap();
@@ -430,7 +420,6 @@ fn names_are_unique() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn locked_reads_nothing_and_writes_fail_with_a_log_line_only() {
     let f = Fixture::new();
     let c = f.openvpn("Office");
@@ -447,7 +436,6 @@ fn locked_reads_nothing_and_writes_fail_with_a_log_line_only() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn forgetting_an_items_secrets_also_unlinks_it() {
     let f = Fixture::new();
     let c = f.openvpn("Office");
@@ -461,4 +449,105 @@ fn forgetting_an_items_secrets_also_unlinks_it() {
     // Removing every secret (uninstall with the user data) takes the credentials too.
     f.secrets.remove_all();
     assert!(f.creds.list().unwrap().is_empty());
+}
+
+/// WinVPN 2c Task 12 (Cisco IPsec on Windows, option A): **Make an L2TP/IPsec Copy** makes a new L2TP connection in
+/// the same folder with the same server, account, `send_all_traffic`, OTP setting, PSK and password (or the same
+/// shared-credential link); the group name is dropped; the original stays as it was.
+#[test]
+fn l2tp_copy_keeps_server_account_and_secrets() {
+    use macvpn_app_core::deps::{ConnectionRepository, FolderOp, FolderOpResult, FolderStore};
+    use macvpn_app_core::folders::VaultFolders;
+    use macvpn_app_core::vault_stores::VaultConnections;
+    use macvpn_core::models::OTPSeparator;
+
+    let f = Fixture::new();
+    let store = Arc::new(VaultConnections::new(f.vault.clone()));
+    let folders = Arc::new(VaultFolders::new(f.vault.clone()));
+    let mut deps = Dependencies::new(store.clone(), f.secrets.clone(), f.helper.clone(), f.native.clone());
+    deps.folders = Some(folders.clone());
+    let manager = ConnectionManager::new(deps);
+    let profiles = Arc::new(MobileconfigProfiles::default());
+    let ed = EditorDeps {
+        manager: manager.clone(),
+        store: store.clone(),
+        secrets: f.secrets.clone(),
+        secret_writer: f.secrets.clone(),
+        profiles: profiles.clone(),
+        clock: clock_at(1_000_000.0),
+    };
+
+    let mut cisco = Connection::new("Office", VPNKind::Cisco);
+    cisco.native = Some(NativeSettings {
+        server: "vpn.example.com".into(),
+        account: "bob".into(),
+        group_name: "staff".into(),
+        send_all_traffic: true,
+    });
+    cisco.native_service_name = Some("Office".into());
+    cisco.otp = OTPSetting::new(true, OTPSeparator::Comma);
+    store.save(&cisco, None).unwrap();
+    f.secrets.set("bob", &cisco.id, SecretField::Username);
+    f.secrets.set("own-pass", &cisco.id, SecretField::Password);
+    f.secrets.set("the-psk", &cisco.id, SecretField::Psk);
+    let FolderOpResult::Created(work) = folders.apply(FolderOp::Create { parent: None, name: "Work".into() }).unwrap()
+    else {
+        panic!("no folder")
+    };
+    folders.apply(FolderOp::MoveItem { key: uuid_string(&cisco.id), folder: Some(work) }).unwrap();
+    manager.reload();
+    manager.reload_folders();
+
+    let copy = editor::l2tp_copy_of(&ed, &cisco, Some(&f.creds)).unwrap();
+    assert_eq!(copy.install_error, None);
+    let c = manager.connections().into_iter().find(|c| c.id == copy.id).expect("the copy is listed");
+    assert_eq!((c.kind, c.name.as_str()), (VPNKind::L2tp, "Office (L2TP)"));
+    assert_eq!(
+        c.native,
+        Some(NativeSettings {
+            server: "vpn.example.com".into(),
+            account: "bob".into(),
+            group_name: String::new(),
+            send_all_traffic: true,
+        })
+    );
+    assert_eq!(c.native_service_name.as_deref(), Some("Office (L2TP)"));
+    assert_eq!(c.otp, cisco.otp);
+    let s = f.secrets.secrets(&copy.id);
+    assert_eq!(
+        (s.username.as_deref(), s.password.as_deref(), s.psk.as_deref()),
+        (Some("bob"), Some("own-pass"), Some("the-psk"))
+    );
+    assert_eq!(manager.placement(&uuid_string(&copy.id)).and_then(|p| p.folder), Some(work));
+    // The copy's profile is installed as a save would (WinVPN: its RAS entry is written).
+    let installs = profiles.installs.lock().unwrap().clone();
+    assert_eq!(installs.iter().map(|i| i.0).collect::<Vec<_>>(), [copy.id]);
+    // The original is untouched.
+    let original = manager.connections().into_iter().find(|c| c.id == cisco.id).unwrap();
+    assert_eq!((original.kind, &original.native, &original.name), (VPNKind::Cisco, &cisco.native, &cisco.name));
+    let s = f.secrets.secrets(&cisco.id);
+    assert_eq!((s.password.as_deref(), s.psk.as_deref()), (Some("own-pass"), Some("the-psk")));
+
+    // A linked Cisco connection: the copy is linked to the same credential, its PSK is its own.
+    let cred = f.creds.create("Office AD", "alice", pw("shared")).unwrap();
+    let mut linked = Connection::new("Branch", VPNKind::Cisco);
+    linked.native = Some(NativeSettings { server: "192.0.2.10".into(), account: "alice".into(), ..Default::default() });
+    store.save(&linked, None).unwrap();
+    f.creds.link(&uuid_string(&linked.id), Some(cred)).unwrap();
+    f.secrets.set("branch-psk", &linked.id, SecretField::Psk);
+    manager.reload();
+    let copy = editor::l2tp_copy_of(&ed, &linked, Some(&f.creds)).unwrap();
+    assert_eq!(f.creds.credential_of(&uuid_string(&copy.id)).unwrap(), Some(cred));
+    let s = f.secrets.secrets(&copy.id);
+    assert_eq!(
+        (s.username.as_deref(), s.password.as_deref(), s.psk.as_deref()),
+        (Some("alice"), Some("shared"), Some("branch-psk"))
+    );
+    let copied = manager.connections().into_iter().find(|c| c.id == copy.id).unwrap();
+    assert_eq!(copied.native.as_ref().map(|n| n.server.as_str()), Some("192.0.2.10"));
+    assert_eq!(manager.placement(&uuid_string(&copy.id)).and_then(|p| p.folder), None);
+
+    // Only a Cisco IPsec connection is copied.
+    let l2tp = manager.connections().into_iter().find(|c| c.kind == VPNKind::L2tp).unwrap();
+    assert!(editor::l2tp_copy_of(&ed, &l2tp, Some(&f.creds)).is_err());
 }

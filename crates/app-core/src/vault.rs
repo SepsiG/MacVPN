@@ -705,7 +705,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     fn discard_removes_only_a_vault_still_fresh_for_the_migration() {
         let tmp = std::env::temp_dir().join(format!("macvpn-app-core-unit-{}", uuid::Uuid::new_v4()));
         let dir = tmp.join("MacVPN");

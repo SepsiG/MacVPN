@@ -1,7 +1,7 @@
 {
   "productName": "MacVPN",
   "mainBinaryName": "MacVPN",
-  "version": "1.5.0",
+  "version": "2.0.0",
   "identifier": "local.macvpn",
   "build": {
     "devUrl": "http://127.0.0.1:1420",
@@ -48,7 +48,7 @@
       },
       "freezePrototype": true,
       "assetProtocol": { "enable": false },
-      "capabilities": ["main", "prompt", "pairing", "credentials", "vault", "backup", "restore-fresh"]
+      "capabilities": ["menu", "manage", "setup", "update", "prompt", "pairing", "credentials", "vault", "backup", "restore-fresh"]
     }
   },
   "bundle": {

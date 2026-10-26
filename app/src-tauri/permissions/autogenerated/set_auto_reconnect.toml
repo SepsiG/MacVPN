@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-set-auto-reconnect"
+description = "Enables the set_auto_reconnect command without any pre-configured scope."
+commands.allow = ["set_auto_reconnect"]
+
+[[permission]]
+identifier = "deny-set-auto-reconnect"
+description = "Denies the set_auto_reconnect command without any pre-configured scope."
+commands.deny = ["set_auto_reconnect"]

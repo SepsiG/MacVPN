@@ -11,6 +11,7 @@ use crate::macos::fsx;
 use crate::macos::log::{self, flush_root_log};
 use crate::macos::paths::{is_dir, is_file, is_symlink};
 use crate::macos::procs;
+use crate::shared::bridge::valid_status;
 use std::path::{Path, PathBuf};
 
 /// Is the recorded openvpn still running under that name (pid reuse)?
@@ -36,14 +37,6 @@ pub fn mgmt_status(run: &Path) -> Option<String> {
     let first = data.split(|&b| b == b'\n').next().unwrap_or_default();
     let s = std::str::from_utf8(first).ok()?;
     valid_status(s).then(|| s.to_string())
-}
-
-/// `^(wait [0-9]{1,12}|ok|failed|cancelled|timeout)$`
-fn valid_status(s: &str) -> bool {
-    match s.strip_prefix("wait ") {
-        Some(n) => (1..=12).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()),
-        None => matches!(s, "ok" | "failed" | "cancelled" | "timeout"),
-    }
 }
 
 /// `fail_openvpn`: stop the process, restore DNS, remove the run directory, exit.
@@ -167,6 +160,9 @@ pub fn up(ctx: &mut Ctx) -> R {
         olog.display().to_string(),
         "--daemon".into(),
         format!("mvpn-{}", ctx.id),
+        // At most 20 consecutive messages of one kind (e.g. "write UDPv4: Network is unreachable" while offline).
+        "--mute".into(),
+        "20".into(),
         "--verb".into(),
         verb.into(),
         "--management".into(),
@@ -315,19 +311,4 @@ pub fn down(ctx: &mut Ctx) -> R<bool> {
         return Ok(true);
     }
     Ok(cleanup(ctx))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn bridge_status_format() {
-        for ok in ["wait 1760000000", "wait 1", "ok", "failed", "cancelled", "timeout"] {
-            assert!(valid_status(ok), "{ok}");
-        }
-        for bad in ["wait ", "wait 1234567890123", "wait x", "OK", "ok ", "done"] {
-            assert!(!valid_status(bad), "{bad}");
-        }
-    }
 }

@@ -64,7 +64,6 @@ fn file_names() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn text_export_is_config_as_is() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -99,7 +98,6 @@ fn cisco_export_has_no_secrets() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn round_trip_through_importer_detection() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -294,7 +292,6 @@ fn write_errors_are_localized() {
 
 /// SSTPTests: the export is the config without a password.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_export_is_config_without_password() {
     let good = "# office\nserver=vpn.example.com\nport=4443\nuser=alice@corp.example\ncert=ca\nroute_all=no\npeer_dns=yes\n<ca>\n-----BEGIN CERTIFICATE-----\nMIIBszCCAVmgAwIBAgIUQ2E+/=\n-----END CERTIFICATE-----\n</ca>\n\n";
     let tmp = TempDir::new();

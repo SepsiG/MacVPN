@@ -39,7 +39,6 @@ fn tray_icon_priority_auth_then_failure_then_active() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn view_model_rows_follow_the_order_and_availability() {
     let f = Fixture::new(AppLanguage::En);
     let wg = Connection::new("Home WG", VPNKind::Wireguard);
@@ -86,8 +85,154 @@ fn view_model_rows_follow_the_order_and_availability() {
     assert_eq!(json["logRequest"], serde_json::Value::Null);
 }
 
+/// Without a VPN engine (WinVPN 2a) every row, of every type, is unavailable with the engine's answer instead of
+/// "Missing tool"; with an engine (macOS) the rows and their JSON are unchanged.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+fn without_an_engine_every_row_carries_the_engine_note() {
+    let f = Fixture::new(AppLanguage::En);
+    let ovpn = Connection::new("Office", VPNKind::Openvpn);
+    let l2tp = Connection::new("Branch", VPNKind::L2tp);
+    f.store.save(&ovpn, Some("remote x\n")).unwrap();
+    f.store.save(&l2tp, None).unwrap();
+    f.native.set_list(Ok(vec![SystemVpn::new(
+        "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+        "Corp",
+        "IKEv2",
+        "Disconnected",
+    )]));
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    let before = serde_json::to_value(&vm).unwrap();
+    assert!(before["rows"].as_array().unwrap().iter().all(|r| r.get("unavailableReason").is_none()));
+    vm.set_engine_missing(None);
+    assert_eq!(serde_json::to_value(&vm).unwrap(), before, "macOS: nothing changes");
+    vm.set_engine_missing(Some("Later."));
+    assert_eq!(vm.rows.len(), 3);
+    for row in &vm.rows {
+        assert!(!row.available && !row.switch_enabled, "{}", row.name);
+        assert_eq!(row.unavailable_reason.as_deref(), Some("Later."));
+    }
+    let json = serde_json::to_value(&vm).unwrap();
+    assert_eq!(json["rows"][0]["unavailableReason"], "Later.");
+}
+
+/// WinVPN 2b: the kinds that come later (the native VPNs) are unavailable with their reason; the other rows and the
+/// system VPNs keep theirs. An empty list (macOS) changes nothing.
+#[test]
+fn later_kinds_carry_their_reason() {
+    let f = Fixture::new(AppLanguage::En);
+    let ovpn = Connection::new("Office", VPNKind::Openvpn);
+    let l2tp = Connection::new("Branch", VPNKind::L2tp);
+    f.store.save(&ovpn, Some("remote x\n")).unwrap();
+    f.store.save(&l2tp, None).unwrap();
+    f.native.set_list(Ok(vec![SystemVpn::new(
+        "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+        "Corp",
+        "IKEv2",
+        "Disconnected",
+    )]));
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    let before = serde_json::to_value(&vm).unwrap();
+    vm.set_later_kinds(&[]);
+    assert_eq!(serde_json::to_value(&vm).unwrap(), before, "macOS: nothing changes");
+    vm.set_later_kinds(&[(VPNKind::L2tp, "Later.".into()), (VPNKind::Sstp, "Later.".into())]);
+    assert_eq!(vm.rows.len(), 3);
+    for row in &vm.rows {
+        if row.kind == Some("l2tp") {
+            assert!(!row.available && !row.switch_enabled);
+            assert_eq!(row.unavailable_reason.as_deref(), Some("Later."));
+        } else {
+            assert!(row.available && row.switch_enabled, "{}", row.name);
+            assert_eq!(row.unavailable_reason, None);
+        }
+    }
+}
+
+/// Missing engines (2.0): the rows of a kind whose engine is not installed are unavailable with the setup report's
+/// label and the System Status link; other kinds, system VPNs and rows already unavailable for another reason (the
+/// engine-missing or later text) keep theirs. `setupLink` is absent from the JSON when false.
+#[test]
+fn unavailable_kinds_show_their_label_and_the_setup_link() {
+    let f = Fixture::new(AppLanguage::En);
+    let ovpn = Connection::new("Office", VPNKind::Openvpn);
+    let l2tp = Connection::new("Branch", VPNKind::L2tp);
+    let sstp = Connection::new("Remote", VPNKind::Sstp);
+    f.store.save(&ovpn, Some("remote x\n")).unwrap();
+    f.store.save(&l2tp, None).unwrap();
+    f.store.save(&sstp, Some("x")).unwrap();
+    f.native.set_list(Ok(vec![SystemVpn::new(
+        "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+        "Corp",
+        "IKEv2",
+        "Disconnected",
+    )]));
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    let before = serde_json::to_value(&vm).unwrap();
+    vm.set_unavailable_kinds(&|_| None);
+    assert_eq!(serde_json::to_value(&vm).unwrap(), before, "everything available: nothing changes");
+    vm.set_later_kinds(&[(VPNKind::Sstp, "Later.".into())]);
+    vm.set_unavailable_kinds(&|kind| {
+        matches!(kind, VPNKind::Openvpn | VPNKind::Sstp).then(|| ("Not installed: OpenVPN".to_string(), true))
+    });
+    let row = |kind: &str| vm.rows.iter().find(|r| r.kind == Some(kind)).unwrap();
+    let office = row("openvpn");
+    assert!(!office.available && !office.switch_enabled && office.setup_link);
+    assert_eq!(office.unavailable_reason.as_deref(), Some("Not installed: OpenVPN"));
+    let branch = row("l2tp");
+    assert!(branch.available && branch.switch_enabled && !branch.setup_link);
+    assert_eq!(branch.unavailable_reason, None);
+    let later = row("sstp");
+    assert_eq!(later.unavailable_reason.as_deref(), Some("Later."), "an earlier reason stays");
+    assert!(!later.setup_link);
+    let corp = vm.rows.iter().find(|r| !r.managed).unwrap();
+    assert!(corp.available && !corp.setup_link);
+    let json = serde_json::to_value(&vm).unwrap();
+    let rows = json["rows"].as_array().unwrap();
+    let by_kind = |kind: &str| rows.iter().find(|r| r["kind"] == kind).unwrap();
+    assert_eq!(by_kind("openvpn")["setupLink"], true);
+    assert_eq!(by_kind("openvpn")["unavailableReason"], "Not installed: OpenVPN");
+    assert!(by_kind("l2tp").get("setupLink").is_none());
+    assert!(by_kind("sstp").get("setupLink").is_none());
+}
+
+/// "Reconnect Automatically" (decision 4): set by the app on managed rows only; absent from the JSON until set and
+/// on system VPN rows.
+#[test]
+fn the_auto_reconnect_switch_is_on_managed_rows_only_when_set() {
+    let f = Fixture::new(AppLanguage::En);
+    let office = Connection::new("Office", VPNKind::Openvpn);
+    let home = Connection::new("Home", VPNKind::Wireguard);
+    f.store.save(&office, Some("remote x\n")).unwrap();
+    f.store.save(&home, Some("[Interface]\n")).unwrap();
+    f.native.set_list(Ok(vec![SystemVpn::new(
+        "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+        "Corp",
+        "IKEv2",
+        "Disconnected",
+    )]));
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    let json = serde_json::to_value(&vm).unwrap();
+    assert!(json["rows"].as_array().unwrap().iter().all(|r| r.get("autoReconnect").is_none()));
+    let off = uuid_string(&office.id);
+    vm.set_auto_reconnect(&|id| id != off);
+    let row = |id: &str| vm.rows.iter().find(|r| r.id == id).unwrap();
+    assert_eq!(row(&off).auto_reconnect, Some(false));
+    assert_eq!(row(&uuid_string(&home.id)).auto_reconnect, Some(true));
+    assert_eq!(vm.rows.iter().find(|r| !r.managed).unwrap().auto_reconnect, None);
+    let json = serde_json::to_value(&vm).unwrap();
+    let rows = json["rows"].as_array().unwrap();
+    assert_eq!(rows.iter().find(|r| r["id"] == off.as_str()).unwrap()["autoReconnect"], false);
+    assert!(rows.iter().find(|r| r["managed"] == false).unwrap().get("autoReconnect").is_none());
+}
+
+#[test]
 fn held_by_labels_follow_the_lease_holders() {
     let f = Fixture::new(AppLanguage::En);
     let a = Connection::new("Office", VPNKind::Openvpn);
@@ -117,7 +262,6 @@ fn held_by_labels_follow_the_lease_holders() {
 
 /// The paired apps reach the UI without their token hash (and the token never exists here).
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn rows_carry_the_server_host_only_for_the_search() {
     let f = Fixture::new(AppLanguage::En);
     let mut native = Connection::new("Branch", VPNKind::L2tp);
@@ -216,7 +360,6 @@ impl macvpn_app_core::deps::ConnectionRepository for CountingStore {
 /// The view model is built from what the reload (after a save, an import, a catalog apply, the unlock) left: no
 /// config is read while building it, however often it is built.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn building_the_view_model_reads_no_config() {
     let f = Fixture::new(AppLanguage::En);
     for i in 0..5 {
@@ -396,7 +539,6 @@ fn broker_keeps_one_prompt_per_connection() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn manager_prompt_through_broker_and_dismissed_on_disconnect() {
     let f = Fixture::new(AppLanguage::En);
     let mut c = Connection::new("S", VPNKind::Strongswan);
@@ -447,7 +589,6 @@ fn manager_texts_are_in_the_table() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn catalog_connections_carry_the_team_badge() {
     use macvpn_app_core::catalog::CatalogBadge;
     let f = Fixture::new(AppLanguage::En);
@@ -473,4 +614,106 @@ fn catalog_connections_carry_the_team_badge() {
         office["catalog"],
         serde_json::json!({"catalogId":"11111111-1111-4111-8111-111111111111","name":"Acme VPN","pendingRemoval":true,"profileOutdated":false})
     );
+}
+
+/// WinVPN 2c: a connection the platform cannot connect with its settings is unavailable with that reason; other
+/// rows, system VPNs and rows already unavailable keep theirs. Empty (macOS): nothing changes.
+#[test]
+fn a_per_connection_reason_makes_the_row_unavailable() {
+    let f = Fixture::new(AppLanguage::En);
+    let tls = Connection::new("TLS", VPNKind::Strongswan);
+    let eap = Connection::new("EAP", VPNKind::Strongswan);
+    let sstp = Connection::new("Remote", VPNKind::Sstp);
+    f.store.save(&tls, Some("x")).unwrap();
+    f.store.save(&eap, Some("x")).unwrap();
+    f.store.save(&sstp, Some("x")).unwrap();
+    f.native.set_list(Ok(vec![SystemVpn::new(
+        "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+        "Corp",
+        "IKEv2",
+        "Disconnected",
+    )]));
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    let before = serde_json::to_value(&vm).unwrap();
+    vm.set_unsupported(&std::collections::HashMap::new());
+    assert_eq!(serde_json::to_value(&vm).unwrap(), before, "macOS: nothing changes");
+    vm.set_later_kinds(&[(VPNKind::Sstp, "Later.".into())]);
+    let reasons = std::collections::HashMap::from([
+        (uuid_string(&tls.id), "Not supported on Windows: local auth = eap-tls".to_string()),
+        (uuid_string(&sstp.id), "Other.".to_string()),
+        ("38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4".to_string(), "Never for a system VPN.".to_string()),
+    ]);
+    vm.set_unsupported(&reasons);
+    let row = |name: &str| vm.rows.iter().find(|r| r.name == name).unwrap();
+    assert!(!row("TLS").available && !row("TLS").switch_enabled && !row("TLS").setup_link);
+    assert_eq!(row("TLS").unavailable_reason.as_deref(), Some("Not supported on Windows: local auth = eap-tls"));
+    assert!(row("EAP").available && row("EAP").switch_enabled && row("EAP").unavailable_reason.is_none());
+    assert_eq!(row("Remote").unavailable_reason.as_deref(), Some("Later."), "an earlier reason stays");
+    assert!(row("Corp").available && row("Corp").unavailable_reason.is_none());
+}
+
+/// WinVPN 2c: a missing WinVPN Service greys only the rows that need it (`SetupReport::needs_service`): the RAS
+/// kinds and the system VPNs keep their switches; `set_engine_missing` (every row) is unchanged.
+#[test]
+fn a_missing_service_greys_only_the_rows_that_need_it() {
+    let f = Fixture::new(AppLanguage::En);
+    let ovpn = Connection::new("Office", VPNKind::Openvpn);
+    let l2tp = Connection::new("Branch", VPNKind::L2tp);
+    f.store.save(&ovpn, Some("remote x\n")).unwrap();
+    f.store.save(&l2tp, None).unwrap();
+    f.native.set_list(Ok(vec![SystemVpn::new(
+        "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4",
+        "Corp",
+        "IKEv2",
+        "Disconnected",
+    )]));
+    let m = f.manager();
+    m.refresh();
+    let vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    let mut all = vm.clone();
+    all.set_engine_missing_where(Some("No service."), &|_| true);
+    let mut legacy = vm.clone();
+    legacy.set_engine_missing(Some("No service."));
+    assert_eq!(serde_json::to_value(&all).unwrap(), serde_json::to_value(&legacy).unwrap());
+    let mut some = vm.clone();
+    some.set_engine_missing_where(Some("No service."), &|kind| kind == Some(VPNKind::Openvpn));
+    let row = |name: &str| some.rows.iter().find(|r| r.name == name).unwrap().clone();
+    assert_eq!(row("Office").unavailable_reason.as_deref(), Some("No service."));
+    assert!(!row("Office").switch_enabled);
+    assert!(row("Branch").available && row("Branch").unavailable_reason.is_none());
+    assert!(row("Corp").available && row("Corp").switch_enabled);
+}
+
+/// WinVPN 2c Task 11: a failed row whose reason names an administrator step (`AdminSteps::offered_action`) offers
+/// its button; other rows and states offer none, and macOS (no step) leaves the JSON as it was.
+#[test]
+fn a_failed_row_offers_the_administrator_step_its_reason_names() {
+    let f = Fixture::new(AppLanguage::En);
+    let branch = Connection::new("Branch", VPNKind::L2tp);
+    let remote = Connection::new("Remote", VPNKind::Sstp);
+    let lab = Connection::new("Lab", VPNKind::L2tp);
+    f.store.save(&branch, None).unwrap();
+    f.store.save(&remote, Some("x")).unwrap();
+    f.store.save(&lab, None).unwrap();
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), true);
+    for row in vm.rows.iter_mut().filter(|r| r.name != "Lab") {
+        row.state = RowState::Failed { reason: format!("{} failed. Use Step One… first.", row.name) };
+    }
+    let before = serde_json::to_value(&vm).unwrap();
+    vm.set_admin_actions(&|_| None);
+    assert_eq!(serde_json::to_value(&vm).unwrap(), before, "macOS: nothing changes");
+    assert!(!serde_json::to_string(&vm).unwrap().contains("adminAction"));
+
+    vm.set_admin_actions(&|reason| reason.contains("Step One…").then_some("allow-l2tp-behind-nat"));
+    let row = |name: &str| vm.rows.iter().find(|r| r.name == name).unwrap();
+    assert_eq!(row("Branch").admin_action, Some("allow-l2tp-behind-nat"));
+    assert_eq!(row("Remote").admin_action, Some("allow-l2tp-behind-nat"));
+    assert_eq!(row("Lab").admin_action, None, "not failed");
+    let json = serde_json::to_value(&vm).unwrap();
+    let branch_json = json["rows"].as_array().unwrap().iter().find(|r| r["name"] == "Branch").unwrap();
+    assert_eq!(branch_json["adminAction"], "allow-l2tp-behind-nat");
 }

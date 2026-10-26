@@ -154,7 +154,6 @@ fn local_ids_are_deterministic_namespaced_and_uuid_shaped() {
 // MARK: - subscriptions
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_subscription_round_trips_and_creates_its_root_folder() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -223,7 +222,6 @@ fn a_subscription_round_trips_and_creates_its_root_folder() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn team_key_and_token_are_only_in_their_blob_columns() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -240,7 +238,6 @@ fn team_key_and_token_are_only_in_their_blob_columns() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn subscribing_twice_and_bad_input_are_refused() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -269,7 +266,6 @@ fn subscribing_twice_and_bad_input_are_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn deleting_a_subscription_cascades_items_and_slots() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -301,7 +297,6 @@ fn deleting_a_subscription_cascades_items_and_slots() {
 // MARK: - the read-only guard
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn every_guarded_write_on_a_catalog_row_is_refused() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -349,7 +344,6 @@ fn every_guarded_write_on_a_catalog_row_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn every_allowed_write_on_a_catalog_row_works() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -391,7 +385,6 @@ fn every_allowed_write_on_a_catalog_row_works() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn personal_rows_are_not_guarded() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -411,7 +404,6 @@ fn personal_rows_are_not_guarded() {
 // MARK: - admin keys
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn admin_keys_save_list_load_promote_delete() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -453,7 +445,6 @@ fn admin_keys_save_list_load_promote_delete() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_backup_key_taken_offline_keeps_its_public_half_until_it_is_imported_again() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -497,7 +488,6 @@ fn a_backup_key_taken_offline_keeps_its_public_half_until_it_is_imported_again()
 // MARK: - publications
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn publications_round_trip_with_the_team_key_only_in_its_column() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -539,7 +529,6 @@ fn publications_round_trip_with_the_team_key_only_in_its_column() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn catalog_rows_make_the_vault_non_empty() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);

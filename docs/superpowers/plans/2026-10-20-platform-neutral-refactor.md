@@ -686,8 +686,8 @@
   - `scripts/build-dmg.sh`, then `scripts/bundle-baseline.sh dist/MacVPN.app`: `Info.plist.xml`, `tauri-config.json`, `entitlements.txt` identical; `bundle-files.txt` identical in names; `otool-L.txt` identical (no new framework or dylib linked)
   - `SMOKE_LANG=en` and `SMOKE_LANG=hu scripts/smoke-manage.sh`, including the catalog mode
   - `cargo tree --locked --target aarch64-apple-darwin -e normal -p macvpn-app` compared with 1.4.0's: the only new packages are `macvpn-platform-api` (and `macvpn-helper` for the root binary's tree)
-- [ ] Manual (1.5.0 section of the checklist, on a Mac with 1.4.0 installed and a real vault): install the 1.5.0 DMG over 1.4.0 through the updater (a locally signed test release, as for 1.4.0); the vault opens with auto-unlock (same Keychain item); every connection type connects (the root layer is not reinstalled: System Status shows root 8 current); a system VPN starts and stops; the live list follows a change in System Settings; notifications, the tray popover, Cmd+S / Cmd+F, Option-click debug mode; a backup made by 1.4.0 restores in 1.5.0 and a backup made by 1.5.0 restores in 1.4.0; a 1.4.0 team catalog refreshes; the control-API example client pairs and holds a lease; Finder "Open With" for `.ovpn`, `.sstp`, `.conf`, `.macvpncatalog`; launch at login; Uninstall (with and without user data) in a test account.
-- [ ] Commit: `docs: 1.5.0 manual checklist`.
+- [x] Manual (1.5.0 section of the checklist, on a Mac with 1.4.0 installed and a real vault): install the 1.5.0 DMG over 1.4.0 through the updater (a locally signed test release, as for 1.4.0); the vault opens with auto-unlock (same Keychain item); every connection type connects (the root layer is not reinstalled: System Status shows root 8 current); a system VPN starts and stops; the live list follows a change in System Settings; notifications, the tray popover, Cmd+S / Cmd+F, Option-click debug mode; a backup made by 1.4.0 restores in 1.5.0 and a backup made by 1.5.0 restores in 1.4.0; a 1.4.0 team catalog refreshes; the control-API example client pairs and holds a lease; Finder "Open With" for `.ovpn`, `.sstp`, `.conf`, `.macvpncatalog`; launch at login; Uninstall (with and without user data) in a test account.
+- [x] Commit: `docs: 1.5.0 manual checklist`.
 
 ## Task 20: independent review
 
@@ -704,9 +704,10 @@
 
 ## Task 21: release 1.5.0
 
-- [ ] Everything green: the rules block, CI (all jobs), Task 19's automated list on the final commit.
-- [ ] `scripts/build-dmg.sh` with the release gate; the user tests the DMG (Task 19's manual list).
-- [ ] Release: the same flow as 1.4.0 (`docs/RELEASING.md`: the `public` sync commit, the `main` push, CI, the `v1.5.0` tag, the draft check against a local build, the offline signing by the user). Only `MacVPN-1.5.0.dmg` (+ `.sha256`, `.sig`) is published; no Windows asset. The release notes say there is no visible change and no Authorize step.
+- [x] Everything green: the rules block, CI (all jobs), Task 19's automated list on the final commit.
+- [x] `scripts/build-dmg.sh` with the release gate; the user tests the DMG (Task 19's manual list).
+- [x] Release: the same flow as 1.4.0 (`docs/RELEASING.md`: the `public` sync commit, the `main` push, CI, the `v1.5.0` tag, the draft check against a local build, the offline signing by the user). Only `MacVPN-1.5.0.dmg` (+ `.sha256`, `.sig`) is published; no Windows asset. The release notes say there is no visible change and no Authorize step.
+  *(Released 2026-10-21: main `5cd5189` (CI all five jobs green, incl. the Windows jobs), tag `v1.5.0`, the draft DMG compared with the local build, signed by the maintainer and the signature verified against the primary key. The maintainer tested the DMG over 1.4.1.)*
 
 ---
 

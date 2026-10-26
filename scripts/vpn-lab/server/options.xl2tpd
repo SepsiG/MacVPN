@@ -1,0 +1,14 @@
+# pppd for L2TP: MS-CHAPv2 only (as MacVPN and Windows send it); DNS = the gateway (DNAT to the lab DNS).
+name macvpn-lab
+require-mschap-v2
+refuse-pap
+refuse-chap
+refuse-mschap
+refuse-eap
+ms-dns 10.99.16.1
+noccp
+nodefaultroute
+mtu 1280
+mru 1280
+lcp-echo-interval 30
+lcp-echo-failure 4

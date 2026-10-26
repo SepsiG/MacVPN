@@ -10,9 +10,14 @@ use std::path::{Path, PathBuf};
 pub const LIBEXEC: &str = "/usr/local/libexec/macvpn";
 pub const RUN_BASE: &str = "/var/run/macvpn";
 pub const LOG_BASE: &str = "/var/log/macvpn";
+/// The DNS manager's persistent, root-only ledger (the original DNS of each network service and the connections
+/// holding DNS), kept across a reboot like the `networksetup` change itself.
+pub const DNS_BASE: &str = "/var/db/macvpn/dns";
+pub const NETWORKSETUP: &str = "/usr/sbin/networksetup";
 /// `wg-quick` keeps the interface → utun mapping here.
 pub const WG_RUN: &str = "/var/run/wireguard";
-/// The log rotates above 5 MB at `up` (one `.1` copy is kept).
+/// The user's connection log is at most 5 MiB, plus one rotated `.1` copy of at most 5 MiB (see
+/// [`crate::macos::log`]).
 pub const LOG_MAX: u64 = 5_242_880;
 /// The source config is at most 1 MB.
 pub use crate::shared::limits::SRC_MAX;
@@ -42,6 +47,9 @@ pub struct Settings {
     pub libexec: PathBuf,
     pub run_base: PathBuf,
     pub log_base: PathBuf,
+    pub dns_base: PathBuf,
+    /// `networksetup`; in test mode only a fake (`MVPN_NETWORKSETUP`), otherwise the DNS is never changed.
+    pub networksetup: Option<PathBuf>,
     /// The user the connection belongs to (`SUDO_USER` as root, the caller in test mode); unvalidated.
     pub target_user: String,
     pub wg_run: PathBuf,
@@ -91,6 +99,12 @@ impl Settings {
             test_mode,
             run_base: pick(&test.run_base, RUN_BASE),
             log_base: pick(&test.log_base, LOG_BASE),
+            dns_base: pick(&test.dns_base, DNS_BASE),
+            networksetup: if test_mode {
+                test.networksetup.as_deref().map(PathBuf::from)
+            } else {
+                Some(PathBuf::from(NETWORKSETUP))
+            },
             target_user,
             wg_run: pick(&test.wg_run, WG_RUN),
             lock_tries: test.lock_tries.unwrap_or(LOCK_TRIES),
@@ -172,9 +186,13 @@ mod tests {
             lock_tries: Some(1),
             brew: Some("/tmp/b".into()),
             mgmt: Some("/tmp/m".into()),
+            dns_base: Some("/tmp/d".into()),
+            networksetup: Some("/tmp/n".into()),
             ..TestEnv::default()
         };
         let s = Settings::resolve(false, t, "alice".into());
+        assert_eq!(s.dns_base, PathBuf::from(DNS_BASE));
+        assert_eq!(s.networksetup, Some(PathBuf::from(NETWORKSETUP)));
         assert_eq!(s.run_base, PathBuf::from(RUN_BASE));
         assert_eq!(s.libexec, PathBuf::from(LIBEXEC));
         assert_eq!(s.mgmt, PathBuf::from("/usr/local/libexec/macvpn/mvpn"));
@@ -192,5 +210,14 @@ mod tests {
         assert_eq!(s.run_base, PathBuf::from("/tmp/x"));
         assert_eq!(s.lock_tries, 2);
         assert_ne!(s.target_user, "ignored");
+        assert_eq!(s.networksetup, None, "test mode never runs the real networksetup");
+        let t = TestEnv {
+            networksetup: Some("/tmp/fake-ns".into()),
+            dns_base: Some("/tmp/d".into()),
+            ..TestEnv::default()
+        };
+        let s = Settings::resolve(true, t, String::new());
+        assert_eq!(s.networksetup, Some(PathBuf::from("/tmp/fake-ns")));
+        assert_eq!(s.dns_base, PathBuf::from("/tmp/d"));
     }
 }

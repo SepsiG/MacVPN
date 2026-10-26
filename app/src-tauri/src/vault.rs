@@ -251,6 +251,9 @@ fn finish_pending_migration(state: &AppState) {
 pub fn after_unlock(state: &Arc<AppState>) {
     finish_pending_migration(state);
     use_the_vault(state);
+    // WinVPN 2c: the native profiles follow the open vault (the orphaned RAS entries go, the L2TP entries are
+    // written); before the catalogs refresh. Nothing on macOS.
+    sync_native_profiles(state);
     // The team catalogs refresh once (the scheduler skipped its rounds while locked).
     state.catalog.service.unlocked();
     // Files opened from Finder while it was locked (unless a create window is still in progress).
@@ -264,6 +267,17 @@ fn use_the_vault(state: &Arc<AppState>) {
     state.poller.wake();
     crate::control::launch(state);
     state.publisher.mark();
+}
+
+/// WinVPN 2c Task 13: with the open vault's connections, the platform removes the profiles of connections that no
+/// longer exist and, where it needs no approval, installs the native ones
+/// (`ConnectionsModel::sync_native_profiles`, which does nothing while the vault is locked). Called after an unlock
+/// and after a restore. The refused ones (Cisco IPsec on Windows) keep their reason on their rows.
+pub fn sync_native_profiles(state: &AppState) {
+    let refused = state.connections.sync_native_profiles();
+    if !refused.is_empty() {
+        eprintln!("MacVPN: {} native connection(s) have no system profile on this system", refused.len());
+    }
 }
 
 /// The vault was locked: only the redacted active connections stay; the editors are dropped.
@@ -308,6 +322,7 @@ pub fn open_window(app: &AppHandle, state: &AppState, label: &str) -> Result<(),
         .visible(false)
         .focused(false)
         .center()
+        .use_https_scheme(crate::navigation::uses_https_scheme())
         .on_navigation(crate::navigation::is_allowed)
         .build()
         .map_err(|e| e.to_string())?;
@@ -652,6 +667,7 @@ pub fn after_fresh_restore(state: &Arc<AppState>) {
     }
     state.manager.reload_all();
     state.connections.system_services_changed();
+    sync_native_profiles(state);
     state.poller.wake();
     crate::control::launch(state);
     state.publisher.mark();

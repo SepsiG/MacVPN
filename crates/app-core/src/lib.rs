@@ -9,16 +9,19 @@
 #![forbid(unsafe_code)]
 
 pub mod app;
+pub mod appearance;
 pub mod backup;
 pub mod catalog;
 pub mod catalog_file;
 pub mod catalog_publish;
 pub mod catalog_schedule;
+pub mod connection_notices;
 pub mod connections;
 pub mod control;
 pub mod credential_prompt;
 pub mod deps;
 pub mod editor;
+pub mod failure_reason;
 pub mod folders;
 pub mod import_export;
 pub mod live;
@@ -27,10 +30,12 @@ pub mod manager;
 pub mod migration;
 pub mod notify;
 pub mod open_files;
+pub mod package_index;
 pub mod pairing;
 pub mod prompt;
 pub mod questions;
 pub mod quit;
+pub mod reconnect;
 pub mod setup;
 pub mod shared_credentials;
 pub mod updates;

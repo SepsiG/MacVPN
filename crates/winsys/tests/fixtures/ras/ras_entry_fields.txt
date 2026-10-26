@@ -1,0 +1,199 @@
+# RASENTRYW fields (non-zero) of Microsoft's reference entries, read back with RasGetEntryPropertiesW. Written by scripts/ras-spike.ps1 capture.
+[l2tp_psk] AuthenticationMethod=MSChapv2 EncryptionLevel=Required Force=True L2tpPsk=<dummy> TunnelType=L2tp server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x27001D10
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (L2TP)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000001
+  guidId = cf3037b4-0e12-4233-8a48-b615ea72acf0
+  dwVpnStrategy = 0x00000003
+  dwfOptions2 = 0x00002114
+  dwRedialCount = 3
+  dwRedialPause = 60
+
+[l2tp_psk_split] AuthenticationMethod=MSChapv2 EncryptionLevel=Required Force=True L2tpPsk=<dummy> SplitTunneling=True TunnelType=L2tp server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x27001D00
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (L2TP)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000001
+  guidId = ad7ed25b-d36c-42dd-a1e8-c49bd77447af
+  dwVpnStrategy = 0x00000003
+  dwfOptions2 = 0x00000114
+  dwRedialCount = 3
+  dwRedialPause = 60
+
+[sstp] AuthenticationMethod=MSChapv2 TunnelType=Sstp server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x27000D10
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (SSTP)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  guidId = d71aab37-d751-4503-88f0-64d6aa5a66f6
+  dwVpnStrategy = 0x00000005
+  dwfOptions2 = 0x00002104
+  dwRedialCount = 3
+  dwRedialPause = 60
+
+[sstp_split] AuthenticationMethod=MSChapv2 SplitTunneling=True TunnelType=Sstp server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x27000D00
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (SSTP)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  guidId = 961139a2-df35-4e3e-b49f-08eb1663bb56
+  dwVpnStrategy = 0x00000005
+  dwfOptions2 = 0x00000104
+  dwRedialCount = 3
+  dwRedialPause = 60
+
+[sstp_port] AuthenticationMethod=MSChapv2 TunnelType=Sstp server=vpn.example.com:8443
+  dwSize = 6724
+  dwfOptions = 0x27000D10
+  szLocalPhoneNumber = "vpn.example.com:8443"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (SSTP)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  guidId = 8c5cd15b-2245-4d63-acba-2fdb1adde3ca
+  dwVpnStrategy = 0x00000005
+  dwfOptions2 = 0x00002104
+  dwRedialCount = 3
+  dwRedialPause = 60
+
+[ikev2_eap] AuthenticationMethod=Eap TunnelType=Ikev2 server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x07020110
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (IKEv2)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  dwCustomAuthKey = 0x0000001A
+  guidId = fe3bccf6-2f97-48d7-ab88-a1560d0d87d7
+  dwVpnStrategy = 0x00000007
+  dwfOptions2 = 0x00002104
+  dwRedialCount = 3
+  dwRedialPause = 60
+  dwNetworkOutageTime = 1800
+
+[ikev2_eap_split] AuthenticationMethod=Eap SplitTunneling=True TunnelType=Ikev2 server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x07020100
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (IKEv2)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  dwCustomAuthKey = 0x0000001A
+  guidId = 89872fcd-41e9-45a6-ab7d-b6aa2428aa59
+  dwVpnStrategy = 0x00000007
+  dwfOptions2 = 0x00000104
+  dwRedialCount = 3
+  dwRedialPause = 60
+  dwNetworkOutageTime = 1800
+
+[ikev2_machinecert] AuthenticationMethod=MachineCertificate TunnelType=Ikev2 server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x07000110
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (IKEv2)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  guidId = 952ad27a-a1fa-4c19-b7d3-aeff48aef2a6
+  dwVpnStrategy = 0x00000007
+  dwfOptions2 = 0x00402104
+  dwRedialCount = 3
+  dwRedialPause = 60
+  dwNetworkOutageTime = 1800
+
+[ikev2_policy] AuthenticationMethod=Eap TunnelType=Ikev2 server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x07020110
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (IKEv2)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  dwCustomAuthKey = 0x0000001A
+  guidId = 8c4c451d-ed68-4caf-95cf-999d34230fe0
+  dwVpnStrategy = 0x00000007
+  dwfOptions2 = 0x00002104
+  dwRedialCount = 3
+  dwRedialPause = 60
+  dwNetworkOutageTime = 1800
+
+[ikev2_policy_gcm] AuthenticationMethod=Eap TunnelType=Ikev2 server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x07020110
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (IKEv2)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  dwCustomAuthKey = 0x0000001A
+  guidId = d28bcfb7-394d-448e-8759-198f59e97742
+  dwVpnStrategy = 0x00000007
+  dwfOptions2 = 0x00002104
+  dwRedialCount = 3
+  dwRedialPause = 60
+  dwNetworkOutageTime = 1800
+
+[ikev2_policy_3des] AuthenticationMethod=Eap TunnelType=Ikev2 server=vpn.example.com
+  dwSize = 6724
+  dwfOptions = 0x07020110
+  szLocalPhoneNumber = "vpn.example.com"
+  dwfNetProtocols = 0x0000000C
+  dwFramingProtocol = 0x00000001
+  szDeviceType = "vpn"
+  szDeviceName = "WAN Miniport (IKEv2)"
+  dwSubEntries = 1
+  dwType = 0x00000002
+  dwEncryptionType = 0x00000003
+  dwCustomAuthKey = 0x0000001A
+  guidId = 5274dfca-6538-4969-a395-734b1e8042e6
+  dwVpnStrategy = 0x00000007
+  dwfOptions2 = 0x00002104
+  dwRedialCount = 3
+  dwRedialPause = 60
+  dwNetworkOutageTime = 1800
+

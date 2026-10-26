@@ -104,8 +104,14 @@ pub struct ImportedCredentialName {
 
 /// Imports one file. The config is saved even with validation problems (fixable in the editor). `confirm` asks
 /// whether the credentials of the referenced secret files may be stored (`files`, `config file name`): their
-/// secrets only reach the Keychain after the user agreed, never the config.
-pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[String], &str) -> bool) -> ImportedFile {
+/// secrets only reach the Keychain after the user agreed, never the config. `gate` refuses a kind that cannot be
+/// added (its engine is missing: the reason), after the file's kind is known and before anything is saved.
+pub fn import_file(
+    deps: &EditorDeps,
+    path: &Path,
+    gate: &dyn Fn(VPNKind) -> Option<String>,
+    confirm: &mut dyn FnMut(&[String], &str) -> bool,
+) -> ImportedFile {
     let file = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let fail = |message: String| ImportedFile {
         report: ImportReport { errors: vec![format!("{file}: {message}")], notes: vec![] },
@@ -119,6 +125,9 @@ pub fn import_file(deps: &EditorDeps, path: &Path, confirm: &mut dyn FnMut(&[Str
         Ok(prepared) => prepared,
         Err(e) => return fail(e.message()),
     };
+    if let Some(reason) = gate(prepared.kind) {
+        return fail(reason);
+    }
     let name = path.file_stem().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
     let c = Connection::new(name, prepared.kind);
     if let Err(e) = deps.store.save(&c, Some(&prepared.config)) {

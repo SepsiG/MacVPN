@@ -112,8 +112,21 @@ pub struct RowView {
     /// A system VPN whose PSK / password MacVPN can keep (L2TP / Cisco IPsec).
     pub stored_secrets: bool,
     pub pinned: bool,
-    /// False: a tool for the type is missing ("Missing tool").
+    /// False: a tool for the type is missing ("Missing tool"), or the platform has no VPN engine yet.
     pub available: bool,
+    /// Why the row is unavailable when it is not a missing tool: the platform's answer while it has no VPN engine
+    /// (WinVPN 2a: "The VPN engine comes in a later version of WinVPN."), shown instead of "Missing tool". Absent from
+    /// the JSON when `None`, so MacVPN's view model stays byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub unavailable_reason: Option<String>,
+    /// The row's engine can be installed or repaired in System Status: the UI links "System Status" after the
+    /// reason ([`ViewModel::set_unavailable_kinds`]). Absent from the JSON when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub setup_link: bool,
+    /// "Reconnect Automatically" of a managed connection ([`ViewModel::set_auto_reconnect`]); `None` for system
+    /// VPNs and until the app sets it. Absent from the JSON when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_reconnect: Option<bool>,
     #[serde(flatten)]
     pub state: RowState,
     /// The switch shows "on" (the state is active).
@@ -126,6 +139,11 @@ pub struct RowView {
     pub catalog: Option<crate::catalog::CatalogBadge>,
     /// A source connection the user publishes: "Published in “…” (vN)" per publication (empty otherwise).
     pub published: Vec<crate::catalog_publish::PublishedBadge>,
+    /// A failed row whose reason names an administrator step (WinVPN 2c: `allow-l2tp-behind-nat`,
+    /// `trust-ca-in-windows`): the failure banner offers its button ([`ViewModel::set_admin_actions`]). Absent from
+    /// the JSON when `None` (MacVPN).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub admin_action: Option<&'static str>,
 }
 
 /// One row of the folder tree (spec 3), in display order: per folder its subfolders, then its items (pinned first,
@@ -261,6 +279,14 @@ pub struct ViewModel {
     pub update: UpdateView,
     /// `None` until the system state was read.
     pub login_item: Option<LoginItemView>,
+    /// The Appearance setting (`system` / `light` / `dark`); set by the app. Absent from the JSON when `None`, so
+    /// the 1.4 view model is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub appearance: Option<&'static str>,
+    /// The "Connection Notifications" switch (only where notifications can be posted); set by the app. Absent from
+    /// the JSON when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub connection_notifications: Option<bool>,
     /// The Connections window: selection, unsaved changes, tab requests, an import's question.
     pub manage: ManageView,
     /// The System Status window.
@@ -501,12 +527,16 @@ impl ViewModel {
                     stored_secrets,
                     pinned: *pinned,
                     available,
+                    unavailable_reason: None,
+                    setup_link: false,
+                    auto_reconnect: None,
                     state: RowState::from(state),
                     switch_on: state.is_active(),
                     switch_enabled: available && *state != ConnectionState::Disconnecting,
                     held_by: Vec::new(),
                     catalog: None,
                     published: Vec::new(),
+                    admin_action: None,
                 }
             })
             .collect();
@@ -529,6 +559,8 @@ impl ViewModel {
             setup_complete,
             update: UpdateView::default(),
             login_item: None,
+            appearance: None,
+            connection_notifications: None,
             manage: ManageView::default(),
             setup: SetupView::default(),
             quit: None,
@@ -544,6 +576,89 @@ impl ViewModel {
             catalogs: Vec::new(),
             team_folders: BTreeMap::new(),
             publishing: PublishingView::default(),
+        }
+    }
+
+    /// The platform has no VPN engine yet (`SetupReport::engine_missing`): every row, of every type, is
+    /// unavailable with `reason` (instead of "Missing tool"), and its switch cannot be used. `None`: unchanged.
+    pub fn set_engine_missing(&mut self, reason: Option<&str>) {
+        self.set_engine_missing_where(reason, &|_| true);
+    }
+
+    /// [`Self::set_engine_missing`] for the rows it `concerns` (the managed rows by kind, the system VPNs with
+    /// `None`; `SetupReport::needs_service`): WinVPN's native kinds and system VPNs run without the WinVPN Service.
+    pub fn set_engine_missing_where(&mut self, reason: Option<&str>, concerns: &dyn Fn(Option<VPNKind>) -> bool) {
+        let Some(reason) = reason else { return };
+        for row in &mut self.rows {
+            let concerned = match (row.managed, row.kind.and_then(VPNKind::from_raw_value)) {
+                (true, Some(kind)) => concerns(Some(kind)),
+                (true, None) => true,
+                (false, _) => concerns(None),
+            };
+            if !concerned {
+                continue;
+            }
+            row.available = false;
+            row.switch_enabled = false;
+            row.unavailable_reason = Some(reason.to_string());
+        }
+    }
+
+    /// The managed connections the platform cannot connect with their settings (`ConnectionManager::
+    /// unsupported_reasons`, by row id; WinVPN: an IKEv2 or SSTP setting Windows lacks): each such row is
+    /// unavailable with its reason, and its switch cannot be used. A row already unavailable keeps its reason.
+    /// Empty (macOS): unchanged.
+    pub fn set_unsupported(&mut self, reasons: &HashMap<String, String>) {
+        for row in self.rows.iter_mut().filter(|r| r.managed && r.unavailable_reason.is_none()) {
+            let Some(reason) = reasons.get(&row.id) else { continue };
+            row.available = false;
+            row.switch_enabled = false;
+            row.unavailable_reason = Some(reason.clone());
+        }
+    }
+
+    /// The administrator step each failed row's reason offers (`AdminSteps::offered_action`; macOS: none).
+    pub fn set_admin_actions(&mut self, offered: &dyn Fn(&str) -> Option<&'static str>) {
+        for row in &mut self.rows {
+            row.admin_action = match &row.state {
+                RowState::Failed { reason } => offered(reason),
+                _ => None,
+            };
+        }
+    }
+
+    /// The kinds the platform offers only later (`SetupReport::later_kinds`; WinVPN: the native VPNs): each managed
+    /// row of such a kind is unavailable with its reason, and its switch cannot be used. Empty: unchanged.
+    pub fn set_later_kinds(&mut self, later: &[(VPNKind, String)]) {
+        for row in &mut self.rows {
+            let Some((_, reason)) = later.iter().find(|(k, _)| row.kind == Some(k.raw_value())) else { continue };
+            row.available = false;
+            row.switch_enabled = false;
+            row.unavailable_reason = Some(reason.clone());
+        }
+    }
+
+    /// The managed rows whose kind cannot start (`SetupReport::unavailable_text`), each with its label ("Not
+    /// installed: OpenVPN") and whether System Status can fix it (the link). Rows of other kinds and system VPNs
+    /// are unchanged. Runs after [`Self::set_engine_missing`] and [`Self::set_later_kinds`]: a row they already made
+    /// unavailable keeps their reason.
+    pub fn set_unavailable_kinds(&mut self, gate: &dyn Fn(VPNKind) -> Option<(String, bool)>) {
+        for row in self.rows.iter_mut().filter(|r| r.managed && r.unavailable_reason.is_none()) {
+            let Some(kind) = row.kind.and_then(VPNKind::from_raw_value) else { continue };
+            if let Some((label, link)) = gate(kind) {
+                row.available = false;
+                row.switch_enabled = false;
+                row.unavailable_reason = Some(label);
+                row.setup_link = link;
+            }
+        }
+    }
+
+    /// "Reconnect Automatically" per managed row (`enabled(id)`, the app's `reconnect::is_enabled`); system VPN rows
+    /// stay `None`.
+    pub fn set_auto_reconnect(&mut self, enabled: &dyn Fn(&str) -> bool) {
+        for row in self.rows.iter_mut().filter(|r| r.managed) {
+            row.auto_reconnect = Some(enabled(&row.id));
         }
     }
 

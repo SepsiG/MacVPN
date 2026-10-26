@@ -30,7 +30,7 @@ pub const MAX_IMPORT_FILES: usize = 64;
 /// The log search text.
 pub const MAX_SEARCH_BYTES: usize = 1024;
 
-fn managed(state: &AppState, id: &str) -> Result<Connection, String> {
+pub(crate) fn managed(state: &AppState, id: &str) -> Result<Connection, String> {
     validate_key(id)?;
     match state.manager.item(id) {
         Some(ConnectionItem::Managed(c)) => Ok(c),
@@ -203,10 +203,12 @@ pub async fn export_check(state: Shared<'_>, id: String) -> Result<Option<Export
 #[tauri::command]
 pub async fn export_connection(
     app: AppHandle,
+    window: tauri::Window,
     state: Shared<'_>,
     id: String,
     with_keys: bool,
 ) -> Result<Option<Notice>, String> {
+    crate::guard::only(&window, "export_connection", MANAGE_WINDOW)?;
     let c = managed(&state, &id)?;
     let shared = state.inner().clone();
     let plan = match blocking(move || import_export::export_plan(shared.connections.deps(), &c, with_keys)).await? {
@@ -228,10 +230,18 @@ pub async fn export_connection(
     Ok(written.err().map(|e| Notice { title: e.message, message: String::new() }))
 }
 
+/// After deleting a native connection: the system's VPN settings open (the user removes the profile there, macOS'
+/// Profiles pane) unless the platform removed it itself (WinVPN 2c: its RAS entry) or in the sandbox.
+pub(crate) fn opens_native_settings_after_delete(removes_profiles: bool, sandbox: bool) -> bool {
+    !removes_profiles && !sandbox
+}
+
 /// Deletes a managed connection (confirmed in the UI): disconnected first, its native debug log stopped, the
-/// config and Keychain items deleted; for a native one the Profiles pane opens (its profile is removed there).
+/// config and Keychain items deleted, its profile removed where the platform does it (WinVPN); for a native one
+/// on macOS the Profiles pane opens (its profile is removed there).
 #[tauri::command]
-pub async fn delete_connection(state: Shared<'_>, id: String) -> Result<(), String> {
+pub async fn delete_connection(window: tauri::Window, state: Shared<'_>, id: String) -> Result<(), String> {
+    crate::guard::only(&window, "delete_connection", MANAGE_WINDOW)?;
     let c = managed(&state, &id)?;
     if state.manager.is_locked() {
         return Err(macvpn_app_core::vault_stores::locked_message());
@@ -240,7 +250,12 @@ pub async fn delete_connection(state: Shared<'_>, id: String) -> Result<(), Stri
     blocking(move || {
         shared.native_logs.remove(&c.id);
         if let Some(deleted) = shared.connections.delete(&c.id) {
-            if deleted.kind.is_native() && !shared.env.sandbox {
+            // Auto-reconnect forgets it (its "off" entry and the planner's records).
+            macvpn_app_core::reconnect::set_enabled(shared.prefs.as_ref(), &c.id, true);
+            shared.reconnect.send(crate::reconnect::Event::Forget(id));
+            if deleted.kind.is_native()
+                && opens_native_settings_after_delete(shared.native_profiles.removes_profiles(), shared.env.sandbox)
+            {
                 crate::platform::get().shell().open_native_profile_settings();
             }
             shared.manager.refresh();
@@ -274,9 +289,12 @@ pub async fn log_subscribe(app: AppHandle, state: Shared<'_>, id: Option<String>
     };
     let shared = state.inner().clone();
     let event = blocking(move || {
-        // The helper's log of the connection (a helper without one: an empty path, which reads nothing).
-        let log_path = crate::platform::get().helper_client().log_path(&c.id).unwrap_or_default();
-        let mut feed = LogFeed::new(&c, log_path, shared.native_logs.clone());
+        // The helper's log of the connection, through the manager's helper (a helper without one: none, which reads
+        // nothing); a native connection's own log where the platform keeps one (WinVPN's RAS log; macOS: none).
+        let source = shared.helper.log_source(&c.id);
+        let native =
+            if c.kind.is_native() { crate::platform::get().native_controller().log_source(&c.id) } else { None };
+        let mut feed = LogFeed::with_native_source(&c, source, native, shared.native_logs.clone());
         let chunk = feed.poll().unwrap_or(LogChunk { reset: true, lines: Vec::new() });
         let mut slot = shared.log_feed.lock().unwrap_or_else(PoisonError::into_inner);
         // A newer subscription won meanwhile: this one is dropped.
@@ -407,12 +425,12 @@ mod tests {
 
     #[test]
     fn dropped_paths_are_absolute_and_bounded() {
-        let many: Vec<PathBuf> = (0..100).map(|i| PathBuf::from(format!("/tmp/{i}.ovpn"))).collect();
+        // An absolute path needs a drive on Windows.
+        let root = if cfg!(windows) { "C:" } else { "" };
+        let many: Vec<PathBuf> = (0..100).map(|i| PathBuf::from(format!("{root}/tmp/{i}.ovpn"))).collect();
         assert_eq!(dropped_paths(&many).len(), MAX_IMPORT_FILES);
-        assert_eq!(
-            dropped_paths(&[PathBuf::from("relative.ovpn"), PathBuf::from("/a.ovpn")]),
-            [PathBuf::from("/a.ovpn")]
-        );
+        let absolute = PathBuf::from(format!("{root}/a.ovpn"));
+        assert_eq!(dropped_paths(&[PathBuf::from("relative.ovpn"), absolute.clone()]), [absolute]);
     }
 
     #[test]
@@ -428,5 +446,15 @@ mod tests {
         ] {
             assert!(serde_json::from_str::<EditorFields>(bad).is_err(), "{bad}");
         }
+    }
+
+    /// G-3: the system's VPN settings open after deleting a native connection only where the user removes the
+    /// profile there (macOS), never in the sandbox; WinVPN removes its RAS entry itself.
+    #[test]
+    fn opens_native_settings_after_delete_only_where_the_user_removes_the_profile() {
+        assert!(super::opens_native_settings_after_delete(false, false));
+        assert!(!super::opens_native_settings_after_delete(false, true));
+        assert!(!super::opens_native_settings_after_delete(true, false));
+        assert!(!super::opens_native_settings_after_delete(true, true));
     }
 }

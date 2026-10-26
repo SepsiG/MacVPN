@@ -24,6 +24,13 @@ fn https_subscription() -> SubscriptionString {
     }
 }
 
+/// A file source: an absolute path of this OS (`/Volumes/…` is drive-relative on Windows, so refused there), and the
+/// same path as a JSON string's content.
+const FILE: &str =
+    if cfg!(windows) { r"\\fileserver\Team\team.macvpncatalog" } else { "/Volumes/Team/team.macvpncatalog" };
+const FILE_JSON: &str =
+    if cfg!(windows) { r"\\\\fileserver\\Team\\team.macvpncatalog" } else { "/Volumes/Team/team.macvpncatalog" };
+
 fn encoded(json: &str) -> String {
     format!("{SUBSCRIPTION_PREFIX}{}", URL_SAFE_NO_PAD.encode(json.as_bytes()))
 }
@@ -49,7 +56,7 @@ fn round_trip_https_and_file() {
     same(&parse_subscription(&text).unwrap(), &s);
 
     let file = SubscriptionString {
-        source: CatalogSource::File(PathBuf::from("/Volumes/Team/team.macvpncatalog")),
+        source: CatalogSource::File(PathBuf::from(FILE)),
         team_key: TeamKey::generate(&FixedEntropy::new(6)).unwrap(),
         fingerprint: s.fingerprint,
         catalog_id: None,
@@ -100,9 +107,9 @@ fn json_rules() {
     let s = https_subscription();
     let key = s.team_key.to_text().to_string();
     let fp = s.fingerprint.to_text();
-    let good =
-        format!(r#"{{"v":1,"source":{{"file":"/Volumes/T/t.macvpncatalog"}},"teamKey":"{key}","fingerprint":"{fp}"}}"#);
-    assert!(parse_subscription(&encoded(&good)).is_ok());
+    assert_eq!(serde_json::to_string(FILE).unwrap(), format!("\"{FILE_JSON}\""));
+    let good = format!(r#"{{"v":1,"source":{{"file":"{FILE_JSON}"}},"teamKey":"{key}","fingerprint":"{fp}"}}"#);
+    assert_eq!(parse_subscription(&encoded(&good)).unwrap().source, CatalogSource::File(PathBuf::from(FILE)));
 
     let newer = good.replace("\"v\":1", "\"v\":2");
     assert_eq!(parse_subscription(&encoded(&newer)).err(), Some(SubscriptionError::NewerVersion(2)));
@@ -112,8 +119,7 @@ fn json_rules() {
     assert_eq!(parse_subscription(&encoded(&duplicate)).err(), Some(SubscriptionError::Malformed));
     let unknown = good.replace("\"v\":1", "\"v\":1,\"bearer\":\"t\"");
     assert_eq!(parse_subscription(&encoded(&unknown)).err(), Some(SubscriptionError::Malformed));
-    let two_sources =
-        good.replace(r#"{"file":"/Volumes/T/t.macvpncatalog"}"#, r#"{"file":"/a","https":"https://a.example/"}"#);
+    let two_sources = good.replace(FILE_JSON, &format!(r#"{FILE_JSON}","https":"https://a.example/"#));
     assert_eq!(parse_subscription(&encoded(&two_sources)).err(), Some(SubscriptionError::Malformed));
     let missing = good.replace(&format!(",\"fingerprint\":\"{fp}\""), "");
     assert_eq!(parse_subscription(&encoded(&missing)).err(), Some(SubscriptionError::Malformed));
@@ -122,9 +128,9 @@ fn json_rules() {
     // Padding is not part of the format.
     assert_eq!(parse_subscription(&format!("{}=", encoded(&good))).err(), Some(SubscriptionError::Malformed));
 
-    let http = good.replace(r#"{"file":"/Volumes/T/t.macvpncatalog"}"#, r#"{"https":"http://a.example/"}"#);
+    let http = good.replace(&format!(r#"{{"file":"{FILE_JSON}"}}"#), r#"{"https":"http://a.example/"}"#);
     assert_eq!(parse_subscription(&encoded(&http)).err(), Some(SubscriptionError::Source(SourceError::NotHttps)));
-    let relative = good.replace("/Volumes/T/t.macvpncatalog", "t.macvpncatalog");
+    let relative = good.replace(FILE_JSON, "t.macvpncatalog");
     assert_eq!(
         parse_subscription(&encoded(&relative)).err(),
         Some(SubscriptionError::Source(SourceError::NotAbsolute))
@@ -140,7 +146,7 @@ fn a_mistyped_team_key_is_a_typo() {
     let fp = s.fingerprint.to_text();
     let last = key.chars().last().unwrap();
     let typo = format!("{}{}", &key[..key.len() - 1], if last == '2' { '3' } else { '2' });
-    let json = format!(r#"{{"v":1,"source":{{"file":"/a"}},"teamKey":"{typo}","fingerprint":"{fp}"}}"#);
+    let json = format!(r#"{{"v":1,"source":{{"file":"{FILE_JSON}"}},"teamKey":"{typo}","fingerprint":"{fp}"}}"#);
     assert_eq!(parse_subscription(&encoded(&json)).err(), Some(SubscriptionError::TeamKey(TeamKeyError::Typo)));
 }
 

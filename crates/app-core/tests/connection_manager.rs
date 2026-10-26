@@ -91,7 +91,6 @@ fn system_manager(f: &Fixture) -> (Arc<macvpn_app_core::ConnectionManager>, Syst
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn refresh_merges_root_and_native_and_hides_managed_native() {
     let f = Fixture::new(HU);
     let ovpn = Connection::new("Iroda", VPNKind::Openvpn);
@@ -113,7 +112,6 @@ fn refresh_merges_root_and_native_and_hides_managed_native() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn connect_failure_sets_failed_and_emits_event() {
     let f = Fixture::new(HU);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -133,7 +131,6 @@ fn connect_failure_sets_failed_and_emits_event() {
 
 /// SSTP is a root type: the same path as the others (`mvpn up sstp <id>`, the password on stdin).
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_connect_uses_root_path() {
     let f = Fixture::new(HU);
     let c = Connection::new("SSTP", VPNKind::Sstp);
@@ -153,7 +150,6 @@ fn sstp_connect_uses_root_path() {
 
 /// Root layer 8: every root kind sends its stored config to `mvpn up` (on stdin, ahead of the secrets).
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn root_up_receives_the_config() {
     let f = Fixture::new(HU);
     for (kind, config) in [
@@ -174,7 +170,6 @@ fn root_up_receives_the_config() {
 
 /// A config that cannot be read fails the connect with the existing text, without calling `mvpn`.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unreadable_config_fails_without_up() {
     let f = Fixture::new(HU);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -186,7 +181,6 @@ fn unreadable_config_fails_without_up() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn drop_detection() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -201,7 +195,6 @@ fn drop_detection() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn connect_passes_secrets_and_disconnect_clears_failure() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -220,7 +213,6 @@ fn connect_passes_secrets_and_disconnect_clears_failure() {
 // MARK: - State machine, races
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn transient_status_failure_keeps_connected() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -237,7 +229,6 @@ fn transient_status_failure_keeps_connected() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn status_error_after_three_failures_and_cleared_on_success() {
     let f = Fixture::new(HU);
     f.store.save(&Connection::new("Iroda", VPNKind::Openvpn), Some("remote x\n")).unwrap();
@@ -254,7 +245,6 @@ fn status_error_after_three_failures_and_cleared_on_success() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn root_status_skipped_without_root_backed_connections() {
     let f = Fixture::new(HU);
     let (m, _) = native_manager(&f);
@@ -267,7 +257,6 @@ fn root_status_skipped_without_root_backed_connections() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn stale_refresh_does_not_overwrite_disconnect() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -299,7 +288,6 @@ fn stale_refresh_does_not_overwrite_disconnect() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn stale_result_from_older_refresh_is_discarded() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -320,7 +308,6 @@ fn stale_result_from_older_refresh_is_discarded() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_connect_failure_detected() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -339,7 +326,6 @@ fn native_connect_failure_detected() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_connect_success() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -352,7 +338,6 @@ fn native_connect_success() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_never_connecting_fails_after_grace_period_and_timeout() {
     let f = Fixture::new(HU);
     let (_, c) = native_manager(&f);
@@ -371,7 +356,6 @@ fn native_never_connecting_fails_after_grace_period_and_timeout() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_stuck_connecting_times_out() {
     let f = Fixture::new(HU);
     let (_, c) = native_manager(&f);
@@ -386,7 +370,6 @@ fn native_stuck_connecting_times_out() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_drop_detected() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -402,7 +385,6 @@ fn native_drop_detected() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn list_failure_keeps_native_and_system_states() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -414,7 +396,6 @@ fn list_failure_keeps_native_and_system_states() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn disconnect_during_pending_connect_then_up_fails_is_silent() {
     let f = Fixture::new(HU);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -456,7 +437,6 @@ fn failed_system_connect_is_sticky() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn reload_keeps_list_on_store_error() {
     let f = Fixture::new(HU);
     let c = Connection::new("A", VPNKind::Openvpn);
@@ -473,7 +453,6 @@ fn reload_keeps_list_on_store_error() {
 // MARK: - Cancelled connect, tokens
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn late_successful_up_after_cancel_is_torn_down() {
     let f = Fixture::new(HU);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -502,7 +481,6 @@ fn late_successful_up_after_cancel_is_torn_down() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn stale_failure_does_not_touch_newer_connect() {
     let f = Fixture::new(HU);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -535,7 +513,6 @@ fn stale_failure_does_not_touch_newer_connect() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_timeout_stops_service_and_works_without_list() {
     let f = Fixture::new(HU);
     let (_, c) = native_manager(&f);
@@ -550,7 +527,6 @@ fn native_timeout_stops_service_and_works_without_list() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn events_are_emitted_after_state_is_published() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -571,7 +547,6 @@ fn events_are_emitted_after_state_is_published() {
 // MARK: - In-process native start: secrets
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_native_connect_passes_secrets_to_driver() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -593,7 +568,6 @@ fn managed_native_connect_passes_secrets_to_driver() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_cisco_connect_passes_xauth() {
     let f = Fixture::new(HU);
     let mut c = Connection::new("Partner", VPNKind::Cisco);
@@ -618,7 +592,6 @@ fn managed_cisco_connect_passes_xauth() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_native_connect_without_secrets_uses_stored_config() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -627,7 +600,6 @@ fn managed_native_connect_without_secrets_uses_stored_config() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_native_driver_failure() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -806,7 +778,6 @@ fn bound_candidate(f: &Fixture) -> Connection {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn refresh_binds_service_by_name_and_server_address() {
     let f = Fixture::new(HU);
     bound_candidate(&f);
@@ -827,7 +798,6 @@ fn refresh_binds_service_by_name_and_server_address() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn bound_connect_and_status_use_the_service_id() {
     let f = Fixture::new(HU);
     let c = bound_candidate(&f);
@@ -848,7 +818,6 @@ fn bound_connect_and_status_use_the_service_id() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ambiguous_name_refuses_to_pass_secrets() {
     let f = Fixture::new(HU);
     let c = l2tp_connection(None);
@@ -870,7 +839,6 @@ const SERVER_MISMATCH_HU: &str = "A(z) „Office L2TP” nevű VPN szolgáltatá
 /// Unbound, the only same-named service points to another server: no start at all (neither with nor without
 /// secrets).
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unbound_name_match_with_other_server_refuses_to_start() {
     let f = Fixture::new(HU);
     let c = l2tp_connection(Some("other.example.com"));
@@ -892,7 +860,6 @@ fn unbound_name_match_with_other_server_refuses_to_start() {
 
 /// Unbound and the server address cannot be read (or the connection has no server): refused too.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unbound_name_match_with_unknown_address_refuses_to_start() {
     let f = Fixture::new(HU);
     let c = l2tp_connection(Some("vpn.example.com"));
@@ -917,7 +884,6 @@ fn unbound_name_match_with_unknown_address_refuses_to_start() {
 /// Unbound, the address matches (case-insensitively) at connect time even without a prior refresh: secrets
 /// passed.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unbound_name_match_with_same_server_passes_secrets() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -938,7 +904,6 @@ fn server_mismatch_message_is_english_too() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn vanished_bound_service_is_unbound() {
     let f = Fixture::new(HU);
     let mut c = l2tp_connection(None);
@@ -955,7 +920,6 @@ fn vanished_bound_service_is_unbound() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn installed_native_ids_are_reported() {
     let f = Fixture::new(HU);
     let (m, c) = native_manager(&f);
@@ -970,4 +934,93 @@ fn installed_native_ids_are_reported() {
     m.refresh();
     assert_eq!(*seen.lock().unwrap(), [HashSet::from([c.id]), HashSet::new()]);
     assert!(m.installed_native_ids().is_empty());
+}
+
+/// WinVPN 2c: the platform's own service of a connection (its RAS entry `WinVPN-<UUID>`, named after the ID, not
+/// the connection) binds it before the name: its state, its start (no server-address check: it is never foreign)
+/// and its stop go there, and a same-named VPN of the user stays a system VPN. An IKEv2 connection's entry is not a
+/// system VPN either. Without a managed ID (macOS) the name + server binding is unchanged (the tests above).
+#[test]
+fn a_managed_service_id_binds_without_the_name() {
+    let f = Fixture::new(HU);
+    let c = l2tp_connection(Some("vpn.example.com"));
+    let ikev2 = Connection::new("Branch IKEv2", VPNKind::Strongswan);
+    f.store.save(&c, None).unwrap();
+    f.store.save(&ikev2, Some("connections {}\n")).unwrap();
+    let entry = format!("WinVPN-{}", uuid_string(&c.id));
+    let ikev2_entry = format!("WinVPN-{}", uuid_string(&ikev2.id));
+    f.native.set_managed(&c.id, &entry);
+    f.native.set_managed(&ikev2.id, &ikev2_entry);
+    f.helper.respond("status", Ok("[]"));
+    f.native.set_list(Ok(vec![
+        SystemVpn::new(&entry, &entry, "L2TP", "Connected"),
+        SystemVpn::new(&ikev2_entry, &ikev2_entry, "IKEv2", "Disconnected"),
+        // The user's own VPN with the connection's name and server: not ours.
+        l2tp("Disconnected"),
+    ]));
+    f.native.set_address(SVC, Some("vpn.example.com"));
+    let m = f.manager();
+    m.refresh();
+    assert_eq!(m.state(&uuid_string(&c.id)), connected(None));
+    assert_eq!(m.system_services().iter().map(|s| s.id.clone()).collect::<Vec<_>>(), [SVC]);
+    assert_eq!(m.installed_native_ids(), HashSet::from([c.id]));
+    // Not bound to the user's VPN in the store.
+    assert_eq!(m.connections().iter().find(|x| x.id == c.id).unwrap().native_service_id, None);
+
+    f.native.set_list(Ok(vec![SystemVpn::new(&entry, &entry, "L2TP", "Disconnected"), l2tp("Disconnected")]));
+    m.refresh();
+    let shows = f.native.shows();
+    f.secrets.set("pw", &c.id, SecretField::Password);
+    m.connect(&c, false);
+    assert_eq!(
+        f.native.starts().iter().map(|s| s.service_id.clone()).collect::<Vec<_>>(),
+        std::slice::from_ref(&entry)
+    );
+    assert_eq!(f.native.shows(), shows, "no server address check for the platform's own entry");
+    m.disconnect(&c);
+    assert_eq!(f.native.stops(), std::slice::from_ref(&entry));
+
+    // Its entry gone: not installed, and never the user's same-named VPN instead.
+    f.native.set_list(Ok(vec![l2tp("Connected")]));
+    m.refresh();
+    assert_eq!(m.state(&uuid_string(&c.id)), ConnectionState::Disconnected);
+    assert!(m.installed_native_ids().is_empty());
+}
+
+/// WinVPN 2c: the platform's answer which connections it cannot connect with their settings, read at every reload
+/// with the stored config (an empty one for the native kinds); none without a `NativeSupport` (macOS).
+#[test]
+fn unsupported_settings_are_read_at_reload() {
+    struct Support(Mutex<Vec<(VPNKind, String)>>);
+    impl macvpn_app_core::deps::NativeSupport for Support {
+        fn unsupported_reason(&self, c: &Connection, config: &[u8]) -> Option<String> {
+            let config = String::from_utf8_lossy(config).into_owned();
+            self.0.lock().unwrap().push((c.kind, config.clone()));
+            (config.contains("eap-tls") || c.kind == VPNKind::Cisco).then(|| format!("Not on Windows: {}", c.name))
+        }
+    }
+    let f = Fixture::new(HU);
+    let tls = Connection::new("TLS", VPNKind::Strongswan);
+    let eap = Connection::new("EAP", VPNKind::Strongswan);
+    let cisco = Connection::new("Partner", VPNKind::Cisco);
+    f.store.save(&tls, Some("auth = eap-tls\n")).unwrap();
+    f.store.save(&eap, Some("auth = eap-mschapv2\n")).unwrap();
+    f.store.save(&cisco, None).unwrap();
+    let plain = f.manager();
+    assert!(plain.unsupported_reasons().is_empty());
+
+    let support = Arc::new(Support(Mutex::new(Vec::new())));
+    let m = macvpn_app_core::ConnectionManager::new(f.deps());
+    m.set_native_support(support.clone());
+    m.reload();
+    let reasons = m.unsupported_reasons();
+    assert_eq!(reasons.len(), 2);
+    assert_eq!(reasons.get(&uuid_string(&tls.id)).map(String::as_str), Some("Not on Windows: TLS"));
+    assert_eq!(m.unsupported_reason(&uuid_string(&cisco.id)).as_deref(), Some("Not on Windows: Partner"));
+    assert_eq!(m.unsupported_reason(&uuid_string(&eap.id)), None);
+    let asked = support.0.lock().unwrap().clone();
+    assert!(asked.contains(&(VPNKind::Cisco, String::new())));
+    assert!(asked.contains(&(VPNKind::Strongswan, "auth = eap-mschapv2\n".into())));
+    m.enter_locked();
+    assert!(m.unsupported_reasons().is_empty(), "nothing kept while locked");
 }

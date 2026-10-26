@@ -80,7 +80,6 @@ fn sample_ranking() -> ConnectionRanking {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ranking_round_trips_with_pin_order_scores_and_dates() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -100,7 +99,6 @@ fn ranking_round_trips_with_pin_order_scores_and_dates() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_ranking_row_is_the_usage_entry_of_connection_order_json() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -114,7 +112,6 @@ fn a_ranking_row_is_the_usage_entry_of_connection_order_json() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_swift_written_ranking_files_survive_the_vault_byte_for_byte() {
     for name in ["recorded.json", "numbers.json", "empty.json"] {
         let path = swift_fixture("connection-order", name);
@@ -130,7 +127,6 @@ fn the_swift_written_ranking_files_survive_the_vault_byte_for_byte() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn saving_the_ranking_replaces_both_tables() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -146,7 +142,6 @@ fn saving_the_ranking_replaces_both_tables() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_ranking_with_a_non_finite_score_is_refused_and_nothing_changes() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -160,7 +155,6 @@ fn a_ranking_with_a_non_finite_score_is_refused_and_nothing_changes() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_undecodable_ranking_row_is_skipped() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -176,7 +170,6 @@ fn an_undecodable_ranking_row_is_skipped() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ranking_writes_are_refused_on_a_newer_database() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -197,7 +190,6 @@ fn sample_otp() -> HashMap<String, OTPSetting> {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_otp_round_trips() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -211,7 +203,6 @@ fn system_otp_round_trips() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_otp_keeps_only_enabled_entries_and_replaces_the_table() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -224,7 +215,6 @@ fn system_otp_keeps_only_enabled_entries_and_replaces_the_table() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_swift_written_system_otp_file_survives_the_vault() {
     let path = swift_fixture("system-otp", "saved.json");
     let map = SystemOTPStore::new(&path).load();
@@ -236,7 +226,6 @@ fn the_swift_written_system_otp_file_survives_the_vault() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_otp_writes_are_refused_on_a_newer_database() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -253,7 +242,6 @@ fn item(service_id: &str) -> SystemItem {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_items_upsert_and_delete() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -282,7 +270,6 @@ fn system_items_upsert_and_delete() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn missing_since_is_stored_and_cleared() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -299,7 +286,6 @@ fn missing_since_is_stored_and_cleared() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unknown_stored_values_of_a_system_item_read_as_none() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -317,7 +303,6 @@ fn unknown_stored_values_of_a_system_item_read_as_none() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_item_writes_are_refused_on_a_newer_database() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -345,7 +330,6 @@ fn client(id: &str, name: &str) -> Value {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn control_clients_round_trip_in_order() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -369,7 +353,6 @@ fn control_clients_round_trip_in_order() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_control_client_without_an_id_is_refused_and_nothing_changes() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -381,7 +364,6 @@ fn a_control_client_without_an_id_is_refused_and_nothing_changes() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_unreadable_control_client_row_is_an_error_not_an_empty_registry() {
     // An empty registry would be saved over the real one at the next change and unpair every client.
     let tmp = TempDir::new();
@@ -397,7 +379,6 @@ fn an_unreadable_control_client_row_is_an_error_not_an_empty_registry() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn control_client_writes_are_refused_on_a_newer_database() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);

@@ -2,7 +2,7 @@
 
 [Magyar változat](control-api.hu.md)
 
-This guide is for developers who want another program on the same Mac to bring MacVPN connections up and down. Most MacVPN users never need it. The [User guide](user-guide.en.md) covers everything else.
+This guide is for developers who want another program on the same Mac to bring MacVPN connections up and down. Most MacVPN users never need it. The [User guide](user-guide.en.md) covers everything else. WinVPN, the Windows version, offers the same API over a named pipe: see [11](#11-windows-winvpn).
 
 ## Contents
 
@@ -16,6 +16,7 @@ This guide is for developers who want another program on the same Mac to bring M
 8. [Forward compatibility](#8-forward-compatibility)
 9. [How to integrate a Rust app](#9-how-to-integrate-a-rust-app)
 10. [Troubleshooting](#10-troubleshooting)
+11. [Windows (WinVPN)](#11-windows-winvpn)
 
 ---
 
@@ -283,7 +284,7 @@ Error codes are generic. They never contain raw tool output.
 | `mfa_timeout` | The code or sign-in prompt timed out. | Let the user retry. |
 | `credentials_cancelled` | The user cancelled the credential prompt, or it expired after 2 minutes (from 1.1.0). | Do not retry on your own. |
 | `locked` | MacVPN's vault is locked (from 1.2.0): `pair`, `hello`, `list`, `up` and `status` are refused until the user unlocks it in MacVPN. `down` still works, and an existing session and its leases are kept. After `pair` or `hello` the connection is closed. | Tell the user to unlock MacVPN, then try again. |
-| `failed` | Any other failure. `message`, if present, is a short localized reason for the user. Also: the user disconnected the connection in MacVPN while it was coming up, or your own `down` cancelled the `up`. | Show the message. |
+| `failed` | Any other failure. `message`, if present, is a short localized reason for the user. Also: the user disconnected the connection in MacVPN while it was coming up, or your own `down` cancelled the `up`. On WinVPN without its VPN engine (the 2a preview) every `up` that has to start a connection, of any type, is `failed` with the message "The VPN engine comes in a later version of WinVPN." (never `setup_required`: there is nothing the user could set up). | Show the message. |
 | `app_quitting` | MacVPN is quitting. The connection closes next (also the `reason` of the [`closing` event](#510-the-closing-event)). | Reconnect after MacVPN runs again. |
 | `disabled` | The user turned **Allow other apps to control VPNs** off. The connection closes next (also the `reason` of the [`closing` event](#510-the-closing-event)). | — |
 | `unsupported` | Unknown `op`. | — |
@@ -453,3 +454,110 @@ Choosing the connection: call `list` (for example in your connection settings), 
 - **The connection closes right after connecting.** Send `hello` (or `pair`) within 5 seconds, keep under 20 requests per second, and keep reading the socket: a client that lets its replies and events pile up is disconnected.
 - **`denied` at once, without a window.** Pairing is paused for 10 minutes after 3 rejections.
 - **The VPN stays up after the session.** It was already up before the first lease (a pre-existing connection), or another socket still holds it. Check the **Held by …** label.
+
+---
+
+## 11. Windows (WinVPN)
+
+WinVPN speaks exactly this protocol (sections 3 to 8: the same requests, events, error codes and lease rules). Only the transport, the client's identity and the place for the token differ. Turning it on and pairing work as in sections 2 and 3, in WinVPN's Connections window → **Paired apps** ([WinVPN user guide, 5.4](winvpn-user-guide.en.md#54-paired-apps-control-api)).
+
+### 11.1 The pipe
+
+- **Name:** `\\.\pipe\WinVPN-control-<SID>`, where `<SID>` is the user's security identifier (`S-1-5-21-…`; `whoami /user` prints it). The example client's `default_endpoint()` builds it; pass it wherever a socket path goes (`Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`). It is not `\\.\pipe\WinVPN`, which is the WinVPN Service's own pipe.
+- **Who can connect:** only programs running as the same user **in a local logon** of this PC. The pipe denies network logons and refuses remote clients, so another user, the network, and even the same user over SSH or another remote shell are refused (access denied). While **Allow other apps to control VPNs** is off, the pipe does not exist (`NotFound`).
+- **Identity:** WinVPN reads the client's user (SID) from the pipe with identification-level impersonation, and its executable path from its process; the pairing is pinned to that path, as on macOS. A client that opens the pipe without allowing identification is closed.
+- **The client checks the server:** before it sends anything (a token, a request), the example client checks that the process serving the pipe runs as the same user, and refuses a pipe another user created first (a squatter) with `PermissionDenied`. Use the example client's transport (it is `macvpn-winsys`' `pipe`, the implementation WinVPN itself uses), or do the same check.
+- **Lifetime:** as on macOS, a lease ends when the pipe handle closes: when your program closes it, exits or is killed.
+- **Error codes** are the same; on Windows `up` of an OpenVPN or WireGuard connection answers `failed` with the service's text when the WinVPN Service is missing or not reachable (never `setup_required`), and L2TP/IPsec, IKEv2, SSTP and system VPNs do not need the service. A Cisco IPsec connection answers `failed` with its "not supported by Windows" text.
+
+### 11.2 Storing the token in Credential Manager
+
+Keep the token in the user's Credential Manager, as a generic credential of your own (WinVPN never reads it). **Never put the token on a command line** (`cmdkey /pass:…`, a program argument): every process of the user, and process-creation auditing, can see command lines.
+
+With `windows-sys` (features `Win32_Foundation`, `Win32_Security_Credentials`):
+
+```rust
+use windows_sys::Win32::Security::Credentials::{
+    CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CREDENTIALW, CredDeleteW, CredFree, CredReadW, CredWriteW,
+};
+
+const TARGET: &str = "com.example.remote-desktop.winvpn";
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
+}
+
+fn store_token(token: &str) -> std::io::Result<()> {
+    let (target, user) = (wide(TARGET), wide("control-token"));
+    let mut blob = token.as_bytes().to_vec();
+    let cred = CREDENTIALW {
+        Type: CRED_TYPE_GENERIC,
+        TargetName: target.as_ptr().cast_mut(),
+        UserName: user.as_ptr().cast_mut(),
+        CredentialBlobSize: blob.len() as u32,
+        CredentialBlob: blob.as_mut_ptr(),
+        Persist: CRED_PERSIST_LOCAL_MACHINE, // DPAPI for this user, never roams
+        ..Default::default()
+    };
+    // SAFETY: every pointer in `cred` outlives the call; CredWriteW copies the blob.
+    let ok = unsafe { CredWriteW(&cred, 0) } != 0;
+    blob.fill(0);
+    if ok { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+fn load_token() -> Option<String> {
+    let target = wide(TARGET);
+    let mut cred: *mut CREDENTIALW = std::ptr::null_mut();
+    // SAFETY: `target` is NUL-terminated; a returned credential is freed below.
+    if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut cred) } == 0 {
+        return None;
+    }
+    // SAFETY: CredReadW succeeded: the struct and its blob are valid until CredFree, called once.
+    unsafe {
+        let c = &*cred;
+        let token = (!c.CredentialBlob.is_null())
+            .then(|| std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize))
+            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
+        CredFree(cred.cast());
+        token
+    }
+}
+
+fn forget_token() {
+    let target = wide(TARGET);
+    // SAFETY: `target` is NUL-terminated.
+    unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) };
+}
+```
+
+Pairing from the app itself, the remote-session lease and the rest of section 9 are the same, with `default_endpoint()` in place of `default_socket_path()`.
+
+### 11.3 The command line tool on Windows
+
+```powershell
+cargo build -p macvpn-control-client
+$bin = "target\debug\macvpn-control-client.exe"
+
+# 1. Pair. WinVPN shows its window with this binary's path; the token is printed once.
+& $bin pair "My test client"
+
+# 2. List or hold: the tool asks "Token (or set MACVPN_TOKEN):" on its standard input.
+#    Paste the token there; it never goes on a command line.
+& $bin list
+& $bin hold 6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01
+
+# Or keep it in this PowerShell session only, read without echo:
+$s = Read-Host -AsSecureString "WinVPN token"
+$env:MACVPN_TOKEN = [System.Net.NetworkCredential]::new('', $s).Password
+& $bin list
+Remove-Item Env:MACVPN_TOKEN
+```
+
+`hold` ends when its standard input ends (Ctrl+Z, Enter) or when the VPN goes down. Run it in your own desktop session: over SSH the pipe refuses the connection.
+
+### 11.4 Troubleshooting on Windows
+
+- **`NotFound` (the pipe does not exist):** **Allow other apps to control VPNs** is off, WinVPN is not running, or it runs in another user's session.
+- **Access denied when connecting:** you connect from another user or from a network logon (SSH, a remote shell, a service account). Run the client in the user's own desktop session.
+- **`PermissionDenied` before anything was sent:** the pipe is served by another user's process (a squatter took the name). Sign out and in again; report it to the PC's administrator.
+- **`unauthorized` after a rebuild:** as on macOS, the pairing is pinned to the executable path (`target\debug` and `target\release` differ).

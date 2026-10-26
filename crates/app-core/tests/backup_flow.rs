@@ -82,7 +82,11 @@ type Installed = (Uuid, Vec<u8>, String, bool);
 #[derive(Default)]
 struct FakeInstaller {
     installed: Mutex<Vec<Installed>>,
+    /// WinVPN: no approval step, and Cisco IPsec refused (option A).
+    windows: bool,
 }
+
+const CISCO_REFUSED: &str = "Cisco IPsec is not supported by Windows.";
 
 impl NativeProfiles for FakeInstaller {
     fn build(&self, connection: &Connection, psk: &str) -> Result<NativeProfile, String> {
@@ -90,8 +94,15 @@ impl NativeProfiles for FakeInstaller {
     }
 
     fn install(&self, id: &Uuid, profile: &[u8], file_name: &str, service_existed: bool) -> Result<(), String> {
+        if self.windows && String::from_utf8_lossy(profile).contains("XAuth") {
+            return Err(CISCO_REFUSED.into());
+        }
         self.installed.lock().unwrap().push((*id, profile.to_vec(), file_name.to_string(), service_existed));
         Ok(())
+    }
+
+    fn needs_approval(&self) -> bool {
+        !self.windows
     }
 }
 
@@ -171,7 +182,9 @@ fn en<T>(f: impl FnOnce() -> T) -> T {
 
 #[test]
 fn file_name_password_rule_and_choices() {
-    assert_eq!(default_file_name("2026-10-19"), "MacVPN-backup-2026-10-19.macvpnbackup");
+    assert_eq!(default_file_name("MacVPN", "2026-10-19"), "MacVPN-backup-2026-10-19.macvpnbackup");
+    // The product's name: WinVPN's backups are named after WinVPN (the format and extension are shared).
+    assert_eq!(default_file_name("WinVPN", "2026-10-19"), "WinVPN-backup-2026-10-19.macvpnbackup");
     en(|| {
         assert_eq!(
             check_backup_password("short"),
@@ -201,7 +214,6 @@ fn file_name_password_rule_and_choices() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_short_own_password_and_a_wrong_master_password_are_refused() {
     let f = Fixture::new(true);
     en(|| {
@@ -243,7 +255,6 @@ fn a_short_own_password_and_a_wrong_master_password_are_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_wrong_password_a_damaged_file_and_a_newer_file() {
     let f = Fixture::new(true);
     f.save(&openvpn(1, "Office"), OVPN);
@@ -267,7 +278,6 @@ fn a_wrong_password_a_damaged_file_and_a_newer_file() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn merge_with_each_mode() {
     for (mode, expected) in [
         (ConflictMode::Overwrite, vec!["Office", "Old site"]),
@@ -293,7 +303,6 @@ fn merge_with_each_mode() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn replace_names_the_lost_count_and_refuses_a_stale_one() {
     let f = Fixture::new(true);
     f.save(&openvpn(1, "Office"), OVPN);
@@ -319,7 +328,6 @@ fn replace_names_the_lost_count_and_refuses_a_stale_one() {
 /// "Replace everything" names what it takes from the publisher side too: an admin key the backup replaces with its
 /// own counts in the number the confirmation sends; one the backup has nothing for stays.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn replace_names_the_admin_keys_it_replaces() {
     use macvpn_core::catalog::keys::AdminKey;
     use macvpn_core::vault::AdminKeyRole;
@@ -350,7 +358,6 @@ fn replace_names_the_admin_keys_it_replaces() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn acknowledged_risky_directives_are_listed_before_the_restore() {
     let f = Fixture::new(true);
     let mut risky = openvpn(1, "Risky");
@@ -362,7 +369,6 @@ fn acknowledged_risky_directives_are_listed_before_the_restore() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn only_the_window_that_opened_it_restores() {
     let f = Fixture::new(true);
     f.save(&openvpn(1, "Office"), OVPN);
@@ -383,7 +389,6 @@ fn only_the_window_that_opened_it_restores() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_locked_vault_neither_backs_up_nor_restores() {
     let f = Fixture::new(true);
     let bytes = f.backup(BackupPreferences::default());
@@ -403,7 +408,6 @@ fn a_locked_vault_neither_backs_up_nor_restores() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn preferences_are_applied_only_when_ticked() {
     let backed_up = BackupPreferences {
         auto_check: false,
@@ -461,7 +465,6 @@ fn preferences_are_applied_only_when_ticked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_profiles_are_reinstalled_one_by_one() {
     let f = Fixture::new(true);
     let native = l2tp(5, "Branch L2TP");
@@ -498,8 +501,46 @@ fn native_profiles_are_reinstalled_one_by_one() {
     assert!(!String::from_utf8_lossy(data).contains("user-pass-456"));
 }
 
+/// WinVPN 2c Task 13: where installing needs no approval, the restore's native profiles are all installed at once
+/// (as macOS installs them one by one); Cisco IPsec's refusal is the row's note, not a failure of the restore. Where
+/// the user approves each (macOS) nothing is installed by itself.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+fn without_approval_every_restored_native_profile_is_installed() {
+    let f = Fixture::new(true);
+    let branch = l2tp(5, "Branch L2TP");
+    f.save(&branch, "");
+    let mut cisco = l2tp(6, "Office Cisco");
+    cisco.kind = VPNKind::Cisco;
+    cisco.native.as_mut().unwrap().group_name = "staff".into();
+    f.save(&cisco, "");
+    f.service.vault().with(|v| v.set_secret(&uuid_string(&branch.id), SecretField::Psk, "shared-psk-123")).unwrap();
+    let bytes = f.backup(BackupPreferences::default());
+    f.open(&bytes);
+    let outcome = f.apply(RestoreChoice::Replace { expected_lost: 0 }).unwrap();
+    assert_eq!(outcome.native_profiles.len(), 2);
+
+    let macos = FakeInstaller::default();
+    let list = f.service.install_profiles_without_approval(WINDOW, &macos, |_| false).unwrap();
+    assert!(list.iter().all(|n| !n.installed && n.note.is_none()));
+    assert!(macos.installed.lock().unwrap().is_empty(), "macOS: the user approves each");
+    let json = serde_json::to_value(&list).unwrap();
+    assert!(json[0].get("note").is_none(), "macOS: absent");
+
+    let windows = FakeInstaller { windows: true, ..FakeInstaller::default() };
+    assert!(f.service.install_profiles_without_approval("other", &windows, |_| false).is_err());
+    let list = f.service.install_profiles_without_approval(WINDOW, &windows, |_| false).unwrap();
+    let by_name = |name: &str| list.iter().find(|n| n.name == name).unwrap().clone();
+    assert!(by_name("Branch L2TP").installed);
+    assert_eq!(by_name("Branch L2TP").note, None);
+    assert!(!by_name("Office Cisco").installed);
+    assert_eq!(by_name("Office Cisco").note.as_deref(), Some(CISCO_REFUSED));
+    let installed = windows.installed.lock().unwrap();
+    assert_eq!(installed.len(), 1);
+    assert_eq!(installed[0].0, branch.id);
+    assert_eq!(f.names(), ["Branch L2TP", "Office Cisco"], "the restore stands");
+}
+
+#[test]
 fn fresh_restore_into_the_new_vault() {
     // The source Mac.
     let source = Fixture::new(true);
@@ -547,7 +588,6 @@ fn fresh_restore_into_the_new_vault() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn fresh_restore_in_place_of_the_migration() {
     let source = Fixture::new(true);
     source.save(&openvpn(2, "Office"), OVPN);

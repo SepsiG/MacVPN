@@ -1,0 +1,135 @@
+# MacVPN / WinVPN test lab (scripts/vpn-lab/README.md). Started by up.sh, which sets LAB_BIND and LAB_STATE;
+# compose.ike-standard-ports.yaml adds UDP 500/4500. Every published port is bound to LAB_BIND only.
+#
+# Networks: "edge" carries the published ports (Docker's NAT to the host); "labnet" (10.99.0.0/24) is internal:
+# no route out, the test page and the DNS server live there. The VPN servers forward client traffic only into
+# labnet (server/common.sh), never to the edge network, the host's LAN or the internet.
+name: macvpn-lab
+
+x-vpn: &vpn
+  image: macvpn-lab-server:local
+  build:
+    context: .
+    dockerfile: images/server.Dockerfile
+  cap_add: [NET_ADMIN]
+  sysctls:
+    net.ipv4.ip_forward: "1"
+    net.ipv4.conf.all.rp_filter: "0"
+  volumes:
+    - ./server:/lab/server:ro
+    - ${LAB_STATE:?set by up.sh}:/state:ro
+  restart: "no"
+  init: true
+
+services:
+  ipsec:
+    <<: *vpn
+    command: ["/lab/server/ipsec.sh"]
+    devices: ["/dev/ppp:/dev/ppp"]
+    networks:
+      edge: { ipv4_address: 172.31.99.20 }
+      labnet: { ipv4_address: 10.99.0.20 }
+    ports:
+      - "${LAB_BIND:?set by up.sh}:${LAB_IKE_ALT_PORT:-4510}:4510/udp"
+
+  openvpn:
+    <<: *vpn
+    command: ["/lab/server/openvpn.sh"]
+    devices: ["/dev/net/tun:/dev/net/tun"]
+    networks:
+      edge: { ipv4_address: 172.31.99.21 }
+      labnet: { ipv4_address: 10.99.0.21 }
+    ports:
+      - "${LAB_BIND:?set by up.sh}:1194:1194/udp"
+      - "${LAB_BIND:?set by up.sh}:1195:1195/udp"
+
+  wireguard:
+    <<: *vpn
+    command: ["/lab/server/wireguard.sh"]
+    networks:
+      edge: { ipv4_address: 172.31.99.22 }
+      labnet: { ipv4_address: 10.99.0.22 }
+    ports:
+      - "${LAB_BIND:?set by up.sh}:51820:51820/udp"
+
+  sstp:
+    <<: *vpn
+    command: ["/lab/server/sstp.sh"]
+    devices: ["/dev/ppp:/dev/ppp"]
+    networks:
+      edge: { ipv4_address: 172.31.99.23 }
+      labnet: { ipv4_address: 10.99.0.23 }
+    ports:
+      - "${LAB_BIND:?set by up.sh}:${LAB_SSTP_PORT:-443}:443/tcp"
+      - "${LAB_BIND:?set by up.sh}:${LAB_SSTP_ALT_PORT:-8443}:8443/tcp"
+
+  # The lab CA's CRL (the server certificate's distribution point), for Windows' SSTP revocation check: only the
+  # CRL folder of the state is mounted.
+  crl:
+    image: macvpn-lab-server:local
+    command: ["httpd", "-f", "-p", "80", "-h", "/www"]
+    volumes: ["${LAB_STATE:?set by up.sh}/crl:/www:ro"]
+    networks:
+      edge: { ipv4_address: 172.31.99.24 }
+    ports:
+      - "${LAB_BIND:?set by up.sh}:${LAB_CRL_PORT:-8081}:80/tcp"
+    init: true
+
+  web:
+    image: macvpn-lab-server:local
+    command: ["/lab/server/web.sh"]
+    volumes: ["./server:/lab/server:ro"]
+    networks:
+      labnet: { ipv4_address: 10.99.0.10 }
+    init: true
+
+  dns:
+    image: macvpn-lab-server:local
+    command: ["dnsmasq", "--keep-in-foreground", "--conf-file=/lab/server/dnsmasq.conf"]
+    volumes: ["./server:/lab/server:ro"]
+    networks:
+      labnet: { ipv4_address: 10.99.0.53 }
+    init: true
+
+  # The selftest client (selftest.sh): Debian's clients, an independent implementation of each protocol, connect
+  # through the published ports from inside Docker. Started only with `--profile selftest`.
+  selftest:
+    image: macvpn-lab-client:local
+    build:
+      context: .
+      dockerfile: images/client.Dockerfile
+    profiles: [selftest]
+    command: ["sleep", "infinity"]
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/ppp:/dev/ppp", "/dev/net/tun:/dev/net/tun"]
+    sysctls:
+      net.ipv4.conf.all.rp_filter: "0"
+    volumes:
+      - ./selftest:/lab/selftest:ro
+      - ${LAB_STATE:?set by up.sh}/client/selftest:/profiles:ro
+    networks:
+      edge: { ipv4_address: 172.31.99.30 }
+    init: true
+
+  # The L2TP selftest client (selftest/l2tp.sh) on the server image: Alpine's xl2tpd works with ppp 2.5.
+  selftest-l2tp:
+    image: macvpn-lab-server:local
+    profiles: [selftest]
+    command: ["sleep", "infinity"]
+    cap_add: [NET_ADMIN]
+    devices: ["/dev/ppp:/dev/ppp"]
+    volumes:
+      - ./selftest:/lab/selftest:ro
+      - ${LAB_STATE:?set by up.sh}/client/selftest:/profiles:ro
+    networks:
+      edge: { ipv4_address: 172.31.99.31 }
+    init: true
+
+networks:
+  edge:
+    ipam:
+      config: [{ subnet: 172.31.99.0/24 }]
+  labnet:
+    internal: true
+    ipam:
+      config: [{ subnet: 10.99.0.0/24 }]

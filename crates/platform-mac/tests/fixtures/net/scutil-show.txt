@@ -1,0 +1,40 @@
+<dictionary> {
+  ARPResolvedHardwareAddress : a4:2b:b0:0:0:7
+  ARPResolvedIPAddress : 192.168.7.1
+  Addresses : <array> {
+    0 : 192.168.7.20
+  }
+  ConfirmedInterfaceName : en7
+  InterfaceName : en7
+  NetworkSignature : IPv4.Router=192.168.7.1;IPv4.RouterHardwareAddress=a4:2b:b0:0:0:7
+  Router : 192.168.7.1
+  SubnetMasks : <array> {
+    0 : 255.255.255.0
+  }
+}
+<dictionary> {
+  ARPResolvedHardwareAddress : a4:2b:b0:0:0:1
+  ARPResolvedIPAddress : 192.168.1.1
+  AdditionalRoutes : <array> {
+    0 : <dictionary> {
+      DestinationAddress : 192.168.1.20
+      InterfaceName : en9
+      SubnetMask : 255.255.255.255
+    }
+    1 : <dictionary> {
+      DestinationAddress : 169.254.0.0
+      SubnetMask : 255.255.0.0
+    }
+  }
+  Addresses : <array> {
+    0 : 192.168.1.20
+  }
+  ConfirmedInterfaceName : en0
+  InterfaceName : en0
+  NetworkSignature : IPv4.Router=192.168.1.1;IPv4.RouterHardwareAddress=a4:2b:b0:0:0:1
+  Router : 192.168.1.1
+  SubnetMasks : <array> {
+    0 : 255.255.255.0
+  }
+}
+  No such key

@@ -104,6 +104,26 @@ pub trait ControlHost: Send + Sync {
     fn locked(&self) -> bool {
         false
     }
+    /// The platform has no VPN engine yet (WinVPN 2a): the localized answer to every connect ("The VPN engine comes
+    /// in a later version of WinVPN."). An `up` that would start a connection, of any type, is then `failed` with
+    /// it as the message, and nothing starts. Asked like [`Self::setup_ready_for`] (never with the server's mutex
+    /// held; it must return quickly). `None` (macOS): connects as usual.
+    fn engine_missing(&self) -> Option<String> {
+        None
+    }
+    /// The connection `key`'s kind comes in a later version on this platform (WinVPN 2b: the native VPNs): the
+    /// localized reason, and an `up` that would start it is `failed` with it as the message. Asked like
+    /// [`Self::engine_missing`]. `None` (macOS, and every other kind): connects as usual.
+    fn later_reason(&self, _key: &str) -> Option<String> {
+        None
+    }
+    /// Why an `up` that would start `key` is `failed` with this message (nothing starts): the one decision of
+    /// the app's `connect` command (`SetupReport::start_refusal`, WinVPN 2c: a missing WinVPN Service refuses
+    /// neither the native kinds nor the system VPNs; a connection the platform cannot connect). Default:
+    /// [`Self::engine_missing`], then [`Self::later_reason`].
+    fn start_refusal(&self, key: &str) -> Option<String> {
+        self.engine_missing().or_else(|| self.later_reason(key))
+    }
 }
 
 /// Where the paired clients are kept: the vault (1.2, `vault_stores::VaultRegistry`) or, before the vault and in
@@ -1458,6 +1478,10 @@ impl Client<'_> {
                 break (state, current);
             }
             drop(state);
+            if let Some(reason) = self.shared.host.start_refusal(&key) {
+                self.send(reply_err(Some(id), ErrorCode::Failed, Some(&reason)));
+                return Flow::Continue;
+            }
             if !self.shared.host.setup_ready_for(&key) {
                 self.send(reply_err(Some(id), ErrorCode::SetupRequired, None));
                 return Flow::Continue;

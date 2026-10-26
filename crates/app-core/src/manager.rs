@@ -13,9 +13,9 @@
 //! prompts) are called without the lock too, so they may call back into the manager.
 
 use crate::deps::{
-    AuthStateReader, Clock, ConnectionRepository, FolderOp, FolderStore, HelperClient, NativeController, NoAuthState,
-    Placement, RankingPersistence, SecretField, SecretReader, SecretWriter, SystemClock, SystemOTPPersistence,
-    SystemVpn,
+    AuthStateReader, Clock, ConnectionRepository, FolderOp, FolderStore, HelperClient, NativeController, NativeSupport,
+    NoAuthState, Placement, RankingPersistence, SecretField, SecretReader, SecretWriter, SystemClock,
+    SystemOTPPersistence, SystemVpn,
 };
 use macvpn_core::credentials::{
     self, CredentialAnswer, CredentialField, CredentialPrompt, CredentialValues, RequiredFields,
@@ -83,8 +83,12 @@ pub enum NativeMatch {
     Ambiguous(Vec<SystemVpn>),
 }
 
-/// Bound ID: only that counts (vanished: `None`); otherwise the name, with a unique match.
-pub fn match_service(c: &Connection, services: &[SystemVpn]) -> NativeMatch {
+/// The platform's own service for `c` ([`NativeController::managed_service_id`]; WinVPN: its RAS entry) first;
+/// then the bound ID: only that counts (vanished: `None`); otherwise the name, with a unique match.
+pub fn match_service(c: &Connection, services: &[SystemVpn], native: &dyn NativeController) -> NativeMatch {
+    if let Some(id) = native.managed_service_id(&c.id) {
+        return services.iter().find(|s| s.id == id).cloned().map_or(NativeMatch::None, NativeMatch::Service);
+    }
     if let Some(id) = &c.native_service_id {
         return services.iter().find(|s| &s.id == id).cloned().map_or(NativeMatch::None, NativeMatch::Service);
     }
@@ -109,11 +113,16 @@ fn redacted(c: &Connection) -> Connection {
 }
 
 /// The service IDs of the managed native connections (these are not shown as system VPNs). For an unbound
-/// connection, every service with its name.
-pub fn managed_service_ids(connections: &[Connection], services: &[SystemVpn]) -> HashSet<String> {
+/// connection, every service with its name. A connection of any kind with a platform-made service
+/// ([`NativeController::managed_service_id`]; WinVPN: the RAS entries of IKEv2 and SSTP too) has that one.
+pub fn managed_service_ids(
+    connections: &[Connection],
+    services: &[SystemVpn],
+    native: &dyn NativeController,
+) -> HashSet<String> {
     let mut ids = HashSet::new();
-    for c in connections.iter().filter(|c| c.kind.is_native()) {
-        match match_service(c, services) {
+    for c in connections.iter().filter(|c| c.kind.is_native() || native.managed_service_id(&c.id).is_some()) {
+        match match_service(c, services, native) {
             NativeMatch::Service(s) => {
                 ids.insert(s.id);
             }
@@ -254,6 +263,7 @@ pub enum DisconnectCause {
 struct Hooks {
     on_event: Option<EventHook>,
     on_native_services_seen: Option<ServicesSeenHook>,
+    native_support: Option<Arc<dyn NativeSupport>>,
     prompt_handler: Option<PromptHandler>,
     dismiss_prompt: Option<DismissHook>,
     credential_handler: Option<CredentialHandler>,
@@ -600,6 +610,9 @@ pub struct ConnectionManager {
     /// The server hosts of the configs ([`Self::server_hosts`]) by row id: read by [`Self::reload`] (which follows
     /// every save, import, delete, catalog apply, restore and unlock), never while the view model is built.
     server_hosts: RwLock<Arc<HashMap<String, String>>>,
+    /// The connections the platform cannot connect with their settings ([`Self::unsupported_reasons`]), by row
+    /// id: read by [`Self::reload`] like [`Self::server_hosts`].
+    unsupported: RwLock<Arc<HashMap<String, String>>>,
 }
 
 impl ConnectionManager {
@@ -616,6 +629,7 @@ impl ConnectionManager {
             next_watch_id: AtomicU64::new(1),
             saves_in_flight: Arc::default(),
             server_hosts: RwLock::default(),
+            unsupported: RwLock::default(),
         })
     }
 
@@ -629,18 +643,49 @@ impl ConnectionManager {
         HashMap::clone(&self.server_hosts.read().unwrap_or_else(PoisonError::into_inner))
     }
 
+    /// The managed connections the platform cannot connect with their settings, by row id, with the localized
+    /// reason ([`NativeSupport`], set with [`Self::set_native_support`]; WinVPN: an IKEv2 or SSTP setting Windows
+    /// lacks). What the last [`Self::reload`] read; empty without a [`NativeSupport`] (macOS).
+    pub fn unsupported_reasons(&self) -> HashMap<String, String> {
+        HashMap::clone(&self.unsupported.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// [`Self::unsupported_reasons`] of one row.
+    pub fn unsupported_reason(&self, key: &str) -> Option<String> {
+        self.unsupported.read().unwrap_or_else(PoisonError::into_inner).get(key).cloned()
+    }
+
     /// Reads the server hosts of `connections` from their configs (each read wiped after parsing; a config that
-    /// cannot be read or names no host is left out). Called by [`Self::reload`] without any lock held.
-    fn read_server_hosts(&self, connections: &[Connection]) -> HashMap<String, String> {
-        connections
-            .iter()
-            .filter(|c| !c.kind.is_native())
-            .filter_map(|c| {
-                let config = self.deps.store.load_config_wiped(&c.id).ok()?;
-                let host = macvpn_core::importer::remote_host(c.kind, &config)?;
-                Some((uuid_string(&c.id), host))
-            })
-            .collect()
+    /// cannot be read or names no host is left out), and with a [`NativeSupport`] the connections it cannot
+    /// connect (a native kind's settings are in its meta: asked with an empty config). Called by [`Self::reload`]
+    /// without any lock held.
+    fn read_config_facts(&self, connections: &[Connection]) -> (HashMap<String, String>, HashMap<String, String>) {
+        let support = self.hooks().native_support;
+        let mut hosts = HashMap::new();
+        let mut unsupported = HashMap::new();
+        for c in connections {
+            let key = uuid_string(&c.id);
+            if c.kind.is_native() {
+                if let Some(reason) = support.as_ref().and_then(|s| s.unsupported_reason(c, &[])) {
+                    unsupported.insert(key, reason);
+                }
+                continue;
+            }
+            let Ok(config) = self.deps.store.load_config_wiped(&c.id) else { continue };
+            if let Some(reason) = support.as_ref().and_then(|s| s.unsupported_reason(c, config.as_bytes())) {
+                unsupported.insert(key.clone(), reason);
+            }
+            if let Some(host) = macvpn_core::importer::remote_host(c.kind, &config) {
+                hosts.insert(key, host);
+            }
+        }
+        (hosts, unsupported)
+    }
+
+    /// The platform's answer which managed connections it cannot connect (read at every [`Self::reload`]; WinVPN
+    /// 2c). Call before the first reload.
+    pub fn set_native_support(&self, support: Arc<dyn NativeSupport>) {
+        self.set_hooks(|h| h.native_support = Some(support));
     }
 
     // MARK: - Hooks
@@ -838,7 +883,7 @@ impl ConnectionManager {
     /// listing failed, or more than one service has the name).
     pub fn native_service_for(&self, c: &Connection) -> Option<Option<(String, Option<String>)>> {
         let services = self.deps.native.list().ok()?;
-        match match_service(c, &services) {
+        match match_service(c, &services, self.deps.native.as_ref()) {
             NativeMatch::Service(s) => {
                 let address = self.deps.native.remote_address(&s.id);
                 Some(Some((s.id, address)))
@@ -920,8 +965,9 @@ impl ConnectionManager {
         let folders = if list.is_ok() { self.load_folders() } else { None };
         // The search's server hosts, before the change is published (the view model built then has them).
         if let Ok(list) = &list {
-            let hosts = self.read_server_hosts(list);
+            let (hosts, unsupported) = self.read_config_facts(list);
             *self.server_hosts.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(hosts);
+            *self.unsupported.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(unsupported);
         }
         self.mutate(|i| {
             if let Ok(list) = list {
@@ -964,6 +1010,7 @@ impl ConnectionManager {
         let connecting: Vec<String> = self
             .read(|i| i.ops.iter().filter(|(_, op)| matches!(op, Op::Connecting)).map(|(k, _)| k.clone()).collect());
         *self.server_hosts.write().unwrap_or_else(PoisonError::into_inner) = Arc::default();
+        *self.unsupported.write().unwrap_or_else(PoisonError::into_inner) = Arc::default();
         self.mutate(|i| {
             i.locked = true;
             // No pruning of the (empty) ranking until the full list is back.
@@ -1170,7 +1217,9 @@ impl ConnectionManager {
             let mut i = self.lock();
             i.remote_addresses.retain(|k, _| listed.contains(k.as_str()));
         }
-        for c in snapshot.iter().filter(|c| c.kind.is_native()) {
+        // A connection with the platform's own service (WinVPN) needs no binding.
+        let own = |c: &Connection| self.deps.native.managed_service_id(&c.id).is_some();
+        for c in snapshot.iter().filter(|c| c.kind.is_native() && !own(c)) {
             let mut updated = c.clone();
             if let Some(id) = &c.native_service_id {
                 if listed.contains(id.as_str()) {
@@ -1262,6 +1311,7 @@ impl ConnectionManager {
             .map(|s| (s.id.clone(), self.system_failure_reason(s)))
             .collect();
         let now = self.now();
+        let native = self.deps.native.as_ref();
         let applied = self.mutate(|i| {
             if start < i.last_applied {
                 return None; // a newer refresh has already been applied
@@ -1324,7 +1374,7 @@ impl ConnectionManager {
                         next.insert(key, previous.unwrap_or(ConnectionState::Disconnected));
                         continue;
                     };
-                    let service = match match_service(&c, services) {
+                    let service = match match_service(&c, services, native) {
                         NativeMatch::Service(s) => Some(s),
                         NativeMatch::Ambiguous(all) => all.into_iter().next(),
                         NativeMatch::None => None,
@@ -1348,11 +1398,11 @@ impl ConnectionManager {
             }
 
             if let Some(services) = &services {
-                let managed = managed_service_ids(&i.connections, services);
+                let managed = managed_service_ids(&i.connections, services, native);
                 i.installed_native_ids = i
                     .connections
                     .iter()
-                    .filter(|c| c.kind.is_native() && match_service(c, services) != NativeMatch::None)
+                    .filter(|c| c.kind.is_native() && match_service(c, services, native) != NativeMatch::None)
                     .map(|c| c.id)
                     .collect();
                 let unmanaged: Vec<SystemVpn> = services.iter().filter(|s| !managed.contains(&s.id)).cloned().collect();
@@ -1520,12 +1570,13 @@ impl ConnectionManager {
         }
         let name = c.native_service_name.clone().unwrap_or_else(|| c.name.clone());
         let services = self.deps.native.list()?;
-        let service = match match_service(c, &services) {
+        let managed = self.deps.native.managed_service_id(&c.id).is_some();
+        let service = match match_service(c, &services, self.deps.native.as_ref()) {
             NativeMatch::Service(s) => {
                 // An unbound connection only matched by name: it may get the secrets only if the service's server
                 // address (`scutil --nc show`, read fresh) is the connection's server. Otherwise it does not start
-                // at all, not even without secrets.
-                if c.native_service_id.is_none() {
+                // at all, not even without secrets. The platform's own service for it (WinVPN) is never foreign.
+                if c.native_service_id.is_none() && !managed {
                     let address = self.deps.native.remote_address(&s.id);
                     self.lock().remote_addresses.insert(s.id.clone(), address.clone());
                     let server = c.native.as_ref().map(|n| n.server.clone()).unwrap_or_default();
@@ -1725,7 +1776,7 @@ impl ConnectionManager {
             let _ = self.deps.helper.respond(&c.id, AuthResponseKind::Cancel, "");
         }
         let result: Result<(), String> = if c.kind.is_native() {
-            self.deps.native.list().and_then(|services| match match_service(&c, &services) {
+            self.deps.native.list().and_then(|services| match match_service(&c, &services, self.deps.native.as_ref()) {
                 NativeMatch::Service(s) => self.deps.native.stop(&s.id),
                 NativeMatch::Ambiguous(all) => {
                     // No secret is passed when stopping: every active service with the name is stopped.

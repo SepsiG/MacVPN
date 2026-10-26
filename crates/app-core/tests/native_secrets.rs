@@ -115,7 +115,6 @@ fn option<'a>(start: &'a Start, entity: &str, key: &str) -> Option<&'a str> {
 
 /// A managed L2TP and Cisco connection start with the PSK, the account name and the password from the vault.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_native_start_passes_the_vault_secrets() {
     let s = Setup::new();
     let l2tp = s.native_connection("Office L2TP", VPNKind::L2tp, L2TP_SERVICE);
@@ -147,7 +146,6 @@ fn managed_native_start_passes_the_vault_secrets() {
 
 /// A system VPN's PSK and password are vault rows keyed by its service ID, and are passed at start.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_vpn_start_passes_the_vault_secrets() {
     let s = Setup::new();
     let service = SystemVpn::new(L2TP_SERVICE, "Office L2TP", "L2TP", "Disconnected");
@@ -168,7 +166,6 @@ fn system_vpn_start_passes_the_vault_secrets() {
 
 /// The system-VPN editor saves into the vault and "Forget" clears the vault rows.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_vpn_editor_saves_and_forgets_in_the_vault() {
     let s = Setup::new();
     let service = SystemVpn::new(CISCO_SERVICE, "Office Cisco", "Cisco IPsec", "Disconnected");
@@ -188,7 +185,6 @@ fn system_vpn_editor_saves_and_forgets_in_the_vault() {
 /// Saving a native connection: the profile embeds the PSK (the "PSK stays in the profile" branch) but never the
 /// password; MacVPN's copies of both go into the vault. A later save without a new PSK embeds the vault's copy.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_save_keeps_the_psk_in_the_profile_and_both_secrets_in_the_vault() {
     let s = Setup::new();
     let c = s.native_connection("Office L2TP", VPNKind::L2tp, L2TP_SERVICE);

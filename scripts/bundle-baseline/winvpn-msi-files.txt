@@ -1,0 +1,4 @@
+PFiles/WinVPN/THIRD-PARTY-NOTICES.txt
+PFiles/WinVPN/WinVPN.exe
+PFiles/WinVPN/WinVPNService.exe
+PFiles/WinVPN/wireguard.dll

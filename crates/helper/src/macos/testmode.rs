@@ -10,6 +10,10 @@
 pub struct TestEnv {
     pub run_base: Option<String>,
     pub log_base: Option<String>,
+    /// `MVPN_DNS_BASE`: the DNS ledger directory.
+    pub dns_base: Option<String>,
+    /// `MVPN_NETWORKSETUP`: a fake `networksetup`; without it test mode never changes DNS.
+    pub networksetup: Option<String>,
     pub libexec: Option<String>,
     pub wg_run: Option<String>,
     pub lock_tries: Option<u64>,
@@ -45,6 +49,8 @@ impl TestEnv {
         TestEnv {
             run_base: s("MVPN_RUN_BASE"),
             log_base: s("MVPN_LOG_BASE"),
+            dns_base: s("MVPN_DNS_BASE"),
+            networksetup: s("MVPN_NETWORKSETUP"),
             libexec: s("MVPN_LIBEXEC"),
             wg_run: s("MVPN_WG_RUN"),
             lock_tries: n("MVPN_LOCK_TRIES"),

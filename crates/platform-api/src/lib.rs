@@ -10,6 +10,7 @@
 #![forbid(unsafe_code)]
 
 pub mod control;
+pub mod curl;
 #[cfg(debug_assertions)]
 pub mod debug;
 pub mod error;
@@ -17,6 +18,7 @@ pub mod helper;
 pub mod login_item;
 pub mod logs;
 pub mod native_vpn;
+pub mod network;
 pub mod prefs;
 pub mod product;
 pub mod setup;
@@ -31,10 +33,17 @@ pub use error::PlatformError;
 pub use helper::{AuthStateReader, HelperClient, LegacySecrets, NoAuthState};
 pub use login_item::{LoginItemView, LoginItems};
 pub use logs::{LogStreamSpawner, StreamHandle};
-pub use native_vpn::{NativeController, NativeProfile, NativeProfiles, SystemVpn};
-pub use prefs::{MemoryPreferences, PreferenceStore};
+pub use native_vpn::{
+    AdminSteps, CaSummary, NativeController, NativeProfile, NativeProfiles, NativeSupport, NoAdminSteps,
+    NoNativeSupport, PlatformNotes, SystemVpn,
+};
+pub use network::{Gateway, NetworkProbe, NetworkSnapshot, NoNetworkProbe};
+pub use prefs::{FilePreferences, MemoryPreferences, PreferenceStore};
 pub use product::{MACVPN, Product, WINVPN};
-pub use setup::{BootstrapTexts, SetupReport, SystemSetup};
+pub use setup::{
+    BootstrapTexts, EngineReport, EngineRow, MissingEngine, OutdatedPackage, PackageIndexUpdate, SetupReport,
+    SystemSetup,
+};
 pub use system::{DownloadMark, Shell, SystemInfo, SystemVpnWatch};
 pub use ui::{
     AppLifecycle, ClipboardMark, FilePanels, NativeWindow, Notifier, SecretClipboard, TerminateReply, WindowChrome,
@@ -69,6 +78,15 @@ pub trait Platform: Send + Sync {
     fn native_controller(&self) -> Arc<dyn NativeController>;
     /// `staging`: the private parent directory of staged profiles; `open`: open a staged profile for approval.
     fn native_profiles(&self, staging: &Path, open: bool) -> Arc<dyn NativeProfiles>;
+    /// Which managed connections the platform cannot connect with their settings. Default: every one can (macOS).
+    fn native_support(&self) -> Arc<dyn NativeSupport> {
+        Arc::new(NoNativeSupport)
+    }
+    /// The administrator steps of the native VPNs (WinVPN 2c: trust a CA, allow L2TP behind NAT). Default: none
+    /// (macOS).
+    fn admin_steps(&self) -> Arc<dyn AdminSteps> {
+        Arc::new(NoAdminSteps)
+    }
     fn auth_state(&self) -> Arc<dyn AuthStateReader>;
     fn log_streams(&self) -> Arc<dyn LogStreamSpawner>;
     fn release_source(&self) -> Arc<dyn ReleaseSource>;
@@ -84,4 +102,8 @@ pub trait Platform: Send + Sync {
     fn migrate_legacy_service(&self);
     fn preferences(&self) -> Arc<dyn PreferenceStore>;
     fn login_items(&self, home: &Path, app: Option<&Path>, sandbox: bool) -> Box<dyn LoginItems>;
+    /// The physical network (auto-reconnect). Default: none.
+    fn network(&self) -> &dyn NetworkProbe {
+        &NoNetworkProbe
+    }
 }

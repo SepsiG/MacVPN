@@ -10,7 +10,7 @@ use macvpn_app_core::logs::{
 };
 use macvpn_core::date::Date;
 use macvpn_core::l10n::AppLanguage;
-use macvpn_core::log::{LogFilter, LogLine};
+use macvpn_core::log::{FileLogSource, LogFilter, LogLine};
 use macvpn_core::models::{Connection, ConnectionState, VPNKind};
 use std::io::Write;
 use std::sync::{Arc, Mutex};
@@ -57,7 +57,7 @@ fn file_feed_tails_new_lines() {
     std::fs::create_dir_all(dir.path()).unwrap();
     let path = dir.path().join("x.log");
     let c = Connection::new("A", VPNKind::Openvpn);
-    let mut feed = LogFeed::new(&c, path.clone(), native_logs(spawner_never()));
+    let mut feed = LogFeed::new(&c, Some(Box::new(FileLogSource { path: path.clone() })), native_logs(spawner_never()));
     let first = feed.poll().unwrap();
     assert!(first.reset && first.lines.is_empty(), "the first poll resets even without a file");
     assert_eq!(feed.poll(), None);
@@ -225,7 +225,7 @@ fn native_feed_follows_the_collector() {
     let spawner = Arc::new(FakeSpawner::default());
     let natives = native_logs(spawner.clone());
     let c = Connection::new("L2TP", VPNKind::L2tp);
-    let mut feed = LogFeed::new(&c, "/nonexistent".into(), natives.clone());
+    let mut feed = LogFeed::new(&c, Some(Box::new(FileLogSource { path: "/nonexistent".into() })), natives.clone());
     let first = feed.poll().unwrap();
     assert!(first.reset);
     assert_eq!(first.lines[0].text, "▶ [mvpn] Native connections only have a log when connected in debug mode.");
@@ -245,4 +245,76 @@ fn native_feed_follows_the_collector() {
     assert!(feed.poll().unwrap().reset);
     natives.remove(&c.id);
     assert!(feed.poll().unwrap().lines[0].text.contains("only have a log"));
+}
+
+/// A platform without a system log stream (WinVPN's `log_streams`).
+struct NoStream;
+
+impl LogStreamSpawner for NoStream {
+    fn command_line(&self) -> String {
+        String::new()
+    }
+
+    fn spawn(
+        &self,
+        _on_lines: Box<dyn FnMut(Vec<String>) + Send>,
+        _on_exit: Box<dyn FnOnce() + Send>,
+    ) -> Result<Box<dyn StreamHandle>, String> {
+        panic!("never spawned where the platform has no stream")
+    }
+
+    fn is_available(&self) -> bool {
+        false
+    }
+}
+
+/// G-2 (WinVPN 2c): the platform's own log of a native connection (the RAS log) is tailed like a helper's.
+#[test]
+fn a_native_connection_with_a_platform_log_is_tailed() {
+    let _fx = Fixture::new(AppLanguage::En);
+    let dir = TempDir::new();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let path = dir.path().join("ras.log");
+    std::fs::write(&path, "═══ up l2tp ═══\nConnecting to vpn.example.com…\n").unwrap();
+    let c = Connection::new("L2TP", VPNKind::L2tp);
+    let helper = Some(Box::new(FileLogSource { path: "/nonexistent".into() }) as Box<dyn macvpn_core::log::LogSource>);
+    let native = Some(Box::new(FileLogSource { path: path.clone() }) as Box<dyn macvpn_core::log::LogSource>);
+    let mut feed = LogFeed::with_native_source(&c, helper, native, native_logs(spawner_never()));
+    let first = feed.poll().unwrap();
+    assert!(first.reset);
+    assert_eq!(
+        first.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(),
+        ["═══ up l2tp ═══", "Connecting to vpn.example.com…"]
+    );
+    let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+    f.write_all("Connected, IPv4 10.8.0.6\n".as_bytes()).unwrap();
+    assert_eq!(feed.poll().unwrap().lines[0].text, "Connected, IPv4 10.8.0.6");
+}
+
+/// Without a platform log (macOS) a native connection follows the debug collection, as before.
+#[test]
+fn a_native_connection_without_one_uses_the_collector() {
+    let _fx = Fixture::new(AppLanguage::En);
+    let natives = native_logs(spawner_never());
+    let c = Connection::new("L2TP", VPNKind::L2tp);
+    let helper = Some(Box::new(FileLogSource { path: "/nonexistent".into() }) as Box<dyn macvpn_core::log::LogSource>);
+    let mut feed = LogFeed::with_native_source(&c, helper, None, natives);
+    let first = feed.poll().unwrap();
+    assert_eq!(first.lines[0].text, "▶ [mvpn] Native connections only have a log when connected in debug mode.");
+}
+
+#[test]
+fn a_debug_connect_starts_no_collector_when_the_platform_has_none() {
+    let none = native_logs(Arc::new(NoStream));
+    let id = uuid::Uuid::new_v4();
+    assert!(none.start_for_debug(&id).is_none());
+    assert!(none.get(&id).is_none(), "nothing is kept");
+
+    // macOS: the collection starts as with `start`.
+    let spawner = Arc::new(FakeSpawner::default());
+    let natives = native_logs(spawner.clone());
+    let (collector, generation) = natives.start_for_debug(&id).unwrap();
+    assert!(collector.is_running());
+    assert_eq!(collector.generation(), generation);
+    assert!(Arc::ptr_eq(&natives.get(&id).unwrap(), &collector));
 }

@@ -432,7 +432,8 @@ fn wg(interface: &[&str], peer: &[&str]) -> Vec<ValidationIssue> {
     parts.extend(interface);
     parts.extend(["[Peer]", &public, "AllowedIPs = 0.0.0.0/0"]);
     parts.extend(peer);
-    wg_all(&parts.join("\n"))
+    // The shared (macOS) rules on every host: the Windows tier (`FwMark`, `Table`) has its own tests.
+    macvpn_core::validators::WireGuardValidator.validate_for(macvpn_core::target_os::TargetOs::MacOs, &parts.join("\n"))
 }
 
 #[test]

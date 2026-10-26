@@ -2,22 +2,24 @@
 //! existing functions, so the behaviour is the one the app had when it called them directly.
 
 use super::adapters::{app_bundle, copy_to_pasteboard, open_path, open_profiles_settings, open_url};
-use crate::brew::{BrewBootstrap, BrewInstaller};
+use crate::brew::{BREW_GUARD, BrewBootstrap, BrewInstaller, BrewOutdated, BrewUpdate};
 use crate::command::ProcessCommandRunner;
 use crate::http::CurlHttpClient;
+use crate::net_probe::MacNetworkProbe;
 use crate::root_installer::{self, InstallError};
 use crate::setup_checker::SetupChecker;
 use crate::update_installer::{self, UpdateInstaller};
 use crate::{
-    app_hooks, dialogs, notifications, pasteboard, quarantine, sc_watch, system, temp_dir, window_fit, window_shape,
+    app_hooks, dialogs, net_watch, notifications, pasteboard, quarantine, sc_watch, system, temp_dir, window_fit,
+    window_shape,
 };
 use macvpn_core::fsx::FileOwner;
 use macvpn_core::l10n::{self, AppLanguage, Arg};
 use macvpn_core::update::{Info, Release};
 use macvpn_platform_api::{
-    AppLifecycle, BootstrapTexts, ClipboardMark, DownloadMark, FilePanels, NativeWindow, Notifier, PlatformError,
-    SecretClipboard, SetupReport, Shell, SystemInfo, SystemSetup, SystemVpnWatch, TerminateReply, UpdateOutcome,
-    Updater, WindowChrome,
+    AppLifecycle, BootstrapTexts, ClipboardMark, DownloadMark, FilePanels, NativeWindow, NetworkProbe, NetworkSnapshot,
+    NoNetworkProbe, Notifier, PackageIndexUpdate, PlatformError, SecretClipboard, SetupReport, Shell, SystemInfo,
+    SystemSetup, SystemVpnWatch, TerminateReply, UpdateOutcome, Updater, WindowChrome,
 };
 use std::collections::BTreeMap;
 use std::io;
@@ -108,9 +110,20 @@ pub struct MacSetup {
 }
 
 impl SystemSetup for MacSetup {
+    /// The system check, then (outside the sandbox, which never runs brew) `brew outdated` when the tools are
+    /// all there.
     fn check(&self, bundled_helper_dir: Option<&Path>) -> SetupReport {
         let runner = ProcessCommandRunner::default();
-        SetupChecker::new(&runner, bundled_helper_dir.map(Path::to_path_buf)).check()
+        let mut report = SetupChecker::new(&runner, bundled_helper_dir.map(Path::to_path_buf)).check();
+        if !self.sandbox
+            && let Some(prefix) = report.package_manager.clone()
+        {
+            let environment: BTreeMap<String, String> = std::env::vars().collect();
+            let brew_runner = ProcessCommandRunner::new(BrewOutdated::TIMEOUT)
+                .with_environment(BrewOutdated::environment(&environment, &prefix));
+            SetupChecker::check_outdated(&mut report, &brew_runner);
+        }
+        report
     }
 
     /// Homebrew's official installer in Terminal, from a script in a fresh private directory under `parent` (the
@@ -131,18 +144,31 @@ impl SystemSetup for MacSetup {
         open_path(&script).map_err(PlatformError::Failed)
     }
 
-    /// `brew install …` as the user, its output streamed between `BrewInstaller`'s header and footer. The sandbox
+    /// `brew install …` as the user, its output streamed between `BrewInstaller`'s header and footer; with no
+    /// tool missing but outdated formulae (the row's "Update"), `brew upgrade <those formulae>` instead. The sandbox
     /// does not run brew: a short simulated output instead.
     fn install_tools(&self, report: &SetupReport, output: &mut dyn FnMut(&str)) -> Result<(), PlatformError> {
         let prefix = report.package_manager.as_deref().ok_or(PlatformError::Failed("no Homebrew".into()))?;
+        let upgrade: Vec<String> = if report.missing_tools.is_empty() {
+            report.outdated_packages.iter().map(|p| p.name.clone()).collect()
+        } else {
+            Vec::new()
+        };
         if self.sandbox {
-            output(&BrewInstaller::header());
+            output(&if upgrade.is_empty() { BrewInstaller::header() } else { BrewInstaller::upgrade_header(&upgrade) });
             output("(sandbox: brew is not run)\n");
             output(&BrewInstaller::footer(0));
             return Ok(());
         }
         let environment: BTreeMap<String, String> = std::env::vars().collect();
-        match BrewInstaller::install(prefix, &environment, output) {
+        // Waits for a running daily `brew update` (at most its time limit).
+        let _held = BREW_GUARD.lock();
+        let result = if upgrade.is_empty() {
+            BrewInstaller::install(prefix, &environment, output)
+        } else {
+            BrewInstaller::upgrade(prefix, &upgrade, &environment, output)
+        };
+        match result {
             Ok(0) => Ok(()),
             Ok(status) => Err(PlatformError::Failed(l10n::tr("brew error (%d)", &[Arg::Int(i64::from(status))]))),
             Err(e) => Err(PlatformError::Failed(e.to_string())),
@@ -165,6 +191,19 @@ impl SystemSetup for MacSetup {
 
     fn helper_upgrade_notice(&self) -> String {
         root_installer::upgrade_disconnect_notice()
+    }
+
+    /// `brew update` as the user (the app runs as the user; no `sudo`), with the minimal environment and a 120 s
+    /// limit, under the brew guard. Nothing in the sandbox or without Homebrew.
+    fn update_package_index(&self) -> PackageIndexUpdate {
+        if self.sandbox {
+            return PackageIndexUpdate::Unavailable;
+        }
+        let Some(prefix) = SetupChecker::installed_brew_prefix() else { return PackageIndexUpdate::Unavailable };
+        let environment: BTreeMap<String, String> = std::env::vars().collect();
+        let runner = ProcessCommandRunner::new(BrewUpdate::TIMEOUT)
+            .with_environment(BrewUpdate::environment(&environment, &prefix));
+        BrewUpdate::run(&runner, &prefix, &BREW_GUARD)
     }
 }
 
@@ -287,7 +326,7 @@ impl SecretClipboard for MacClipboard {
     }
 }
 
-/// `applicationShouldTerminate:` and the wake notification (`app_hooks`).
+/// `applicationShouldTerminate:` and the wake and will-sleep notifications (`app_hooks`).
 pub struct MacLifecycle;
 
 impl AppLifecycle for MacLifecycle {
@@ -301,6 +340,10 @@ impl AppLifecycle for MacLifecycle {
 
     fn observe_wake(&self, on_wake: Box<dyn Fn() + Send + Sync>) {
         app_hooks::observe_wake(on_wake);
+    }
+
+    fn observe_sleep(&self, on_sleep: Box<dyn Fn() + Send + Sync>) {
+        app_hooks::observe_sleep(on_sleep);
     }
 }
 
@@ -319,5 +362,37 @@ pub struct MacSystemVpnWatch;
 impl SystemVpnWatch for MacSystemVpnWatch {
     fn start(&self, on_change: Box<dyn Fn() + Send>) -> io::Result<Box<dyn Send>> {
         sc_watch::SystemVpnWatcher::start(on_change).map(|watcher| Box::new(watcher) as Box<dyn Send>)
+    }
+}
+
+/// The physical network (`net_probe`, `net_watch`). The sandbox has none: its snapshot is unsupported (the
+/// auto-reconnect never reconnects) and its watch is an inert guard.
+pub struct MacNetwork {
+    pub sandbox: bool,
+    probe: MacNetworkProbe<ProcessCommandRunner>,
+}
+
+impl MacNetwork {
+    /// Each probe command's time limit (seconds).
+    pub const COMMAND_TIMEOUT: f64 = 3.0;
+
+    pub fn new(sandbox: bool) -> MacNetwork {
+        MacNetwork { sandbox, probe: MacNetworkProbe::new(ProcessCommandRunner::new(Self::COMMAND_TIMEOUT)) }
+    }
+}
+
+impl NetworkProbe for MacNetwork {
+    fn snapshot(&self) -> Result<NetworkSnapshot, PlatformError> {
+        if self.sandbox {
+            return NoNetworkProbe.snapshot();
+        }
+        self.probe.snapshot()
+    }
+
+    fn watch(&self, on_change: Box<dyn Fn() + Send>) -> io::Result<Box<dyn Send>> {
+        if self.sandbox {
+            return NoNetworkProbe.watch(on_change);
+        }
+        net_watch::NetworkWatcher::start(on_change).map(|watcher| Box::new(watcher) as Box<dyn Send>)
     }
 }

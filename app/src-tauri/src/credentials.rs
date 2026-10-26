@@ -109,6 +109,7 @@ fn open_window(app: &AppHandle, state: &AppState, prompt: &CredentialPromptView)
         .visible(false)
         .focused(false)
         .center()
+        .use_https_scheme(crate::navigation::uses_https_scheme())
         .on_navigation(crate::navigation::is_allowed)
         .build()
         .map_err(|e| e.to_string())?;

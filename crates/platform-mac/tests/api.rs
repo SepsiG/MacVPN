@@ -7,7 +7,8 @@ use macvpn_core::l10n::{self, AppLanguage, TextPlatform};
 use macvpn_core::models::{Connection, NativeSettings, SecretField, VPNKind};
 use macvpn_core::{exporter, mobileconfig};
 use macvpn_platform_api::{
-    Accepted, ControlTransport, LegacySecrets, LogStreamSpawner, MACVPN, PeerUser, Platform, ReleaseSource,
+    Accepted, ControlTransport, LegacySecrets, LogStreamSpawner, MACVPN, PackageIndexUpdate, PeerUser, Platform,
+    ReleaseSource,
 };
 use macvpn_platform_mac::api::{GitHubReleases, Keychain, LogStreams, MacPlatform, Transport, app_bundle};
 use macvpn_platform_mac::control_socket;
@@ -200,6 +201,12 @@ fn the_sandbox_never_runs_the_root_installer() {
     AppLanguage::set_thread_override(None);
 }
 
+/// The sandbox never runs the daily `brew update`.
+#[test]
+fn the_sandbox_never_updates_homebrew() {
+    assert_eq!(MacPlatform::new(true).setup().update_package_index(), PackageIndexUpdate::Unavailable);
+}
+
 /// The sandbox refuses every HTTPS catalog source, with the text the smoke run expects (debug builds only:
 /// release builds have no sandbox).
 #[cfg(debug_assertions)]
@@ -232,6 +239,18 @@ fn the_sandbox_never_runs_brew() {
     let mut output = String::new();
     MacPlatform::new(true).setup().install_tools(&report, &mut |text| output.push_str(text)).unwrap();
     assert_eq!(output, format!("{}(sandbox: brew is not run)\n{}", BrewInstaller::header(), BrewInstaller::footer(0)));
+    // Nothing missing but an outdated formula: the row's "Update" is `brew upgrade` (not run either).
+    let outdated = SetupReport {
+        outdated_packages: vec![macvpn_platform_api::OutdatedPackage {
+            name: "openvpn".into(),
+            installed: "2.6.8".into(),
+            available: "2.6.9".into(),
+        }],
+        ..report.clone()
+    };
+    let mut upgrade = String::new();
+    MacPlatform::new(true).setup().install_tools(&outdated, &mut |text| upgrade.push_str(text)).unwrap();
+    assert_eq!(upgrade, format!("$ brew upgrade openvpn\n(sandbox: brew is not run)\n{}", BrewInstaller::footer(0)));
     // Without Homebrew nothing runs and nothing is printed.
     let mut nothing = String::new();
     assert!(

@@ -7,16 +7,23 @@
 //! the view-model publisher and every connect / disconnect run on their own threads or the blocking pool,
 //! because the platform calls are synchronous.
 
+// A release WinVPN.exe is a GUI program: no console window opens with it (no effect on macOS; debug builds keep
+// the console for their logs). `scripts/build-msi.sh` checks the binary's PE subsystem.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+mod appearance;
 mod backup;
 mod catalog;
 mod clipboard;
 mod commands;
 mod control;
+mod corners;
 mod credentials;
 mod dialogs;
 mod dock;
 mod fit;
 mod folders;
+mod guard;
 mod manage;
 mod navigation;
 mod notifications;
@@ -24,6 +31,8 @@ mod open_files;
 mod pairing;
 mod platform;
 mod prompts;
+mod ras;
+mod reconnect;
 mod shared_credentials;
 mod state;
 mod system;
@@ -45,6 +54,7 @@ use macvpn_app_core::folders::VaultFolders;
 use macvpn_app_core::live::{LiveReload, WATCHER_TRUSTED};
 use macvpn_app_core::logs::{NativeLogCollector, NativeLogs};
 use macvpn_app_core::migration::LegacySources;
+use macvpn_app_core::package_index::PackageIndexSchedule;
 use macvpn_app_core::prompt::PromptBroker;
 use macvpn_app_core::quit::{QuitAction, QuitGuard, QuitOrigin};
 use macvpn_app_core::shared_credentials::SharedCredentials;
@@ -60,7 +70,7 @@ use macvpn_core::ranking::ConnectionRankingStore;
 use macvpn_core::store::ConnectionStore;
 use macvpn_core::system_otp::SystemOTPStore;
 use macvpn_core::vault::{Entropy, KdfParams, VAULT_FILE};
-use macvpn_platform_api::{NativeProfiles, Platform, SetupReport, TerminateReply};
+use macvpn_platform_api::{NativeProfiles, PackageIndexUpdate, Platform, SetupReport, TerminateReply};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
@@ -133,7 +143,7 @@ fn build_state(
     // The smoke run's system VPN list is a stand-in the driver changes (debug builds only).
     #[cfg(debug_assertions)]
     let native = platform::smoke_fake_native(&env).unwrap_or(native);
-    let mut deps = Dependencies::new(storage.connections.clone(), storage.secrets.clone(), helper, native);
+    let mut deps = Dependencies::new(storage.connections.clone(), storage.secrets.clone(), helper.clone(), native);
     deps.ranking_store = Some(storage.ranking.clone());
     deps.system_otp_store = Some(storage.system_otp.clone());
     deps.auth_state = platform.auth_state();
@@ -151,6 +161,8 @@ fn build_state(
         Arc::new(SystemClock),
     ));
     let manager = ConnectionManager::new(deps);
+    // The connections the platform cannot connect with their settings (WinVPN 2c; none on macOS), read at reload.
+    manager.set_native_support(platform.native_support());
     let connections = Arc::new(ConnectionsModel::new(EditorDeps {
         manager: manager.clone(),
         store: storage.connections.clone(),
@@ -159,6 +171,9 @@ fn build_state(
         profiles: profiles.clone(),
         clock: Arc::new(SystemClock),
     }));
+    // The editors' notes on how the platform runs the settings, and its administrator steps (WinVPN 2c; none on
+    // macOS).
+    connections.set_native_platform(platform.native_support(), platform.admin_steps());
     // The shared credentials live in the vault (the section answers "locked" while it is locked).
     connections.set_shared_credentials(SharedCredentials::new(storage.vault.clone()));
     let native_logs = Arc::new(NativeLogs::new(Box::new(move || {
@@ -189,6 +204,8 @@ fn build_state(
         manager: manager.clone(),
         clock: Arc::new(SystemClock),
     });
+    // A connection the catalog removes loses its profile too (WinVPN 2c; nothing on macOS).
+    catalog_service.set_native_profiles(profiles.clone());
     let catalog_publisher = Arc::new(CatalogPublisher::new(PublisherDeps {
         vault: storage.vault.clone(),
         entropy: storage.entropy.clone(),
@@ -208,6 +225,7 @@ fn build_state(
         log_poller: AtomicBool::new(false),
         dialog_open: AtomicBool::new(false),
         manager,
+        helper,
         broker: Arc::new(PromptBroker::new()),
         credential_broker: Arc::new(CredentialBroker::new()),
         poller: Arc::new(Poller::new()),
@@ -217,6 +235,7 @@ fn build_state(
         publisher: Arc::new(Publisher::default()),
         setup: RwLock::new(SetupReport::unknown()),
         setup_checked: AtomicBool::new(false),
+        setup_rechecked: Mutex::new(None),
         brew: Mutex::default(),
         setup_ops: Mutex::default(),
         uninstalled: AtomicBool::new(false),
@@ -232,6 +251,8 @@ fn build_state(
         pairing_windows: pairing::PairingWindows::default(),
         backup,
         open_files: open_files::OpenFilesApp::default(),
+        notices: Default::default(),
+        reconnect: reconnect::Reconnect::new(storage.connections.clone()),
     })
 }
 
@@ -251,6 +272,23 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
     state.updates.set_on_change(move || publisher.mark());
     let publisher = state.publisher.clone();
     state.connections.set_on_change(move || publisher.mark());
+    // A kind whose engine is missing cannot be created or imported (only once the check ran: unknown is not
+    // missing). The gate reads the current report, so it follows every check (an install among them).
+    let gating = Arc::downgrade(state);
+    state.connections.set_kind_gate(Box::new(move |kind| {
+        let state = gating.upgrade()?;
+        if !state.setup_checked.load(Ordering::SeqCst) {
+            return None;
+        }
+        let setup = state.setup.read().unwrap_or_else(PoisonError::into_inner);
+        if setup.is_available(kind) {
+            return None;
+        }
+        Some(match setup.missing_engine(kind) {
+            Some(m) => l10n::tr("%@ is not installed. Install it in System Status first.", &[l10n::Arg::Str(&m.name)]),
+            None => setup.unavailable_text(kind).unwrap_or_default(),
+        })
+    }));
     let publisher = state.publisher.clone();
     state.quit.set_on_change(move || publisher.mark());
     let publisher = state.publisher.clone();
@@ -272,13 +310,28 @@ fn connect_hooks(app: &AppHandle, state: &Arc<AppState>) {
     state.manager.set_credential_handler(move |prompt| broker.present(prompt, Date::now()));
     let broker = state.credential_broker.clone();
     state.manager.set_dismiss_credentials(move |key| broker.dismiss(key));
-    // Failures and drops: a notification (bundle only; generic text) and the UI event.
+    // Failures and drops: a notification (bundle only; the reason from the log, read off the manager's thread) and
+    // the UI event.
     let handle = app.clone();
     let notifying = state.clone();
     state.manager.set_on_event(move |event| {
-        notifications::event(&notifying, &event);
-        let _ = handle.emit("connection-event", event);
+        let state = notifying.clone();
+        let for_ui = event.clone();
+        // A failed attempt of auto-reconnect posts nothing: the planner posts one "could not reconnect" at the end.
+        // Asked here, before the driver sees the failure (it ends the attempt).
+        let ours = matches!(&event, macvpn_app_core::ConnectionEvent::Failed { connection_id, .. }
+            if state.reconnect.is_attempting(connection_id));
+        reconnect::event(&state.reconnect, &event);
+        if !ours {
+            std::thread::spawn(move || notifications::event(&state, &event));
+        }
+        let _ = handle.emit("connection-event", for_ui);
     });
+    // "Connected" / "reconnected" notices.
+    let noticing = state.clone();
+    state.manager.add_state_listener(move |key, s| notifications::state_changed(&noticing, key, s));
+    // Auto-reconnect: its driver thread, the manager's hooks and the network watcher.
+    reconnect::start(state);
 }
 
 /// The steps after the Swift `AppModel.init` part (reload, setup check, …, polling), off the main thread.
@@ -316,6 +369,7 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                     })
                     .expect("update scheduler thread");
             }
+            start_package_index_updates(state);
         }
         LaunchStep::StartPolling => {
             let state = state.clone();
@@ -340,6 +394,42 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
         LaunchStep::StartCatalogRefresh => state.catalog.start_scheduler(),
         LaunchStep::MigrateKeychain | LaunchStep::SweepStagedProfiles | LaunchStep::RemoveLegacyProfiles => {}
     }
+}
+
+/// The daily package-index refresh (macOS: `brew update` as the user, `macvpn_app_core::package_index`): a minute
+/// after launch when the last successful run is over 24 hours old, then once a day; never in the sandbox (smoke
+/// runs). A failure is only logged (retried at the next hourly wake); after a success the system is checked again,
+/// so System Status (and its "Update" offer) shows the fresh `brew outdated` answer. The platform does nothing
+/// without Homebrew and while an install / upgrade runs (retried later); on Windows the "refresh" is that check
+/// itself (winget and the WinVPN Service asked again), with a usable service only.
+fn start_package_index_updates(state: &Arc<AppState>) {
+    if state.env.sandbox {
+        return;
+    }
+    let state = state.clone();
+    std::thread::Builder::new()
+        .name("macvpn-package-index".into())
+        .spawn(move || {
+            let schedule = PackageIndexSchedule::new(state.prefs.clone(), Arc::new(SystemClock));
+            schedule.run(
+                || platform::get().setup().update_package_index(),
+                |outcome| match outcome {
+                    PackageIndexUpdate::Updated => {
+                        system::check(&state);
+                    }
+                    PackageIndexUpdate::Failed(e) => {
+                        let task = platform::get().setup().package_index_task();
+                        eprintln!("MacVPN: {task} failed ({e}); retrying later");
+                    }
+                    PackageIndexUpdate::Busy | PackageIndexUpdate::Unavailable => {}
+                },
+                |wake| {
+                    std::thread::sleep(wake);
+                    true
+                },
+            )
+        })
+        .expect("package index thread");
 }
 
 /// The live system VPN list: the debounced reload thread (it wakes the poller) and, outside the sandbox, the
@@ -430,6 +520,24 @@ fn install_menu(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn main() {
+    // Windows: before any DLL loads, the process' DLL search is System32 only (no app folder, current directory or
+    // PATH), for every mode below, the elevated steps included (L-5 of the 2.0.0 security review). macOS: nothing.
+    platform::harden_dll_search();
+    // The updater's relauncher (Windows): a copy of WinVPN.exe that holds the MSI and msiexec's log until msiexec has
+    // exited, records the outcome and starts the new WinVPN. Before anything else: no Tauri, no window, no
+    // single-instance claim. macOS: never.
+    if platform::relaunch() {
+        return;
+    }
+    // The elevated steps (Windows: System Status' OpenVPN install, `--winvpn-openvpn-step …`; Trust This CA in
+    // Windows…, `--winvpn-trust-ca-step <file>`). macOS: never.
+    if let Some(code) = platform::helper_mode() {
+        std::process::exit(code);
+    }
+    #[cfg(debug_assertions)]
+    if let Some(code) = platform::test_install_mode() {
+        std::process::exit(code);
+    }
     if let Err(e) = platform::supported() {
         eprintln!("{e}");
         std::process::exit(1);
@@ -440,6 +548,10 @@ fn main() {
     });
     let platform = platform::init(sandbox_home.is_some());
     platform.install_core_hooks();
+    // Another instance of this product runs for this user: it got this launch's files.
+    if !platform::claim_instance() {
+        std::process::exit(0);
+    }
     let env = match Environment::detect(platform, sandbox_home) {
         Ok(env) => env,
         Err(e) => {
@@ -475,6 +587,10 @@ fn main() {
 
     let app = tauri::Builder::default()
         .manage(state.clone())
+        // Every window's corners (Windows 11: round), once it exists.
+        .plugin(corners::plugin())
+        // Every window gets the Appearance setting's theme, once it exists.
+        .plugin(appearance::plugin())
         .invoke_handler(tauri::generate_handler![
             commands::get_view_model,
             commands::get_platform,
@@ -490,6 +606,9 @@ fn main() {
             commands::check_for_updates,
             commands::set_update_option,
             commands::set_launch_at_login,
+            commands::set_appearance,
+            commands::set_connection_notifications,
+            commands::set_auto_reconnect,
             commands::open_login_items_settings,
             commands::open_user_guide,
             manage::select_connection,
@@ -506,6 +625,10 @@ fn main() {
             manage::export_check,
             manage::export_connection,
             manage::delete_connection,
+            ras::ras_ca_summary,
+            ras::ras_trust_ca,
+            ras::ras_allow_l2tp_nat,
+            ras::make_l2tp_copy,
             manage::log_subscribe,
             manage::log_copy,
             manage::log_save,
@@ -514,6 +637,7 @@ fn main() {
             system::setup_install_tools,
             system::setup_install_root,
             system::setup_uninstall,
+            system::setup_open_system_uninstall,
             system::quit_after_uninstall,
             update_window::update_install,
             update_window::update_open_page,
@@ -660,6 +784,8 @@ fn main() {
         })
         .setup(move |app| {
             platform::configure_app(app);
+            // The Appearance setting, before any window is shown.
+            appearance::apply(app.handle(), macvpn_app_core::appearance::Appearance::load(state.prefs.as_ref()));
             let handle = app.handle().clone();
             // A system quit goes through the quit questions too (tao does not implement this delegate method).
             let terminating = handle.clone();
@@ -668,15 +794,31 @@ fn main() {
                 eprintln!("MacVPN: applicationShouldTerminate could not be installed");
             }
             // A woken Mac refreshes at once (the Swift `didWakeNotification`), the team catalogs too.
+            // Auto-reconnect first learns which connections were up (the states before the poller's refresh).
             let poller = state.poller.clone();
             let catalogs = state.catalog.service.clone();
+            let waking = state.clone();
             lifecycle.observe_wake(Box::new(move || {
+                waking.reconnect.send(reconnect::Event::Wake(reconnect::connected_keys(&waking)));
                 poller.wake();
                 catalogs.wake();
             }));
-            install_menu(&handle)?;
+            let sleeping = state.clone();
+            lifecycle.observe_sleep(Box::new(move || {
+                sleeping.reconnect.send(reconnect::Event::Sleep(reconnect::connected_keys(&sleeping)));
+            }));
+            if platform::uses_app_menu() {
+                install_menu(&handle)?;
+            }
             tray::create_menu_window(&handle)?;
             tray::create(&handle)?;
+            // A taskbar theme switch (Windows) redraws the tray icon in the new tint, off the window procedure;
+            // macOS's template image needs nothing (never called there).
+            let redraw = handle.clone();
+            lifecycle.observe_appearance(Box::new(move || {
+                let app = redraw.clone();
+                std::thread::spawn(move || tray::redraw_icon(&app));
+            }));
             connect_hooks(&handle, &state);
             // Files opened from Finder (`RunEvent::Opened`) wait for the launch's vault decision.
             state.open_files.attach(handle.clone());

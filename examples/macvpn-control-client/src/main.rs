@@ -9,12 +9,18 @@
 //!
 //! The token never goes on the command line (other users' `ps` could see it): `list` and `hold` read it from
 //! the `MACVPN_TOKEN` environment variable or, if that is not set, from the first line of standard input.
-//! `MACVPN_SOCKET` overrides the socket path (for example for a sandboxed development build of MacVPN).
+//! `MACVPN_SOCKET` overrides the socket path (for example for a sandboxed development build of MacVPN). On Windows
+//! the default is WinVPN's named pipe for this user (`\\.\pipe\WinVPN-control-<SID>`), and `MACVPN_SOCKET` takes a
+//! pipe name.
 //!
 //! Remember that a pairing is pinned to the executable that asked for it: a token printed by `pair` works
 //! for this binary at this path only.
 
-use macvpn_control_client::{Client, Error, ErrorCode, StateEvent, default_socket_path};
+#[cfg(windows)]
+use macvpn_control_client::default_endpoint;
+#[cfg(not(windows))]
+use macvpn_control_client::default_socket_path;
+use macvpn_control_client::{Client, Error, ErrorCode, StateEvent};
 use std::io::{self, BufRead, IsTerminal};
 use std::path::PathBuf;
 use std::process::ExitCode;
@@ -27,7 +33,7 @@ const USAGE: &str = "usage:
   macvpn-control-client hold <connection-id>
 
 The token for list and hold comes from MACVPN_TOKEN or the first line of standard input.
-MACVPN_SOCKET overrides the socket path.";
+MACVPN_SOCKET overrides the socket path (on Windows: the pipe name).";
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -70,11 +76,17 @@ fn hint(code: ErrorCode) -> Option<&'static str> {
     })
 }
 
+/// `MACVPN_SOCKET`, else MacVPN's socket (macOS) or WinVPN's named pipe for this user (Windows).
 fn socket() -> Result<PathBuf, Error> {
     match std::env::var_os("MACVPN_SOCKET") {
         Some(path) if !path.is_empty() => Ok(PathBuf::from(path)),
-        _ => Ok(default_socket_path()?),
+        _ => Ok(default_endpoint()?),
     }
+}
+
+#[cfg(not(windows))]
+fn default_endpoint() -> std::io::Result<PathBuf> {
+    default_socket_path()
 }
 
 /// The token from `MACVPN_TOKEN`, else the first line of standard input.

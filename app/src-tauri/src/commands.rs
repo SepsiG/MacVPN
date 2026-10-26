@@ -112,19 +112,28 @@ pub async fn connect(app: AppHandle, state: Shared<'_>, id: String, debug: bool)
     if state.manager.state(&id).is_active() {
         return Err("already active".into());
     }
+    // Refused outright (the UI shows the same text on the row): without a VPN engine (WinVPN 2a) nothing that
+    // needs it, a kind that comes later, a connection the platform cannot connect (WinVPN 2c).
+    let setup = state.setup.read().map_err(|_| "state")?.clone();
+    if let Some(reason) = crate::control::start_refusal(&setup, &state.manager, &item) {
+        return Err(reason);
+    }
     let shared = state.inner().clone();
     match item {
         ConnectionItem::Managed(c) => {
-            if !state.setup.read().map_err(|_| "state")?.is_available(c.kind) {
+            let setup = state.setup.read().map_err(|_| "state")?;
+            if !setup.is_available(c.kind) {
                 return Err("missing tool".into());
             }
+            drop(setup);
             // Option-click debug (the Swift `connect(_:debug:)`): the Connections window opens on the connection's
-            // Log tab (through the unsaved-changes check); a native connection's system log is collected meanwhile.
+            // Log tab (through the unsaved-changes check); a native connection's system log is collected meanwhile
+            // where the platform has a system log stream (WinVPN: none; the RAS log is always written).
             let collection = if debug {
                 state.connections.request_log_tab(&id);
                 state.connections.select(Some(id.clone()));
                 open(&app, "manage")?;
-                c.kind.is_native().then(|| state.native_logs.start(&c.id))
+                if c.kind.is_native() { state.native_logs.start_for_debug(&c.id) } else { None }
             } else {
                 None
             };
@@ -207,6 +216,7 @@ pub fn open(app: &AppHandle, name: &str) -> Result<(), String> {
                 .center()
                 // Shown below, after the Dock icon.
                 .visible(false)
+                .use_https_scheme(crate::navigation::uses_https_scheme())
                 .on_navigation(crate::navigation::is_allowed);
             // The Connections window as the Swift one: at least 720 × 420 (a list next to a readable detail).
             let builder = match name {
@@ -221,6 +231,12 @@ pub fn open(app: &AppHandle, name: &str) -> Result<(), String> {
     crate::dock::sync(app);
     let _ = window.show();
     let _ = window.unminimize();
+    // The Connections window: an engine installed outside the app shows up without "Check Again".
+    if name == "manage"
+        && let Some(state) = app.try_state::<Arc<AppState>>()
+    {
+        crate::system::recheck_if_incomplete(state.inner());
+    }
     window.set_focus().map_err(|e| e.to_string())
 }
 
@@ -255,6 +271,36 @@ pub async fn set_update_option(state: Shared<'_>, option: String, on: bool) -> R
     Ok(())
 }
 
+/// The Appearance setting: stored, then applied to every window at once.
+#[tauri::command]
+pub async fn set_appearance(app: AppHandle, state: Shared<'_>, mode: String) -> Result<(), String> {
+    let a = macvpn_app_core::appearance::Appearance::parse(&mode).ok_or("invalid appearance")?;
+    a.store(state.prefs.as_ref());
+    crate::appearance::apply(&app, a);
+    state.publisher.mark();
+    Ok(())
+}
+
+/// The "Connection Notifications" switch (connected / disconnected / reconnected / failed).
+#[tauri::command]
+pub async fn set_connection_notifications(state: Shared<'_>, on: bool) -> Result<(), String> {
+    state.prefs.set_bool(macvpn_app_core::connection_notices::ENABLED_KEY, on);
+    state.publisher.mark();
+    Ok(())
+}
+
+/// "Reconnect Automatically" of a managed connection (default on; the off ones are a preference).
+#[tauri::command]
+pub async fn set_auto_reconnect(state: Shared<'_>, id: String, on: bool) -> Result<(), String> {
+    validate_key(&id)?;
+    let Some(ConnectionItem::Managed(c)) = state.manager.item(&id) else {
+        return Err("not a managed connection".into());
+    };
+    macvpn_app_core::reconnect::set_enabled(state.prefs.as_ref(), &c.id, on);
+    state.publisher.mark();
+    Ok(())
+}
+
 /// The "Launch at Login" switch. A failure comes back as the notice to show (the Swift alert).
 #[tauri::command]
 pub async fn set_launch_at_login(state: Shared<'_>, on: bool) -> Result<Option<Notice>, String> {
@@ -284,10 +330,12 @@ pub async fn open_login_items_settings(state: Shared<'_>) -> Result<(), String> 
         .map_err(|e| e.to_string())
 }
 
-/// Help: the user guide for the current language on GitHub.
+/// Help: the running product's user guide for the current language on GitHub (WinVPN: its own guide).
 #[tauri::command]
 pub async fn open_user_guide(app: AppHandle, state: Shared<'_>) -> Result<(), String> {
-    let url = user_guide_url(state.env.repo().as_deref(), l10n::AppLanguage::current()).ok_or("refused URL")?;
+    let product = crate::platform::get().product();
+    let url =
+        user_guide_url(product, state.env.repo().as_deref(), l10n::AppLanguage::current()).ok_or("refused URL")?;
     crate::tray::hide_menu(&app);
     tauri::async_runtime::spawn_blocking(move || crate::platform::open_github_url(&url))
         .await
@@ -298,7 +346,7 @@ pub async fn open_user_guide(app: AppHandle, state: Shared<'_>) -> Result<(), St
 pub async fn set_menu_height(app: AppHandle, height: f64) -> Result<(), String> {
     let height = validate_menu_height(height)?;
     let window = app.get_webview_window(MENU_WINDOW).ok_or("no menu window")?;
-    crate::tray::resize_menu(&window, height)
+    crate::tray::resize_shown_menu(&window, height)
 }
 
 /// `choice` absent: the menu's Quit – `ask` when the menu shows the active-connections question, `unsaved` when
@@ -528,7 +576,8 @@ mod tests {
         assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "macos", "productName": "MacVPN"}));
         let view = PlatformView::of(&macvpn_platform_api::WINVPN);
         assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "windows", "productName": "WinVPN"}));
-        assert_eq!(PlatformView::of(crate::platform::get().product()), PlatformView::of(&macvpn_platform_api::MACVPN));
+        let own = if cfg!(windows) { &macvpn_platform_api::WINVPN } else { &macvpn_platform_api::MACVPN };
+        assert_eq!(PlatformView::of(crate::platform::get().product()), PlatformView::of(own));
     }
 
     #[test]
@@ -541,8 +590,8 @@ mod tests {
 
     /// Every command is granted exactly where it is used: the prompt, credential and pairing windows only signal and
     /// answer their own prompt / pairing, fit their own height and read the view model; every window reads the
-    /// platform (`get_platform`, for its texts); the other windows get everything else; nothing but listening to
-    /// events from the core. The build list, the capabilities and `generate_handler!` name the same commands.
+    /// platform (`get_platform`, for its texts); the menu, Connections, System Status and Update windows each get
+    /// their own capability, and together everything else; nothing but listening to events from the core. The build list, the capabilities and `generate_handler!` name the same commands.
     #[test]
     fn capabilities_grant_exactly_the_commands() {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
@@ -557,7 +606,9 @@ mod tests {
         let permissions = |v: &serde_json::Value| -> Vec<String> {
             v["permissions"].as_array().unwrap().iter().map(|p| p.as_str().unwrap().to_string()).collect()
         };
-        let (main, prompt, pairing) = (read("main.json"), read("prompt.json"), read("pairing.json"));
+        let (prompt, pairing) = (read("prompt.json"), read("pairing.json"));
+        let mains: Vec<serde_json::Value> =
+            ["menu", "manage", "setup", "update"].iter().map(|w| read(&format!("{w}.json"))).collect();
         let credentials = read("credentials.json");
         let vault = read("vault.json");
         assert_eq!(vault["windows"], serde_json::json!(crate::vault::VAULT_WINDOWS));
@@ -655,7 +706,7 @@ mod tests {
             ]
         );
         // Every window words its texts for the platform.
-        for capability in [&main, &prompt, &pairing, &credentials, &vault, &backup, &fresh] {
+        for capability in mains.iter().chain([&prompt, &pairing, &credentials, &vault, &backup, &fresh]) {
             assert!(permissions(capability).iter().any(|p| p == "allow-get-platform"), "{}", capability["identifier"]);
         }
         for permission in backup_permissions.iter().chain(&fresh_permissions) {
@@ -664,7 +715,53 @@ mod tests {
                 "unexpected permission {permission}"
             );
         }
-        let main_permissions = permissions(&main);
+        // Each main window's capability: its own window only, listening to events first, no command twice.
+        let mut main_permissions: Vec<String> = Vec::new();
+        for (capability, window) in mains.iter().zip(["menu", "manage", "setup", "update"]) {
+            assert_eq!(capability["identifier"], window);
+            assert_eq!(capability["windows"], serde_json::json!([window]));
+            let own = permissions(capability);
+            assert_eq!(own[..2], ["core:event:allow-listen", "core:event:allow-unlisten"], "{window}");
+            let mut unique = own.clone();
+            unique.sort();
+            unique.dedup();
+            assert_eq!(unique.len(), own.len(), "{window}: a permission twice");
+            main_permissions.extend(own);
+        }
+        // The commands that change the machine or delete data: only the window that offers them (their Rust side
+        // checks the label too, `guard.rs`).
+        let only_in = |command: &str, window: &str| {
+            for (capability, label) in mains.iter().zip(["menu", "manage", "setup", "update"]) {
+                let granted = permissions(capability).iter().any(|p| p == command);
+                assert_eq!(granted, label == window, "{command} in {label}");
+            }
+        };
+        for command in [
+            "allow-ras-trust-ca",
+            "allow-ras-allow-l2tp-nat",
+            "allow-make-l2tp-copy",
+            "allow-delete-connection",
+            "allow-folder-delete",
+            "allow-export-connection",
+            "allow-control-set-enabled",
+            "allow-control-set-allowed",
+            "allow-control-revoke",
+            "allow-admin-key-export",
+            "allow-publish-catalog",
+        ] {
+            only_in(command, "manage");
+        }
+        for command in [
+            "allow-setup-install-homebrew",
+            "allow-setup-install-tools",
+            "allow-setup-install-root",
+            "allow-setup-uninstall",
+            "allow-setup-open-system-uninstall",
+            "allow-quit-after-uninstall",
+        ] {
+            only_in(command, "setup");
+        }
+        only_in("allow-update-install", "update");
         for command in &commands {
             let in_main = main_permissions.contains(command);
             let window_only = vault_only.contains(command)
@@ -700,7 +797,18 @@ mod tests {
             serde_json::from_str(&std::fs::read_to_string(dir.join("tauri.conf.json")).unwrap()).unwrap();
         assert_eq!(
             config["app"]["security"]["capabilities"],
-            serde_json::json!(["main", "prompt", "pairing", "credentials", "vault", "backup", "restore-fresh"])
+            serde_json::json!([
+                "menu",
+                "manage",
+                "setup",
+                "update",
+                "prompt",
+                "pairing",
+                "credentials",
+                "vault",
+                "backup",
+                "restore-fresh"
+            ])
         );
         // The command list, the generated permissions and the handler agree.
         let main_rs = std::fs::read_to_string(dir.join("src/main.rs")).unwrap();

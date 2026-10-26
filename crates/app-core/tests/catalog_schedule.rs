@@ -13,7 +13,6 @@ use macvpn_core::catalog::source::CatalogSource;
 use macvpn_core::vault::SubscriptionStatus;
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const MIN: Duration = Duration::from_secs(60);
@@ -72,7 +71,7 @@ fn subscribed() -> (CatalogFixture, Publisher) {
     let (_, pending) = f
         .service
         .preview(SubscribeInput {
-            source: CatalogSource::File(PathBuf::from("/Volumes/Share/acme.macvpncatalog")),
+            source: CatalogSource::File(share_file("acme.macvpncatalog")),
             team_key: TeamKey::from_bytes(p.team.as_bytes()).unwrap(),
             fingerprint: p.admin.public().fingerprint(),
             bearer: None,
@@ -89,7 +88,6 @@ fn failures(f: &CatalogFixture) -> u32 {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn timer_rounds_follow_the_interval_and_the_back_off() {
     let (f, _) = subscribed();
     let t = Instant::now();
@@ -126,7 +124,6 @@ fn timer_rounds_follow_the_interval_and_the_back_off() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn subscribing_and_refresh_now_count_as_the_timers_attempt() {
     // Subscribed: the first download was the subscription's own, so the timer does not fetch again at its next
     // wake (it would race a "Refresh now" and apply a new version behind the user's back).
@@ -146,7 +143,6 @@ fn subscribing_and_refresh_now_count_as_the_timers_attempt() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_refused_rollback_keeps_the_normal_schedule() {
     let (f, p) = subscribed();
     f.fetcher.serve(p.seal(2, &payload(&[(1, "One")])));
@@ -161,7 +157,6 @@ fn a_refused_rollback_keeps_the_normal_schedule() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_locked_vault_fetches_nothing_at_all() {
     let (f, _) = subscribed();
     let calls = f.fetcher.calls();
@@ -175,7 +170,6 @@ fn a_locked_vault_fetches_nothing_at_all() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_scheduler_loop_starts_with_launch_and_takes_wake_requests() {
     let (f, _) = subscribed();
     let calls = f.fetcher.calls();
@@ -198,7 +192,6 @@ fn the_scheduler_loop_starts_with_launch_and_takes_wake_requests() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn wait_for_trigger_returns_requests_and_the_stop() {
     let (f, _) = subscribed();
     assert_eq!(f.service.wait_for_trigger(Duration::from_millis(20)), Some(None));
@@ -216,7 +209,6 @@ fn wait_for_trigger_returns_requests_and_the_stop() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn every_unlocked_round_deletes_removals_that_went_down_meanwhile() {
     for trigger in [RefreshTrigger::Launch, RefreshTrigger::Unlock, RefreshTrigger::Timer] {
         removals_that_went_down_meanwhile(trigger);
@@ -264,7 +256,6 @@ fn removals_that_went_down_meanwhile(trigger: RefreshTrigger) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_scheduler_thread_stops_promptly_and_a_stop_before_the_start_skips_the_launch_round() {
     let (f, _) = subscribed();
     let calls = f.fetcher.calls();

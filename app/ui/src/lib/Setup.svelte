@@ -1,13 +1,18 @@
 <script lang="ts">
   // The System Status window (the Swift `SetupView`): Homebrew, the VPN tools with the live `brew install`
-  // output, the root layer (with the up-front notice that reinstalling disconnects active connections), launch at
-  // login, and uninstall with its confirmation and final message. The texts of the rows come from the backend.
+  // output (and "Update" on the green row when a formula is outdated: `brew upgrade`), the root layer (with the
+  // up-front notice that reinstalling disconnects active connections), launch at login, and uninstall with its
+  // confirmation and final message. The texts of the rows come from the backend.
+  // On WinVPN the WinVPN Service, OpenVPN Community and WireGuard rows replace the first three (with the OpenVPN
+  // installer's output); the Windows VPN client row (WinVPN 2c) follows them, or the engine note when the service
+  // is missing (the native Windows VPNs need no service).
   import { onMount, tick } from 'svelte';
   import { api, onViewModel, type Notice, type UninstallResult, type ViewModel } from './api';
   import CheckRow from './CheckRow.svelte';
   import Icon from './Icon.svelte';
   import { setLanguage, tr } from './l10n.svelte';
   import Modal from './manage/Modal.svelte';
+  import { engineRows, rasRow, uninstallTexts } from './setup';
   import './manage/manage.css';
 
   let vm = $state<ViewModel | null>(null);
@@ -16,8 +21,17 @@
   let removeUserData = $state(false);
   let uninstalled = $state<UninstallResult | null>(null);
   let output: HTMLElement | undefined = $state();
+  // The engine row whose button ran last: the installer's output box is shown under it (WinVPN).
+  let outputRow = $state<'openvpn' | 'wireguard'>('openvpn');
+
+  function runEngineAction(row: 'openvpn' | 'wireguard') {
+    outputRow = row;
+    api.setupInstallTools(row === 'wireguard' ? 'wireguard' : undefined).catch(console.error);
+  }
 
   const setup = $derived(vm?.setup ?? null);
+  // "Uninstall MacVPN…", or WinVPN's "Remove WinVPN from This Account…" (the clean-up before the MSI's uninstall).
+  const uninstallText = $derived(uninstallTexts(setup ?? {}, tr));
 
   function apply(next: ViewModel) {
     setLanguage(next.language);
@@ -61,6 +75,14 @@
   }
 </script>
 
+{#snippet windowsVpnClient()}
+  {@const ras = setup ? rasRow(setup, tr) : null}
+  {#if ras}
+    <hr />
+    <CheckRow row={ras.row} title={ras.title} />
+  {/if}
+{/snippet}
+
 <div class="manage setup">
   <header class="hero">
     <span class="hero-icon" aria-hidden="true"><Icon name="status" /></span>
@@ -79,14 +101,68 @@
   {/if}
 
   <div class="card">
-    {#if setup?.homebrew && setup.tools && setup.root}
+    {#if setup?.engineNote}
+      <p class="engine-note">{setup.engineNote}</p>
+      {@render windowsVpnClient()}
+      <hr class="full" />
+    {:else if setup?.engine}
+      {@const engine = setup.engine}
+      {#each engineRows(setup, tr) as item, i (item.id)}
+        {#if i > 0}
+          <hr />
+        {/if}
+        <CheckRow
+          row={item.row}
+          title={item.title}
+          showAction={(item.id === 'openvpn' && engine.openvpnAction !== undefined) ||
+            (item.id === 'wireguard' && engine.wireguardAction !== undefined)}
+        >
+          {#if item.id === 'wireguard' && engine.wireguardAction}
+            <button disabled={!setup.canInstallTools} onclick={() => runEngineAction('wireguard')}>
+              {#if setup.brewRunning && outputRow === 'wireguard'}
+                {tr('Installing…')}
+              {:else}
+                {tr('Update')}
+              {/if}
+            </button>
+          {/if}
+          {#if item.id === 'openvpn' && engine.openvpnAction}
+            <button disabled={!setup.canInstallTools} onclick={() => runEngineAction('openvpn')}>
+              {#if setup.brewRunning && outputRow === 'openvpn'}
+                {tr('Installing…')}
+              {:else if engine.openvpnAction === 'repair'}
+                {tr('Repair')}
+              {:else if engine.openvpnAction === 'update'}
+                {tr('Update')}
+              {:else}
+                {tr('Install')}
+              {/if}
+            </button>
+          {/if}
+        </CheckRow>
+        {#if item.id === outputRow && setup.brewOutput}
+          <pre class="output" bind:this={output}>{setup.brewOutput}</pre>
+        {/if}
+      {/each}
+      {@render windowsVpnClient()}
+      {#if engine.laterNote}
+        <p class="caption later-note">{engine.laterNote}</p>
+      {/if}
+      <hr class="full" />
+    {:else if setup?.homebrew && setup.tools && setup.root}
       <CheckRow row={setup.homebrew} title={tr('Homebrew')}>
         <button onclick={() => installHomebrew().catch(console.error)}>{tr('Install…')}</button>
       </CheckRow>
       <hr />
-      <CheckRow row={setup.tools} title={tr('VPN tools')}>
+      <CheckRow row={setup.tools} title={tr('VPN tools')} showAction={setup.toolsAction === 'update'}>
         <button disabled={!setup.canInstallTools} onclick={() => api.setupInstallTools().catch(console.error)}>
-          {setup.brewRunning ? tr('Installing…') : tr('Install')}
+          {#if setup.brewRunning}
+            {tr('Installing…')}
+          {:else if setup.toolsAction === 'update'}
+            {tr('Update')}
+          {:else}
+            {tr('Install')}
+          {/if}
         </button>
       </CheckRow>
       {#if setup.brewOutput}
@@ -107,7 +183,9 @@
       <hr class="full" />
     {/if}
     <div class="line">
-      <span class="caption">{tr('L2TP and Cisco IPsec work without these.')}</span>
+      {#if !setup?.engine}
+        <span class="caption">{tr('L2TP and Cisco IPsec work without these.')}</span>
+      {/if}
       <span class="spacer"></span>
       <button onclick={() => api.setupCheck().catch(console.error)}><Icon name="refresh" />{tr('Check Again')}</button>
     </div>
@@ -137,29 +215,40 @@
     </div>
   {/if}
 
-  <div class="card danger">
-    <div class="line">
-      <span class="caption">{tr('Removes the root scripts, the sudoers rule and the logs; optionally your connections too.')}</span>
-      <span class="spacer"></span>
-      <button
-        class="destructive uninstall"
-        disabled={(setup?.uninstalling ?? false) || (setup?.installingRoot ?? false)}
-        onclick={() => {
-          removeUserData = false;
-          confirmUninstall = true;
-        }}>{tr('Uninstall MacVPN…')}</button
-      >
+  {#if setup?.systemUninstall}
+    <div class="card">
+      <div class="line">
+        <span class="caption">{setup.systemUninstall}</span>
+        <span class="spacer"></span>
+        <button onclick={() => api.setupOpenSystemUninstall().catch(console.error)}>{tr('Open Installed Apps…')}</button>
+      </div>
     </div>
-  </div>
+  {/if}
+  {#if !setup?.systemUninstall || setup.accountCleanup}
+    <div class="card danger">
+      <div class="line">
+        <span class="caption">{uninstallText.caption}</span>
+        <span class="spacer"></span>
+        <button
+          class="destructive uninstall"
+          disabled={(setup?.uninstalling ?? false) || (setup?.installingRoot ?? false)}
+          onclick={() => {
+            removeUserData = false;
+            confirmUninstall = true;
+          }}>{uninstallText.button}</button
+        >
+      </div>
+    </div>
+  {/if}
 </div>
 
 {#if confirmUninstall}
   <Modal
-    title={tr('Uninstall MacVPN')}
-    message={tr('After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.')}
+    title={uninstallText.title}
+    message={uninstallText.message}
     buttons={[
       { label: tr('Cancel'), kind: 'cancel', action: () => (confirmUninstall = false) },
-      { label: tr('Uninstall'), kind: 'destructive', action: () => uninstall().catch(console.error) },
+      { label: uninstallText.confirm, kind: 'destructive', action: () => uninstall().catch(console.error) },
     ]}
   >
     <label class="check accessory" title={tr('~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items')}>
@@ -262,6 +351,12 @@
     width: 15px;
     height: 15px;
     color: var(--state-busy);
+  }
+  .engine-note {
+    font-size: var(--text-md);
+  }
+  .later-note {
+    margin-left: 36px;
   }
   .notice {
     color: var(--state-busy-text);

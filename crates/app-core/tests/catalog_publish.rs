@@ -5,7 +5,7 @@
 mod catalog_support;
 mod common;
 
-use catalog_support::{CatalogFixture, MASTER, OPENVPN};
+use catalog_support::{CatalogFixture, MASTER, OPENVPN, share_file};
 use common::TempDir;
 use macvpn_app_core::catalog::{RefreshResult, SubscribeInput};
 use macvpn_app_core::catalog_publish::{PublishError, PublishInput, PublishResult, Publisher, PublisherDeps};
@@ -125,7 +125,6 @@ fn team(result: &PublishResult) -> TeamKey {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn publishing_twice_gives_versions_1_and_2_with_the_same_ids() {
     let a = admin();
     assert_eq!(a.publish(None, "acme.macvpncatalog").unwrap_err(), PublishError::NoAdminKey);
@@ -200,7 +199,6 @@ fn a_failed_write_leaves_the_version_unchanged() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_invalid_name_or_selection_is_refused_before_anything_is_written() {
     let a = admin();
     a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -224,7 +222,6 @@ fn an_invalid_name_or_selection_is_refused_before_anything_is_written() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn rotating_the_team_key_locks_out_the_old_key() {
     let a = admin();
     let primary = a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -244,12 +241,11 @@ fn rotating_the_team_key_locks_out_the_old_key() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_subscription_string_needs_the_master_password() {
     let a = admin();
     let primary = a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
     let first = a.publish(None, "acme.macvpncatalog").unwrap();
-    let source = CatalogSource::File(PathBuf::from("/Volumes/Share/team/acme.macvpncatalog"));
+    let source = CatalogSource::File(share_file("acme.macvpncatalog"));
     let text =
         a.publisher.subscription_string(first.catalog_id, Zeroizing::new(MASTER.into()), source.clone()).unwrap();
     let parsed = parse_subscription(&text).unwrap();
@@ -263,7 +259,6 @@ fn the_subscription_string_needs_the_master_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_badge_shows_when_a_published_connection_changed() {
     let a = admin();
     a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -292,7 +287,6 @@ fn the_badge_shows_when_a_published_connection_changed() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_backup_key_is_announced_kept_offline_promoted_and_followed_by_a_subscriber() {
     let a = admin();
     let primary = a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -308,7 +302,7 @@ fn the_backup_key_is_announced_kept_offline_promoted_and_followed_by_a_subscribe
     let (_, pending) = f
         .service
         .preview(SubscribeInput {
-            source: CatalogSource::File(PathBuf::from("/Volumes/Share/team/acme.macvpncatalog")),
+            source: CatalogSource::File(share_file("acme.macvpncatalog")),
             team_key: TeamKey::from_bytes(key.as_bytes()).unwrap(),
             fingerprint: primary,
             bearer: None,
@@ -375,7 +369,6 @@ fn the_backup_key_is_announced_kept_offline_promoted_and_followed_by_a_subscribe
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_preview_warns_when_a_publish_would_drop_an_announced_successor() {
     let a = admin();
     a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -388,7 +381,6 @@ fn the_preview_warns_when_a_publish_would_drop_an_announced_successor() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn promoting_the_announced_successor_does_not_warn() {
     let a = admin();
     a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -399,7 +391,6 @@ fn promoting_the_announced_successor_does_not_warn() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_version_and_a_new_team_key_are_reserved_before_the_file_is_written() {
     let a = admin();
     let primary = a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -432,7 +423,6 @@ fn the_version_and_a_new_team_key_are_reserved_before_the_file_is_written() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn rotating_the_team_key_needs_a_reviewed_publish_of_any_change() {
     let a = admin();
     let primary = a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();
@@ -455,7 +445,6 @@ fn rotating_the_team_key_needs_a_reviewed_publish_of_any_change() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_backup_seed_is_removed_only_after_the_written_file_opens_with_the_password() {
     let a = admin();
     a.publisher.generate_admin_key(AdminKeyRole::Primary).unwrap();

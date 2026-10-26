@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The WinVPN Service (2b plan, Task 15). Generated per architecture into target/winvpn-wix/<arch>/service.wxs by
+     scripts/build-msi.sh, which replaces the two source placeholders with the absolute Windows paths of the gated
+     files. Core WiX only (no util extension; one property-setting custom action, SetINSTALLDIR).
+     WinVPNService.exe is the helper crate's release mvpn.exe; Windows Installer registers it with the image path
+     "[INSTALLDIR]WinVPNService.exe" (quoted) plus the argument `service`, as LocalSystem, automatic start;
+     ServiceControl starts it on install, stops it on install (an upgrade's or repair's replaced files) and on
+     uninstall, and deletes it on uninstall. wireguard.dll (the pinned, signed wireguard-nt DLL) lives only in the
+     install directory, the admin-only folder the service loads it from (see "The install folder" below).
+     No failure actions here (no ServiceConfigFailureActions, so no MsiServiceConfigFailureActions table): Windows
+     Installer opens the service without SERVICE_START, which a restart action needs, and the install fails with
+     error 1939. The service sets its own recovery at every start (crates/helper/src/windows/recovery.rs; 2b plan,
+     Task 15, fix2); scripts/build-msi.sh fails the build if the table comes back.
+     C:\ProgramData\WinVPN is never touched here: Windows Installer runs as SYSTEM and would follow a junction a user
+     planted there (the 2b plan's resolved points).
+     The install folder (security review part 2, P2-M2): the service runs as SYSTEM from it, so only administrators
+     may change it.
+     - SetINSTALLDIR pins it to <Program Files>\WinVPN in both sequences, before CostFinalize resolves the folders: an
+       INSTALLDIR from the command line, from the HKCU value Tauri's template reads back, or from a dialog never
+       applies. The UI skips the folder dialog (WelcomeDlg goes straight to VerifyReadyDlg; Tauri's template uses
+       Order 2 for its own skip, these use 3, and the last true NewDialog of a control wins).
+     - InstallDirAcl writes MsiLockPermissionsEx (core WiX PermissionEx; SIDs in SDDL, so a localized Windows, where
+       "Administrators" has another name, applies it as well): protected (no inherited ACE, so nothing of the parent's
+       "Users: modify" survives), SYSTEM and Administrators full control, Users, Authenticated Users and the two app
+       package groups read and execute, all inherited by the files installed into it.
+     - The service checks it again at every start and stops when others can change it
+       (crates/helper/src/windows/install_dir.rs).
+     scripts/build-msi.sh checks the custom action, both sequences, the dialog skip and the MsiLockPermissionsEx row
+     (and that LockPermissions is empty). -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="WinVPNServiceExe" Guid="{5501A1E0-1338-473A-B37C-B12D2B68F7FF}">
+        <File Id="WinVPNServiceExe" Name="WinVPNService.exe" Source="@SERVICE_EXE@" KeyPath="yes" />
+        <ServiceInstall Id="WinVPNServiceInstall" Name="WinVPN" DisplayName="WinVPN Service"
+                        Description="Connects WinVPN's OpenVPN and WireGuard connections."
+                        Type="ownProcess" Start="auto" Account="LocalSystem" ErrorControl="normal"
+                        Interactive="no" Arguments="service" Vital="yes" />
+        <ServiceControl Id="WinVPNServiceControl" Name="WinVPN" Start="install" Stop="both" Remove="uninstall" Wait="yes" />
+      </Component>
+      <Component Id="WireGuardDll" Guid="{1DA04AE6-3D84-4E07-A513-AAEADE8CD5FA}">
+        <File Id="WireGuardDll" Name="wireguard.dll" Source="@WIREGUARD_DLL@" KeyPath="yes" />
+      </Component>
+    </DirectoryRef>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="InstallDirAcl" Guid="{9E5B3C1A-6F2D-4B8E-A7C4-2D81F0B6E953}">
+        <CreateFolder>
+          <PermissionEx Id="InstallDirSddl"
+                        Sddl="D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)(A;OICI;0x1200a9;;;BU)(A;OICI;0x1200a9;;;AU)(A;OICI;0x1200a9;;;AC)(A;OICI;0x1200a9;;;S-1-15-2-2)" />
+        </CreateFolder>
+      </Component>
+    </DirectoryRef>
+    <SetProperty Id="INSTALLDIR" Value="[ProgramFiles64Folder]WinVPN\" Before="CostFinalize" Sequence="both" />
+    <UI>
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" Order="3">1</Publish>
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3">NOT Installed</Publish>
+    </UI>
+    <ComponentGroup Id="WinVPNServiceComponents">
+      <ComponentRef Id="WinVPNServiceExe" />
+      <ComponentRef Id="WireGuardDll" />
+      <ComponentRef Id="InstallDirAcl" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>

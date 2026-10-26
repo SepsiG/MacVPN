@@ -4,7 +4,7 @@
 
 use crate::macos::exec::{Cmd, EnvMode};
 use crate::macos::fsx;
-use crate::macos::log::{Log, flush_root_log};
+use crate::macos::log::{Log, ROOT_LOG_KEEP, ROOT_LOG_MAX, flush_root_log};
 use crate::macos::openvpn::{mgmt_alive, ovpn_alive};
 use crate::macos::paths::{Settings, is_dir, is_file, is_symlink};
 use crate::macos::testmode::is_digits;
@@ -133,20 +133,32 @@ fn inet_of(iface: &str) -> String {
         .to_string()
 }
 
-/// `status_flush_openvpn`: a connected OpenVPN's root-only log is copied at status time too, only under the
-/// connection's lock taken without waiting (a running up/down does the copying). Status does not know the
-/// secrets, so password- and authentication-like lines are left out.
-fn flush_openvpn(s: &Settings, d: &Path, id: &str) {
+/// `status_flush_openvpn`, and the size limits while a connection runs (status is what the app polls): under the
+/// connection's lock taken without waiting (a running up/down does this itself), the user's log is rolled when
+/// writers outside `mvpn` took it over its cap, a connected OpenVPN's root-only log (SSTP: pppd's) is copied into it
+/// and then cut to its cap. Status does not know the secrets, so password- and authentication-like lines are left
+/// out.
+fn housekeep(s: &Settings, d: &Path, id: &str, kind: &str) {
+    let engine = match kind {
+        "openvpn" => Some((d.join("openvpn.log"), "")),
+        "sstp" => Some((d.join("pppd.log"), "[pppd] ")),
+        _ => None,
+    };
     let log = s.log_file(id);
-    let olog = d.join("openvpn.log");
-    if !is_file(&log) || is_symlink(&log) || !is_file(&olog) || is_symlink(&olog) {
-        return;
-    }
     let lock = s.run_base.join(format!(".{id}.lock"));
     if !crate::macos::lock::try_take(&lock) {
         return;
     }
-    flush_root_log(&Log::at(log), &olog, "", true, &Masker::default());
+    let engine = engine.filter(|(f, _)| is_file(f) && !is_symlink(f));
+    if is_file(&log) && !is_symlink(&log) {
+        let log = Log::capped(log, s.log_max);
+        log.enforce_cap();
+        if let Some((f, prefix)) = &engine {
+            flush_root_log(&log, f, prefix, true, &Masker::default());
+        }
+    } else if let Some((f, _)) = &engine {
+        crate::macos::log::trim_root_log(f, ROOT_LOG_MAX, ROOT_LOG_KEEP);
+    }
     crate::macos::lock::release_try(&lock);
 }
 
@@ -171,9 +183,7 @@ pub fn render(s: &Settings) -> String {
         }
         let since = fsx::cat(&d.join("started"));
         let since = is_digits(&since).then_some(since);
-        if kind == "openvpn" {
-            flush_openvpn(s, &d, &id);
-        }
+        housekeep(s, &d, &id, &kind);
         let st = one(s, &d);
         lines.push(StatusLine { id, kind, state: st.state, iface: st.iface, ip: st.ip, since });
     }
@@ -240,6 +250,37 @@ mod tests {
         };
         let s = Settings::resolve(true, t, String::new());
         assert_eq!(render(&s), crate::shared::status_json::tests::GOLDEN_1_4);
+        fsx::remove_rf(&base);
+    }
+
+    #[test]
+    fn status_keeps_a_running_connections_logs_under_their_caps() {
+        use crate::macos::log::{FLUSH_MAX, ROOT_LOG_KEEP, ROOT_LOG_MAX};
+        let base = std::env::temp_dir().join(format!("mvpn-status-{}", uuid::Uuid::new_v4()));
+        let id = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
+        let (run, logs) = (base.join("run"), base.join("log"));
+        std::fs::create_dir_all(run.join(id)).unwrap();
+        std::fs::create_dir_all(&logs).unwrap();
+        std::fs::write(run.join(id).join("kind"), "openvpn\n").unwrap();
+        let line = b"2026-10-23 03:00:00 write UDPv4: Network is unreachable (fd=5,code=51)\n";
+        let olog = run.join(id).join("openvpn.log");
+        std::fs::write(&olog, line.repeat((ROOT_LOG_MAX as usize * 2) / line.len())).unwrap();
+        let user = logs.join(format!("{id}.log"));
+        std::fs::write(&user, line.repeat(100)).unwrap();
+        let t = TestEnv {
+            run_base: Some(run.display().to_string()),
+            log_base: Some(logs.display().to_string()),
+            log_max: Some(4096),
+            wg_run: Some(base.join("no-wg").display().to_string()),
+            brew: Some(base.join("no-brew").display().to_string()),
+            ..TestEnv::default()
+        };
+        let s = Settings::resolve(true, t, String::new());
+        render(&s);
+        assert!(std::fs::metadata(&olog).unwrap().len() <= ROOT_LOG_KEEP);
+        assert!(std::fs::metadata(&user).unwrap().len() <= 4096);
+        assert!(std::fs::metadata(format!("{}.1", user.display())).unwrap().len() <= 4096.min(FLUSH_MAX));
+        assert!(!run.join(format!(".{id}.lock")).exists());
         fsx::remove_rf(&base);
     }
 }

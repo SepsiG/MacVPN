@@ -13,6 +13,13 @@ pub fn geteuid() -> u32 {
     unsafe { libc::geteuid() }
 }
 
+/// `flock(fd, LOCK_EX | LOCK_NB)`: `true` if the exclusive lock was taken (released when the file closes).
+pub fn try_lock_exclusive(f: &std::fs::File) -> bool {
+    use std::os::unix::io::AsRawFd;
+    // SAFETY: a valid descriptor owned by `f` for the duration of the call.
+    unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) == 0 }
+}
+
 /// Sets the file mode creation mask (the bash `umask 077`).
 pub fn umask(mask: u16) {
     // SAFETY: plain integer argument, cannot fail.
@@ -29,6 +36,67 @@ pub fn kill(pid: i32, sig: i32) -> Result<(), i32> {
     // SAFETY: plain integer arguments.
     let rc = unsafe { libc::kill(pid, sig) };
     if rc == 0 { Ok(()) } else { Err(std::io::Error::last_os_error().raw_os_error().unwrap_or(libc::ESRCH)) }
+}
+
+/// `openat(dir, name, O_RDONLY | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC [| O_DIRECTORY])`: one plain name (no `/`,
+/// not `.` / `..`) in an open directory, never through a symlink (`ELOOP`).
+pub fn open_at(dir: &std::fs::File, name: &std::ffi::OsStr, directory: bool) -> std::io::Result<std::fs::File> {
+    use std::os::fd::{AsRawFd, FromRawFd};
+    use std::os::unix::ffi::OsStrExt;
+    let b = name.as_bytes();
+    if b.is_empty() || b == b"." || b == b".." || b.contains(&b'/') {
+        return Err(std::io::Error::from_raw_os_error(libc::EINVAL));
+    }
+    let cname = CString::new(b).map_err(|_| std::io::Error::from_raw_os_error(libc::EINVAL))?;
+    let mut flags = libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC;
+    if directory {
+        flags |= libc::O_DIRECTORY;
+    }
+    // SAFETY: a valid descriptor owned by `dir` and a NUL-terminated name, both valid for the call.
+    let fd = unsafe { libc::openat(dir.as_raw_fd(), cname.as_ptr(), flags) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `fd` is a new descriptor that nothing else owns.
+    Ok(unsafe { std::fs::File::from_raw_fd(fd) })
+}
+
+/// The entry names of an open directory (without `.` and `..`), read through a duplicate of its descriptor.
+pub fn list_dir(dir: &std::fs::File) -> std::io::Result<Vec<std::ffi::OsString>> {
+    use std::os::fd::AsRawFd;
+    use std::os::unix::ffi::OsStrExt;
+    // SAFETY: a valid descriptor owned by `dir`; the duplicate is owned by the DIR stream below.
+    let fd = unsafe { libc::dup(dir.as_raw_fd()) };
+    if fd < 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: `fd` is a valid directory descriptor; on success the stream owns it (closed by `closedir`).
+    let d = unsafe { libc::fdopendir(fd) };
+    if d.is_null() {
+        let e = std::io::Error::last_os_error();
+        // SAFETY: `fd` was not taken over by a stream.
+        unsafe { libc::close(fd) };
+        return Err(e);
+    }
+    // SAFETY: `d` is a valid stream; the shared offset is rewound so the listing is complete.
+    unsafe { libc::rewinddir(d) };
+    let mut names = Vec::new();
+    loop {
+        // SAFETY: `d` is a valid stream; the entry is copied before the next `readdir` / `closedir`.
+        let e = unsafe { libc::readdir(d) };
+        if e.is_null() {
+            break;
+        }
+        // SAFETY: `d_name` of a returned entry is NUL terminated within the entry.
+        let name = unsafe { CStr::from_ptr((*e).d_name.as_ptr()) };
+        let b = name.to_bytes();
+        if b != b"." && b != b".." {
+            names.push(std::ffi::OsStr::from_bytes(b).to_os_string());
+        }
+    }
+    // SAFETY: `d` is a valid stream, closed once.
+    unsafe { libc::closedir(d) };
+    Ok(names)
 }
 
 /// `kill -0 <pid>` semantics including `0` (the caller's process group) the way bash passes it through.

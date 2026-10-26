@@ -1285,6 +1285,14 @@ pub fn connect_hooks(state: &Arc<AppState>) {
         }
     });
     service.set_logger(|line| eprintln!("MacVPN: {line}"));
+    // WinVPN 2c: an added or changed native connection gets its system profile at once (nothing on macOS, where the
+    // user installs and approves it).
+    let installing = Arc::downgrade(state);
+    service.set_after_apply(move || {
+        if let Some(state) = installing.upgrade() {
+            state.connections.install_native_profiles();
+        }
+    });
     state.catalog.publisher.set_logger(|line| eprintln!("MacVPN: {line}"));
     let pruning = Arc::downgrade(state);
     service.set_forget_keys(move |keys| match pruning.upgrade() {
@@ -1332,6 +1340,13 @@ mod tests {
 
     fn https(url: &str) -> CatalogSource {
         CatalogSource::Https(HttpsUrl::parse(url).unwrap())
+    }
+
+    /// A catalog file on a team share as the open panel or Finder/Explorer hands it over: an absolute path of this
+    /// OS (`parse_file_source` takes only those; `/Volumes/…` is drive-relative on Windows).
+    fn share(name: &str) -> PathBuf {
+        let share = if cfg!(windows) { r"\\fileserver\Share" } else { "/Volumes/Share" };
+        Path::new(share).join(name)
     }
 
     // MARK: label and ids
@@ -1429,12 +1444,12 @@ mod tests {
 
     #[test]
     fn sources_are_https_or_the_chosen_file() {
-        let file = Path::new("/Volumes/Share/team/acme.macvpncatalog");
+        let file = share("acme.macvpncatalog");
         assert_eq!(
             parse_source(Some("https://vpn.example.com/acme.macvpncatalog"), None, false, false).unwrap(),
             https("https://vpn.example.com/acme.macvpncatalog")
         );
-        assert_eq!(parse_source(None, Some(file), true, false).unwrap(), CatalogSource::File(file.to_path_buf()));
+        assert_eq!(parse_source(None, Some(&file), true, false).unwrap(), CatalogSource::File(file.clone()));
         for (url, chosen) in [
             (Some("http://vpn.example.com/acme.macvpncatalog"), false),
             (Some("https://user:pw@vpn.example.com/acme"), false),
@@ -1445,7 +1460,7 @@ mod tests {
             (Some("   "), false),
             (Some("https://vpn.example.com/acme"), true),
         ] {
-            assert!(parse_source(url, Some(file), chosen, false).is_err(), "{url:?} {chosen}");
+            assert!(parse_source(url, Some(&file), chosen, false).is_err(), "{url:?} {chosen}");
         }
         // The file must have been chosen in the panel; a relative path is refused.
         assert!(parse_source(None, None, true, false).is_err());
@@ -1459,7 +1474,7 @@ mod tests {
         }
         #[cfg(not(debug_assertions))]
         assert!(parse_source(Some("https://vpn.example.com/acme"), None, false, true).is_ok());
-        assert!(parse_source(None, Some(file), true, true).is_ok());
+        assert!(parse_source(None, Some(&file), true, true).is_ok());
     }
 
     /// The sandbox's HTTPS refusal is debug-only code: release builds have no sandbox and do not ship it.
@@ -1502,10 +1517,7 @@ mod tests {
         assert!(!json.contains("secret-query"), "the query is redacted: {json}");
         assert!(!json.contains(text.as_str()), "{json}");
         // A file source by its name only.
-        let parsed = parse_subscription_view(&subscription(CatalogSource::File(
-            "/Volumes/Share/team/acme.macvpncatalog".into(),
-        )))
-        .unwrap();
+        let parsed = parse_subscription_view(&subscription(CatalogSource::File(share("acme.macvpncatalog")))).unwrap();
         assert_eq!((parsed.kind, parsed.source.as_str()), ("file", "acme.macvpncatalog"));
         for bad in ["", "macvpn-sub:", "macvpn-sub:!!!", "https://vpn.example.com", &"x".repeat(MAX_INPUT_BYTES + 1)] {
             assert!(parse_subscription_view(bad).is_err(), "{bad}");
@@ -1750,7 +1762,7 @@ mod tests {
     #[test]
     fn a_finder_opened_catalog_file_is_only_the_add_dialogs() {
         let (app, _) = app();
-        let opened = PathBuf::from("/Volumes/Share/opened.macvpncatalog");
+        let opened = share("opened.macvpncatalog");
         app.pick_opened(opened.clone());
         let file = |s: CatalogSource| match s {
             CatalogSource::File(f) => f,
@@ -1760,7 +1772,7 @@ mod tests {
         assert!(app.source(None, true).is_err(), "the source edit does not");
         assert!(app.picked(Pick::Source).is_none(), "nor does Copy subscription string");
         // A file chosen in a panel (in any dialog) replaces it.
-        let chosen = PathBuf::from("/Volumes/Share/chosen.macvpncatalog");
+        let chosen = share("chosen.macvpncatalog");
         app.chose_file(chosen.clone());
         assert!(app.picked(Pick::Opened).is_none());
         assert_eq!(file(app.add_source(None, true).unwrap()), chosen);

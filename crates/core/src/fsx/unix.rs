@@ -1,13 +1,29 @@
 //! `fsx` on Unix: the exact calls the call sites made before (plan Task 4's table).
 
-use super::{Access, Follow, OpenFor, not_regular_file};
-use std::fs::{self, DirBuilder, File, Metadata, OpenOptions};
+use super::{Access, Follow, OpenFor, Stat, not_regular_file};
+use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, ErrorKind};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub(super) type OwnerId = u32;
 pub(super) type FileIdent = (u64, u64);
+/// Unix needs nothing beyond the metadata.
+pub(super) type Extra = ();
+
+/// `fstat`.
+pub(super) fn stat(file: &File) -> io::Result<Stat> {
+    Ok(Stat { meta: file.metadata()?, extra: () })
+}
+
+/// `lstat` ([`Follow::No`]) or `stat` ([`Follow::Yes`]).
+pub(super) fn stat_path(path: &Path, follow: Follow) -> io::Result<Stat> {
+    let meta = match follow {
+        Follow::No => fs::symlink_metadata(path)?,
+        Follow::Yes => fs::metadata(path)?,
+    };
+    Ok(Stat { meta, extra: () })
+}
 
 fn file_mode(access: Access) -> u32 {
     match access {
@@ -72,7 +88,7 @@ pub(super) fn create_new(path: &Path, access: Access, read: bool) -> io::Result<
         .open(path)
 }
 
-pub(super) fn open_regular(path: &Path, open: OpenFor, follow: Follow, noctty: bool) -> io::Result<(File, Metadata)> {
+pub(super) fn open_regular(path: &Path, open: OpenFor, follow: Follow, noctty: bool) -> io::Result<(File, Stat)> {
     let mut flags = libc::O_NONBLOCK;
     if follow == Follow::No {
         flags |= libc::O_NOFOLLOW;
@@ -90,7 +106,7 @@ pub(super) fn open_regular(path: &Path, open: OpenFor, follow: Follow, noctty: b
     if !meta.file_type().is_file() {
         return Err(not_regular_file());
     }
-    Ok((clear_nonblocking(file)?, meta))
+    Ok((clear_nonblocking(file)?, Stat { meta, extra: () }))
 }
 
 /// Switches an open descriptor back to blocking I/O. Core has no `unsafe` (no `fcntl`): the descriptor is wrapped
@@ -111,21 +127,21 @@ pub(super) fn set_access(file: &File, access: Access) -> io::Result<()> {
     file.set_permissions(fs::Permissions::from_mode(file_mode(access)))
 }
 
-pub(super) fn has_access(meta: &Metadata, access: Access) -> bool {
-    let want = if meta.is_dir() { dir_mode(access) } else { file_mode(access) };
-    meta.mode() & 0o7777 == want
+pub(super) fn has_access(stat: &Stat, access: Access) -> bool {
+    let want = if stat.meta.is_dir() { dir_mode(access) } else { file_mode(access) };
+    stat.meta.mode() & 0o7777 == want
 }
 
-pub(super) fn owner(meta: &Metadata) -> io::Result<OwnerId> {
-    Ok(meta.uid())
+pub(super) fn owner(stat: &Stat) -> io::Result<OwnerId> {
+    Ok(stat.meta.uid())
 }
 
-pub(super) fn file_id(meta: &Metadata) -> Option<FileIdent> {
-    Some((meta.dev(), meta.ino()))
+pub(super) fn file_id(stat: &Stat) -> Option<FileIdent> {
+    Some((stat.meta.dev(), stat.meta.ino()))
 }
 
-pub(super) fn hard_links(meta: &Metadata) -> u64 {
-    meta.nlink()
+pub(super) fn hard_links(stat: &Stat) -> u64 {
+    stat.meta.nlink()
 }
 
 pub(super) fn sync_dir(dir: &Path) {
@@ -162,4 +178,33 @@ pub(super) fn is_unavailable(e: &io::Error) -> bool {
 
 pub(super) fn is_symlink_refused(e: &io::Error) -> bool {
     e.raw_os_error() == Some(libc::ELOOP)
+}
+
+pub(super) fn is_separator(c: char) -> bool {
+    c == '/'
+}
+
+pub(super) fn names_a_stream(_path: &Path) -> bool {
+    false
+}
+
+pub(super) fn join_reference(base: &Path, reference: &str) -> Option<PathBuf> {
+    if crate::swift_str::has_prefix(reference, "/") {
+        return Some(PathBuf::from(reference));
+    }
+    // Not `Path::join`: a reference that starts with `/` plus a combining mark is relative for Swift (one Character),
+    // and `join` would make it absolute.
+    let mut joined = base.as_os_str().to_owned();
+    joined.push("/");
+    joined.push(reference);
+    Some(PathBuf::from(joined))
+}
+
+/// `realpath`, as 1.5.0 (see `fsx::canonicalize_reference` for why a symlink is followed here).
+pub(super) fn canonicalize_reference(_base: &Path, joined: &Path) -> io::Result<PathBuf> {
+    fs::canonicalize(joined)
+}
+
+pub(super) fn is_outside_base(_e: &io::Error) -> bool {
+    false
 }

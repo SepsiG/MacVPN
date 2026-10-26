@@ -2,11 +2,22 @@
 
 [English version](user-guide.en.md)
 
-A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató az 1.5-ös verziót írja le (lásd: [Újdonságok az 1.5-ben](#újdonságok-az-15-ben)). A menü **Súgó** pontja ezt nyitja meg.
+A MacVPN egy menüsor-alkalmazás macOS-re (14 vagy újabb, Apple processzoros vagy Intel Mac). Egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. Itt importálhatod és szerkesztheted a configokat, mappákba rendezheted őket, és minden kapcsolatnak van élő naplója. A kapcsolatok és jelszavaik egy titkosított széfben vannak. Ez az útmutató a 2.0-s verziót írja le (lásd: [Újdonságok a 2.0-ban](#újdonságok-a-20-ban)). A menü **Súgó** pontja ezt nyitja meg.
 
 Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útmutató a teljes referencia. Ha fejlesztőként azt szeretnéd, hogy egy másik program ezen a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait (**Párosított appok** a Kapcsolatok ablakban), olvasd el a [vezérlő API leírását](control-api.hu.md).
 
 > **Nyelv:** a MacVPN a macOS nyelvi beállítását követi (Rendszerbeállítások → Általános → Nyelv és régió, illetve az appra beállított nyelv). Magyarul és angolul érhető el; ha a preferált nyelvek között egyik sincs, angolul jelenik meg. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](user-guide.en.md) az angolokat.
+
+## Újdonságok a 2.0-ban
+
+- **Megjelenés.** A **Beállítások → Megjelenés** pontban **Rendszer szerint**, **Világos** vagy **Sötét** választható; egyszerre vált a menü és minden MacVPN-ablak. Lásd [2.2](#22-megjelenés).
+- **Kapcsolatértesítések.** Értesítés, ha egy kapcsolat csatlakozott, megszakadt, újracsatlakozott vagy sikertelen, közérthető okkal (például **A szerver nem válaszol.**); kattintásra a kapcsolat **Napló** füle nyílik meg. A **Beállítások → Kapcsolatértesítések** kapcsolja ki őket. Lásd [2.3](#23-kapcsolatértesítések).
+- **Hiányzó VPN-eszközök.** Ha egy kapcsolat eszköze nincs telepítve, a kapcsolat a listában marad, kiszürkítve, **Nincs telepítve: OpenVPN – Rendszerállapot** felirattal; a sorban a **Rendszerállapot** megnyitja az ablakot, ahol telepítheted. Addig az **Új** menü és az import nem kínálja ezt a típust. Lásd [2.4](#24-hiányzó-vpn-eszközök).
+- **Automatikus újracsatlakozás.** Alvás vagy a hálózat elvesztése után a MacVPN magától újra felépíti a kapcsolatot, de csak ugyanazon a hálózaton, mint korábban, és csak ha a VPN saját hálózatai ott nem érhetők el közvetlenül. Kapcsolatonként kikapcsolható. Lásd [5.5](#55-automatikus-újracsatlakozás).
+- **A DNS megbízhatóan visszaáll.** A root réteg egyetlen DNS-kezelője lemezen jegyzi az eredeti DNS-beállításokat, így azok visszaállnak, amikor az utolsó, DNS-t állító kapcsolat bomlik; akkor is, ha kapcsolódás közben összeomlott valami vagy újraindult a Mac, és több kapcsolatnál bármilyen sorrendben. Lásd [5.6](#56-dns-kapcsolat-közben).
+- **Naplóméret-korlát.** Egy kapcsolat naplója többé nem töltheti meg a lemezt: legfeljebb 5 MiB, plusz egy régebbi, szintén legfeljebb 5 MiB-os rész. Lásd [6.](#6-debug-mód-és-a-napló)
+- **strongSwan (IKEv2):** a Homebrew `etc/swanctl` mappáiban lévő CA, kliens-tanúsítványok és kulcsok működnek (a tanúsítványos belépés is), és két IKEv2 kapcsolat lehet egyszerre aktív. Lásd [3.3](#33-ikev2-strongswan).
+- **9-es root réteg:** a frissítés után a **Rendszerállapot** egyszer kéri az **Engedélyezés** gombot (admin jelszóval). Lásd [8.4](#84-frissítés-15-ről).
 
 ## Újdonságok az 1.5-ben
 
@@ -49,13 +60,13 @@ Rövid, lépésenkénti leírások: [Hogyan használd](how-to.hu.md). Ez az útm
 ## Tartalom
 
 1. [Telepítés](#1-telepítés)
-2. [Első indítás és a Rendszerállapot ablak](#2-első-indítás-és-a-rendszerállapot-ablak)
+2. [Első indítás és a Rendszerállapot ablak](#2-első-indítás-és-a-rendszerállapot-ablak) ([Megjelenés](#22-megjelenés), [Kapcsolatértesítések](#23-kapcsolatértesítések), [Hiányzó VPN-eszközök](#24-hiányzó-vpn-eszközök))
 3. [Kapcsolatok felvétele típusonként](#3-kapcsolatok-felvétele-típusonként)
 4. [Import és export](#4-import-és-export) ([VPN-fájlok megnyitása a Finderből](#41-vpn-fájlok-megnyitása-a-finderből))
-5. [Csatlakozás](#5-csatlakozás)
+5. [Csatlakozás](#5-csatlakozás) ([Automatikus újracsatlakozás](#55-automatikus-újracsatlakozás), [DNS kapcsolat közben](#56-dns-kapcsolat-közben))
 6. [Debug mód és a napló](#6-debug-mód-és-a-napló)
 7. [Hibaelhárítás a napló alapján](#7-hibaelhárítás-a-napló-alapján)
-8. [Frissítés](#8-frissítés) ([Frissítés 0.x verzióról](#81-frissítés-0x-verzióról), [Frissítés 1.1-ről](#82-frissítés-11-ről), [Frissítés 1.2-ről](#83-frissítés-12-ről))
+8. [Frissítés](#8-frissítés) ([Frissítés 0.x verzióról](#81-frissítés-0x-verzióról), [Frissítés 1.1-ről](#82-frissítés-11-ről), [Frissítés 1.2-ről](#83-frissítés-12-ről), [Frissítés 1.5-ről](#84-frissítés-15-ről))
 9. [Eltávolítás](#9-eltávolítás)
 10. [Biztonsági megjegyzések](#10-biztonsági-megjegyzések)
 11. [Széf](#11-széf)
@@ -112,7 +123,7 @@ Ha már van Homebrew-d, Terminálban egyszerre is telepítheted mindet:
 brew install openvpn wireguard-tools strongswan sstp-client bash
 ```
 
-Ha egy eszköz hiányzik, csak az adott típusú kapcsolatok szürkülnek ki, a többi típus működik.
+Ha egy eszköz hiányzik, csak az adott típusú kapcsolatok szürkülnek ki, a többi típus működik (lásd [2.4](#24-hiányzó-vpn-eszközök)).
 
 ---
 
@@ -128,7 +139,7 @@ Indítás után a MacVPN a menüsorban egy pajzs ikonként jelenik meg. Amíg va
 Az ikonra kattintva nyílik meg a menü. Minden kapcsolat egy kártya a típusa színes buborékával, a nevével, a típusával és az állapotával, valamint egy kapcsolóval (lásd [5](#5-csatlakozás)); sok kapcsolatnál a lista görgethető. A mappák nyitható-csukható sorokként jelennek meg (lásd [12.](#12-mappák-és-színek)). A kártyák alatt:
 
 - három csempe: **Új kapcsolat / Import…**, **Kapcsolatok kezelése…** és **Rendszerállapot**;
-- a **Beállítások** csoport (kattintásra nyílik és csukódik): **Frissítések automatikus keresése**, **Csak a legalább 24 órája megjelent frissítések felajánlása**, **Frissítések keresése most** és **Indítás bejelentkezéskor**; utána a széf beállításai: **Automatikus feloldás**, **„Széf zárolása most” megjelenítése**, **Mesterjelszó módosítása…** és **Új helyreállítási kulcs…** (lásd [11.](#11-széf)), végül **Teljes biztonsági mentés…** és **Visszaállítás biztonsági mentésből…** (lásd [14.](#14-biztonsági-mentés-és-visszaállítás));
+- a **Beállítások** csoport (kattintásra nyílik és csukódik): **Megjelenés** (lásd [2.2](#22-megjelenés)), **Kapcsolatértesítések** (lásd [2.3](#23-kapcsolatértesítések)), **Frissítések automatikus keresése**, **Csak a legalább 24 órája megjelent frissítések felajánlása**, **Frissítések keresése most** és **Indítás bejelentkezéskor**; utána a széf beállításai: **Automatikus feloldás**, **„Széf zárolása most” megjelenítése**, **Mesterjelszó módosítása…** és **Új helyreállítási kulcs…** (lásd [11.](#11-széf)), végül **Teljes biztonsági mentés…** és **Visszaállítás biztonsági mentésből…** (lásd [14.](#14-biztonsági-mentés-és-visszaállítás));
 - **Súgó** (ezt az útmutatót nyitja meg), **Széf zárolása most** (ha látszik, lásd [11.4](#114-széf-zárolása-most)) és **Kilépés**.
 
 Amíg a széf zárolva van, a menüben csak egy **Széf feloldása…** sor, az aktív kapcsolatok száma és a **Kilépés** látszik (lásd [11.5](#115-a-zárolt-menü)). Amíg a széf nem létezik, a sor felirata **Széf beállítása…**.
@@ -138,7 +149,7 @@ Ha van frissítés, a **Frissítés elérhető: vX.Y.Z** sáv is megjelenik. Az 
 Ha valami hiányzik, induláskor automatikusan megnyílik a **Rendszerállapot** ablak. Bármikor megnyithatod a menüből is (**Rendszerállapot**). Három ellenőrzést mutat, mindegyik zöld vagy piros:
 
 1. **Homebrew.** Ha hiányzik, a **Telepítés…** gomb Terminált nyit a hivatalos telepítővel. A telepítő a rendszergazdai jelszavadat kéri. Ha a telepítő nem tölthető le, a Terminál ablak ezt kiírja, és semmit nem futtat. Ha végzett, térj vissza, és nyomd meg az **Újraellenőrzés** gombot.
-2. **VPN eszközök.** A hiányzó eszközök listája mellett a **Telepítés** gomb lefuttatja a `brew install` parancsot. A kimenet élőben látszik az ablakban. A telepítés akkor is folytatódik, ha közben bezárod az ablakot.
+2. **VPN eszközök.** A hiányzó eszközök listája mellett a **Telepítés** gomb lefuttatja a `brew install` parancsot. A kimenet élőben látszik az ablakban. A telepítés akkor is folytatódik, ha közben bezárod az ablakot. Ha minden eszköz megvan, de a Homebrew-ban valamelyik csomagnak újabb verziója van, a sor felsorolja (**Frissítés elérhető: 2.6.8 → 2.6.9**), és a **Frissítés** gomb csak ezekre a csomagokra futtatja a `brew upgrade` parancsot. A MacVPN futás közben nagyjából naponta egyszer a háttérben frissíti a Homebrew csomaglistáját (`brew update`), így az ajánlat akkor is naprakész, ha te magad sosem futtatod a `brew update`-et.
 3. **Jogosultság (root scriptek + sudoers).** Az **Engedélyezés** gomb egyszer kéri az admin jelszót. Telepíti a MacVPN root rétegét: az egyetlen root binárist, a `/usr/local/libexec/macvpn/mvpn`-t a `VERSION` fájljával (a MacVPN 1.2-ben 8-as root réteg), valamint a `/etc/sudoers.d/macvpn` szabályt. Ezután a csatlakozás és a bontás jelszó nélkül működik. Ha naprakész, a sorban **Telepítve (verzió 8)** áll. Ha egy app-frissítés újabb root réteget hoz, **Frissítés szükséges (7 → 8)** jelenik meg (a telepített és az új verzióval); ha egy fájl hiányzik, **Hiányos telepítés**. Ilyenkor nyomd meg újra az **Engedélyezés** gombot. Ha van aktív kapcsolat, az ablak előbb figyelmeztet: **A rendszerkomponens frissítése bontja az aktív VPN-kapcsolatokat.**
 
 Ha mindhárom zöld, kész a telepítés. Az L2TP és a Cisco IPsec ezek nélkül is működik.
@@ -151,6 +162,37 @@ A MacVPN alapból nem indul el magától. Ha minden bejelentkezéskor el szeretn
 - A MacVPN nincs Apple Developer ID-val aláírva, ezért a macOS gyakran nem tudja a szokásos módon regisztrálni. Ilyenkor a MacVPN helyette egy kis bejelentkezési LaunchAgentet hoz létre (`~/Library/LaunchAgents/local.macvpn.launcher.plist`, amely az `open -b local.macvpn` parancsot futtatja). A négyzet bejelölve marad, alatta a megjegyzés: „Bejelentkezési LaunchAgenttel bekapcsolva (a következő bejelentkezéstől érvényes).” A MacVPN ilyenkor nem indul el azonnal, csak a következő bejelentkezéskor. A LaunchAgent a bundle azonosító alapján nyitja meg az appot, így az app áthelyezése után is működik. A **Rendszerbeállítások → Általános → Bejelentkezési elemek** alatt a **Háttérben való futás engedélyezése** listában is megjelenhet. A jelölés törlése (vagy az eltávolítás) törli a fájlt.
 - Ha a bekapcsolás egyik módon sem sikerül, egy riasztás mutatja az okát, és a négyzet jelöletlen marad.
 - A négyzet nem kattintható, ha a MacVPN nem az Alkalmazások mappából (`/Applications` vagy `~/Applications`) fut, például közvetlenül a DMG-ről vagy a Letöltések mappából. Húzd az appot az Alkalmazások mappába, onnan nyisd meg, és próbáld újra.
+
+### 2.2 Megjelenés
+
+A **Beállítások → Megjelenés** pontban három lehetőség van: **Rendszer szerint** (alapértelmezés: a MacVPN a **Rendszerbeállítások → Megjelenés** beállítását követi, akkor is, ha futás közben váltasz), **Világos** és **Sötét**. A választás azonnal érvényes a menüre és minden nyitott ablakra (Kapcsolatok, Rendszerállapot, Frissítés, a kódbekérő és a hitelesítőadat-ablak, a figyelmeztetések), és minden később megnyíló ablakra. A MacVPN újraindítás után is megjegyzi. Ez ennek a Macnek a beállítása, nem része a biztonsági mentésnek.
+
+### 2.3 Kapcsolatértesítések
+
+A MacVPN macOS értesítést küld, ha:
+
+- egy kapcsolat **csatlakozott** (**Office VPN: csatlakozva**);
+- egy kapcsolat automatikusan **újracsatlakozott** (**Office VPN: újracsatlakozva**, lásd [5.5](#55-automatikus-újracsatlakozás));
+- egy élő kapcsolat úgy **szakadt meg**, hogy nem te bontottad (**Office VPN: megszakadt a kapcsolat**);
+- egy csatlakozás **sikertelen** volt (**Office VPN: sikertelen csatlakozás**);
+- egy automatikus újracsatlakozás **elmaradt** (**Office VPN: nem csatlakozott újra**) vagy **nem sikerült** (**Office VPN: nem sikerült újracsatlakozni**).
+
+A cím alatt rövid, közérthető ok áll, amelyet a MacVPN a kapcsolat naplójának végéből olvas ki: **A szerver nem válaszol.**, **A szerver nem érhető el.**, **A szerver nevét nem sikerült feloldani.**, **A szerver elutasította a bejelentkezést.**, **Egy tanúsítványt nem fogadott el a kapcsolat.** vagy **Megszakadt a hálózati kapcsolat.** (a mögöttük álló naplósorok: [7.12](#712-az-értesítések-okai)). Ha egyik sem illik, **Kattints a naplóért.** áll ott (sikertelen csatlakozásnál **Részletek a MacVPN-ben**). Az értesítésre kattintva a kapcsolat a **Kapcsolatok** ablakban, a **Napló** fülön nyílik meg.
+
+- **Amit sosem mutat.** Az értesítések a lezárt képernyőn is látszhatnak, ezért csak a kapcsolatot nevezik meg, szervert, címet, felhasználónevet vagy a napló hibaüzenetét soha. Zárolt széfnél még a kapcsolat nevét sem: a cím általános (**Egy VPN-kapcsolat megszakadt**, **Egy VPN-kapcsolat csatlakozott**, …).
+- **Amiről nincs értesítés:** az általad indított bontás (a MacVPN-ből való kilépéskor, vagy ha egy párosított app elengedi a kapcsolatot, sem), és a MacVPN indulásakor már élő kapcsolat. Az OpenVPN saját újraindulása egy rövid hálózati kiesés után (`ping-restart`) nem bontja a kapcsolatot, így erről sem jön értesítés.
+- **A kapcsoló.** A **Beállítások → Kapcsolatértesítések** (alapból be) mindezeket kikapcsolja. Ami tőled kér valamit, az megmarad: **…: hitelesítés szükséges**, a hitelesítő adatok bekérése és a csapatkatalógusok értesítései.
+- **Engedély.** A macOS egyszer megkérdezi, hogy a MacVPN küldhet-e értesítést. Ha nemet mondtál, vagy máshogy szeretnéd látni őket: **Rendszerbeállítások → Értesítések → MacVPN**.
+
+### 2.4 Hiányzó VPN-eszközök
+
+A MacVPN a **Rendszerállapot** ablakban ellenőrzi az egyes kapcsolattípusok eszközeit (Homebrew, a VPN eszközök és a root réteg, lásd fent). Ha egy típus eszköze hiányzik vagy nem használható:
+
+- **Az ilyen típusú kapcsolatok a listában maradnak, kiszürkítve.** A soruk megmondja, miért, például **OpenVPN · Nincs telepítve: OpenVPN – Rendszerállapot**, vagy **Nem használható: …**, ha az eszköz megvan, de nem használható (például a root réteghez **Engedélyezés** kell). A **Rendszerállapot** szó link, a Rendszerállapot ablakot nyitja meg. A kapcsoló és a **Csatlakozás** gomb tiltott. Ez a menüben, a **Kapcsolatok** ablak listájában és a kapcsolat részleteinél is így látszik. A nevek: **Homebrew** (minden Homebrew-s típusnál, ha maga a Homebrew hiányzik), **OpenVPN**, **WireGuard tools** (vagy **bash**), **strongSwan**, **sstp-client** és **Jogosultság (root scriptek + sudoers)**. Az L2TP-hez, a Cisco IPsec-hez és a rendszer VPN-ekhez sosem kell eszköz.
+- A Kapcsolatok ablak **Új** menüje csak a használható típusokat kínálja. Ha egyik sem az, ezt mutatja: **Kapcsolat hozzáadásához telepítsd a VPN-eszközöket a Rendszerállapot ablakban.**, és egy **Rendszerállapot…** pontot.
+- **Az import elutasítja az ilyen fájlt** (**Import fájlból…**, az ablakra ejtett vagy a Finderből megnyitott fájl), mielőtt bármit mentene: **office.ovpn: A(z) OpenVPN nincs telepítve. Előbb telepítsd a Rendszerállapot ablakban.** Ugyanannak az importnak a többi fájlja bekerül.
+- **A csapatkatalógusok megtartják a kapcsolataikat.** Egy hiányzó típusú katalóguskapcsolat megmarad, és ugyanúgy kiszürkítve látszik; az eszköz telepítése után új szinkronizálás nélkül működik.
+- **Telepítés a MacVPN-en kívül.** Ha a Terminálban `brew install`-lal telepítettél, nem kell **Újraellenőrzés**: amikor egy típus nem használható, és megnyitod a menüt vagy a Kapcsolatok ablakot, a MacVPN a háttérben újra ellenőriz (legfeljebb percenként egyszer), és a sorok egy percen belül visszaállnak.
 
 ---
 
@@ -182,7 +224,7 @@ A legegyszerűbb, ha a szolgáltatótól kapott `.ovpn` fájlt importálod (**Ú
   - Az **engedett** direktívák a megszokott módon működnek, például `setenv CONFIG_VERSION "2.0.4"`, `remap-usr1 SIGTERM`, `pull-filter`, `machine-readable-output`.
   - A **kockázatos beállítások** (például `user nobody`, `group nogroup`, `route-noexec`, szerveroldali vagy csak Windowson működő opciók, és minden direktíva, amelyet a MacVPN nem ismer) egy sárga **Kockázatos beállítások** panelen jelennek meg, mindegyik rövid indoklással. Mentéshez és csatlakozáshoz jelöld be: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. A tudomásulvétel pontosan a mentéskor jelen lévő kockázatos direktívákra szól: ha később újat adsz hozzá, újra be kell jelölnöd.
   - A **tiltott** direktívák, például `up`, `down`, `script-security`, `plugin`, `log`, `chroot` és `echo`, sosem engedettek (külső scriptet futtatnának, kódot töltenének be, rootként olvasnának vagy írnának fájlt, vagy a MacVPN saját beállításait írnák felül). A DNS-t a MacVPN maga állítja be. Részletek a [7.7 fejezetben](#77-nem-engedélyezett-direktíva--tiltott-direktíva).
-- `user` / `group` mellett az OpenVPN a kapcsolódás után eldobja a root jogot: tegyél a configba `persist-tun` sort, hogy az újracsatlakozás működjön. A DNS-t a MacVPN-ben való bontás állítja vissza; ha az OpenVPN magától lép ki, bontsd a kapcsolatot a MacVPN-ben.
+- `user` / `group` mellett az OpenVPN a kapcsolódás után eldobja a root jogot: tegyél a configba `persist-tun` sort, hogy az újracsatlakozás működjön. A DNS-t a MacVPN-ben való bontás állítja vissza, és akkor is visszaáll, ha az OpenVPN magától lép ki (a MacVPN következő állapotlekérdezésekor, lásd [5.6](#56-dns-kapcsolat-közben)).
 - Az engedélyezett direktívák argumentumait is ellenőrzi: például a `dev` csak `tun`, `tap` vagy `utunN` lehet, a port és az időzítők számok, a hosztnév és a titkosító neve nem tartalmazhat `/` jelet, és nem kezdődhet `-` jellel. A `<connection>` blokkok használhatók, a soraik ugyanezen az ellenőrzésen mennek át.
 
 ### 3.2 WireGuard
@@ -234,8 +276,12 @@ connections {
 
 - A **Felhasználónév** mező értéke egyezzen az `eap_id`-val, a jelszót a **Jelszó** mezőbe írd. Ezek nem kerülnek a configba, a MacVPN csatlakozáskor adja hozzá őket egy `secrets` blokkban.
 - Ha a szerver előre megosztott kulcsot (PSK) használ, mindkét oldalon `auth = psk` legyen, a kulcs pedig a **Pre-shared key (PSK)** mezőbe kerül.
-- Ha a szerver tanúsítványát nem egy általánosan ismert hitelesítő írta alá, a CA tanúsítványát a strongSwan tanúsítványkönyvtárába kell tenni (Homebrew alatt általában `/opt/homebrew/etc/swanctl/x509ca/`). Ebben kérd az üzemeltető segítségét.
+- **A tanúsítványok és kulcsok** a strongSwan saját könyvtáraiba kerülnek a Homebrew mappájában (`/opt/homebrew/etc/swanctl/`, Intel-alapú Macen `/usr/local/etc/swanctl/`): a nem általánosan ismert hitelesítő által aláírt szerver CA tanúsítványa az `x509ca/`-ba; tanúsítványos belépéshez (`auth = pubkey` és `certs = <fájlnév>` a `local` szakaszban) a saját tanúsítványod az `x509/`-be, a titkos kulcsa a `private/`-ba (vagy mindkettő egy PKCS#12 fájlban a `pkcs12/`-be). Ezeket a fájlokat a szerver üzemeltetőjétől kérd.
+  - A MacVPN minden csatlakozáskor átmásolja ezeket a kapcsolat saját, csak a rendszer által olvasható mappájába, mert a strongSwan onnan olvassa őket; a kapcsolat bontásakor a másolatok törlődnek. `swanctl --load-creds` nem kell, és egy később hozzáadott fájlt a következő csatlakozás már használ.
+  - Csak sima nevű, közönséges fájlok másolódnak (betű, szám, `_`, `.`, `-`; symlink és rejtett fájl nem), egyenként legfeljebb 1 MB.
+  - A titkos kulcs nem lehet jelszóval védett (a MacVPN nem tud kulcsjelszót átadni a strongSwannak). Csak te olvashasd: `chmod 700 /opt/homebrew/etc/swanctl/private`.
 - Az `include`, az `updown` és a fájlra hivatkozó `secrets` (`file = …`) nem engedett.
+- **Több IKEv2 kapcsolat egyszerre** is működik: a MacVPN az összes aktív IKEv2 kapcsolat configját együtt tölti be a strongSwanba, és minden kapcsolat jelszava vagy PSK-ja a saját szerverazonosítójához (`remote.id`) kötött, így egy kapcsolat felépítése vagy bontása a többit nem bontja. Két kapcsolat nem lehet egyszerre aktív, ha ugyanazt a nevet használja a `connections` (vagy a `secrets`, `pools`, `authorities`) alatt, vagy PSK-val, illetve EAP-jelszóval ugyanazt a `remote.id`-t: ezeket a strongSwan nem tudná megkülönböztetni. A második csatlakozás ilyenkor az ütközést megnevező üzenettel áll le, például **Egy másik aktív strongSwan-kapcsolat már definiálja ezt: connections.office**; adj a másolatnak saját neveket és `remote.id`-t.
 - Csak a dokumentált `swanctl.conf` kulcsok fogadhatók el, mindegyik a saját szakaszában. A `certs`, `cacerts`, `cacert` és `pubkeys` értéke csak sima fájlnév lehet (`/` és `..` nélkül); a strongSwan a saját tanúsítványkönyvtáraiban keresi őket (például `x509ca/`). A `crl_uris`, az `ocsp_uris` és a `file:` URI nem engedett.
 
 ### 3.4 L2TP/IPsec és Cisco IPsec
@@ -367,8 +413,8 @@ Kattints duplán egy `.ovpn` vagy `.sstp` fájlra a Finderben, vagy húzd rá a 
   - **Használja: …** a kártyán: egy párosított app tartja fenn a kapcsolatot (lásd [5.4](#54-párosított-appok-vezérlő-api))
 - **A Kapcsolatok ablakból:** **Csatlakozás** / **Bontás** gomb.
 - Egyszerre több kapcsolat is aktív lehet.
-- Ha egy típushoz hiányzik eszköz, a kapcsolat kiszürkül, és a **Hiányzó eszköz** felirat jelenik meg rajta. Ilyenkor nézd meg a **Rendszerállapot** ablakot.
-- **Értesítések.** Sikertelen csatlakozásnál macOS értesítés jelenik meg („…: sikertelen csatlakozás”, **Részletek a MacVPN-ben** szöveggel). Maga a hibaüzenet nem kerül az értesítésbe, mert az a lezárt képernyőn is látszhat; a teljes ok a MacVPN-ben látszik. Kattintásra a kapcsolat a **Kapcsolatok** ablakban, a **Napló** fülön nyílik meg. Akkor is értesítés jön, ha egy élő kapcsolat váratlanul megszakad („…: a kapcsolat megszakadt”), és ha egy kapcsolat kódra vagy bejelentkezésre vár („…: hitelesítés szükséges”; kattintásra előjön a kódbekérő ablak). Az értesítésekhez a macOS egyszer engedélyt kér. Automatikus újracsatlakozás nincs.
+- Ha egy típushoz hiányzik eszköz, a kapcsolat kiszürkül, és a **Nincs telepítve: <eszköz> – Rendszerállapot** felirat jelenik meg rajta (lásd [2.4](#24-hiányzó-vpn-eszközök)).
+- **Értesítések** jönnek, ha egy kapcsolat csatlakozott, megszakadt, újracsatlakozott vagy sikertelen, és ha kódra vagy bejelentkezésre vár („…: hitelesítés szükséges”; kattintásra előjön a kódbekérő ablak): lásd [2.3](#23-kapcsolatértesítések). Alvás vagy a hálózat elvesztése után a MacVPN magától is újra felépítheti a kapcsolatot: lásd [5.5](#55-automatikus-újracsatlakozás).
 - **Kilépéskor** (**Kilépés**, ⌘Q, valamint kijelentkezés, újraindítás vagy leállítás) a MacVPN előbb a Kapcsolatok ablak nem mentett változásaira kérdez rá (**Mentés**, **Elvetés** vagy **Mégse**). Utána, ha van aktív kapcsolat, megkérdezi: **Leállítás és kilépés**, **Kilépés, fussanak tovább** vagy **Mégse**. A Mégse esetén a MacVPN fut tovább (és a kijelentkezés megszakad). A tovább futó kapcsolatokat a MacVPN következő indításkor felismeri.
 
 ### 5.1 A kapcsolatok sorrendje
@@ -431,6 +477,34 @@ A **Párosított appok** alatt minden program látszik a futtatható fájl útvo
 
 Fejlesztőknek: a protokoll, a biztonsági modell és egy példakliens [a vezérlő API leírásában](control-api.hu.md) van.
 
+### 5.5 Automatikus újracsatlakozás
+
+Ha egy kapcsolat azért bomlik, mert a Mac elaludt vagy elment a hálózat, a MacVPN magától is újra felépítheti. Csak akkor teszi, ha mindkét feltétel teljesül:
+
+1. **Ugyanazon a hálózaton vagy, mint amikor a kapcsolat felépült.** A MacVPN a routert hasonlítja össze (az alapértelmezett átjáró címét és hardvercímét), és ahol a macOS megmondja, a Wi-Fi nevét. A Wi-Fi nevét a macOS csak helymeghatározási engedéllyel rendelkező appnak mutatja; a MacVPN ezt nem kéri, így általában a router hardvercíme dönt. Ha a hálózat nem azonosítható, a MacVPN nem csatlakozik újra.
+2. **A VPN saját hálózatai közül egyik sem érhető el ott közvetlenül.** Ezek a kapcsolat útvonalai (OpenVPN `route` sorok és a szerver által küldött útvonalak, WireGuard `AllowedIPs`; a „mindent a VPN-be” útvonal, például a `0.0.0.0/0` nem számít) és a DNS-szerverei. Ha valamelyik olyan hálózat, amelyre a Mac közvetlenül csatlakozik, az alagút elvenné tőled ezt a helyi hálózatot, ezért a MacVPN a kapcsolatot bontva hagyja.
+
+**Egy példa.** Otthon csatlakozol az „Office VPN”-hez, amely az irodai 10.20.30.0/24 hálózatot vezeti a VPN-be. Lecsukod a gépet, és otthon nyitod ki újra: a hálózat ugyanaz, és a 10.20.30.0/24 nem az otthoni hálózatod, így a kapcsolat visszajön (**Office VPN: újracsatlakozva**). Ha viszont az irodában nyitod ki, ahol a Mac a 10.20.30.0/24-ből kap címet: ez másik hálózat, és az irodai hálózat amúgy is közvetlenül elérhető, ezért a MacVPN nem csatlakozik újra: **Office VPN: nem csatlakozott újra** / **A VPN hálózata itt közvetlenül elérhető.** (Ezt nézi meg először. Más hálózaton, ahol a VPN-ből semmi sem helyi – például egy kávézóban –, az ok: **Másik hálózaton vagy.**)
+
+- **Mikor indul.** Ha egy kapcsolat elalváskor élt, és ébredés után nem él (vagy az ébredés utáni 3 percen belül megszakad), illetve ha egy kapcsolat hálózat nélkül vagy egy hálózatváltás utáni egy percen belül szakad meg. A MacVPN ébredés vagy hálózatváltás után néhány másodpercet vár, aztán legfeljebb háromszor próbálkozik (azonnal, 10 és 30 másodperc múlva). Hálózat nélkül megvárja, amíg a hálózat visszajön.
+- **Amit sosem csatlakoztat újra:** az általad bontott kapcsolatot (a MacVPN-ből való kilépéssel vagy egy párosított app elengedésével bontottat sem), az általad indított, sikertelen csatlakozást, azt a kapcsolatot, amelynél a szerver elutasította a bejelentkezést vagy nem fogadott el egy tanúsítványt (új jelszó vagy tanúsítvány kell), és azt, amelynek a kódbekérő vagy hitelesítőadat-ablakát megszakítottad. Ha közben te magad csatlakozol vagy bontasz, a MacVPN abbahagyja a próbálkozást.
+- **Értesítések** (lásd [2.3](#23-kapcsolatértesítések)): siker után **újracsatlakozva**; **nem csatlakozott újra** az okkal (**Másik hálózaton vagy.**, **A hálózatot nem sikerült azonosítani.**, **A VPN hálózata itt közvetlenül elérhető.**, **A VPN DNS-szervere itt közvetlenül elérhető.**, **Az újracsatlakozáshoz oldd fel a széfet.**); vagy **nem sikerült újracsatlakozni** az utolsó hiba okával. Az újracsatlakozás rendes csatlakozás: egyszer használatos kódos kapcsolatnál újra kéri a kódot, a hiányzó hitelesítő adatokat is bekéri.
+- **A széf.** A jelszavak a széfből jönnek, ezért zárolt széfnél nincs újracsatlakozás (**Az újracsatlakozáshoz oldd fel a széfet.**).
+- **Alvást túlélő alagutak.** Az OpenVPN saját újraindulása (`ping-restart`) és a WireGuard egy rövid alvást át is vészelhet, így ébredés után a kapcsolat még él. Minden ébredés után egyszer a MacVPN az ilyen kapcsolatot összeveti az új hálózattal: ha valamelyik hálózata vagy DNS-szervere ott közvetlenül elérhető (a fenti példában az iroda), a MacVPN **bontja**, és megírja, miért (**Office VPN: megszakadt a kapcsolat** / **A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.**), mert ha a helyi hálózat az alagútba menne, elérhetetlenné válna. Minden más hálózaton (kávézó, másik otthoni hálózat) az alagút él tovább. Az így bontott kapcsolat úgy számít, mintha te bontottad volna: nem csatlakozik magától újra, amíg újra nem csatlakoztatod. Ez az ellenőrzés a lenti kapcsolótól függetlenül fut.
+- **A kapcsoló.** Minden MacVPN-ben létrehozott kapcsolat részleteinél a Kapcsolatok ablakban ott az **Automatikus újracsatlakozás** (alapból be; a rendszer VPN-eknél nincs). Kapcsold ki annál a kapcsolatnál, amelynek alvás után bontva kell maradnia. A beállítás ezen a Macen marad (nincs a mentésben és az exportban); egy törölt, majd újra importált kapcsolatnál ismét be van kapcsolva.
+- **Korlátok.** Az OpenVPN-szerver által küldött útvonalakat a MacVPN a kapcsolat naplójából olvassa, ezért hagyd meg az alapértelmezett naplószintet (`verb 3`; a `verb 1` vagy `2` elrejti őket). Az IKEv2, SSTP, L2TP és Cisco IPsec kapcsolatok nem adják meg a hálózataik listáját: náluk csak az „ugyanaz a hálózat” szabály érvényes. Alvás nélküli kábel-bedugás vagy Wi-Fi-váltás nem indítja el az alvást túlélő alagutak ellenőrzését.
+
+### 5.6 DNS kapcsolat közben
+
+Az OpenVPN (a szervertől kapott DNS-sel), a WireGuard (`DNS =` sor) és az SSTP (**A szerver DNS-ének használata**) a kapcsolat idejére a VPN DNS-szervereit állítja be a Mac minden hálózati szolgáltatásán. Mindhármat a MacVPN root rétegének egyetlen DNS-kezelője végzi:
+
+- **Az eredeti beállítások lemezen maradnak** (csak a rendszer olvashatja), még mielőtt az első kapcsolat bármit módosítana. Amikor az utolsó, DNS-t állító kapcsolat bomlik, a MacVPN visszaállítja az eredetit, és ellenőrzi, hogy érvényes lett-e (a naplóban: **original DNS restored and verified**).
+- **Több kapcsolat:** a legutóbb felépült kapcsolat DNS-e érvényes. Ha az bomlik, a még élők közül a legújabbé jön vissza; az eredeti csak az utolsóval tér vissza, bármilyen sorrendben bontasz.
+- **Összeomlás és újraindítás:** ha egy VPN-program bontás nélkül áll le, vagy a Mac kapcsolódás közben újraindul vagy leáll, a MacVPN a következő állapotlekérdezésekor (induláskor, és futás közben rendszeresen) visszaállítja a DNS-t.
+- Minden változtatást visszaolvas, és ha nem lett érvényes, még egyszer beállítja; az eredmény a kapcsolat naplójában áll (**DNS set and verified on 2 network service(s)**, vagy egy **DNS check failed** sor a szolgáltatás nevével).
+- Az IKEv2-t (a strongSwan maga alkalmazza a szerver DNS-ét, a beállításaid módosítása nélkül), az L2TP-t, a Cisco IPsec-et és a rendszer VPN-eket a macOS kezeli.
+- **Egyszer, 1.5-ös vagy régebbi verzióról frissítve:** egy régebbi MacVPN kapcsolódás közbeni összeomlás vagy újraindítás után beállítva hagyhatta egy VPN DNS-szerverét. Erről a 2.0 nem tudhat. Ha VPN nélkül, a szokásos hálózatodon nem nyílnak meg a weboldalak, nyisd meg a **Rendszerbeállítások → Hálózat** pontot, válaszd ki a szolgáltatást (Wi-Fi vagy Ethernet) → **Részletek…** → **DNS**, és töröld a VPN DNS-szervereit (vagy állítsd vissza a sajátodat). Ezt csak egyszer kell megtenned.
+
 ---
 
 ## 6. Debug mód és a napló
@@ -464,6 +538,8 @@ Debug módban:
 | egyéb | az eszköz (openvpn, wg-quick, charon, sstpc, pppd) saját kimenete |
 
 **A Napló fül** a kapcsolat naplójának utolsó 5000 sorát mutatja, és élőben követi, debug módon kívül is (az L2TP-nek és a Cisco IPsec-nek csak debug módban van naplója: **Natív kapcsolatnál csak debug csatlakozáskor van napló.**). Maguk a naplófájlok a `/var/log/macvpn` alatt vannak.
+
+**Naplóméret.** Egy kapcsolat naplója (`/var/log/macvpn/<azonosító>.log`) legfeljebb 5 MiB. Ha megtelik, a legújabb sorai a régebbi részbe, az `<azonosító>.log.1`-be kerülnek (ez is legfeljebb 5 MiB), és a napló újraindul, miközben a kapcsolat fut tovább; így egy kapcsolat akármeddig él, nagyjából 10 MB-nál többet nem foglal. A VPN-programok saját munkanaplóit ugyanígy vágja. Az OpenVPN `--mute 20`-szal indul: 20 egyforma fajta sor után már csak egy számlálót ír, így a milliószor ismétlődő üzenet (például `Network is unreachable`, amíg nincs hálózat) nem árasztja el a naplót; a config saját `mute` vagy magasabb `verb` sora ezt nem írja felül. Egy régebbi MacVPN által hagyott nagy napló a következő csatlakozáskor vagy bontáskor erre a méretre rövidül.
 
 **Napló műveletek:** szűrés (**Minden**, **Parancsok**, **Hibák**), **Keresés**, **Követés** (automatikus görgetés), **Másolás** (a szűrt sorokat másolja), **Mentés…** (a naplót `<név>-naplo.txt` néven menti, csak te olvashatod). Jelszó, PSK és privát kulcs nem kerül a naplóba, így a mentett napló is megosztható (például a rendszergazdával). Kivétel az SSTP debug naplója, lásd fent.
 
@@ -588,6 +664,21 @@ A MacVPN rootként indítja a VPN-eszközöket, ezért csak ismert, biztonságos
 - **A mvpn-mgmt nem található** (a root `mvpn` bináris OpenVPN-segédje nem indult el; `mvpn-mgmt` az a név, amelyen fut), vagy **Hiányos telepítés** a **Rendszerállapot** ablakban: a root réteg régebbi verzióé vagy hiányos. Kattints az **Engedélyezés** gombra a **Rendszerállapot** ablakban az újratelepítéshez.
 - A naplóban a `[mgmt]` sorok a segéd lépései (például `hold released`, `credentials sent`, `dynamic challenge received`). Soha nem tartalmazzák a kódot vagy a jelszót, a bejelentkezési címnek pedig csak a hosztja kerül a naplóba.
 
+### 7.12 Az értesítések okai
+
+Egy megszakadásról vagy sikertelen csatlakozásról szóló értesítés (lásd [2.3](#23-kapcsolatértesítések)) ezek egyikét adja okként. A MacVPN a kapcsolat naplójának utolsó illeszkedő sorából veszi; nyisd meg a **Napló** fület, és keress a jobb oldali oszlop szövegére.
+
+| Ok | A mögötte álló naplósorok (példák) | Automatikus újracsatlakozás |
+|---|---|---|
+| **A szerver nem válaszol.** | `Inactivity timeout (--ping-restart)`, `Inactivity timeout (--ping-exit)` (OpenVPN), `giving up after 5 retransmits` (IKEv2), `peer not responding` | megpróbálja |
+| **A szerver nem érhető el.** | `TLS key negotiation failed`, `Connection refused`, `Connection timed out` | megpróbálja |
+| **A szerver nevét nem sikerült feloldani.** | `Cannot resolve host address` | megpróbálja |
+| **A szerver elutasította a bejelentkezést.** | `AUTH_FAILED`, `AUTHENTICATION_FAILED` | nem próbálja |
+| **Egy tanúsítványt nem fogadott el a kapcsolat.** | `VERIFY ERROR`, `certificate verify failed` | nem próbálja |
+| **Megszakadt a hálózati kapcsolat.** | `Network is unreachable`, `No route to host` | megpróbálja |
+
+Minden más esetben **Kattints a naplóért.** áll ott (sikertelen csatlakozásnál **Részletek a MacVPN-ben**). Az ok csak útmutatás: a fenti szakaszok minden hibát részletesen leírnak.
+
 ---
 
 ## 8. Frissítés
@@ -649,6 +740,15 @@ A MacVPN 1.3 a szokásos, appon belüli frissítés. A root réteg 8 marad, így
 - **Keychain:** a macOS egyszer megkérdezheti, hogy a MacVPN olvashatja-e a széfkulcsot (csak bekapcsolt **Automatikus feloldás** mellett), mint minden frissítés után. Csak a MacVPN saját kérdésénél engedélyezd (lásd [8.](#8-frissítés)).
 - A **csapatkatalógusokhoz** minden közzétevő és feliratkozó Macen MacVPN 1.3 kell.
 - **Mikor törölhető a `vault.db.bak-v1`:** ha elégedett vagy az 1.3-mal (nem térsz vissza az 1.2-re, és van friss teljes mentésed, lásd [14.2](#142-teljes-biztonsági-mentés)), töröld. A frissítés előtti állapotában tartalmazza az adataidat, ugyanazzal a széfkulccsal titkosítva, így aki a széfedet meg tudja nyitni, ezt is; a MacVPN sosem frissíti és nem használja.
+
+### 8.4 Frissítés 1.5-ről
+
+A MacVPN 2.0 a szokásos, appon belüli frissítés. A széf nem változik.
+
+- **Root réteg 8 → 9.** A DNS-kezelő, a naplóméret-korlát és a strongSwan-változások a root rétegben vannak, ezért a **Rendszerállapot** **Frissítés szükséges (8 → 9)** sort mutat. Kattints az **Engedélyezés** gombra, és add meg egyszer az admin jelszót. Az aktív VPN-kapcsolatok előbb bomlanak. Addig az OpenVPN, WireGuard, IKEv2 és SSTP kapcsolatokon **Nem használható: Jogosultság (root scriptek + sudoers) – Rendszerállapot** áll.
+- **Új beállítások, alapból bekapcsolva:** **Kapcsolatértesítések** ([2.3](#23-kapcsolatértesítések)) és minden kapcsolatnál az **Automatikus újracsatlakozás** ([5.5](#55-automatikus-újracsatlakozás)). A **Megjelenés** **Rendszer szerint** értékkel indul.
+- **Régebbi verzió által hagyott DNS:** ha az 1.5 vagy egy régebbi verzió alatt egy összeomlás vagy újraindítás után beállítva maradt egy VPN DNS-szervere, egyszer állítsd vissza kézzel (lásd az [5.6](#56-dns-kapcsolat-közben) végét).
+- **Egy régebbi verzió nagyon nagy naplója** (például egy több gigabájtos `.log.1` a `/var/log/macvpn` alatt) a kapcsolat következő csatlakozásakor vagy bontásakor 5 MiB-ra rövidül.
 
 ---
 

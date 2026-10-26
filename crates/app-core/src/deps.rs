@@ -18,8 +18,8 @@ use zeroize::Zeroizing;
 /// The privileged helper, the system VPNs, the native profiles and the helper's UI state files: platform traits,
 /// defined in `macvpn-platform-api` and re-exported here (their old home).
 pub use macvpn_platform_api::{
-    AuthStateReader, HelperClient, LegacySecrets, NativeController, NativeProfile, NativeProfiles, NoAuthState,
-    SystemVpn,
+    AuthStateReader, HelperClient, LegacySecrets, NativeController, NativeProfile, NativeProfiles, NativeSupport,
+    NoAuthState, NoNativeSupport, SystemVpn,
 };
 
 /// The connection store (`connections/<UUID>/{meta.json,config}`).

@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-make-l2tp-copy"
+description = "Enables the make_l2tp_copy command without any pre-configured scope."
+commands.allow = ["make_l2tp_copy"]
+
+[[permission]]
+identifier = "deny-make-l2tp-copy"
+description = "Denies the make_l2tp_copy command without any pre-configured scope."
+commands.deny = ["make_l2tp_copy"]

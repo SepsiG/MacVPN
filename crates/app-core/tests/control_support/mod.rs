@@ -1,6 +1,7 @@
 //! The control server test harness, shared by `control_server.rs` and `control_example_client.rs`: a real Unix
-//! socket in a short temp directory (or TCP on the loopback address, which runs on every OS), a fake host whose
-//! connections follow a script, and a fake transport (the peer identity is set by the test).
+//! socket in a short temp directory (or TCP on the loopback address, which runs on every OS, or a real named pipe on
+//! Windows), a fake host whose connections follow a script, and a fake transport (the peer identity is set by the
+//! test).
 //!
 //! Waits poll a condition with a deadline (never a fixed sleep), and the server's timings are shortened through
 //! `ControlLimits`, so the tests are deterministic.
@@ -13,6 +14,8 @@ use macvpn_app_core::control::{
 };
 use macvpn_core::control::protocol::ErrorCode;
 use macvpn_core::models::{AuthWait, AuthWaitKind, Connection, ConnectionState, VPNKind, uuid_string};
+#[cfg(windows)]
+use macvpn_winsys::pipe::{Listener as PipeListener, NetworkLogons, PipeStream};
 use serde_json::{Value, json};
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{self, BufRead, BufReader, ErrorKind, Read, Write};
@@ -62,7 +65,8 @@ pub fn wait_until(what: &str, mut f: impl FnMut() -> bool) {
 
 // MARK: - Fake transports
 
-/// Which test transport a harness runs over. The server suite runs over both.
+/// Which test transport a harness runs over. The server suite runs over two: Unix `[Unix, Loopback]`, Windows
+/// `[Loopback, Pipe]` (`over_both!`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     /// A real Unix socket at `control/macvpn.sock` (Unix only).
@@ -70,6 +74,19 @@ pub enum Kind {
     /// TCP on `127.0.0.1` (every OS). The peer is always `uid 0`; its address is written to
     /// `control/macvpn.sock`, a plain file, which is the endpoint's `socket_file`.
     Loopback,
+    /// A real named pipe (Windows only); the peer identity is the fake one, as for the other kinds, with a SID
+    /// ([`PIPE_SID`]). Like `Loopback`, the pipe's name is written to `control/macvpn.sock`, a plain file, which is
+    /// the endpoint's `socket_file` (so the suite's socket-file checks hold over every kind; WinVPN's real pipe
+    /// transport has none, tested in platform-win's `control_pipe.rs`).
+    Pipe,
+}
+
+/// The fake peer's user over [`Kind::Pipe`].
+pub const PIPE_SID: &str = "S-1-5-21-1-2-3-1001";
+
+/// The kind the example client speaks: the Unix socket, or the named pipe on Windows.
+pub fn client_kind() -> Kind {
+    if cfg!(windows) { Kind::Pipe } else { Kind::Unix }
 }
 
 /// The peer identity the test sets (shared with the bound listener, so a change applies to the next accept).
@@ -79,9 +96,9 @@ pub struct FakePeer {
 }
 
 impl FakePeer {
-    fn identity(&self, uid: u32) -> PeerIdentity {
+    fn identity(&self, user: &PeerUser) -> PeerIdentity {
         PeerIdentity {
-            user: PeerUser::Uid(uid),
+            user: user.clone(),
             same_user: self.same_user.load(Ordering::SeqCst),
             pid: 4242,
             executable: self.executable.lock().unwrap().clone(),
@@ -97,6 +114,8 @@ pub struct FakeTransport {
     pub socket_file: AtomicBool,
     /// Loopback: the address of the last bind.
     pub addr: Mutex<Option<SocketAddr>>,
+    /// Pipe: the name of the last bind.
+    pub pipe_name: Mutex<Option<String>>,
 }
 
 impl FakeTransport {
@@ -111,6 +130,7 @@ impl FakeTransport {
             peer: Arc::new(FakePeer { executable: Mutex::new(Some(EXE.into())), same_user: AtomicBool::new(true) }),
             socket_file: AtomicBool::new(true),
             addr: Mutex::new(None),
+            pipe_name: Mutex::new(None),
         })
     }
 
@@ -118,14 +138,22 @@ impl FakeTransport {
         *self.peer.executable.lock().unwrap() = exe.map(str::to_string);
     }
 
-    fn uid(&self) -> u32 {
-        if self.kind == Kind::Unix { 501 } else { 0 }
+    fn user(&self) -> PeerUser {
+        match self.kind {
+            Kind::Unix => PeerUser::Uid(501),
+            Kind::Loopback => PeerUser::Uid(0),
+            Kind::Pipe => PeerUser::Sid(PIPE_SID.into()),
+        }
     }
 }
 
 /// The log line's user part for this transport's peer.
 pub fn peer_user(kind: Kind) -> &'static str {
-    if kind == Kind::Unix { "uid 501" } else { "uid 0" }
+    match kind {
+        Kind::Unix => "uid 501",
+        Kind::Loopback => "uid 0",
+        Kind::Pipe => "sid S-1-5-21-1-2-3-1001",
+    }
 }
 
 impl ControlTransport for FakeTransport {
@@ -133,14 +161,14 @@ impl ControlTransport for FakeTransport {
         std::fs::create_dir_all(dir)?;
         let path = dir.join("macvpn.sock");
         let _ = std::fs::remove_file(&path);
-        let (peer, uid) = (self.peer.clone(), self.uid());
+        let (peer, user) = (self.peer.clone(), self.user());
         match self.kind {
             #[cfg(unix)]
             Kind::Unix => {
                 let listener = UnixListener::bind(&path)?;
                 listener.set_nonblocking(true)?;
                 Ok(BoundEndpoint {
-                    listener: Box::new(UnixTestListener { listener, peer, uid }),
+                    listener: Box::new(UnixTestListener { listener, peer, user }),
                     display: path.display().to_string(),
                     socket_file: Some(path),
                     guard: Box::new(()),
@@ -160,12 +188,33 @@ impl ControlTransport for FakeTransport {
                     None
                 };
                 Ok(BoundEndpoint {
-                    listener: Box::new(LoopbackListener { listener, peer, uid }),
+                    listener: Box::new(LoopbackListener { listener, peer, user }),
                     display: addr.to_string(),
                     socket_file,
                     guard: Box::new(()),
                 })
             }
+            // The tests run over SSH on the Windows test machine (a network logon, which the default DACL refuses).
+            #[cfg(windows)]
+            Kind::Pipe => {
+                let name = format!(r"\\.\pipe\macvpn-test-{}", uuid::Uuid::new_v4());
+                let listener = PipeListener::bind_with(&name, NetworkLogons::Allow)?;
+                *self.pipe_name.lock().unwrap() = Some(name.clone());
+                let socket_file = if self.socket_file.load(Ordering::SeqCst) {
+                    std::fs::write(&path, &name)?;
+                    Some(path)
+                } else {
+                    None
+                };
+                Ok(BoundEndpoint {
+                    listener: Box::new(PipeTestListener { listener, peer, user }),
+                    display: name,
+                    socket_file,
+                    guard: Box::new(()),
+                })
+            }
+            #[cfg(not(windows))]
+            Kind::Pipe => Err(io::Error::from(ErrorKind::Unsupported)),
         }
     }
 
@@ -176,9 +225,12 @@ impl ControlTransport for FakeTransport {
         Ok(bytes)
     }
 
-    /// EINVAL / ENOTCONN / ECONNRESET, as the macOS transport.
+    /// EINVAL / ENOTCONN / ECONNRESET, as the macOS transport; over the pipe also a broken pipe
+    /// (ERROR_BROKEN_PIPE, ERROR_NO_DATA, ERROR_PIPE_NOT_CONNECTED), as WinVPN's transport.
     fn is_already_closed(&self, e: &io::Error) -> bool {
         matches!(e.kind(), ErrorKind::InvalidInput | ErrorKind::NotConnected | ErrorKind::ConnectionReset)
+            || (self.kind == Kind::Pipe
+                && (e.kind() == ErrorKind::BrokenPipe || matches!(e.raw_os_error(), Some(109 | 232 | 233))))
     }
 
     /// Deliberately core's `fsx::ensure_private_dir` alone (no owner check): the test directories are this user's
@@ -202,7 +254,7 @@ macro_rules! accept_with {
         if stream.set_nonblocking(false).is_err() {
             return Ok(Accepted::Idle);
         }
-        Ok(Accepted::Client { stream: Box::new($wrap(stream)), peer: Ok($self.peer.identity($self.uid)) })
+        Ok(Accepted::Client { stream: Box::new($wrap(stream)), peer: Ok($self.peer.identity(&$self.user)) })
     }};
 }
 
@@ -275,7 +327,7 @@ control_stream!(LoopbackStream, TcpStream);
 pub struct UnixTestListener {
     listener: UnixListener,
     peer: Arc<FakePeer>,
-    uid: u32,
+    user: PeerUser,
 }
 
 #[cfg(unix)]
@@ -288,12 +340,77 @@ impl ControlListener for UnixTestListener {
 pub struct LoopbackListener {
     listener: TcpListener,
     peer: Arc<FakePeer>,
-    uid: u32,
+    user: PeerUser,
 }
 
 impl ControlListener for LoopbackListener {
     fn accept(&self, poll: Duration) -> io::Result<Accepted> {
         accept_with!(self, poll, LoopbackStream)
+    }
+}
+
+/// The pipe of [`Kind::Pipe`]: `PipeStream` delegates (its zero-length peek consumes nothing).
+#[cfg(windows)]
+pub struct PipeWrap(pub PipeStream);
+
+#[cfg(windows)]
+impl Read for PipeWrap {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        self.0.read_some(buf)
+    }
+}
+
+#[cfg(windows)]
+impl Write for PipeWrap {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0.write_some(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[cfg(windows)]
+impl ControlStream for PipeWrap {
+    fn try_clone(&self) -> io::Result<Box<dyn ControlStream>> {
+        Ok(Box::new(PipeWrap(self.0.try_clone())))
+    }
+
+    fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+        self.0.shutdown(how)
+    }
+
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.0.set_read_timeout(timeout)
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.0.set_write_timeout(timeout)
+    }
+
+    fn peer_connected(&self) -> bool {
+        self.0.peer_connected()
+    }
+}
+
+/// The pipe's accept; the real peer of the pipe is ignored (the fake identity, as for the other kinds).
+#[cfg(windows)]
+pub struct PipeTestListener {
+    listener: PipeListener,
+    peer: Arc<FakePeer>,
+    user: PeerUser,
+}
+
+#[cfg(windows)]
+impl ControlListener for PipeTestListener {
+    fn accept(&self, poll: Duration) -> io::Result<Accepted> {
+        Ok(match self.listener.accept(poll)? {
+            None => Accepted::Idle,
+            Some((stream, _real_peer)) => {
+                Accepted::Client { stream: Box::new(PipeWrap(stream)), peer: Ok(self.peer.identity(&self.user)) }
+            }
+        })
     }
 }
 
@@ -341,6 +458,10 @@ pub struct FakeHost {
     pub credentials_cancelled: Mutex<HashSet<String>>,
     /// The vault is locked (`ControlHost::locked`).
     pub locked: AtomicBool,
+    /// `ControlHost::engine_missing` (WinVPN 2a: no VPN engine).
+    pub engine_missing: Mutex<Option<String>>,
+    /// `ControlHost::later_reason` per key (WinVPN 2b: the kinds that come later).
+    pub later: Mutex<HashMap<String, String>>,
 }
 
 pub fn managed(name: &str) -> (String, ConnectionItem) {
@@ -510,6 +631,14 @@ impl ControlHost for FakeHost {
     fn locked(&self) -> bool {
         self.locked.load(Ordering::SeqCst)
     }
+
+    fn engine_missing(&self) -> Option<String> {
+        self.engine_missing.lock().unwrap().clone()
+    }
+
+    fn later_reason(&self, key: &str) -> Option<String> {
+        self.later.lock().unwrap().get(key).cloned()
+    }
 }
 
 // MARK: - Harness
@@ -571,9 +700,17 @@ impl Harness {
         self.server.as_ref().unwrap()
     }
 
-    /// The endpoint's `socket_file` (Unix: the socket; loopback: the address file).
+    /// The endpoint's `socket_file` (Unix: the socket; loopback: the address file; pipe: the name file).
     pub fn socket(&self) -> PathBuf {
         self.dir.0.join("control/macvpn.sock")
+    }
+
+    /// What a client connects to: the socket's path, or the pipe's name (Loopback: the address file's path).
+    pub fn endpoint(&self) -> PathBuf {
+        match self.transport.kind {
+            Kind::Pipe => PathBuf::from(self.transport.pipe_name.lock().unwrap().clone().expect("bound")),
+            Kind::Unix | Kind::Loopback => self.socket(),
+        }
     }
 
     /// A raw connection to the current endpoint.
@@ -587,6 +724,13 @@ impl Harness {
                 let addr = self.transport.addr.lock().unwrap().expect("bound");
                 TcpStream::connect(addr).map(TestStream::Tcp)
             }
+            #[cfg(windows)]
+            Kind::Pipe => {
+                let name = self.transport.pipe_name.lock().unwrap().clone().expect("bound");
+                macvpn_winsys::pipe::connect(&name, Duration::from_secs(5)).map(TestStream::Pipe)
+            }
+            #[cfg(not(windows))]
+            Kind::Pipe => Err(io::Error::from(ErrorKind::Unsupported)),
         }
     }
 
@@ -629,6 +773,8 @@ pub enum TestStream {
     #[cfg(unix)]
     Unix(UnixStream),
     Tcp(TcpStream),
+    #[cfg(windows)]
+    Pipe(PipeStream),
 }
 
 impl TestStream {
@@ -637,6 +783,8 @@ impl TestStream {
             #[cfg(unix)]
             TestStream::Unix(s) => s.try_clone().map(TestStream::Unix),
             TestStream::Tcp(s) => s.try_clone().map(TestStream::Tcp),
+            #[cfg(windows)]
+            TestStream::Pipe(s) => Ok(TestStream::Pipe(s.try_clone())),
         }
     }
 
@@ -645,6 +793,8 @@ impl TestStream {
             #[cfg(unix)]
             TestStream::Unix(s) => s.shutdown(how),
             TestStream::Tcp(s) => s.shutdown(how),
+            #[cfg(windows)]
+            TestStream::Pipe(s) => s.shutdown(how),
         }
     }
 
@@ -653,6 +803,8 @@ impl TestStream {
             #[cfg(unix)]
             TestStream::Unix(s) => s.set_read_timeout(timeout),
             TestStream::Tcp(s) => s.set_read_timeout(timeout),
+            #[cfg(windows)]
+            TestStream::Pipe(s) => s.set_read_timeout(timeout),
         }
     }
 }
@@ -663,6 +815,8 @@ impl Read for TestStream {
             #[cfg(unix)]
             TestStream::Unix(s) => s.read(buf),
             TestStream::Tcp(s) => s.read(buf),
+            #[cfg(windows)]
+            TestStream::Pipe(s) => s.read(buf),
         }
     }
 }
@@ -673,6 +827,8 @@ impl Write for TestStream {
             #[cfg(unix)]
             TestStream::Unix(s) => s.write(buf),
             TestStream::Tcp(s) => s.write(buf),
+            #[cfg(windows)]
+            TestStream::Pipe(s) => s.write(buf),
         }
     }
 
@@ -681,6 +837,8 @@ impl Write for TestStream {
             #[cfg(unix)]
             TestStream::Unix(s) => s.flush(),
             TestStream::Tcp(s) => s.flush(),
+            #[cfg(windows)]
+            TestStream::Pipe(s) => s.flush(),
         }
     }
 }

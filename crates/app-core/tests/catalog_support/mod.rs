@@ -27,6 +27,15 @@ use zeroize::Zeroizing;
 pub const OPENVPN: &str = "client\ndev tun\nproto udp\nremote vpn.example.com 1194\nnobind\nauth-user-pass\n";
 pub const MASTER: &str = "correct horse battery";
 
+/// The team share a file source points into: an absolute path of this OS (`parse_file_source` takes only those, and
+/// the vault reads a stored file source back through it; `/Volumes/…` is drive-relative on Windows).
+pub const SHARE: &str = if cfg!(windows) { r"\\fileserver\Share" } else { "/Volumes/Share" };
+
+/// A catalog file on [`SHARE`].
+pub fn share_file(name: &str) -> std::path::PathBuf {
+    std::path::Path::new(SHARE).join(name)
+}
+
 /// The manager's connections from the vault.
 pub struct VaultRepo(pub Arc<VaultLifecycle>);
 

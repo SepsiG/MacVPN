@@ -1,0 +1,1 @@
+? (192.168.1.1) at a4:2b:b0:0:0:1 on en0 ifscope [ethernet]

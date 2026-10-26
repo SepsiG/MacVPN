@@ -147,6 +147,7 @@
     palette={vm?.palette ?? []}
     {selected}
     kinds={vm?.manage.kinds ?? []}
+    kindsNote={vm?.manage.kindsNote ?? null}
     onselect={(id) => select(id).catch(console.error)}
     onimport={() => importFiles().catch(console.error)}
     paired={showPaired && !selected}

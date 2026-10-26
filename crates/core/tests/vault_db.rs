@@ -80,7 +80,6 @@ fn sidecar(dir: &Path, suffix: &str) -> PathBuf {
 // --- Create and open --------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_then_open_with_the_same_key() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -91,8 +90,36 @@ fn create_then_open_with_the_same_key() {
     assert!(name.contains(CANARY_NAME));
 }
 
+/// A vault far larger than Windows' default working-set quota: SQLCipher's memory security locks every allocation,
+/// `VirtualLock` starts failing after a few dozen pages, and the warning it logs to stderr by default allocated and
+/// failed again until the stack overflowed (every vault write crashed the process on Windows). The memory security
+/// stays on.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+fn a_large_vault_is_written_and_read_with_memory_security_on() {
+    let tmp = TempDir::new();
+    let (dir, mut vault) = new_vault(&tmp);
+    assert_eq!(pragma_text(&vault, "cipher_memory_security"), "1");
+    let config = "x".repeat(16 * 1024);
+    vault
+        .transaction(|tx| {
+            for i in 0..256 {
+                tx.execute(
+                    "INSERT INTO connections(id, kind, meta_json, config, position) VALUES (?1, 'openvpn', '{}', ?2, ?3)",
+                    (format!("id-{i}"), config.as_str(), i),
+                )?;
+            }
+            Ok(())
+        })
+        .unwrap();
+    vault.close();
+    let vault = Vault::open(&dir, &dek(1)).unwrap();
+    assert_eq!(pragma_text(&vault, "cipher_memory_security"), "1");
+    let total: i64 =
+        vault.connection().query_row("SELECT sum(length(config)) FROM connections", [], |r| r.get(0)).unwrap();
+    assert_eq!(total, 256 * 16 * 1024);
+}
+
+#[test]
 fn a_different_key_is_wrong_key() {
     let tmp = TempDir::new();
     let (dir, vault) = new_vault(&tmp);
@@ -103,7 +130,6 @@ fn a_different_key_is_wrong_key() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_refuses_an_existing_vault_and_open_a_missing_one() {
     let tmp = TempDir::new();
     let (dir, vault) = new_vault(&tmp);
@@ -178,7 +204,6 @@ fn open_refuses_a_file_that_is_not_0600_or_a_symlink() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn no_stray_files_are_left_in_the_directory() {
     let tmp = TempDir::new();
     let (dir, vault) = new_vault(&tmp);
@@ -192,7 +217,6 @@ fn no_stray_files_are_left_in_the_directory() {
 // --- No plaintext -----------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_files_contain_no_plaintext() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -209,7 +233,6 @@ fn the_files_contain_no_plaintext() {
 
 /// The scan does find plaintext when it is there (a plain SQLite file with the same rows).
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_plaintext_scan_detects_a_plain_database() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -229,7 +252,6 @@ fn the_plaintext_scan_detects_a_plain_database() {
 // --- Pragmas ------------------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn pragmas_of_the_open_sequence() {
     let tmp = TempDir::new();
     let (dir, vault) = new_vault(&tmp);
@@ -257,7 +279,6 @@ fn sqlcipher_uses_commoncrypto() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn foreign_keys_are_enforced() {
     let tmp = TempDir::new();
     let (_, mut vault) = new_vault(&tmp);
@@ -269,7 +290,6 @@ fn foreign_keys_are_enforced() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failed_transaction_rolls_back() {
     let tmp = TempDir::new();
     let (_, mut vault) = new_vault(&tmp);
@@ -285,7 +305,6 @@ fn a_failed_transaction_rolls_back() {
 // --- Schema ---------------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn schema_v2_has_the_spec_tables_and_columns() {
     let tmp = TempDir::new();
     let (_, vault) = new_vault(&tmp);
@@ -347,7 +366,6 @@ fn schema_v2_has_the_spec_tables_and_columns() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn meta_rows() {
     let tmp = TempDir::new();
     let (_, vault) = new_vault(&tmp);
@@ -361,7 +379,6 @@ fn meta_rows() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn schema_cascades_and_restrictions() {
     let tmp = TempDir::new();
     let (_, mut vault) = new_vault(&tmp);
@@ -449,10 +466,19 @@ fn row_count(vault: &Vault, table: &str) -> i64 {
 fn backup_version(dir: &Path, name: &str) -> String {
     let copy = TempDir::new();
     #[cfg(unix)]
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(copy.path()).unwrap();
+    {
+        fs::DirBuilder::new().recursive(true).mode(0o700).create(copy.path()).unwrap();
+        fs::copy(dir.join(name), copy.path().join(VAULT_FILE)).unwrap();
+    }
+    // A copied file gets the folder's inherited ACL on Windows (the vault refuses that): write it private, as the
+    // backup itself is.
     #[cfg(not(unix))]
-    fs::create_dir_all(copy.path()).unwrap();
-    fs::copy(dir.join(name), copy.path().join(VAULT_FILE)).unwrap();
+    {
+        fs::create_dir_all(copy.path()).unwrap();
+        let bytes = fs::read(dir.join(name)).unwrap();
+        macvpn_core::fsx::atomic_write(&copy.path().join(VAULT_FILE), &bytes, macvpn_core::fsx::Access::Private)
+            .unwrap();
+    }
     let vault = Vault::open_with_migrations(copy.path(), &dek(1), &[]).unwrap_or_else(|e| panic!("{e}"));
     meta(&vault, "schema_version")
 }
@@ -487,7 +513,6 @@ fn an_older_database_is_backed_up_and_migrated() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn several_steps_run_in_order_in_one_atomic_migration() {
     let tmp = TempDir::new();
     let (dir, vault) = new_v1_vault(&tmp);
@@ -500,7 +525,6 @@ fn several_steps_run_in_order_in_one_atomic_migration() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failing_step_leaves_the_old_version_and_the_backup() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_v1_vault(&tmp);
@@ -522,7 +546,6 @@ fn a_failing_step_leaves_the_old_version_and_the_backup() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn backup_rotation_keeps_the_last_two() {
     let tmp = TempDir::new();
     let (dir, vault) = new_v1_vault(&tmp);
@@ -537,7 +560,6 @@ fn backup_rotation_keeps_the_last_two() {
 
 /// The database written by a newer MacVPN: readable, but this build must not write to it.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_newer_database_opens_read_only_and_refuses_every_write() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_v1_vault(&tmp);
@@ -572,7 +594,6 @@ fn a_newer_database_opens_read_only_and_refuses_every_write() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_much_newer_but_readable_database_is_read_only() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -592,7 +613,6 @@ fn a_much_newer_but_readable_database_is_read_only() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_unreadable_newer_database_is_refused() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -611,7 +631,6 @@ fn an_unreadable_newer_database_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_missing_schema_version_is_corrupt() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -643,7 +662,6 @@ fn crash_child() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_crash_mid_transaction_leaves_a_consistent_database() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -691,7 +709,6 @@ fn hot_wal_child() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn opening_a_newer_database_with_a_hot_wal_leaves_the_main_file_unchanged() {
     let tmp = TempDir::new();
     let (dir, vault) = new_v1_vault(&tmp);
@@ -744,7 +761,6 @@ fn attach_works(vault: &Vault, path: &Path, key: &str) -> bool {
 /// The DEK is a raw key (`x'…'`), not a passphrase run through SQLCipher's PBKDF2: the same hex text as a
 /// passphrase does not open the file.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_dek_is_used_as_a_raw_key() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -761,7 +777,6 @@ fn the_dek_is_used_as_a_raw_key() {
 
 /// A flipped byte in page 2 is caught by the per-page HMAC.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_tampered_page_is_detected() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);
@@ -790,7 +805,6 @@ fn a_tampered_page_is_detected() {
 // --- Debug ------------------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn debug_and_errors_show_no_key() {
     let tmp = TempDir::new();
     let (dir, vault) = new_vault(&tmp);
@@ -808,7 +822,6 @@ fn debug_and_errors_show_no_key() {
 /// A 1.2 vault (schema v1) with data is backed up and migrated to v2: the catalog tables appear, the data stays,
 /// and `min_app_schema` stays 1.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn migration_v1_to_v2_keeps_the_data_and_min_app_schema_1() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_v1_vault(&tmp);
@@ -849,7 +862,6 @@ fn migration_v1_to_v2_keeps_the_data_and_min_app_schema_1() {
 /// still there, and `min_app_schema` is 1), and the open-time rule of 1.2 (`schema_version` above the app's schema
 /// → read-only) applies, so 1.2 reads every v1 table without migrating or writing anything.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_v2_database_opens_in_a_1_2_build_and_reads_every_v1_table() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);

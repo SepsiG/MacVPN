@@ -146,6 +146,37 @@ impl BridgeFiles for RootFiles {
             let _ = crate::macos::sys::kill(pid, crate::macos::sys::SIGTERM);
         }
     }
+
+    /// While openvpn runs (also when the app does not poll the status): under the connection's lock taken without
+    /// waiting, as root `<run>/openvpn.log` is copied into the user's log (which is kept under its cap), and the
+    /// engine log is cut to its cap ([`crate::macos::log`]).
+    fn housekeeping(&mut self) {
+        housekeep(Path::new(&self.run), self.is_root.then_some(Path::new(crate::macos::paths::LOG_BASE)));
+    }
+}
+
+/// The bridge's log housekeeping for the run directory `run` (`<base>/<id>`); `log_base`: where the user's log is
+/// (`None`: only the engine log is cut).
+fn housekeep(run: &Path, log_base: Option<&Path>) {
+    use crate::macos::log::{self, Log, ROOT_LOG_KEEP, ROOT_LOG_MAX};
+    let (Some(base), Some(id)) = (run.parent(), run.file_name().and_then(|n| n.to_str())) else { return };
+    let olog = run.join("openvpn.log");
+    let lock = base.join(format!(".{id}.lock"));
+    if !crate::macos::lock::try_take(&lock) {
+        return;
+    }
+    let user_log = log_base
+        .map(|b| b.join(format!("{id}.log")))
+        .filter(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.file_type().is_file()));
+    match user_log {
+        Some(p) => {
+            let user_log = Log::at(p);
+            user_log.enforce_cap();
+            log::flush_root_log(&user_log, &olog, "", true, &crate::shared::mask::Masker::default());
+        }
+        None => log::trim_root_log(&olog, ROOT_LOG_MAX, ROOT_LOG_KEEP),
+    }
+    crate::macos::lock::release_try(&lock);
 }
 
 /// As root only the root layer's own directories: `/var/run/macvpn/<id>` and `/var/run/macvpn-ui`.
@@ -245,5 +276,35 @@ mod tests {
         assert!(!root_paths_ok(&mk("/var/run/macvpn/11111111-4b5a-6978-8796-a5b4c3d2e1f0", "/var/run/macvpn-ui")));
         assert!(!root_paths_ok(&mk("/var/root", "/var/run/macvpn-ui")));
         assert!(!root_paths_ok(&mk("/var/run/macvpn/0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0", "/tmp")));
+    }
+
+    #[test]
+    fn housekeeping_keeps_the_logs_under_their_caps_without_the_app() {
+        use crate::macos::log::{FLUSH_MAX, LOG_MAX, ROOT_LOG_KEEP, ROOT_LOG_MAX};
+        let d = std::env::temp_dir().join(format!("mvpn-bridge-hk-{}", uuid::Uuid::new_v4()));
+        let id = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
+        let (run, logs) = (d.join("run").join(id), d.join("log"));
+        std::fs::create_dir_all(&run).unwrap();
+        std::fs::create_dir_all(&logs).unwrap();
+        let line = b"2026-10-23 03:00:00 write UDPv4: Network is unreachable (fd=5,code=51)\n";
+        let olog = run.join("openvpn.log");
+        let mut data = b"2026-10-22 16:24:01 Initialization Sequence Completed\n".to_vec();
+        data.extend(line.repeat((ROOT_LOG_MAX as usize + 4096) / line.len()));
+        std::fs::write(&olog, &data).unwrap();
+        let user = logs.join(format!("{id}.log"));
+        std::fs::write(&user, line.repeat((LOG_MAX as usize + 4096) / line.len())).unwrap();
+        // While up/down/status holds the connection's lock nothing is touched.
+        let lock = d.join("run").join(format!(".{id}.lock"));
+        assert!(crate::macos::lock::try_take(&lock));
+        housekeep(&run, Some(&logs));
+        assert_eq!(std::fs::metadata(&olog).unwrap().len(), data.len() as u64);
+        crate::macos::lock::release_try(&lock);
+        housekeep(&run, Some(&logs));
+        assert!(std::fs::metadata(&olog).unwrap().len() <= ROOT_LOG_KEEP + 100);
+        assert!(crate::macos::log::ovpn_done_file(&olog));
+        assert!(std::fs::metadata(&user).unwrap().len() <= FLUSH_MAX + 200);
+        assert!(std::fs::metadata(format!("{}.1", user.display())).unwrap().len() <= LOG_MAX);
+        assert!(!lock.exists(), "the lock is released");
+        std::fs::remove_dir_all(&d).unwrap();
     }
 }

@@ -248,6 +248,10 @@ fn up(ctx: &mut Ctx, input: Result<framing::Framed, framing::FrameError>) -> R {
     };
     // Validated first: a bad new config must not tear down a working connection of this id.
     validate::validate_config(ctx, &config)?;
+    // DNS left by connections that no longer run (crash, reboot) is restored before anything new is set.
+    if !ctx.dry() {
+        crate::macos::dns::reconcile(&ctx.s, true);
+    }
     // A run directory left for this id (e.g. a connection never taken down) is closed first, otherwise the copy
     // would delete its pid / iface files and the process would be orphaned. A crashed openvpn (dead pid) gets
     // its DNS restored from dns-backup this way.
@@ -273,19 +277,19 @@ fn up(ctx: &mut Ctx, input: Result<framing::Framed, framing::FrameError>) -> R {
 }
 
 fn body(ctx: &mut Ctx, input: Option<Result<framing::Framed, framing::FrameError>>) -> R {
-    ctx.log = log::open(
-        &ctx.s.log_base.clone(),
-        &ctx.id.clone(),
-        (ctx.a.cmd == "up").then_some(ctx.s.log_max),
-        ctx.owner_uid(),
-    );
+    ctx.log = log::open(&ctx.s.log_base.clone(), &ctx.id.clone(), ctx.s.log_max, ctx.a.cmd == "up", ctx.owner_uid());
     ctx.check_term()?;
     lock::acquire(ctx)?;
     if let Some(input) = input {
         up(ctx, input)
     } else {
         header(ctx, "down");
-        do_down(ctx)
+        let r = do_down(ctx);
+        // Whatever DNS this connection (or another that is gone) still held is given up now.
+        if !ctx.dry() {
+            crate::macos::dns::reconcile(&ctx.s, true);
+        }
+        r
     }
 }
 

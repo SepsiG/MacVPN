@@ -33,6 +33,21 @@
 #   folders.js – folders and colours in the Connections window (kept in the vault): New Folder named
 #               in place, a subfolder, a colour the subfolder inherits, a connection dragged into it, collapse, and
 #               the subfolder deleted with its contents moved up;
+#   appearance.js, engines.js, notices.js, reconnect.js – the 2.0 features (their connections are created in the vault
+#               for the step and deleted after it): Settings' Appearance (Dark, Light, Match System) switches the
+#               popover and the Connections window (prefers-color-scheme); with one engine missing (macOS: sstpc,
+#               Windows: OpenVPN) its row is greyed with "Not installed: … – System Status" (the switch disabled, the
+#               link opens System Status), the New menu leaves the kind out and a file of that kind opened from
+#               Finder is refused; installed "outside the app", the popover's background check brings the row back
+#               within 2 s; a connect and a drop are notified (recorded: the sandbox posts no notification), nothing
+#               with "Connection Notifications" off; auto-reconnect over a scripted network and the sleep / wake hooks
+#               (reconnected at home, not on another network, not with the detail's switch off; a tunnel still up
+#               after waking on the network it routes is disconnected, at a café it stays);
+#   ras.js   – Windows only (WinVPN 2c; its connections are created in the vault for the step and deleted after it):
+#               the New menu without Cisco IPsec, an IKEv2 PSK connection greyed with the Windows reason, a Cisco
+#               IPsec connection with option A's text and "Make an L2TP/IPsec Copy", IKEv2 (EAP) and SSTP connected and
+#               disconnected through the stand-in helper, an L2TP connection saved (the sandbox engine's entry, then
+#               listed), connected and disconnected through the stand-in native layer – never a dial;
 #   (the menu popover shown: its rounded corners as AppKit holds them; SMOKE_SHOTS=<dir> takes screenshots)
 #   (every prompt, pairing and credential window must fit its content: no scrolling, checked in the real window;
 #               the largest credential window – retry line, four fields, a refused answer's error – too)
@@ -65,6 +80,14 @@
 #               checks that the Connections window asked first and the app then quit.
 # Then it checks the vault's files, the connections the app wrote out for the checks (<home>/smoke-dump: the vault
 # itself is encrypted) and the log.
+# On Windows (Git Bash, WinVPN's debug build: scripts/win-smoke.sh runs it in winvpn-dev's desktop session) every
+# section runs except what is AppKit's: the Dock icon, the screenshots and the appearance print "skipped on Windows";
+# the popover's corners are DWM's round-corner preference (round=true on Windows 11, false on Windows 10); the
+# system's quit request is logout's WM_QUERYENDSESSION, which the app's smoke driver sends to its own lifecycle window;
+# there is no old Keychain item (Windows has none), no staged native profile (saving an L2TP connection writes the
+# sandbox RAS engine's entry in its private phonebook under the sandbox; System Status shows the Windows VPN client
+# row and the account clean-up, whose confirmation is cancelled) and no Unix mode check (the Windows ACLs are checked by the app's own tests). SMOKE_LANG is passed as
+# MACVPN_SMOKE_LANG (Windows' UI languages cannot be set for one process).
 # SMOKE_LANG=en|hu forces the app's language the way macOS selects it (the AppleLanguages preference, here in the
 # app's argument domain: -AppleLanguages '(hu)'); the run checks that the core picked it and the windows show it. Never touches the real Application Support, Keychain, preferences or
 # system (the sandbox's vault is in its own home, its auto-unlock key in memory; preferences in memory; it
@@ -72,24 +95,60 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-APP=${APP:-target/debug/macvpn-app}
-BUILD_HINT="build first: (cd app/ui && npm run build) && cargo build -p macvpn-app --features custom-protocol"
+case "$(uname -s)" in
+  MINGW*|MSYS*) SMOKE_OS=windows ;;
+  *) SMOKE_OS=macos ;;
+esac
+if [ "$SMOKE_OS" = windows ]; then
+  # scripts/win-smoke.sh builds it for the CI target (the remote checkout's warm build directory).
+  APP=${APP:-target/x86_64-pc-windows-msvc/debug/macvpn-app.exe}
+  BUILD_HINT="build first: (cd app/ui && npm run build) && cargo build --target x86_64-pc-windows-msvc -p macvpn-app --features custom-protocol"
+else
+  APP=${APP:-target/debug/macvpn-app}
+  BUILD_HINT="build first: (cd app/ui && npm run build) && cargo build -p macvpn-app --features custom-protocol"
+fi
 [ -x "$APP" ] || { echo "$BUILD_HINT" >&2; exit 2; }
 # The binary must embed the current UI build. `cargo test`/`clippy` rebuild target/debug/macvpn-app without
 # custom-protocol (the app crate has integration tests); such a binary loads the dev server and every flow stalls.
+# (Git Bash has no `strings`: the asset's name is plain text in the binary.)
 UI_JS=$(cd app/ui/dist/assets 2>/dev/null && ls index-*.js 2>/dev/null | head -1 || true)
-if [ -z "$UI_JS" ] || ! strings "$APP" | grep -F "assets/$UI_JS" >/dev/null; then
+embeds_ui() {
+  if [ "$SMOKE_OS" = windows ]; then grep -aqF "assets/$UI_JS" "$APP"; else strings "$APP" | grep -F "assets/$UI_JS" >/dev/null; fi
+}
+if [ -z "$UI_JS" ] || ! embeds_ui; then
   echo "$APP does not embed the current UI build (app/ui/dist/assets/${UI_JS:-?}); $BUILD_HINT" >&2
   exit 2
 fi
-# A short path: the control socket (<home>/Library/Application Support/MacVPN/control/macvpn.sock) must fit a
-# Unix socket address (104 bytes), which $TMPDIR (/var/folders/…) would not leave room for.
-HOME_DIR=$(mktemp -d /tmp/macvpn-smoke.XXXXXX)
-NODE=$(command -v node || echo /opt/homebrew/bin/node)
-[ -x "$NODE" ] || { echo "the control API test client needs node" >&2; exit 2; }
+if [ "$SMOKE_OS" = windows ]; then
+  # A fresh directory under the user's temp folder; the app gets its Windows path.
+  HOME_DIR=$(mktemp -d "${TEMP:-/tmp}/winvpn-smoke.XXXXXX")
+  # Long names (-l): the user's temp folder is often given in 8.3 form (C:\Users\WINVPN~1\…), and the app refuses a
+  # file source path with `~` ("The file path contains an invalid character").
+  APP_HOME=$(cygpath -l -w "$HOME_DIR")
+  APP_SMOKE_DIR=$(cygpath -l -w "$PWD/scripts/smoke")
+  NODE=$(command -v node || true)
+  SUPPORT="$HOME_DIR/AppData/Local/WinVPN"
+else
+  # A short path: the control socket (<home>/Library/Application Support/MacVPN/control/macvpn.sock) must fit a
+  # Unix socket address (104 bytes), which $TMPDIR (/var/folders/…) would not leave room for.
+  HOME_DIR=$(mktemp -d /tmp/macvpn-smoke.XXXXXX)
+  APP_HOME=$HOME_DIR
+  APP_SMOKE_DIR="$PWD/scripts/smoke"
+  NODE=$(command -v node || echo /opt/homebrew/bin/node)
+  SUPPORT="$HOME_DIR/Library/Application Support/MacVPN"
+fi
+[ -n "$NODE" ] && [ -x "$NODE" ] || { echo "the control API test client needs node" >&2; exit 2; }
 # SMOKE_LOG=<file>: keep the app's log.
-trap 'kill "$PID" 2>/dev/null || true; [ -z "${SMOKE_LOG:-}" ] || cp "$LOG" "$SMOKE_LOG"; rm -rf "$HOME_DIR"' EXIT
-SUPPORT="$HOME_DIR/Library/Application Support/MacVPN"
+# The app is stopped and gone before its sandbox is removed (Windows keeps the files of a running process busy).
+stop_app() {
+  [ -n "${PID:-}" ] || return 0
+  if [ "$SMOKE_OS" = windows ] && [ -r "/proc/$PID/winpid" ]; then
+    taskkill //F //PID "$(cat "/proc/$PID/winpid")" >/dev/null 2>&1 || true
+  fi
+  kill "$PID" 2>/dev/null || true
+  for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 0.5; done
+}
+trap 'stop_app; [ -z "${SMOKE_LOG:-}" ] || cp "$LOG" "$SMOKE_LOG"; rm -rf "$HOME_DIR"' EXIT
 STORE="$SUPPORT/connections"
 # The connections as the app had them at the end (written by its smoke driver; the vault is encrypted).
 DUMP="$HOME_DIR/smoke-dump/connections"
@@ -141,9 +200,10 @@ seed "$SHARED_ONE" openvpn "Zz Shared one" "${OVPN}auth-user-pass\n"
 seed "$SHARED_TWO" openvpn "Zz Shared two" "${OVPN}auth-user-pass\n"
 
 LANG_ARGS=()
+LANG_ENV=()
 case "${SMOKE_LANG:-}" in
   '') ;;
-  en|hu) LANG_ARGS=(-AppleLanguages "(${SMOKE_LANG})") ;;
+  en|hu) if [ "$SMOKE_OS" = windows ]; then LANG_ENV=(MACVPN_SMOKE_LANG="$SMOKE_LANG"); else LANG_ARGS=(-AppleLanguages "(${SMOKE_LANG})"); fi ;;
   *) echo "SMOKE_LANG: en or hu" >&2; exit 2 ;;
 esac
 # SMOKE_SHOTS=<dir>: screenshots (with the shadow) of the real windows, <dir>/<name>-<lang>[-dark|-light].png: the menu
@@ -153,10 +213,14 @@ esac
 # SMOKE_DARK=1: the app in dark mode, SMOKE_LIGHT=1: in light mode (NSApp.appearance in the debug build; the system's
 # own setting is not touched).
 SHOTS_ENV=()
+if [ "$SMOKE_OS" = windows ] && [ -n "${SMOKE_SHOTS:-}${SMOKE_DARK:-}${SMOKE_LIGHT:-}" ]; then
+  echo "SMOKE_SHOTS, SMOKE_DARK and SMOKE_LIGHT are macOS only: ignored" >&2
+  unset SMOKE_SHOTS SMOKE_DARK SMOKE_LIGHT
+fi
 [ -z "${SMOKE_SHOTS:-}" ] || { mkdir -p "$SMOKE_SHOTS"; rm -f "$SMOKE_SHOTS"/*.done; SHOTS_ENV=(MACVPN_SMOKE_SHOTS="$SMOKE_SHOTS"); }
 [ -z "${SMOKE_DARK:-}" ] || SHOTS_ENV+=(MACVPN_SMOKE_DARK=1)
 [ -z "${SMOKE_LIGHT:-}" ] || SHOTS_ENV+=(MACVPN_SMOKE_LIGHT=1)
-env ${SHOTS_ENV[@]+"${SHOTS_ENV[@]}"} MACVPN_SANDBOX_HOME="$HOME_DIR" MACVPN_SMOKE_DIR="$PWD/scripts/smoke" "$APP" ${LANG_ARGS[@]+"${LANG_ARGS[@]}"} > "$LOG" 2>&1 &
+env ${SHOTS_ENV[@]+"${SHOTS_ENV[@]}"} ${LANG_ENV[@]+"${LANG_ENV[@]}"} MACVPN_SANDBOX_HOME="$APP_HOME" MACVPN_SMOKE_DIR="$APP_SMOKE_DIR" "$APP" ${LANG_ARGS[@]+"${LANG_ARGS[@]}"} > "$LOG" 2>&1 &
 PID=$!
 CLIENT_PID=
 # The console's screen lock, sampled through the run (the session's CGSSessionScreenIsLocked, as ioreg shows it):
@@ -167,11 +231,14 @@ SCREEN_LOCKED="$HOME_DIR/screen-locked"
 # The output is read whole first: piped into `grep -q`, ioreg (about 87 KB, more than a pipe holds) was killed by
 # SIGPIPE once grep had its match, and with `pipefail` that made every sample "not locked".
 screen_locked() {
+  [ "$SMOKE_OS" = macos ] || return 1
   local registry
   registry=$(ioreg -n Root -d1 2>/dev/null) || return 1
   [[ $registry == *'"CGSSessionScreenIsLocked"=Yes'* ]]
 }
-for _ in $(seq 1 480); do
+# The whole run's limit (seconds): WebView2 and the debug build are slower than macOS' WebKit.
+if [ "$SMOKE_OS" = windows ]; then RUN_LIMIT=1200; else RUN_LIMIT=600; fi
+for _ in $(seq 1 "$RUN_LIMIT"); do
   sleep 1
   ! screen_locked || touch "$SCREEN_LOCKED"
   if grep -q '^MacVPN smoke: done' "$LOG" 2>/dev/null; then break; fi
@@ -210,6 +277,7 @@ grep '^MacVPN smoke: backup' "$LOG" || true
 grep '^MacVPN smoke: catalog' "$LOG" || true
 grep '^MacVPN smoke: open' "$LOG" || true
 grep '^MacVPN smoke: publish' "$LOG" || true
+grep -E '^MacVPN smoke: (appearance|engines|notices|reconnect)' "$LOG" || true
 fail() { echo "✗ $1"; sed 's/^/  app: /' "$LOG"; exit 1; }
 grep -q '^MacVPN smoke: done' "$LOG" || fail "the smoke run did not finish"
 LANGUAGE=$(sed -n 's/^MacVPN smoke: language //p' "$LOG")
@@ -218,15 +286,19 @@ echo "language: ${LANGUAGE}"
 
 # The vault: created in migration mode, the seeded connections, the old Keychain item and the pin moved in, the
 # old files deleted, the marker written; the files are private.
-grep -q '^MacVPN smoke: vault: create window migrating=true keychain_items=1$' "$LOG" || fail "the create window was not in migration mode"
-grep -q '^MacVPN smoke: vault: created done=true connections=16 secret=yes pinned=true files_gone=true marker=true key=true$' "$LOG" \
+# Windows has no old Keychain: no item, so no secret moves.
+if [ "$SMOKE_OS" = windows ]; then KEYCHAIN_ITEMS=0 SECRET=no SECRETS=0; else KEYCHAIN_ITEMS=1 SECRET=yes SECRETS=1; fi
+grep -q "^MacVPN smoke: vault: create window migrating=true keychain_items=$KEYCHAIN_ITEMS\$" "$LOG" || fail "the create window was not in migration mode"
+grep -q "^MacVPN smoke: vault: created done=true connections=16 secret=$SECRET pinned=true files_gone=true marker=true key=true\$" "$LOG" \
   || fail "the vault was not created and migrated"
-grep -q '^MacVPN: Vault: migrated: 16 connections, 1 secrets' "$LOG" || fail "no migration line"
+grep -q "^MacVPN: Vault: migrated: 16 connections, $SECRETS secrets" "$LOG" || fail "no migration line"
 [ ! -e "$STORE" ] && [ ! -e "$SUPPORT/connection-order.json" ] || fail "the old files are still there"
 [ -e "$SUPPORT/migrated-to-vault" ] || fail "no migration marker"
-for f in vault.db vault.keys migrated-to-vault; do
-  [ "$(stat -f %Lp "$SUPPORT/$f")" = 600 ] || fail "$f is not 0600"
-done
+if [ "$SMOKE_OS" = macos ]; then
+  for f in vault.db vault.keys migrated-to-vault; do
+    [ "$(stat -f %Lp "$SUPPORT/$f")" = 600 ] || fail "$f is not 0600"
+  done
+fi
 ! grep -aq 'Seeded A\|Zz Credentials\|vpn.example.com' "$SUPPORT/vault.db" || fail "a name or a config is readable in vault.db"
 # Locked: no name in the view model; unlocked with the password (after a wrong one and its delay), with the recovery
 # key and a new master password, and with the new password.
@@ -261,9 +333,11 @@ if [ "$(name "$A")" != "SMOKE OK" ]; then
   fi
 fi
 grep -q '^port=8443$' "$DUMP/$S/config" || fail "the SSTP form was not saved"
-PROFILE=$(find "$HOME_DIR/tmp" -path '*/macvpn-profile.*/Seeded L2.mobileconfig' | head -1)
-[ -n "$PROFILE" ] || fail "the native profile was not staged"
-[ "$(stat -f %Lp "$PROFILE")" = 600 ] || fail "the staged profile is not 0600"
+if [ "$SMOKE_OS" = macos ]; then
+  PROFILE=$(find "$HOME_DIR/tmp" -path '*/macvpn-profile.*/Seeded L2.mobileconfig' | head -1)
+  [ -n "$PROFILE" ] || fail "the native profile was not staged"
+  [ "$(stat -f %Lp "$PROFILE")" = 600 ] || fail "the staged profile is not 0600"
+fi
 ! grep -rq native-secret "$HOME_DIR/tmp" || fail "the password is in a staged profile"
 # 16 seeded, one created and deleted, the backup step's canary (in the backup, so restored), one imported by the
 # shared credential step, one published by the publishing step.
@@ -280,10 +354,15 @@ PROFILE=$(find "$HOME_DIR/tmp" -path '*/macvpn-profile.*/Seeded L2.mobileconfig'
 
 # The Dock icon (NSApp.activationPolicy): shown while a window is open, a Dock click brings back
 # a minimized window and opens none, hidden once the windows are closed and while only an MFA prompt is open.
-grep -q '^MacVPN smoke: dock: windows open regular=true$' "$LOG" || fail "no Dock icon with the windows open"
-grep -Eq '^MacVPN smoke: dock: reopen minimized=true restored=true windows=([0-9])->\1$' "$LOG" || fail "the Dock click"
-grep -q '^MacVPN smoke: dock: closed=true regular=false$' "$LOG" || fail "the Dock icon stayed after the windows closed"
-grep -q '^MacVPN smoke: dock: prompt only regular=false$' "$LOG" || fail "a Dock icon for an MFA prompt"
+if [ "$SMOKE_OS" = macos ]; then
+  grep -q '^MacVPN smoke: dock: windows open regular=true$' "$LOG" || fail "no Dock icon with the windows open"
+  grep -Eq '^MacVPN smoke: dock: reopen minimized=true restored=true windows=([0-9])->\1$' "$LOG" || fail "the Dock click"
+  grep -q '^MacVPN smoke: dock: closed=true regular=false$' "$LOG" || fail "the Dock icon stayed after the windows closed"
+  grep -q '^MacVPN smoke: dock: prompt only regular=false$' "$LOG" || fail "a Dock icon for an MFA prompt"
+else
+  grep -q '^MacVPN smoke: dock: skipped on Windows$' "$LOG" || fail "the Dock step was not skipped"
+  grep -q '^MacVPN smoke: windows: closed=true$' "$LOG" || fail "the windows did not close"
+fi
 
 # The MFA prompts.
 grep -q '^MacVPN smoke: prompt: code ok closed=true$' "$LOG" || fail "the code prompt"
@@ -371,7 +450,7 @@ grep -q '^MacVPN smoke: open: cancelled closed=true unlocked=true imported=false
 ! grep -q 'macvpn-smoke-open' "$LOG" || fail "open: the log shows a path of an opened file"
 
 # The control API: the switch, the pairing window, the test client's session, the lease's end, the switch off.
-CONTROL_SOCKET="$HOME_DIR/Library/Application Support/MacVPN/control/macvpn.sock"
+CONTROL_SOCKET="$SUPPORT/control/macvpn.sock"
 grep -q '^MacVPN smoke: control: on running=true socket=true$' "$LOG" || fail "the control API did not start"
 [ -f "$HOME_DIR/client.json" ] || fail "the test client did not run: $(cat "$HOME_DIR/client.log" 2>/dev/null)"
 for s in pair hello list up closed; do
@@ -385,10 +464,11 @@ grep -q '^MacVPN smoke: control: held_by=smoke-client$' "$LOG" || fail "the conn
 grep -q '^MacVPN smoke: control: released disconnected=true$' "$LOG" || fail "the lease's end"
 [ "$(name "$CONTROL")" = "CONTROL OK" ] || fail "Paired apps: $(name "$CONTROL")"
 grep -q '^MacVPN smoke: control: off running=false socket=false$' "$LOG" || fail "the socket stayed after the switch was turned off"
-[ ! -e "$CONTROL_SOCKET" ] || fail "the control socket is still there"
+[ "$SMOKE_OS" = windows ] || [ ! -e "$CONTROL_SOCKET" ] || fail "the control socket is still there"
 grep -q 'MacVPN (Control API): paired “smoke-client”' "$LOG" || fail "no audit line for the pairing"
-AUDIT="$HOME_DIR/Library/Application Support/MacVPN/control/audit.log"
-[ "$(stat -f %Lp "$AUDIT" 2>/dev/null)" = 600 ] || fail "the audit file is missing or not 0600"
+AUDIT="$SUPPORT/control/audit.log"
+[ -f "$AUDIT" ] || fail "the audit file is missing"
+[ "$SMOKE_OS" = windows ] || [ "$(stat -f %Lp "$AUDIT" 2>/dev/null)" = 600 ] || fail "the audit file is not 0600"
 grep -q 'paired “smoke-client”' "$AUDIT" || fail "no pairing in the audit file"
 grep -q 'lease on .* ended' "$AUDIT" || fail "no lease end in the audit file"
 ! grep -qi 'token' "$AUDIT" || fail "the audit file mentions a token"
@@ -404,7 +484,9 @@ ADDED_MS=$(sed -n 's/^MacVPN smoke: live: added listed=\([0-9]*\)$/\1/p' "$LOG")
 [ -n "$ADDED_MS" ] && [ "$ADDED_MS" -lt 2500 ] || fail "live list: the added VPN was not reloaded in time (${ADDED_MS:-never} ms)"
 [ "$(name "$LIVE")" = "LIVE OK" ] || fail "live list, Connections window: $(name "$LIVE")"
 [ "$(name "$LIVE_MENU")" = "MENU OK" ] || fail "live list, menu: $(name "$LIVE_MENU")"
-! grep -q '^MacVPN smoke: fake native: start ' "$LOG" || fail "live list: a fake system VPN was started"
+# (Windows: the native step's own L2TP entry, `WinVPN-<UUID>`, is started on purpose.)
+! grep '^MacVPN smoke: fake native: start ' "$LOG" | grep -qv '^MacVPN smoke: fake native: start WinVPN-' \
+  || fail "live list: a fake system VPN was started"
 
 # Folders and colours: created (named in place, the default name in the run's language), nested, coloured (the
 # subfolder inherits), a connection dragged into the subfolder, collapsed, the subfolder deleted with its contents
@@ -412,19 +494,52 @@ ADDED_MS=$(sed -n 's/^MacVPN smoke: live: added listed=\([0-9]*\)$/\1/p' "$LOG")
 [ "$(name "$FOLDERS")" = "FOLDERS OK" ] || fail "folders: $(name "$FOLDERS")"
 grep -q '^MacVPN smoke: folders: store work=true colour=teal subfolders=0 item_in_work=true$' "$LOG" || fail "folders: the stored tree"
 
-# The menu popover's rounded corners (borderless window: non-opaque, its content layer masked, with a shadow).
-grep -Eq '^MacVPN smoke: menu: shape radius=12 masks=true opaque=false shadow=true window=[0-9]+$' "$LOG" || fail "the menu's rounded corners"
+# The 2.0 features: the Appearance setting in the popover and the Connections window; a missing engine's row, New
+# menu and import, and the row back once installed; the connection notices and their switch; auto-reconnect.
+for SECTION in appearance engines notices reconnect; do
+  grep -q "^MacVPN smoke: $SECTION: ok$" "$LOG" || fail "$SECTION: $(grep "^MacVPN smoke: $SECTION: " "$LOG" | tail -1)"
+done
+grep -q '^MacVPN smoke: notice: Zz Notices' "$LOG" || fail "notices: nothing was recorded"
+! grep -q '^MacVPN smoke: features: ERROR' "$LOG" || fail "the 2.0 features' connections"
 
-# Quitting the way logout does (a quit Apple Event): applicationShouldTerminate answers "later", the Connections
-# window asks about the unsaved change (system.js answers Discard), then the app quits.
+# WinVPN 2c's native VPNs (Windows only): the step's verdict, and no secret of it in the log.
+if [ "$SMOKE_OS" = windows ]; then
+  grep '^MacVPN smoke: ras: ' "$LOG" || true
+  grep -q '^MacVPN smoke: ras: ok$' "$LOG" || fail "native VPNs: $(grep '^MacVPN smoke: ras: ' "$LOG" | tail -1)"
+  ! grep -q 'smoke-ras-pass\|smoke-ras-psk\|smoke-ras-helper-pass' "$LOG" || fail "the log shows a native VPN secret"
+fi
+
+# The menu popover's rounded corners (borderless window: non-opaque, its content layer masked, with a shadow).
+if [ "$SMOKE_OS" = macos ]; then
+  grep -Eq '^MacVPN smoke: menu: shape radius=12 masks=true opaque=false shadow=true window=[0-9]+$' "$LOG" || fail "the menu's rounded corners"
+else
+  # Windows 11 (build 22000 and later) rounds the popover through DWM; Windows 10 has no round corners.
+  WIN_BUILD=$(cmd //c ver 2>/dev/null | sed -n 's/.*Version [0-9]*\.[0-9]*\.\([0-9]*\).*/\1/p')
+  if [ "${WIN_BUILD:-0}" -ge 22000 ]; then CORNERS=true; else CORNERS=false; fi
+  grep -q "^MacVPN smoke: menu: corners round=$CORNERS\$" "$LOG" \
+    || fail "the menu's corners (build ${WIN_BUILD:-?}): $(grep '^MacVPN smoke: menu: ' "$LOG" | tail -1)"
+fi
+
+# Quitting the way logout does (macOS: a quit Apple Event; Windows: WM_QUERYENDSESSION, sent by the app's driver to
+# its own lifecycle window): the system's request is answered "later" (blocked for now), the Connections window asks
+# about the unsaved change (system.js answers Discard), then the app quits.
 grep -q '^MacVPN smoke: system: unsaved change ready$' "$LOG" || fail "no unsaved change for the quit test"
-cat > "$HOME_DIR/terminate.swift" <<SWIFT
+if [ "$SMOKE_OS" = windows ]; then
+  grep -q '^MacVPN smoke: system: quit request blocked=true$' "$LOG" \
+    || fail "the quit request: $(grep '^MacVPN smoke: system: quit' "$LOG" | tail -1)"
+else
+  cat > "$HOME_DIR/terminate.swift" <<SWIFT
 import AppKit
 exit(NSRunningApplication(processIdentifier: $PID)?.terminate() == true ? 0 : 1)
 SWIFT
-swift "$HOME_DIR/terminate.swift" || fail "could not send the quit request"
+  swift "$HOME_DIR/terminate.swift" || fail "could not send the quit request"
+fi
 for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 ! kill -0 "$PID" 2>/dev/null || fail "the app did not quit after the quit question"
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
-echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"
+if [ "$SMOKE_OS" = windows ]; then
+  echo "✓ smoke test passed on Windows (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Explorer, publishing, appearance, missing engines, notices, auto-reconnect, native VPNs (L2TP, IKEv2, SSTP, Cisco copy), menu corners (round=$CORNERS), quit flows, quit request; skipped: Dock, screenshots)${PLACEMENT_SKIPPED}"
+  exit 0
+fi
+echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, appearance, missing engines, notices, auto-reconnect, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"

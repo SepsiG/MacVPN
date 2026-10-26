@@ -11,7 +11,7 @@
     type ViewModel,
     type WindowName,
   } from './api';
-  import { setLanguage, tr } from './l10n.svelte';
+  import { i18n, setLanguage, tr } from './l10n.svelte';
   import Icon from './Icon.svelte';
   import MenuRow from './MenuRow.svelte';
   import FolderRow from './folders/FolderRow.svelte';
@@ -36,7 +36,7 @@
   let scrollable = $state(false);
   let settingsOpen = $state(false);
   const unlocked = $derived(vm?.vault.state === 'unlocked');
-  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null || unlocked || vm.backupAvailable));
+  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null || !!vm.appearance || vm.connectionNotifications !== undefined || unlocked || vm.backupAvailable));
   /// The vault is locked or not set up yet: the menu shows no connection (the backend sends none either).
   const vaultClosed = $derived(vm?.vault.state === 'locked' || vm?.vault.state === 'notCreated');
   /// "Unlock Automatically" is being turned off: the menu asks first.
@@ -189,7 +189,7 @@
   {:else if vm && vaultClosed}
     <LockedMenu
       vault={vm.vault}
-      version={versionLabel(vm.appVersion)}
+      version={versionLabel(vm.appVersion, i18n.platform.product)}
       onunlock={() => showVault(vm?.vault.state === 'notCreated' ? 'create' : 'unlock')}
       onquit={() => quit().catch(console.error)}
     />
@@ -259,6 +259,33 @@
           <Icon name="chevron" class="chevron" />
         </button>
         <div id="menu-settings" class="settings" hidden={!settingsOpen}>
+          {#if vm.appearance}
+            <div class="setting appearance">
+              <span>{tr('Appearance')}</span>
+              <div class="segmented small" role="radiogroup" aria-label={tr('Appearance')}>
+                {#each [['system', tr('Match System')], ['light', tr('Light')], ['dark', tr('Dark')]] as [mode, label] (mode)}
+                  <button
+                    role="radio"
+                    aria-checked={vm.appearance === mode}
+                    class:on={vm.appearance === mode}
+                    onclick={() => api.setAppearance(mode as 'system' | 'light' | 'dark').catch(console.error)}>{label}</button
+                  >
+                {/each}
+              </div>
+            </div>
+          {/if}
+          {#if vm.connectionNotifications !== undefined}
+            <label class="setting">
+              <span>{tr('Connection Notifications')}</span>
+              <input
+                type="checkbox"
+                class="switch"
+                role="switch"
+                checked={vm.connectionNotifications}
+                onchange={(e) => api.setConnectionNotifications((e.currentTarget as HTMLInputElement).checked).catch(console.error)}
+              />
+            </label>
+          {/if}
           {#if vm.update.enabled}
             <label class="setting">
               <span>{tr('Check for Updates Automatically')}</span>
@@ -352,7 +379,7 @@
       </button>
     </div>
     <p class="hint">{tr('Option-click a switch: debug mode')}</p>
-    {#if vm}<p class="version">{versionLabel(vm.appVersion)}</p>{/if}
+    {#if vm}<p class="version">{versionLabel(vm.appVersion, i18n.platform.product)}</p>{/if}
   {/if}
 </main>
 
@@ -636,6 +663,36 @@
   .setting.action:focus-visible {
     box-shadow: none;
     text-decoration: underline;
+  }
+  /* The Appearance choice: the Connections window's segmented control (manage.css), smaller. */
+  .segmented {
+    display: inline-flex;
+    gap: 2px;
+    padding: 2px;
+    border-radius: 9px;
+    background: var(--surface-sunken);
+  }
+  .segmented button {
+    min-height: 22px;
+    padding: 2px 8px;
+    border-radius: 7px;
+    background: transparent;
+    box-shadow: none;
+    color: var(--secondary);
+    font-size: var(--text-sm);
+  }
+  .segmented button:hover:not(:disabled):not(.on) {
+    background: var(--fill-hover);
+    color: var(--text);
+  }
+  .segmented button.on,
+  .segmented button.on:hover:not(:disabled) {
+    background: var(--segment-on);
+    color: var(--text);
+    box-shadow: var(--shadow-control);
+  }
+  .segmented button:focus-visible {
+    box-shadow: var(--focus-ring);
   }
   .setting-extra {
     display: flex;

@@ -33,6 +33,21 @@ else
   echo "skip - a v0.4.0 tag nem érhető el (sekély klón)"
 fi
 
+# Build provenance (P2-L5): a release.yml minden draft-fájlhoz attesztációt készít (a GitHub saját, SHA-ra rögzített
+# actionjével, csak a release jobban), és a script aláírás előtt minden assetre ellenőrzi (repó, workflow, tag,
+# commit, GitHub-hostolt runner); hiba esetén nem ír alá.
+WF=".github/workflows/release.yml"
+check "release.yml: attest-build-provenance SHA-ra rögzítve" \
+  grep -Eq '^ +uses: actions/attest-build-provenance@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' "$WF"
+check "release.yml: a DMG és az MSI is attesztált" bash -c \
+  "grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/MacVPN-\*\.dmg$' && grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/WinVPN-\*\.msi$'"
+check "release.yml: id-token és attestations írás csak a release jobban" bash -c \
+  "[ \"\$(grep -c 'id-token: write' '$WF')\" = 1 ] && [ \"\$(grep -c 'attestations: write' '$WF')\" = 1 ] && sed -n '/^  release:/,\$p' '$WF' | grep -q 'id-token: write'"
+check "sign-release.sh: gh attestation verify a repóra, a workflow-ra, a tagre és a commitra" bash -c \
+  "grep -q 'gh attestation verify' '$SCRIPT' && grep -q -- '--signer-workflow \"\$FULL_NAME/.github/workflows/release.yml\"' '$SCRIPT' \
+   && grep -q -- '--source-ref \"refs/tags/\$TAG\"' '$SCRIPT' && grep -q -- '--source-digest \"\$TAG_SHA\"' '$SCRIPT' \
+   && grep -q -- '--deny-self-hosted-runners' '$SCRIPT' && grep -q '^  verify_provenance \"\$name\"$' '$SCRIPT'"
+
 OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl
 if [ ! -x "$OPENSSL" ] && command -v brew >/dev/null 2>&1; then OPENSSL="$(brew --prefix openssl@3 2>/dev/null)/bin/openssl"; fi
 if [ ! -x "$OPENSSL" ] || ! "$OPENSSL" version | grep -q '^OpenSSL 3\.'; then
@@ -74,6 +89,33 @@ else
   ok "más verzióra nem érvényes"
 fi
 
+# WinVPN: az MSI aláírása a WinVPN-üzenetre (a fájlnévvel együtt), és csak a saját architektúrájára érvényes.
+head -c 100000 /dev/urandom >"$T/winvpn.msi"
+MHASH="$(shasum -a 256 "$T/winvpn.msi" | awk '{print $1}')"
+if OUT="$("$SCRIPT" --dry-run --msi "$T/winvpn.msi" --arch arm64 --backup-key "$T/throwaway.pem" v9.8.7 </dev/null 2>&1)"; then
+  ok "msi dry-run lefut"
+else
+  nok "msi dry-run lefut"; echo "$OUT"
+fi
+check "msi: kiírja a hash-t és az asset nevét" grep -q "as WinVPN-9.8.7-arm64.msi): $MHASH" <<<"$OUT"
+MSIG="$(sed -n 's/^signature: //p' <<<"$OUT")"
+printf 'winvpn-update-v1\nWinVPN-9.8.7-arm64.msi\n9.8.7\n%s\n' "$MHASH" >"$T/mmessage"
+printf %s "$MSIG" | base64 -d >"$T/msig.bin"
+check "az msi aláírása a WinVPN-üzenetre érvényes" \
+  "$OPENSSL" pkeyutl -verify -pubin -inkey "$T/throwaway.pub.pem" -rawin -in "$T/mmessage" -sigfile "$T/msig.bin" -out /dev/null
+printf 'winvpn-update-v1\nWinVPN-9.8.7-x64.msi\n9.8.7\n%s\n' "$MHASH" >"$T/mmessage2"
+if "$OPENSSL" pkeyutl -verify -pubin -inkey "$T/throwaway.pub.pem" -rawin -in "$T/mmessage2" -sigfile "$T/msig.bin" >/dev/null 2>&1; then
+  nok "az arm64 aláírás az x64 fájlra nem érvényes"
+else
+  ok "az arm64 aláírás az x64 fájlra nem érvényes"
+fi
+printf 'macvpn-update-v1\n9.8.7\n%s\n' "$MHASH" >"$T/mmessage3"
+if "$OPENSSL" pkeyutl -verify -pubin -inkey "$T/throwaway.pub.pem" -rawin -in "$T/mmessage3" -sigfile "$T/msig.bin" >/dev/null 2>&1; then
+  nok "az msi aláírása a MacVPN-üzenetre nem érvényes"
+else
+  ok "az msi aláírása a MacVPN-üzenetre nem érvényes"
+fi
+
 # Hibás használat.
 expect_fail() { local desc="$1"; shift; if "$@" </dev/null >/dev/null 2>&1; then nok "$desc"; else ok "$desc"; fi; }
 expect_fail "rossz tag (v nélkül)" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --backup-key "$T/throwaway.pem" 9.8.7
@@ -82,6 +124,11 @@ expect_fail "rossz tag (utótag)" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg
 expect_fail "dry-run --dmg nélkül" "$SCRIPT" --dry-run --backup-key "$T/throwaway.pem" v9.8.7
 expect_fail "--dmg dry-run nélkül" "$SCRIPT" --dmg "$T/MacVPN-9.8.7.dmg" --backup-key "$T/throwaway.pem" v9.8.7
 expect_fail "nem létező kulcsfájl" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --backup-key "$T/nincs.pem" v9.8.7
+expect_fail "--msi --arch nélkül" "$SCRIPT" --dry-run --msi "$T/winvpn.msi" --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--msi rossz arch" "$SCRIPT" --dry-run --msi "$T/winvpn.msi" --arch x86 --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--dmg és --msi együtt" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --msi "$T/winvpn.msi" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--dmg --arch-csal" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--msi dry-run nélkül" "$SCRIPT" --msi "$T/winvpn.msi" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
 expect_fail "ismeretlen opció" "$SCRIPT" --force v9.8.7
 
 echo "# $PASS ok, $FAIL hiba"

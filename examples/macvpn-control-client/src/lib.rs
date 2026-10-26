@@ -1,7 +1,10 @@
 //! A minimal client for MacVPN's local control API (see `docs/control-api.md`).
 //!
-//! This file is meant to be copied into your own app. It needs only `std` and `serde_json`, and it has no
-//! global state: everything lives in a [`Client`], which is one socket connection to MacVPN.
+//! This file is meant to be copied into your own app. It needs only `std` and `serde_json` (on Windows also
+//! `macvpn-winsys`, for the named pipe: see the README), and it has no global state: everything lives in a
+//! [`Client`], which is one socket connection to MacVPN.
+//!
+//! On Windows the endpoint is WinVPN's named pipe ([`default_endpoint`]), passed wherever a socket path goes.
 //!
 //! # The lifetime rule
 //!
@@ -478,8 +481,7 @@ impl Closer {
 
 // MARK: - Transport
 
-/// The socket under a [`Client`]: a Unix domain socket. The Windows client (a named pipe) comes with WinVPN; until
-/// then [`Client::connect`] returns `ErrorKind::Unsupported` there.
+/// The socket under a [`Client`]: a Unix domain socket on macOS (and other Unix systems).
 #[cfg(unix)]
 mod transport {
     use std::io;
@@ -492,7 +494,71 @@ mod transport {
     }
 }
 
-#[cfg(not(unix))]
+/// On Windows: WinVPN's named pipe, `\\.\pipe\WinVPN-control-<your SID>` ([`default_endpoint`]). The client asks
+/// for identification-level impersonation only and refuses a pipe served by another user (`PermissionDenied`)
+/// before it sends anything. A squatter (another user's server that took the name first) can still identify the
+/// client while it connects (its SID, groups and privileges, at identification level), but it can never act as the
+/// client and receives no data: no bearer token, no request.
+#[cfg(windows)]
+mod transport {
+    use macvpn_winsys::pipe::{self, PipeStream};
+    use std::io::{self, ErrorKind, Read, Write};
+    use std::net::Shutdown;
+    use std::path::Path;
+    use std::time::Duration;
+
+    pub(crate) struct Stream(PipeStream);
+
+    /// `path` is the pipe name. Waits at most 5 s for a free instance.
+    pub(crate) fn connect(path: &Path) -> io::Result<Stream> {
+        let name = path.to_str().ok_or_else(|| io::Error::from(ErrorKind::InvalidInput))?;
+        pipe::connect(name, Duration::from_secs(5)).map(Stream)
+    }
+
+    impl Stream {
+        pub(crate) fn try_clone(&self) -> io::Result<Stream> {
+            Ok(Stream(self.0.try_clone()))
+        }
+
+        pub(crate) fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+            self.0.set_read_timeout(timeout)
+        }
+
+        pub(crate) fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+            self.0.set_write_timeout(timeout)
+        }
+
+        pub(crate) fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+            self.0.shutdown(how)
+        }
+    }
+
+    impl Read for Stream {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.0.read_some(buf)
+        }
+    }
+
+    impl Write for Stream {
+        fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+            self.0.write_some(buf)
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+}
+
+/// WinVPN's control endpoint for this user: the pipe name `\\.\pipe\WinVPN-control-<your SID>`, used as the
+/// `path` of [`Client::connect`], [`Client::open`], [`Client::pair`] and [`Lease::acquire`].
+#[cfg(windows)]
+pub fn default_endpoint() -> io::Result<PathBuf> {
+    macvpn_winsys::pipe::user_pipe_name("WinVPN-control").map(PathBuf::from)
+}
+
+/// Neither Unix nor Windows: no transport; [`Client::connect`] returns `ErrorKind::Unsupported`.
+#[cfg(not(any(unix, windows)))]
 mod transport {
     use std::io::{self, ErrorKind, Read, Write};
     use std::net::Shutdown;
@@ -503,7 +569,7 @@ mod transport {
     pub(crate) enum Stream {}
 
     pub(crate) fn connect(_path: &Path) -> io::Result<Stream> {
-        Err(io::Error::new(ErrorKind::Unsupported, "the named pipe client comes with WinVPN"))
+        Err(io::Error::new(ErrorKind::Unsupported, "no control API transport on this system"))
     }
 
     impl Stream {

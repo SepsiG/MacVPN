@@ -2,7 +2,7 @@
 //! Keychain are not included (for SSTP the user name is part of the config); key material and credentials inline
 //! in the config are handled by `secret_material` / `strip_secrets`.
 
-use crate::fsx::{self, Access};
+use crate::fsx::{self, Access, Follow};
 use crate::importer::{self, ExportMeta};
 use crate::l10n::{self, Arg};
 use crate::mobileconfig::{self, MobileconfigError};
@@ -144,8 +144,8 @@ pub fn write_with_access_raced(
         race(&tmp);
         fsx::set_access(&file, access)
             .map_err(|_| WriteError { message: l10n::tr("Cannot set the permissions: %@", &[Arg::Str(&display)]) })?;
-        let written = file.metadata().map_err(|_| cannot_write())?;
-        let named = fs::symlink_metadata(&tmp).map_err(|_| cannot_write())?;
+        let written = fsx::stat(&file).map_err(|_| cannot_write())?;
+        let named = fsx::stat_path(&tmp, Follow::No).map_err(|_| cannot_write())?;
         let same_file = matches!((fsx::file_id(&named), fsx::file_id(&written)), (Some(a), Some(b)) if a == b);
         if !named.file_type().is_file() || !same_file {
             ours = false;

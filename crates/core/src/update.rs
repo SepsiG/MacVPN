@@ -492,16 +492,27 @@ impl UserGuide {
 
 // MARK: - Signature
 
+/// Which product's update a signature is for (the first line of the signed message).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SignatureDomain {
+    /// MacVPN: `macvpn-update-v1\n<version>\n<sha256>\n`, byte for byte as every MacVPN since 0.2.2 checks it.
+    MacVpnV1,
+    /// WinVPN: `winvpn-update-v1\n<asset>\n<version>\n<sha256>\n`; the asset is the file name
+    /// `WinVPN-<version>-x64.msi` or `WinVPN-<version>-arm64.msi`, so a signature binds the product, the
+    /// architecture and the version as well as the bytes.
+    WinVpnV1,
+}
+
 /// The releases' offline Ed25519 signature.
 ///
-/// The maintainer signs every release DMG's SHA-256 with an offline key independent of GitHub
-/// (`scripts/sign-release.sh`); the signature is the `MacVPN-<version>.dmg.sig` asset. The app installs only if
-/// the signature is valid with one of the embedded public keys, so a compromised GitHub account (or CI) cannot
-/// publish an update.
+/// The maintainer signs every release asset's SHA-256 with an offline key independent of GitHub
+/// (`scripts/sign-release.sh`); the signature is the `<asset>.sig` asset. The app installs only if the signature is
+/// valid with one of the embedded public keys, so a compromised GitHub account (or CI) cannot publish an update.
 ///
-/// The signed message, byte for byte: `"macvpn-update-v1\n" + version + "\n" + lower-case sha256 hex + "\n"`, the
-/// version without `v` (e.g. `0.2.2`). Plain Ed25519 (OpenSSL 3: `pkeyutl -sign -rawin`). The `.sig` is one line:
-/// the 64-byte signature in base64, with a trailing newline.
+/// The signed message, byte for byte, by [`SignatureDomain`]: MacVPN `"macvpn-update-v1\n" + version + "\n" +
+/// lower-case sha256 hex + "\n"`; WinVPN `"winvpn-update-v1\n" + asset + "\n" + version + "\n" + sha256 + "\n"`.
+/// The version is without `v` (e.g. `0.2.2`). Plain Ed25519 (OpenSSL 3: `pkeyutl -sign -rawin`). The `.sig` is one
+/// line: the 64-byte signature in base64, with a trailing newline.
 pub struct UpdateSignature;
 
 impl UpdateSignature {
@@ -512,6 +523,7 @@ impl UpdateSignature {
     /// The largest `.sig` asset (the real one: 88 characters + newline).
     pub const MAX_SIGNATURE_FILE_SIZE: usize = 1024;
     pub const DOMAIN: &'static str = "macvpn-update-v1";
+    pub const WINVPN_DOMAIN: &'static str = "winvpn-update-v1";
 
     /// The embedded, trusted keys (primary, backup), raw 32 bytes each.
     pub fn trusted_keys() -> Vec<[u8; 32]> {
@@ -522,28 +534,55 @@ impl UpdateSignature {
             .collect()
     }
 
-    /// The signed message. `None` if the version is not `X.Y.Z`, or the hash is not 64 lower-case hex digits.
+    /// MacVPN's signed message. `None` if the version is not `X.Y.Z`, or the hash is not 64 lower-case hex digits.
     pub fn message(version: &str, sha256_hex: &str) -> Option<Vec<u8>> {
+        Self::message_for(SignatureDomain::MacVpnV1, "", version, sha256_hex)
+    }
+
+    /// The signed message of `domain`. MacVPN ignores `asset` (its message has none); WinVPN requires exactly
+    /// `WinVPN-<version>-x64.msi` or `WinVPN-<version>-arm64.msi`. `None`: not a message any signature may cover.
+    pub fn message_for(domain: SignatureDomain, asset: &str, version: &str, sha256_hex: &str) -> Option<Vec<u8>> {
         if !crate::validators::matches(version, "^[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}$")
             || sha256_hex.len() != 64
             || !sha256_hex.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
         {
             return None;
         }
-        Some(format!("{}\n{version}\n{sha256_hex}\n", Self::DOMAIN).into_bytes())
+        match domain {
+            SignatureDomain::MacVpnV1 => Some(format!("{}\n{version}\n{sha256_hex}\n", Self::DOMAIN).into_bytes()),
+            SignatureDomain::WinVpnV1 => {
+                let allowed = [format!("WinVPN-{version}-x64.msi"), format!("WinVPN-{version}-arm64.msi")];
+                if !allowed.iter().any(|a| a == asset) {
+                    return None;
+                }
+                Some(format!("{}\n{asset}\n{version}\n{sha256_hex}\n", Self::WINVPN_DOMAIN).into_bytes())
+            }
+        }
+    }
+
+    /// MacVPN's verification ([`Self::verify_for`] with [`SignatureDomain::MacVpnV1`]).
+    pub fn verify(version: &str, sha256_hex: &str, signature_base64: &str, public_keys: &[[u8; 32]]) -> bool {
+        Self::verify_for(SignatureDomain::MacVpnV1, "", version, sha256_hex, signature_base64, public_keys)
     }
 
     /// Verification is strict (`verify_strict`: also rejects small-order keys and non-canonical points), which
     /// every signature made by `scripts/sign-release.sh` passes.
     ///
-    /// True if `signature_base64` (the `.sig` content) is a valid Ed25519 signature of the `version` +
-    /// `sha256_hex` message with any of `public_keys`. Pure: no network, no file. The hash is the locally computed
-    /// SHA-256.
-    pub fn verify(version: &str, sha256_hex: &str, signature_base64: &str, public_keys: &[[u8; 32]]) -> bool {
+    /// True if `signature_base64` (the `.sig` content) is a valid Ed25519 signature of `domain`'s message for
+    /// `asset`, `version` and `sha256_hex` with any of `public_keys`. Pure: no network, no file. The hash is the
+    /// locally computed SHA-256.
+    pub fn verify_for(
+        domain: SignatureDomain,
+        asset: &str,
+        version: &str,
+        sha256_hex: &str,
+        signature_base64: &str,
+        public_keys: &[[u8; 32]],
+    ) -> bool {
         if signature_base64.len() > Self::MAX_SIGNATURE_FILE_SIZE {
             return false;
         }
-        let Some(message) = Self::message(version, sha256_hex) else { return false };
+        let Some(message) = Self::message_for(domain, asset, version, sha256_hex) else { return false };
         // One line; a trailing newline (and space) is fine, an inner space or more lines are not.
         let trimmed = signature_base64.trim_matches(swift_str::is_foundation_whitespace_or_newline);
         if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
@@ -560,6 +599,17 @@ impl UpdateSignature {
     /// [`Self::verify`] with the embedded keys.
     pub fn verify_trusted(version: &str, sha256_hex: &str, signature_base64: &str) -> bool {
         Self::verify(version, sha256_hex, signature_base64, &Self::trusted_keys())
+    }
+
+    /// [`Self::verify_for`] with the embedded keys (the WinVPN updater, 2b).
+    pub fn verify_trusted_for(
+        domain: SignatureDomain,
+        asset: &str,
+        version: &str,
+        sha256_hex: &str,
+        signature_base64: &str,
+    ) -> bool {
+        Self::verify_for(domain, asset, version, sha256_hex, signature_base64, &Self::trusted_keys())
     }
 }
 

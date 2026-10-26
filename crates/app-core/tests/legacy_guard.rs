@@ -68,7 +68,6 @@ fn setup() -> (TempDir, PathBuf, Arc<VaultLifecycle>, Arc<MemoryKeyStore>) {
 /// The create window in migration mode: the vault is created, the recovery key is shown and checked, and only then
 /// the migration runs. A folder edit in between is refused, and the migration succeeds.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_folder_write_while_the_migration_waits_is_refused() {
     let (_tmp, support, v, _) = setup();
     let src = LegacySources::new(support.clone(), Arc::new(NoKeychain));
@@ -94,7 +93,6 @@ fn a_folder_write_while_the_migration_waits_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_shared_credential_write_while_the_migration_waits_is_refused() {
     let (_tmp, support, v, _) = setup();
     let src = LegacySources::new(support.clone(), Arc::new(NoKeychain));
@@ -110,7 +108,6 @@ fn a_shared_credential_write_while_the_migration_waits_is_refused() {
 /// The app quits (or crashes) after the import committed and before the cleanup list was written: the next launch
 /// verifies the vault against the old data again and finishes the deletion.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_quit_between_the_import_and_the_cleanup_list_is_finished_at_the_next_launch() {
     let (_tmp, support, v, ks) = setup();
     let src = LegacySources::new(support.clone(), Arc::new(NoKeychain));

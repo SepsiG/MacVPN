@@ -68,7 +68,6 @@ fn first_read_is_bounded_to_last_256kb() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn inode_replacement_resets() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -108,7 +107,6 @@ fn partial_flush_never_splits_multibyte_character() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn inode_replacement_reapplies_window() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -160,4 +158,40 @@ fn failed_status_maps_to_failed() {
     )
     .unwrap();
     assert_eq!(s[0].connection_state(), ConnectionState::Failed("A kapcsolat megszakadt".into()));
+}
+
+/// A log kept in memory, as the WinVPN Service serves it: (generation, bytes).
+struct Memory(std::sync::Arc<std::sync::Mutex<(u64, Vec<u8>)>>);
+
+impl LogSource for Memory {
+    fn read(&mut self, offset: u64, max: usize) -> Option<LogRead> {
+        let g = self.0.lock().unwrap();
+        let size = g.1.len() as u64;
+        let from = offset.min(size) as usize;
+        let to = (from + max).min(g.1.len());
+        Some(LogRead {
+            identity: Some(LogIdentity::Generation(g.0)),
+            size,
+            start: from as u64,
+            data: g.1[from..to].to_vec(),
+        })
+    }
+}
+
+#[test]
+fn a_tailer_over_another_source_follows_the_same_rules() {
+    let shared = std::sync::Arc::new(std::sync::Mutex::new((1u64, b"one\ntwo\npart".to_vec())));
+    let mut t = LogTailer::with_source(Box::new(Memory(shared.clone())));
+    assert_eq!(t.read_new(), ["one", "two"]);
+    shared.lock().unwrap().1.extend_from_slice(b"ial\n");
+    assert_eq!(t.read_new(), ["partial"]);
+    assert_eq!(t.read_new(), Vec::<String>::new());
+    // A new generation (the service started a new log for a new connect): from the start again.
+    *shared.lock().unwrap() = (2, b"fresh\n".to_vec());
+    assert_eq!(t.read_new(), ["fresh"]);
+    // A large first read keeps only the last 256 KiB, without its first (cut) line.
+    let mut big = vec![b'x'; 300 * 1024];
+    big.extend_from_slice(b"\nlast\n");
+    *shared.lock().unwrap() = (3, big);
+    assert_eq!(t.read_new().last().map(String::as_str), Some("last"));
 }

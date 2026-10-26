@@ -8,6 +8,13 @@
 //
 //   node scripts/third-party-notices.mjs           writes THIRD-PARTY-NOTICES.txt
 //   node scripts/third-party-notices.mjs --check   exits 1 when the committed file is not what it would write
+//   --os windows                                    THIRD-PARTY-NOTICES.windows.txt instead (WinVPN's MSI installs it
+//                                                   as THIRD-PARTY-NOTICES.txt): the app and the WinVPN Service (the
+//                                                   helper crate), the two Windows targets, OpenSSL's licence too (the
+//                                                   vendored OpenSSL 3 under SQLCipher is linked into WinVPN.exe), and
+//                                                   wireguard-nt's prebuilt-binaries licence (wireguard.dll ships in the
+//                                                   MSI; scripts/notices/wireguard-nt-LICENSE.txt, the LICENSE.txt of
+//                                                   the zip pinned in scripts/pins/wireguard-nt.txt)
 //
 // Needs the crate sources (`cargo fetch --locked`) and app/ui/node_modules (`npm ci`).
 import { execFileSync } from 'node:child_process';
@@ -16,11 +23,31 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const OUT = join(ROOT, 'THIRD-PARTY-NOTICES.txt');
 const UI = join(ROOT, 'app', 'ui');
+const MACOS_TARGETS = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
+const WINDOWS_TARGETS = ['x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'];
+
+function usage(message) {
+  console.error(`${message} (usage: third-party-notices.mjs [--os macos|windows] [--check])`);
+  process.exit(2);
+}
+let OS = 'macos';
+let CHECK = false;
+for (let args = process.argv.slice(2); args.length > 0; args = args.slice(1)) {
+  if (args[0] === '--check') CHECK = true;
+  else if (args[0] === '--os') {
+    if (args[1] !== 'macos' && args[1] !== 'windows') usage('--os needs macos or windows');
+    OS = args[1];
+    args = args.slice(1);
+  } else usage(`unknown option: ${args[0]}`);
+}
+const WINDOWS = OS === 'windows';
+const PRODUCT = WINDOWS ? 'WinVPN' : 'MacVPN';
+const OUT_NAME = WINDOWS ? 'THIRD-PARTY-NOTICES.windows.txt' : 'THIRD-PARTY-NOTICES.txt';
+const OUT = join(ROOT, OUT_NAME);
 const ROOT_PACKAGES = ['macvpn-app', 'macvpn-helper'];
-const TARGETS = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
-const OTHER_TARGETS = ['x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'];
+const TARGETS = WINDOWS ? WINDOWS_TARGETS : MACOS_TARGETS;
+const OTHER_TARGETS = WINDOWS ? MACOS_TARGETS : WINDOWS_TARGETS;
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-._].*)?$/i;
 const RULE = '='.repeat(100);
 
@@ -82,7 +109,10 @@ function crates() {
     while (queue.length > 0) {
       const node = nodes.get(queue.shift());
       for (const dep of node?.deps ?? []) {
-        if (!dep.dep_kinds.some((k) => k.kind === null)) continue;
+        // A build dependency is a tool, not linked; except openssl-src on Windows, whose OpenSSL sources it builds
+        // into a static library that ends up in WinVPN.exe.
+        const linked = dep.dep_kinds.some((k) => k.kind === null || (WINDOWS && k.kind === 'build' && dep.name === 'openssl_src'));
+        if (!linked) continue;
         if (seen.has(dep.pkg)) continue;
         seen.add(dep.pkg);
         queue.push(dep.pkg);
@@ -156,25 +186,57 @@ function section(title, list) {
   return lines.join('\n');
 }
 
-function sqlcipherNotice(rust) {
-  const sys = rust.find((c) => c.name === 'libsqlite3-sys');
-  if (!sys) throw new Error('libsqlite3-sys is not a dependency');
-  const home = process.env.CARGO_HOME ?? join(process.env.HOME, '.cargo');
+/// A licence file inside a crate's registry source (`relative`, '/'-separated), normalized.
+function registryFile(rust, crate, relative, what) {
+  const found = rust.find((c) => c.name === crate);
+  if (!found) throw new Error(`${crate} is not a dependency`);
+  const home = process.env.CARGO_HOME ?? join(process.env.HOME ?? process.env.USERPROFILE, '.cargo');
   const registry = join(home, 'registry', 'src');
   for (const index of readdirSync(registry).sort()) {
-    const file = join(registry, index, `libsqlite3-sys-${sys.version}`, 'sqlcipher', 'LICENSE');
+    const file = join(registry, index, `${crate}-${found.version}`, ...relative.split('/'));
     if (existsSync(file)) return normalize(readFileSync(file, 'utf8'));
   }
-  throw new Error(`the SQLCipher licence of libsqlite3-sys ${sys.version} was not found (cargo fetch --locked)`);
+  throw new Error(`the ${what} licence of ${crate} ${found.version} was not found (cargo fetch --locked)`);
+}
+
+function sqlcipherNotice(rust) {
+  return registryFile(rust, 'libsqlite3-sys', 'sqlcipher/LICENSE', 'SQLCipher');
+}
+
+/// Windows only: SQLCipher's crypto provider there is OpenSSL 3, built from openssl-src and linked statically.
+function opensslNotice(rust) {
+  const src = rust.find((c) => c.name === 'openssl-src');
+  const version = src?.version.split('+')[1] ?? 'unknown';
+  return [
+    RULE,
+    `OpenSSL ${version} (vendored through openssl-src, SQLCipher's crypto provider, linked into WinVPN.exe)`,
+    RULE,
+    '',
+    registryFile(rust, 'openssl-src', 'openssl/LICENSE.txt', 'OpenSSL'),
+  ];
+}
+
+/// Windows only: wireguard.dll, the prebuilt wireguard-nt DLL of the pinned zip, under its own licence.
+function wireguardNtNotice() {
+  const pins = readFileSync(join(ROOT, 'scripts', 'pins', 'wireguard-nt.txt'), 'utf8');
+  const version = pins.split('\n').filter((l) => l.startsWith('version\t')).map((l) => l.slice('version\t'.length));
+  if (version.length !== 1 || !/^[0-9][0-9.]*$/.test(version[0])) throw new Error('scripts/pins/wireguard-nt.txt: no version');
+  return [
+    RULE,
+    `wireguard-nt ${version[0]} (wireguard.dll, the prebuilt signed DLL of WireGuard LLC, used by the WinVPN Service)`,
+    RULE,
+    '',
+    normalize(readFileSync(join(ROOT, 'scripts', 'notices', 'wireguard-nt-LICENSE.txt'), 'utf8')),
+  ];
 }
 
 function render() {
   const rust = crates();
   const js = jsPackages();
   return [
-    'MacVPN — third-party notices',
+    `${PRODUCT} — third-party notices`,
     '',
-    'MacVPN includes the software listed below. Each part is used under its own licence, reproduced here.',
+    `${PRODUCT} includes the software listed below. Each part is used under its own licence, reproduced here.`,
     'This file is generated by scripts/third-party-notices.mjs; do not edit it by hand.',
     '',
     RULE,
@@ -189,19 +251,22 @@ function render() {
     'SQLCipher is based on SQLite. The SQLite source code is in the public domain: its authors disclaim copyright',
     'to it (https://sqlite.org/copyright.html).',
     '',
-    section('Rust crates (the MacVPN app and the mvpn helper)', rust),
+    ...(WINDOWS ? opensslNotice(rust) : []),
+    ...(WINDOWS ? wireguardNtNotice() : []),
+    section(WINDOWS ? 'Rust crates (the WinVPN app and the WinVPN Service)' : 'Rust crates (the MacVPN app and the mvpn helper)', rust),
     section('JavaScript packages (the app’s web view)', js),
   ].join('\n');
 }
 
 const text = render();
-if (process.argv.includes('--check')) {
+if (CHECK) {
   const current = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
   if (current !== text) {
-    console.error('THIRD-PARTY-NOTICES.txt is not up to date: run node scripts/third-party-notices.mjs');
+    const option = WINDOWS ? ' --os windows' : '';
+    console.error(`${OUT_NAME} is not up to date: run node scripts/third-party-notices.mjs${option}`);
     process.exit(1);
   }
-  console.log('THIRD-PARTY-NOTICES.txt is up to date');
+  console.log(`${OUT_NAME} is up to date`);
 } else {
   writeFileSync(OUT, text);
   console.log(`wrote ${OUT}`);

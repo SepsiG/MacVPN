@@ -1,0 +1,43 @@
+# OpenVPN Community, pinned for WinVPN (docs/superpowers/plans/2026-10-22-winvpn-2b-service-openvpn-wireguard.md, Task 10,
+# decision 4 as amended on 2026-10-22: OpenVPN 2.7.8 with DCO and TAP-Windows6, no Wintun).
+# Since fix4 (2026-10-24) the pinned MSI is the minimum and the offline/bootstrap fallback: System Status offers the
+# newest official MSI it finds on https://openvpn.net/community-downloads/ (Authenticode signer checked, no pin).
+# Fields: key<TAB>value. Changing a pin: new MSIs verified with GnuPG and Authenticode, then this file, then
+# `cargo test -p macvpn-helper --test ovpn_windows` with WINVPN_WRITE_PINS=1 regenerates crates/platform-win/src/pure/openvpn_pins.rs.
+# 2.7.8-I001 (https://openvpn.net/community-downloads/; MSIs Last-Modified 2026-10-07; swupdate.openvpn.org redirects
+# to swupdate.openvpn.net). OpenVPN 2.7 removed Wintun and ignores --windows-driver (Changes.rst, options.c of v2.7.8).
+# GnuPG: good signatures (MSIs and openvpn-2.7.8.tar.gz) by subkey 33DA8C9EAE0EAE8C73172C10822F6DF096D04874 of the
+# OpenVPN security mailing list key F554A3687412CFFEBDEFE0A312F5F7B42F2B01E7
+# (https://swupdate.openvpn.net/community/keys/security.key.asc).
+# Authenticode: both MSIs, and openvpn.exe and openvpnserv.exe (2.7.8.0) inside them, Valid, signer "OpenVPN Inc."
+# (leaf SHA-1 thumbprint 32BF9F103192726DAA416FEF348066E5F2D831CF, valid 2025-12-04 to 2026-12-03, issued by
+# DigiCert Trusted G4 Code Signing RSA4096 SHA384 2021 CA1, SHA-1 thumbprint 7B0F360B775F76C94A12CA48445AA2D2A875701C).
+# signer_ca_spki_sha256 (M-1 of the 2.0.0 security review, 2026-10-25): an MSI (pinned or the newest official one) and
+# openvpn.exe are accepted only when their Authenticode chain has a CA above the signer whose key's SHA-256 (of the
+# DER SubjectPublicKeyInfo) is in this comma-separated list: an "OpenVPN Inc." certificate from any other CA (an
+# operator CA trusted on the PC, a TLS-inspection root) is refused. The pinned key is DigiCert Trusted G4 Code Signing
+# RSA4096 SHA384 2021 CA1's (valid to 2036-04-28), read with `openssl pkcs7 -print_certs` from the MSIs'
+# \x05DigitalSignature stream: the 2.7.8, 2.6.15 and 2.6.0 MSIs (leaf keys 6b2799…be01 and 75d408…248b) all chain
+# to it. When OpenVPN Inc. changes CA, newer MSIs and openvpn.exe are refused until a WinVPN release adds the new
+# CA's key here (then WINVPN_WRITE_PINS=1 as above): docs/RELEASING.md, "Signer pins".
+# Features (Feature table, the same in both MSIs; ProductVersion 2.7.801, INSTALLLEVEL 2): OpenVPN = openvpn.exe,
+# its DLLs, tapctl.exe and, inseparably, openvpnserv.exe with the OpenVPNServiceInteractive service (start type
+# automatic, ServiceInstall table; WinVPN disables and stops it after an install WinVPN made, never on an existing
+# installation: decision 4, Task 17); Drivers; Drivers.OvpnDco (level 0,
+# raised to 1 by WIN102004; ovpn-dco.sys 2.8.13.0, nx20 and nx21 builds, signed by Microsoft Windows Hardware
+# Compatibility Publisher); Drivers.TAPWindows6 (merge module tap0901 9.27.0). No Wintun feature in either MSI.
+# Left out: OpenVPN.GUI, OpenVPN.GUI.OnLogon, OpenVPN.Service, OpenVPN.PLAP.Register, OpenVPN.Documentation,
+# OpenVPN.SampleCfg, OpenSSL, EasyRSA.
+# min_version 2.6.0: the service passes only options OpenVPN has had since 2.6.0 (DCO: no driver option; TAP-Windows6:
+# --disable-dco), which select the same driver in 2.6 and 2.7.
+version	2.7.8
+min_version	2.6.0
+signer	OpenVPN Inc.
+signer_ca_spki_sha256	4448d301cce6845000da99faf2b70baf3637601e9e1f940137943fe811a9ab32
+interactive_service	OpenVPNServiceInteractive
+msi_x64_url	https://swupdate.openvpn.org/community/releases/OpenVPN-2.7.8-I001-amd64.msi
+msi_x64_sha256	1ea61a3056905b90607d4b0f084c04e5cf3043e07cf192d9cd44b0474f29cc49
+msi_x64_features	OpenVPN,Drivers,Drivers.OvpnDco,Drivers.TAPWindows6
+msi_arm64_url	https://swupdate.openvpn.org/community/releases/OpenVPN-2.7.8-I001-arm64.msi
+msi_arm64_sha256	6fc0e8899cc5275ee297fb837bc84aa2bc49f8ef96d7ad93ee3fee1e7163a25c
+msi_arm64_features	OpenVPN,Drivers,Drivers.OvpnDco,Drivers.TAPWindows6

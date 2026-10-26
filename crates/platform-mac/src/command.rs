@@ -1,4 +1,5 @@
-//! Running external commands (port of `CommandRunner.swift`).
+//! Running external commands (port of `CommandRunner.swift`). The [`CommandRunner`] trait and its result and error
+//! types are platform-api's (`macvpn_platform_api::curl`, shared with Windows), re-exported here.
 //!
 //! [`ProcessCommandRunner`] never blocks on a pipe: one loop `poll`s the child's stdin (while there is payload
 //! left), stdout and stderr, all non-blocking, and checks the exit, the timeout and the cancellation flag between
@@ -6,7 +7,7 @@
 //! inherited pipes afterwards is not waited for. A timeout or a cancellation sends SIGTERM, then SIGKILL after 2 s.
 
 use crate::sys;
-use macvpn_core::l10n::{self, Arg};
+pub use macvpn_platform_api::curl::{CommandError, CommandResult, CommandRunner};
 use std::collections::BTreeMap;
 use std::io::{self, Read, Write};
 use std::os::fd::AsRawFd;
@@ -14,76 +15,6 @@ use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct CommandResult {
-    pub exit_code: i32,
-    pub stdout: String,
-    pub stderr: String,
-}
-
-impl CommandResult {
-    pub fn new(exit_code: i32, stdout: &str, stderr: &str) -> Self {
-        CommandResult { exit_code, stdout: stdout.to_string(), stderr: stderr.to_string() }
-    }
-
-    pub fn exit(exit_code: i32) -> Self {
-        CommandResult { exit_code, ..Default::default() }
-    }
-
-    pub fn stdout(stdout: &str) -> Self {
-        CommandResult { stdout: stdout.to_string(), ..Default::default() }
-    }
-}
-
-#[derive(Debug)]
-pub enum CommandError {
-    /// Stopped after the runner's timeout (the executable path).
-    TimedOut(String),
-    /// Stopped by [`CancelToken::cancel`] (Swift `CancellationError`).
-    Cancelled,
-    /// The process could not be started or watched.
-    Io(io::Error),
-}
-
-impl PartialEq for CommandError {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (CommandError::TimedOut(a), CommandError::TimedOut(b)) => a == b,
-            (CommandError::Cancelled, CommandError::Cancelled) => true,
-            (CommandError::Io(a), CommandError::Io(b)) => a.kind() == b.kind(),
-            _ => false,
-        }
-    }
-}
-
-impl std::fmt::Display for CommandError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CommandError::TimedOut(executable) => {
-                f.write_str(&l10n::tr("The command was stopped after a timeout: %@", &[Arg::Str(executable)]))
-            }
-            // Swift's `CancellationError` description.
-            CommandError::Cancelled => {
-                f.write_str("The operation couldn’t be completed. (Swift.CancellationError error 1.)")
-            }
-            CommandError::Io(e) => write!(f, "{e}"),
-        }
-    }
-}
-
-impl std::error::Error for CommandError {}
-
-/// Runs one command. Behind a trait so tests (and the UI) can substitute recorded answers.
-pub trait CommandRunner: Send + Sync {
-    fn run(&self, executable: &str, arguments: &[String], stdin: Option<&str>) -> Result<CommandResult, CommandError>;
-
-    /// [`CommandRunner::run`] with raw bytes on stdin (`mvpn up`'s framed config). The real runner writes them as
-    /// they are, without a copy; the default (test doubles) passes them on as (lossy) text.
-    fn run_bytes(&self, executable: &str, arguments: &[String], stdin: &[u8]) -> Result<CommandResult, CommandError> {
-        self.run(executable, arguments, Some(&String::from_utf8_lossy(stdin)))
-    }
-}
 
 /// The runners' time limits (seconds).
 pub struct RunnerTimeouts;

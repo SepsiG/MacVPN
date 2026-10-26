@@ -2,10 +2,11 @@
 
 - `src-tauri/`: the Rust shell (`macvpn-app`): tray icon, menu popover, windows and the IPC commands. It reaches
   the operating system only through `macvpn-platform-api`: `src-tauri/src/platform/` (the app's only
-  `cfg(target_os)`) creates the platform (`MacPlatform` from `macvpn-platform-mac` on macOS, the `WinPlatform` stub
-  from `macvpn-platform-win` elsewhere) and holds the Tauri glue (native window handle, activation policy, the
-  macOS run events) and the smoke driver. On Windows, `platform::supported()` refuses and the app exits 1 before
-  any window opens (phase 1).
+  `cfg(target_os)`) creates the platform (`MacPlatform` from `macvpn-platform-mac` on macOS, `WinPlatform` from
+  `macvpn-platform-win` on Windows) and holds the Tauri glue (native window handle, activation policy, the macOS
+  run events, the Windows single instance and its forwarded files) and the smoke driver (macOS). On Windows the app
+  is WinVPN (a preview without the VPN engine, phase 2a): no app menu, the popover above the taskbar icon, a tinted
+  tray icon, the engine note in System Status.
 - `ui/`: the web UI (Svelte 5 + TypeScript + Vite). Texts come from `crates/core/l10n/strings.json` (scope `app`
   only is bundled); the language is the core's rule, sent by the backend in the view model. The OS and the product
   name (for the per-OS text variants and the Cmd / Ctrl shortcuts) come from the `get_platform` command at start.
@@ -14,7 +15,7 @@
 
 The rest of the repository: `crates/core` (platform-independent logic and the EN/HU text table), `crates/platform-api`
 (the platform traits and the product identity), `crates/platform-mac` (the macOS platform), `crates/platform-win` (the
-Windows stub), `crates/helper` (the root binary `mvpn`), `scripts/` (build, test and signing scripts). How they fit
+Windows platform), `crates/winsys` (its Win32 bindings, shared with core), `crates/helper` (the root binary `mvpn`), `scripts/` (build, test and signing scripts). How they fit
 together: [`docs/architecture.md`](../docs/architecture.md). The 0.x Swift app is only in the git history (up to tag
 `v0.4.0`).
 
@@ -93,13 +94,15 @@ libsqlite3-sys` if one was set); `scripts/build-dmg.sh` unsets all of them itsel
 - `scripts/smoke-manage.sh`: the smoke test of the real windows (below), with `SMOKE_LANG=en` and `SMOKE_LANG=hu`
 - `scripts/check-windows.sh`: the Windows compile check that runs on a Mac (`macvpn-core` without the vault,
   `macvpn-helper`, the control client; both Windows targets, debug and release). The app, app-core, the vault and
-  the platform crates need an MSVC toolchain for their C code, so they are checked on Windows only in CI (the
-  `windows` and `windows-node` jobs in `.github/workflows/ci.yml`)
+  the platform crates need an MSVC toolchain for their C code, so they are checked on Windows: in CI (the
+  `windows` and `windows-node` jobs in `.github/workflows/ci.yml`) and on the Windows test machine
+  (`scripts/win-remote.sh test`, `scripts/win-remote.sh run 'cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-app'`)
+- `scripts/check-ignored.sh`: no test is ignored on one OS only
 - `crates/app-core/tests/cfg_rule.rs` (in `cargo test`): an OS `cfg` in this crate only under `src/platform/`,
   and no `unsafe` at all
 - `scripts/bundle-baseline.sh dist/MacVPN.app` and `node scripts/l10n-baseline.mjs --check`: the built bundle and
   the macOS texts compared with the 1.4.0 baseline
-- the manual checklist: `docs/manual-test-checklist.md`
+- the manual checklist: `docs/manual-test-checklist.md` (its WinVPN section for what needs a Windows desktop)
 
 ## Running a development build without touching real data
 
@@ -118,6 +121,20 @@ administrator prompt was cancelled, a web sign-in URL is not opened, preferences
 is registered, no notification is posted (notifications need an app bundle). The update steps run against
 `<sandbox>/tmp` (nothing is downloaded or mounted; the helper script is written, never run): with nothing to
 ask before quitting, "Download and Install" only quits the app.
+
+On Windows (at the desktop, in a Command Prompt; the sandbox keeps the vault key and the preferences in memory,
+never in Credential Manager or `%LOCALAPPDATA%\WinVPN`, and registers no login item):
+
+```bat
+cd app\ui && npm run dev
+rem in a second Command Prompt, from the repository root:
+cargo build -p macvpn-app
+set MACVPN_SANDBOX_HOME=%TEMP%\winvpn-sandbox
+target\debug\macvpn-app.exe
+```
+
+Toasts need the AppUserModelID of the installed MSI's Start-menu shortcut, so test them with the MSI
+(`scripts/build-msi.sh`, see `docs/architecture.md`, "The WinVPN MSIs").
 
 ### Smoke test of the windows
 
@@ -167,10 +184,14 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
 - CSP: `default-src 'self'`, scripts / styles / images / fonts only from the app, IPC only, no `eval`, no
   objects, frames or forms; `freezePrototype`; the asset protocol is off; no remote URL is ever loaded.
 - Capabilities: only the app's own commands (generated as `allow-<command>` by `build.rs`) and listening to
-  events. `main.json` (the menu, Connections, System Status and Update windows) grants every command but
-  `answer_prompt` and `prompt_ready`; `prompt.json` (the `prompt-*` windows) grants only `get_view_model`,
-  `prompt_ready` and `answer_prompt`. No core
-  window / webview / path API, no plugin (a test keeps the files to exactly the generated commands). Every
+  events. Each main window has its own file granting only the commands its UI uses: `menu.json` (the menu
+  popover), `manage.json` (Connections), `setup.json` (System Status) and `update.json` (Update);
+  `prompt.json` (the `prompt-*` windows) grants only `get_view_model`, `prompt_ready` and `answer_prompt`. The
+  commands that change the machine or delete data also check the calling window's label in Rust (`guard.rs`):
+  `ras_trust_ca`, `ras_allow_l2tp_nat`, `make_l2tp_copy`, `delete_connection`, `folder_delete`,
+  `export_connection`, `control_set_enabled`, `control_set_allowed` and `control_revoke` (Connections only);
+  the `setup_install_*` commands, `setup_uninstall`, `setup_open_system_uninstall` and `quit_after_uninstall`
+  (System Status only); `update_install` (Update only). No core window / webview / path API, no plugin (a test keeps the files to exactly the generated commands). Every
   window's capability also grants `get_platform` (read-only, no input; it returns the OS and the product name).
 - Commands: `get_view_model`, `connect` (with the Option-click debug flag), `disconnect`, `pin`, `unpin`,
   `move_pinned`, `open_window`, `set_menu_height`, `quit`, `check_for_updates`, `set_update_option`,
@@ -256,6 +277,7 @@ their window closes; the MFA prompt broker blocks the connecting thread until th
 
 ## Tray icons
 
-`src-tauri/icons/tray/*.png` are template images rendered from SF Symbols (the same symbols as 0.x). To regenerate
+`src-tauri/icons/tray/*.png` are template images rendered from SF Symbols (the same symbols as 0.x); on Windows
+the same images are tinted at runtime (white on a dark taskbar, black on a light one). To regenerate
 them (needs the Xcode command line tools for `swift`; not part of the build):
 `swift scripts/make-tray-icons.swift app/src-tauri/icons/tray`.

@@ -19,8 +19,10 @@
   checks.removed = !names().includes('Smoke Live A');
   checks.others = names().includes('Zz Control VPN');
   // The version line under the debug hint: the backend's version through the view model.
+  // The product's name (MacVPN, WinVPN) as the platform reports it.
   const version = (await invoke('get_view_model')).appVersion;
-  checks.version = !!version && document.querySelector('.version')?.textContent === `MacVPN ${version}`;
+  const product = (await invoke('get_platform')).productName;
+  checks.version = !!version && document.querySelector('.version')?.textContent === `${product} ${version}`;
   // Not clipped: the window's height (set_menu_height, from the measured content) leaves the version line and
   // the bottom padding inside the page.
   const fits = () => {

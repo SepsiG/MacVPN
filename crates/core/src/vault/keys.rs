@@ -18,7 +18,6 @@ use chacha20poly1305::aead::AeadInOut;
 use chacha20poly1305::{KeyInit, Tag, XChaCha20Poly1305, XNonce};
 use serde_json::{Value, json};
 use std::fmt;
-use std::fs;
 use std::io::{self, Read};
 use std::path::Path;
 use unicode_segmentation::UnicodeSegmentation;
@@ -304,7 +303,7 @@ impl KeyFile {
             Err(e) if fsx::is_not_regular_file(&e) => None,
             Err(e) => return Err(KeyError::Io(e)),
         };
-        let dir_owner = fsx::owner(&fs::metadata(dir).map_err(KeyError::Io)?).map_err(KeyError::Io)?;
+        let dir_owner = fsx::owner(&fsx::stat_path(dir, Follow::Yes).map_err(KeyError::Io)?).map_err(KeyError::Io)?;
         let file = match opened {
             Some((file, meta)) if fsx::owner(&meta).map_err(KeyError::Io)? == dir_owner => file,
             _ => {

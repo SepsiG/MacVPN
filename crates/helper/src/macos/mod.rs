@@ -7,7 +7,8 @@
 //!                    (stdin: the config, then the secrets — see below)
 //! mvpn down    <openvpn|wireguard|strongswan|sstp> <id> [--dry-run]
 //! mvpn respond openvpn <id>   (stdin: kind=crv1|static|webauth-ack|cancel, response=<value>)
-//! mvpn status
+//! mvpn status                  (also restores the DNS of connections that no longer run, see `dns`)
+//! mvpn dns-reconcile           (only that)
 //! mvpn version
 //!   any of them: --lang <en|hu>
 //! mvpn validate …              (the old mvpn-validate, see `validate`; the config on stdin, no secrets)
@@ -59,6 +60,7 @@ macro_rules! err {
 }
 
 mod ctx;
+mod dns;
 mod exec;
 mod fsx;
 mod hook_dns;
@@ -168,7 +170,14 @@ pub fn main() -> i32 {
             0
         }
         "status" => {
+            // The app asks for the status at start (also after a reboot) and on every refresh: DNS held by a
+            // connection that no longer runs is restored here (skipped if the DNS ledger is busy).
+            dns::reconcile(&ctx.s, false);
             out_raw(&status::render(&ctx.s));
+            0
+        }
+        "dns-reconcile" => {
+            dns::reconcile(&ctx.s, true);
             0
         }
         "respond" => {
@@ -234,7 +243,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_8() {
-        assert_eq!(VERSION.trim(), "8");
+    fn version_is_9() {
+        assert_eq!(VERSION.trim(), "9");
     }
 }

@@ -1,0 +1,18 @@
+{
+  "identifier": "update",
+  "description": "The Update window (update, local content only): Download and Install (it also checks the calling window in Rust), the release page, dismissing the notice, closing itself and the quit questions; the view model, the platform (its texts) and listening to events.",
+  "windows": [
+    "update"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view-model",
+    "allow-get-platform",
+    "allow-close-window",
+    "allow-quit",
+    "allow-update-install",
+    "allow-update-open-page",
+    "allow-update-dismiss-notice"
+  ]
+}

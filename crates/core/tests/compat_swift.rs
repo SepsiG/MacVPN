@@ -90,7 +90,6 @@ fn swift_written_meta_has_the_expected_fields() {
 
 /// Rust writes exactly what Swift wrote for the same values.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn rust_writes_what_swift_writes() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -121,7 +120,6 @@ fn rust_writes_what_swift_writes() {
 
 /// Hand-written (older, newer, hand-edited, broken) `meta.json` files load exactly as in Swift.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn meta_inputs_decode_like_swift() {
     for input in json_files(&fixtures().join("inputs/meta")) {
         let name = input.file_name().unwrap();
@@ -147,7 +145,6 @@ fn meta_inputs_decode_like_swift() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn swift_written_ranking_round_trips_byte_for_byte() {
     for path in json_files(&fixtures().join("connection-order")) {
         let tmp = TempDir::new();
@@ -160,7 +157,6 @@ fn swift_written_ranking_round_trips_byte_for_byte() {
 
 /// The same operations give the same scores, bit for bit, and the same file.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ranking_arithmetic_matches_swift() {
     let t0 = Date::from_time_interval_since_1970(1_800_000_000.0);
     let day = 24.0 * 60.0 * 60.0;
@@ -199,7 +195,6 @@ fn ranking_arithmetic_matches_swift() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ranking_inputs_decode_like_swift() {
     for input in json_files(&fixtures().join("inputs/connection-order")) {
         let name = input.file_name().unwrap();
@@ -211,7 +206,6 @@ fn ranking_inputs_decode_like_swift() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_otp_matches_swift() {
     let tmp = TempDir::new();
     let store = SystemOTPStore::new(tmp.path().join("system-otp.json"));
@@ -235,7 +229,6 @@ fn system_otp_matches_swift() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn system_otp_inputs_decode_like_swift() {
     for input in json_files(&fixtures().join("inputs/system-otp")) {
         let name = input.file_name().unwrap();
@@ -250,7 +243,6 @@ fn system_otp_inputs_decode_like_swift() {
 /// default comparator must agree on every pair Swift distinguishes (ties keep the directory order in both).
 /// The exact per-locale order (e.g. Hungarian `cs`, `ö`) comes from the platform comparator.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn default_name_order_agrees_with_swift_en_us() {
     let swift: Vec<String> = read(&fixtures().join("list-order-en_US.txt")).lines().map(str::to_string).collect();
     assert_eq!(swift.len(), 23);

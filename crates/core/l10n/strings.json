@@ -22,6 +22,17 @@
       "hu": "%@ és %@ átkerült és ellenőrizve lett. A régi másolatok a folytatáskor törlődnek.",
       "scope": "app"
     },
+    "%@ bytes of the engine log were left out (log size limit)": {
+      "hu": "%@ bájt kimaradt a motor naplójából (naplóméret-korlát)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "%@ is not installed. Install it in System Status first.": {
+      "hu": "A(z) %@ nincs telepítve. Előbb telepítsd a Rendszerállapot ablakban.",
+      "scope": "app"
+    },
     "%@ not found": {
       "hu": "%@ nem található",
       "scope": "core"
@@ -185,9 +196,12 @@
     "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).": {
       "hu": "A .mobileconfig profil nem importálható a MacVPN-be. Kattints rá duplán a Finderben: a macOS profilként telepíti, utána a Rendszerbeállítások → Általános → Eszközkezelés (Profilok) alatt hagyd jóvá.",
       "scope": "core",
-      "only": [
-        "macos"
-      ]
+      "variants": {
+        "windows": {
+          "en": "A .mobileconfig profile cannot be imported into WinVPN. Create the connection with New → L2TP, or restore a backup that has it.",
+          "hu": "A .mobileconfig profil nem importálható a WinVPN-be. Hozd létre a kapcsolatot az Új → L2TP menüponttal, vagy állíts vissza egy mentést, amelyben benne van."
+        }
+      }
     },
     "A VPN connection dropped": {
       "hu": "Egy VPN-kapcsolat megszakadt",
@@ -199,6 +213,553 @@
     },
     "A VPN connection needs authentication": {
       "hu": "Egy VPN-kapcsolat hitelesítést kér",
+      "scope": "app"
+    },
+    "%@ connected": {
+      "hu": "%@: csatlakozva",
+      "scope": "app"
+    },
+    "%@ could not reconnect": {
+      "hu": "%@: nem sikerült újracsatlakozni",
+      "scope": "app"
+    },
+    "%@ disconnected": {
+      "hu": "%@: megszakadt a kapcsolat",
+      "scope": "app"
+    },
+    "%@ not reconnected": {
+      "hu": "%@: nem csatlakozott újra",
+      "scope": "app"
+    },
+    "%@ reconnected": {
+      "hu": "%@: újracsatlakozva",
+      "scope": "app"
+    },
+    "A VPN connection connected": {
+      "hu": "Egy VPN-kapcsolat csatlakozott",
+      "scope": "app"
+    },
+    "A VPN connection could not reconnect": {
+      "hu": "Egy VPN-kapcsolatnak nem sikerült újracsatlakozni",
+      "scope": "app"
+    },
+    "A VPN connection reconnected": {
+      "hu": "Egy VPN-kapcsolat újracsatlakozott",
+      "scope": "app"
+    },
+    "A VPN connection was not reconnected": {
+      "hu": "Egy VPN-kapcsolat nem csatlakozott újra",
+      "scope": "app"
+    },
+    "Another active strongSwan connection already defines %@": {
+      "hu": "Egy másik aktív strongSwan-kapcsolat már definiálja ezt: %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Another active strongSwan connection already has a secret for the same identities (set a different remote id)": {
+      "hu": "Egy másik aktív strongSwan-kapcsolat már tart titkot ugyanezekhez az azonosítókhoz (adj meg eltérő remote id-t)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Another strongSwan connection is being set up or closed (lock: %@)": {
+      "hu": "Egy másik strongSwan-kapcsolat éppen felépül vagy bomlik (zár: %@)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Applying settings…": {
+      "hu": "Beállítások alkalmazása…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Authenticated": {
+      "hu": "Hitelesítve",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Authenticating again…": {
+      "hu": "Újrahitelesítés…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Authenticating…": {
+      "hu": "Hitelesítés…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Authentication acknowledged": {
+      "hu": "Hitelesítés nyugtázva",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Authentication status received": {
+      "hu": "Hitelesítési állapot megérkezett",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Before you uninstall: disconnects every connection and removes launch at login and WinVPN's Windows VPN entries; optionally your connections too.": {
+      "hu": "Eltávolítás előtt: bont minden kapcsolatot, és törli az indítást bejelentkezéskor és a WinVPN Windows VPN-bejegyzéseit; ha kéred, a kapcsolataidat is.",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Callback step (not used by VPNs): %@": {
+      "hu": "Visszahívási lépés (VPN-nél nem használt): %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Connected": {
+      "hu": "Csatlakozva",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Connected, IPv4 %@": {
+      "hu": "Csatlakozva, IPv4: %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Connecting to %@…": {
+      "hu": "Kapcsolódás ide: %@…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Disconnected": {
+      "hu": "Bontva",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "IP configuration done": {
+      "hu": "IP-beállítások kész",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Link established": {
+      "hu": "Az összeköttetés létrejött",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Measuring link speed…": {
+      "hu": "Kapcsolati sebesség mérése…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "No computer certificate for IKEv2 was found. An administrator must import it (see the user guide).": {
+      "hu": "Nem található számítógép-tanúsítvány az IKEv2-höz. Egy rendszergazdának kell importálnia (lásd a felhasználói útmutatót).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Opening port…": {
+      "hu": "Port megnyitása…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Port opened": {
+      "hu": "Port megnyitva",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Projecting (IP configuration)…": {
+      "hu": "Projekció (IP-beállítások)…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "RAS state %@": {
+      "hu": "RAS-állapot: %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Remove": {
+      "hu": "Eltávolítás",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Remove WinVPN from This Account": {
+      "hu": "WinVPN eltávolítása erről a fiókról",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Remove WinVPN from This Account…": {
+      "hu": "WinVPN eltávolítása erről a fiókról…",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "The Windows service %@ is disabled. An administrator must set it to Manual (services.msc).": {
+      "hu": "A(z) %@ Windows-szolgáltatás le van tiltva. Egy rendszergazdának Kézi indításra kell állítania (services.msc).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "These are removed from this Windows account:\n• Launch at Login\n• WinVPN's Windows VPN entries and the pre-shared keys Windows keeps for them\n\nActive connections are disconnected first. Your own Windows VPNs are kept. Then Settings → Apps → Installed apps opens: uninstall WinVPN there (the WinVPN Service and the program files go with it).": {
+      "hu": "Ezek törlődnek erről a Windows-fiókról:\n• az indítás bejelentkezéskor\n• a WinVPN Windows VPN-bejegyzései és a Windows által hozzájuk tárolt előre megosztott kulcsok\n\nAz aktív kapcsolatok előbb bontódnak. A saját Windows VPN-jeid megmaradnak. Utána megnyílik a Gépház → Alkalmazások → Telepített alkalmazások: ott távolítsd el a WinVPN-t (a WinVPN szolgáltatás és a programfájlok vele mennek).",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "This Windows VPN no longer exists. It may have been removed in Settings → Network & internet → VPN.": {
+      "hu": "Ez a Windows VPN már nem létezik. Lehet, hogy törölték a Gépházban: Hálózat és internet → VPN.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "reloading the other strongSwan connections": {
+      "hu": "a többi strongSwan-kapcsolat újratöltése",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Retrying authentication…": {
+      "hu": "Hitelesítés újrapróbálása…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Server reached: %@": {
+      "hu": "Szerver elérve: %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Signing in to the network…": {
+      "hu": "Bejelentkezés a hálózatba…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Sub-entry connected": {
+      "hu": "Albejegyzés csatlakozva",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Sub-entry disconnected": {
+      "hu": "Albejegyzés bontva",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The IPsec negotiation with the server failed. Check the pre-shared key and the server’s IPsec settings, or the server did not answer (check the address and that UDP 500/4500 reach it).": {
+      "hu": "Az IPsec-egyeztetés a szerverrel nem sikerült. Ellenőrizd az előre megosztott kulcsot és a szerver IPsec-beállításait – vagy a szerver nem válaszolt (ellenőrizd a címet, és hogy az UDP 500/4500 eléri-e).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The PPP negotiation with the server failed. Ask your VPN administrator which authentication and encryption the server needs.": {
+      "hu": "A PPP-egyeztetés a szerverrel nem sikerült. Kérdezd meg a VPN-rendszergazdát, milyen hitelesítést és titkosítást vár a szerver.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The connection was cancelled.": {
+      "hu": "A kapcsolódás megszakítva.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The connection was closed (by the server or the network).": {
+      "hu": "A kapcsolat bezárult (a szerver vagy a hálózat zárta le).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The password has expired": {
+      "hu": "A jelszó lejárt",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server address must not contain control characters": {
+      "hu": "A szerver címe nem tartalmazhat vezérlőkaraktert",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server accepted none of the IPsec proposals WinVPN offered (%@).": {
+      "hu": "A szerver a WinVPN által kínált IPsec-javaslatok egyikét sem fogadta el (%@).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server accepted none of the IPsec proposals Windows offered.": {
+      "hu": "A szerver a Windows által kínált IPsec-javaslatok egyikét sem fogadta el.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server asks for a new password": {
+      "hu": "A szerver új jelszót kér",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server closed the connection before it was complete.": {
+      "hu": "A szerver a kapcsolat felépülése előtt lezárta azt.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server did not accept the computer certificate.": {
+      "hu": "A szerver nem fogadta el a számítógép-tanúsítványt.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server did not answer on the VPN ports. A firewall may block them, or the server is behind NAT: Windows allows that for L2TP/IPsec only after Allow L2TP Behind NAT… (an administrator confirms).": {
+      "hu": "A szerver nem válaszolt a VPN-portokon. Lehet, hogy tűzfal blokkolja őket, vagy a szerver NAT mögött van: ezt a Windows L2TP/IPsec esetén csak az „L2TP engedélyezése NAT mögött…” után engedi (egy rendszergazda hagyja jóvá).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server did not answer on the VPN ports. A firewall may block them.": {
+      "hu": "A szerver nem válaszolt a VPN-portokon. Lehet, hogy tűzfal blokkolja őket.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server did not answer. Check the server address and your network connection.": {
+      "hu": "A szerver nem válaszolt. Ellenőrizd a szerver címét és a hálózati kapcsolatot.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server’s CA is not trusted by Windows. Use Trust This CA in Windows… in the editor.": {
+      "hu": "A szerver hitelesítésszolgáltatójában (CA) a Windows nem bízik meg. Használd a szerkesztőben „A CA megbízhatóvá tétele a Windowsban…” lehetőséget.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server’s certificate does not match the server address. Use the name in the certificate as the server address.": {
+      "hu": "A szerver tanúsítványa nem egyezik a szerver címével. Szervercímként a tanúsítványban szereplő nevet add meg.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server’s certificate is not issued by a CA Windows trusts. Ask your VPN administrator.": {
+      "hu": "A szerver tanúsítványát nem olyan hitelesítésszolgáltató (CA) adta ki, amelyben a Windows megbízik. Kérdezd a VPN-rendszergazdát.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server’s name could not be resolved. Check the server address and your network’s DNS.": {
+      "hu": "A szerver neve nem oldható fel. Ellenőrizd a szerver címét és a hálózat DNS-beállítását.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server’s policy refused the connection (for example the authentication method). Ask your VPN administrator.": {
+      "hu": "A szerver házirendje elutasította a kapcsolatot (például a hitelesítési mód miatt). Kérdezd a VPN-rendszergazdát.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Waiting for terminal input (not used by VPNs)": {
+      "hu": "Kézi bevitelre vár (VPN-nél nem használt)",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows VPN entry (debug mode):": {
+      "hu": "Windows VPN-bejegyzés (hibakereső mód):",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows asks for EAP input": {
+      "hu": "A Windows EAP-adatokat kér",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows could not check whether the server’s certificate was revoked (the revocation server is unreachable).": {
+      "hu": "A Windows nem tudta ellenőrizni, hogy a szerver tanúsítványát visszavonták-e (a visszavonási szerver nem érhető el).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows error %@ (see the log)": {
+      "hu": "Windows-hiba: %@ (lásd a naplót)",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Built into Windows": {
+      "hu": "A Windows része",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Save this connection again: its Windows VPN entry is missing or damaged.": {
+      "hu": "Mentsd el újra ezt a kapcsolatot: a Windows VPN-bejegyzése hiányzik vagy sérült.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The Windows VPN entry could not be written: %@": {
+      "hu": "A Windows VPN-bejegyzés nem írható: %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "This connection is already connecting.": {
+      "hu": "Ez a kapcsolat már kapcsolódik.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "WinVPN's folder %@ is not a private folder of this user. Delete it, then start WinVPN again.": {
+      "hu": "A WinVPN %@ mappája nem ennek a felhasználónak a saját mappája. Töröld, majd indítsd újra a WinVPN-t.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server did not answer or closed the connection.": {
+      "hu": "A szerver nem válaszolt, vagy lezárta a kapcsolatot.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The server did not answer on its port. Check the server address and your network connection.": {
+      "hu": "A szerver nem válaszolt a portján. Ellenőrizd a szerver címét és a hálózati kapcsolatot.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows is still closing the previous connection. Try again in a moment.": {
+      "hu": "A Windows még zárja az előző kapcsolatot. Próbáld újra egy kis idő múlva.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "This connection is already being dialled.": {
+      "hu": "Ez a kapcsolat már tárcsáz.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows has no pre-shared key for this connection. Save it again and reconnect.": {
+      "hu": "A Windows nem tárol előre megosztott kulcsot ehhez a kapcsolathoz. Mentsd el újra, és kapcsolódj újra.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The VPN’s DNS server is directly reachable here.": {
+      "hu": "A VPN DNS-szervere itt közvetlenül elérhető.",
+      "scope": "app"
+    },
+    "The VPN’s network is directly reachable here.": {
+      "hu": "A VPN hálózata itt közvetlenül elérhető.",
+      "scope": "app"
+    },
+    "The VPN’s DNS server is directly reachable here, so it was disconnected.": {
+      "hu": "A VPN DNS-szervere itt közvetlenül elérhető, ezért a kapcsolat bontva lett.",
+      "scope": "app"
+    },
+    "The VPN’s network is directly reachable here, so it was disconnected.": {
+      "hu": "A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.",
+      "scope": "app"
+    },
+    "The network could not be identified.": {
+      "hu": "A hálózatot nem sikerült azonosítani.",
+      "scope": "app"
+    },
+    "Unlock the vault to reconnect.": {
+      "hu": "Az újracsatlakozáshoz oldd fel a széfet.",
+      "scope": "app"
+    },
+    "You are on a different network.": {
+      "hu": "Másik hálózaton vagy.",
       "scope": "app"
     },
     "A catalog name must have 1 to 64 characters and no control characters.": {
@@ -235,7 +796,13 @@
     },
     "A missing tool or root helper shows in System Status, as usual.": {
       "hu": "A hiányzó eszköz vagy root segéd a szokásos módon a Rendszerállapotban látszik.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "A missing component shows in System Status, as usual.",
+          "hu": "A hiányzó összetevő a szokásos módon a Rendszerállapotban látszik."
+        }
+      }
     },
     "A personal setting": {
       "hu": "Személyes beállítás",
@@ -327,6 +894,10 @@
       "hu": "A mentésben lévőre cserélt aláírókulcsok: %lld",
       "scope": "app"
     },
+    "After sleep or a network change, only on the same network, and only when the VPN’s network is not directly reachable there.": {
+      "hu": "Alvás vagy hálózatváltás után, csak ugyanazon a hálózaton, és csak ha a VPN hálózata ott nem érhető el közvetlenül.",
+      "scope": "app"
+    },
     "After you enter an admin password, these are deleted:\n• /usr/local/libexec/macvpn (root scripts)\n• /etc/sudoers.d/macvpn (sudoers rule)\n• /var/run/macvpn, /var/run/macvpn-ui (runtime data)\n• /var/log/macvpn (connection logs)\n\nActive connections are disconnected first. Homebrew packages are kept.": {
       "hu": "Egy admin jelszóval törlődik:\n• /usr/local/libexec/macvpn (root scriptek)\n• /etc/sudoers.d/macvpn (sudoers szabály)\n• /var/run/macvpn, /var/run/macvpn-ui (futási adatok)\n• /var/log/macvpn (kapcsolatnaplók)\n\nElőtte az aktív kapcsolatok bontódnak. A Homebrew csomagok megmaradnak.",
       "scope": "app",
@@ -404,12 +975,32 @@
       "hu": "A kapcsolaton már fut egy művelet (zár: %@)",
       "scope": "mvpn"
     },
+    "Another operation on this connection is in progress": {
+      "hu": "Ezen a kapcsolaton már folyik egy művelet",
+      "scope": "mvpn"
+    },
     "Anyone with this file and its password can read all your VPN credentials.": {
       "hu": "Aki birtokolja ezt a fájlt és a jelszavát, az összes VPN-hitelesítő adatodat elolvashatja.",
       "scope": "app"
     },
     "Anyone with this file and its password can sign your team catalogs.": {
       "hu": "Aki birtokolja ezt a fájlt és a jelszavát, aláírhatja a csapatkatalógusaidat.",
+      "scope": "app"
+    },
+    "Appearance": {
+      "hu": "Megjelenés",
+      "scope": "app"
+    },
+    "Dark": {
+      "hu": "Sötét",
+      "scope": "app"
+    },
+    "Light": {
+      "hu": "Világos",
+      "scope": "app"
+    },
+    "Match System": {
+      "hu": "Rendszer szerint",
       "scope": "app"
     },
     "Apply Selected Preferences": {
@@ -556,6 +1147,13 @@
       "hu": "A korábbi kapcsolat nem bontható le",
       "scope": "mvpn"
     },
+    "Cannot configure the WireGuard adapter: %@ (%@)": {
+      "hu": "Nem állítható be a WireGuard-adapter: %@ (%@)",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "Cannot create %@": {
       "hu": "Nem hozható létre: %@",
       "scope": "mvpn"
@@ -563,6 +1161,13 @@
     "Cannot create a temporary directory": {
       "hu": "Nem hozható létre ideiglenes könyvtár",
       "scope": "core"
+    },
+    "Cannot create the WireGuard adapter (%@)": {
+      "hu": "Nem hozható létre a WireGuard-adapter (%@)",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
     },
     "Cannot create the dry-run directory": {
       "hu": "Nem hozható létre dry-run könyvtár",
@@ -611,6 +1216,13 @@
     "Cannot read the file: %@": {
       "hu": "A fájl nem olvasható: %@",
       "scope": "core"
+    },
+    "Cannot resolve %@": {
+      "hu": "Nem oldható fel: %@",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
     },
     "Cannot set the permissions of the script": {
       "hu": "Nem állítható be a script jogosultsága",
@@ -782,7 +1394,13 @@
     },
     "Choose the file at the path the members’ Macs use, for example on the mounted share.": {
       "hu": "A fájlt azon az útvonalon válaszd ki, amelyet a tagok Macjei használnak, például a csatolt megosztáson.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Choose the file at the path the members’ PCs use, for example on the mapped network drive.",
+          "hu": "A fájlt azon az útvonalon válaszd ki, amelyet a tagok számítógépei használnak, például a csatlakoztatott hálózati meghajtón."
+        }
+      }
     },
     "Cisco IPsec requires a group name": {
       "hu": "Cisco IPsec-hez csoportnév szükséges",
@@ -815,6 +1433,13 @@
     "Close": {
       "hu": "Bezárás",
       "scope": "app"
+    },
+    "Closing WinVPN…": {
+      "hu": "A WinVPN bezárása…",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
     },
     "Code": {
       "hu": "Kód",
@@ -877,6 +1502,10 @@
     },
     "Connection": {
       "hu": "Kapcsolat",
+      "scope": "app"
+    },
+    "Connection Notifications": {
+      "hu": "Kapcsolatértesítések",
       "scope": "app"
     },
     "Connections": {
@@ -1568,6 +2197,10 @@
       "hu": "Profil telepítése",
       "scope": "app"
     },
+    "Install the VPN tools in System Status to add connections.": {
+      "hu": "Kapcsolat hozzáadásához telepítsd a VPN-eszközöket a Rendszerállapot ablakban.",
+      "scope": "app"
+    },
     "Install the profile first.": {
       "hu": "Előbb telepítsd a profilt.",
       "scope": "core-rust"
@@ -1594,6 +2227,136 @@
     "Installed version: %@": {
       "hu": "Telepített verzió: %@",
       "scope": "app"
+    },
+    "Add the DCO and TAP-Windows6 drivers in Settings → Apps → Installed apps → OpenVPN → Modify.": {
+      "hu": "Add hozzá a DCO és a TAP-Windows6 illesztőprogramot: Gépház → Alkalmazások → Telepített alkalmazások → OpenVPN → Módosítás.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Cancelled": {
+      "hu": "Megszakítva",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Installing OpenVPN Community %@…": {
+      "hu": "Az OpenVPN Community %@ telepítése…",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Only a WinVPN installed in Program Files can install OpenVPN Community.": {
+      "hu": "Az OpenVPN Communityt csak a Program Files mappába telepített WinVPN tudja telepíteni.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "OpenVPN Community is installed.": {
+      "hu": "Az OpenVPN Community telepítve.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "OpenVPN's Interactive Service could not be disabled.": {
+      "hu": "Az OpenVPN interaktív szolgáltatását (Interactive Service) nem sikerült letiltani.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Restart Windows to finish.": {
+      "hu": "A befejezéshez indítsd újra a Windowst.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The OpenVPN installer could not be downloaded: %@": {
+      "hu": "Az OpenVPN telepítőjét nem sikerült letölteni: %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The OpenVPN installer could not be started.": {
+      "hu": "Az OpenVPN telepítőjét nem sikerült elindítani.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The OpenVPN installer failed (%@).": {
+      "hu": "Az OpenVPN telepítője hibával leállt (%@).",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The OpenVPN installer is not OpenVPN Community %@ or newer.": {
+      "hu": "Az OpenVPN telepítője nem OpenVPN Community (legalább %@).",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The OpenVPN installer is not signed by %@.": {
+      "hu": "Az OpenVPN telepítőjét nem a(z) %@ írta alá.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "WinVPN could not record that it installed OpenVPN Community.": {
+      "hu": "A WinVPN nem tudta feljegyezni, hogy ő telepítette az OpenVPN Communityt.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Installing the newest OpenVPN Community with winget…": {
+      "hu": "A legújabb OpenVPN Community telepítése winget-tel…",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Update available: %@ → %@": {
+      "hu": "Frissítés elérhető: %@ → %@",
+      "scope": "core"
+    },
+    "Updating wireguard-nt…": {
+      "hu": "A wireguard-nt frissítése…",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "wireguard-nt %@ is installed.": {
+      "hu": "A(z) %@ wireguard-nt telepítve.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "winget could not install OpenVPN (%@); trying the official installer.": {
+      "hu": "A winget nem tudta telepíteni az OpenVPN-t (%@); a hivatalos telepítővel próbálom.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "winget did not install every OpenVPN driver; adding them with the official installer.": {
+      "hu": "A winget nem telepítette az összes OpenVPN-illesztőprogramot; a hivatalos telepítővel pótolom.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "Installing Homebrew (with the official installer)…": {
       "hu": "Homebrew telepítése (a hivatalos telepítővel)…",
@@ -1771,9 +2534,12 @@
     "L2TP and Cisco IPsec connections need their profile on this Mac. macOS asks you to approve each one.": {
       "hu": "Az L2TP és Cisco IPsec kapcsolatoknak profil kell ezen a Macen. A macOS mindegyik jóváhagyását kéri.",
       "scope": "app",
-      "only": [
-        "macos"
-      ]
+      "variants": {
+        "windows": {
+          "en": "WinVPN wrote the Windows VPN entries of the L2TP connections. IKEv2 and SSTP get theirs when they first connect.",
+          "hu": "A WinVPN megírta az L2TP kapcsolatok Windows VPN-bejegyzéseit. Az IKEv2 és SSTP kapcsolatok az első csatlakozáskor kapják meg a sajátjukat."
+        }
+      }
     },
     "L2TP and Cisco IPsec work without these.": {
       "hu": "L2TP és Cisco IPsec ezek nélkül is működik.",
@@ -1820,6 +2586,10 @@
     },
     "Line %ld: %@": {
       "hu": "%ld. sor: %@",
+      "scope": "core"
+    },
+    "Line too long": {
+      "hu": "Túl hosszú sor",
       "scope": "core"
     },
     "Link the Same Sign-in?": {
@@ -1870,7 +2640,13 @@
     },
     "MacVPN has been uninstalled": {
       "hu": "A MacVPN eltávolítva",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "MacVPN has been removed from this account",
+          "hu": "A MacVPN eltávolítva erről a fiókról"
+        }
+      }
     },
     "MacVPN is locked": {
       "hu": "A MacVPN zárolva van",
@@ -1895,9 +2671,12 @@
     "MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.": {
       "hu": "A MacVPN a VPN-eszközöket Homebrew-ból használja (openvpn, wireguard-tools, strongswan, sstp-client, bash). A hiányzókat innen telepítheted.",
       "scope": "app",
-      "only": [
-        "macos"
-      ]
+      "variants": {
+        "windows": {
+          "en": "WinVPN connects OpenVPN and WireGuard through the WinVPN Service. OpenVPN Community is installed here when you need it.",
+          "hu": "A WinVPN az OpenVPN- és a WireGuard-kapcsolatokat a WinVPN szolgáltatáson keresztül építi fel. Az OpenVPN Communityt itt telepítheted, ha szükséged van rá."
+        }
+      }
     },
     "MacVPN will ask for the master password at every launch.": {
       "hu": "A MacVPN minden indításkor elkéri a mesterjelszót.",
@@ -1981,6 +2760,13 @@
       "hu": "Hiányzik: %@",
       "scope": "app"
     },
+    "Missing: %@. Repair adds them.": {
+      "hu": "Hiányzik: %@. A Javítás telepíti őket.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
     "More than one VPN service is named “%@”. MacVPN does not pass the password until it is clear which one is its own: rename or remove the other one in System Settings → Network.": {
       "hu": "Több „%@” nevű VPN szolgáltatás van. A MacVPN nem adja át a jelszót, amíg nem egyértelmű, melyik az övé: nevezd át vagy töröld a másikat a Rendszerbeállítások → Hálózat alatt.",
       "scope": "core",
@@ -2019,6 +2805,13 @@
     "Name and File": {
       "hu": "Név és fájl",
       "scope": "app"
+    },
+    "Native Windows VPNs (L2TP, IKEv2, SSTP, Cisco IPsec) come in a later version of WinVPN.": {
+      "hu": "A Windows saját VPN-jei (L2TP, IKEv2, SSTP, Cisco IPsec) a WinVPN egy későbbi verziójában érkeznek.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "Native connections only have a log when connected in debug mode.": {
       "hu": "Natív kapcsolatnál csak debug csatlakozáskor van napló.",
@@ -2178,7 +2971,14 @@
     },
     "Not installed. The installer runs in Terminal and asks for an administrator password.": {
       "hu": "Nincs telepítve. A telepítő Terminálban fut és rendszergazdai jelszót kér.",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Not installed: %@": {
+      "hu": "Nincs telepítve: %@",
+      "scope": "platform"
     },
     "Not ready yet. Wait a moment, then click Connect again.": {
       "hu": "Még nem kész. Várj egy pillanatot, majd kattints újra a Csatlakozás gombra.",
@@ -2188,9 +2988,20 @@
       "hu": "Még nem kész. Várj egy pillanatot, aztán próbáld újra.",
       "scope": "app"
     },
+    "Not ready: %@": {
+      "hu": "Nem használható: %@",
+      "scope": "platform"
+    },
     "Not supported on Windows (Linux only)": {
       "hu": "Windowson nem támogatott (csak Linuxon)",
       "scope": "core"
+    },
+    "Not supported on Windows: %@": {
+      "hu": "Windowson nem támogatott: %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "Not supported on macOS (Windows or Linux only)": {
       "hu": "macOS-en nem támogatott (csak Windows vagy Linux)",
@@ -2278,6 +3089,13 @@
       "hu": "Mentés megnyitása",
       "scope": "app"
     },
+    "Open Installed Apps…": {
+      "hu": "Telepített alkalmazások megnyitása…",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
     "Open Login Items Settings…": {
       "hu": "Bejelentkezési elemek beállításai…",
       "scope": "app",
@@ -2304,6 +3122,27 @@
       "hu": "Kiadás megnyitása a GitHubon",
       "scope": "app"
     },
+    "OpenVPN Community": {
+      "hu": "OpenVPN Community",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "OpenVPN Community %@ is too old (%@ or newer is needed).": {
+      "hu": "Az OpenVPN Community %@ túl régi (%@ vagy újabb kell).",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "OpenVPN Community is not installed.": {
+      "hu": "Az OpenVPN Community nincs telepítve.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "OpenVPN inline <key> or <pkcs12>: everyone uses the same client key": {
       "hu": "OpenVPN inline <key> vagy <pkcs12>: mindenki ugyanazt a kliens kulcsot használja",
       "scope": "app"
@@ -2314,7 +3153,13 @@
     },
     "Opened for approval": {
       "hu": "Jóváhagyásra megnyitva",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "Ready",
+          "hu": "Kész"
+        }
+      }
     },
     "Opening the backup…": {
       "hu": "A mentés megnyitása…",
@@ -2574,6 +3419,10 @@
       "hu": "Kilépés és újraindítás…",
       "scope": "app"
     },
+    "Reconnect Automatically": {
+      "hu": "Automatikus újracsatlakozás",
+      "scope": "app"
+    },
     "Recovery key": {
       "hu": "Helyreállítási kulcs",
       "scope": "app"
@@ -2658,6 +3507,13 @@
     "Rename…": {
       "hu": "Átnevezés…",
       "scope": "app"
+    },
+    "Repair": {
+      "hu": "Javítás",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
     },
     "Repeat the backup password": {
       "hu": "A mentés jelszava még egyszer",
@@ -2774,6 +3630,13 @@
     "Rotating the team key is the only way to revoke access to a catalog someone already has. Check what this version publishes; the new key is shown once after the file is saved.": {
       "hu": "A csapatkulcs cseréje az egyetlen módja annak, hogy valakitől visszavond a hozzáférést egy olyan katalógushoz, amely már nála van. Ellenőrizd, mit tesz közzé ez a verzió; az új kulcs a fájl mentése után egyszer jelenik meg.",
       "scope": "app"
+    },
+    "Running (version %@)": {
+      "hu": "Fut (%@. verzió)",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "SSTP needs a password (set it in the connection settings)": {
       "hu": "Az SSTP-hez jelszó kell (a kapcsolat beállításainál add meg)",
@@ -3021,6 +3884,10 @@
       "hu": "Rendszerállapot",
       "scope": "app"
     },
+    "System Status…": {
+      "hu": "Rendszerállapot…",
+      "scope": "app"
+    },
     "System VPNs and connections of team catalogs cannot be published.": {
       "hu": "Rendszer-VPN-ek és csapatkatalógusok kapcsolatai nem tehetők közzé.",
       "scope": "core-rust"
@@ -3105,6 +3972,20 @@
       "hu": "Az SSTP jelszóban nem lehet idézőjel, fordított perjel és vezérlőkarakter",
       "scope": "core"
     },
+    "The VPN engine comes in a later version of WinVPN.": {
+      "hu": "A VPN-motor a WinVPN egy későbbi verziójában érkezik.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The VPN engine comes in a later version of WinVPN. You can already create, import, edit, export and back up connections.": {
+      "hu": "A VPN-motor a WinVPN egy későbbi verziójában érkezik. Kapcsolatokat már most is létrehozhatsz, importálhatsz, szerkeszthetsz, exportálhatsz és menthetsz.",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
     "The VPN server asks you to sign in on a web page. Open it only if you started this connection and you trust this address:": {
       "hu": "A VPN szerver weboldalon kér bejelentkezést. Csak akkor nyisd meg, ha te indítottad ezt a kapcsolatot, és megbízol ebben a címben:",
       "scope": "app"
@@ -3112,6 +3993,20 @@
     "The VPN server says:": {
       "hu": "A VPN-szerver üzenete:",
       "scope": "app"
+    },
+    "The WinVPN Service is missing or from another WinVPN version. Repair WinVPN: Settings → Apps → Installed apps → WinVPN → Modify → Repair.": {
+      "hu": "A WinVPN szolgáltatás hiányzik, vagy egy másik WinVPN-verzióhoz tartozik. Javítsd a WinVPN-t: Gépház → Alkalmazások → Telepített alkalmazások → WinVPN → Módosítás → Javítás.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The WinVPN Service is not reachable.": {
+      "hu": "A WinVPN szolgáltatás nem érhető el.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "The access token is not sent to a new address. Enter the token for it, if it needs one.": {
       "hu": "A hozzáférési token nem megy új címre. Ha az új cím tokent kér, add meg.",
@@ -3340,6 +4235,10 @@
       "hu": "A kapcsolat már nincs a széfben.",
       "scope": "app"
     },
+    "The connection was taken down while connecting": {
+      "hu": "A kapcsolatot csatlakozás közben bontották",
+      "scope": "mvpn"
+    },
     "The connection's stored user name and password become a shared credential that it then uses. The values are not shown.": {
       "hu": "A kapcsolat tárolt felhasználónevéből és jelszavából közös hitelesítő adat lesz, amelyet ezután használ. Az értékek nem jelennek meg.",
       "scope": "app"
@@ -3412,6 +4311,13 @@
       "hu": "Az ujjlenyomat egyezik azzal, amit a rendszergazda küldött",
       "scope": "app"
     },
+    "The folder %@ has unsafe permissions. An administrator must delete it, then restart the WinVPN Service.": {
+      "hu": "A(z) %@ mappa jogosultságai nem biztonságosak. Egy rendszergazdának törölnie kell, majd újra kell indítania a WinVPN szolgáltatást.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "The folder change failed: %@": {
       "hu": "A mappa módosítása nem sikerült: %@",
       "scope": "app"
@@ -3430,7 +4336,10 @@
     },
     "The installed mvpn is not a protected root file, so running connections were not disconnected:": {
       "hu": "A telepített mvpn nem védett root fájl, ezért a futó kapcsolatok nem lettek bontva:",
-      "scope": "platform"
+      "scope": "platform",
+      "only": [
+        "macos"
+      ]
     },
     "The installed version (%@) is the latest.": {
       "hu": "A telepített verzió (%@) a legfrissebb.",
@@ -3447,6 +4356,13 @@
     "The management bridge stopped (details in the log)": {
       "hu": "A management közvetítő leállt (részletek a naplóban)",
       "scope": "mvpn"
+    },
+    "The management connection to OpenVPN failed": {
+      "hu": "Nem sikerült a kapcsolat az OpenVPN kezelőfelületével",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
     },
     "The master password is not correct.": {
       "hu": "A mesterjelszó nem helyes.",
@@ -3562,7 +4478,10 @@
     },
     "The root scripts were not found in the app": {
       "hu": "A root scriptek nem találhatók az alkalmazásban",
-      "scope": "app"
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     },
     "The selected preferences were applied.": {
       "hu": "A kijelölt beállítások életbe léptek.",
@@ -3574,6 +4493,30 @@
       "only": [
         "macos"
       ]
+    },
+    "A certificate was not accepted.": {
+      "hu": "Egy tanúsítványt nem fogadott el a kapcsolat.",
+      "scope": "app"
+    },
+    "The network connection was lost.": {
+      "hu": "Megszakadt a hálózati kapcsolat.",
+      "scope": "app"
+    },
+    "The server could not be reached.": {
+      "hu": "A szerver nem érhető el.",
+      "scope": "app"
+    },
+    "The server refused the sign-in.": {
+      "hu": "A szerver elutasította a bejelentkezést.",
+      "scope": "app"
+    },
+    "The server stopped responding.": {
+      "hu": "A szerver nem válaszol.",
+      "scope": "app"
+    },
+    "The server’s name could not be resolved.": {
+      "hu": "A szerver nevét nem sikerült feloldani.",
+      "scope": "app"
     },
     "The server asks for a code.": {
       "hu": "A szerver kódot kér.",
@@ -3714,6 +4657,13 @@
     "The update check failed": {
       "hu": "A frissítés-ellenőrzés nem sikerült",
       "scope": "app"
+    },
+    "The update failed (msiexec %@). Details: %@": {
+      "hu": "A frissítés nem sikerült (msiexec %@). Részletek: %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "The update is not signed by the MacVPN maintainer": {
       "hu": "A frissítést nem a MacVPN fejlesztője írta alá",
@@ -3895,6 +4845,13 @@
       "hu": "Ennek a kapcsolatnak nincs megosztható tárolt felhasználóneve.",
       "scope": "app"
     },
+    "This connection needs the %@ driver. Repair OpenVPN Community in System Status.": {
+      "hu": "Ehhez a kapcsolathoz a(z) %@ illesztőprogram kell. Javítsd az OpenVPN Communityt a Rendszerállapotban.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "This connection no longer exists": {
       "hu": "Ez a kapcsolat már nem létezik",
       "scope": "app"
@@ -3945,6 +4902,13 @@
       "hu": "Ez a közzététel már nem létezik.",
       "scope": "core-rust"
     },
+    "This release has no installer for this computer.": {
+      "hu": "Ehhez a kiadáshoz nincs telepítő erre a számítógépre.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
     "This team catalog no longer exists.": {
       "hu": "Ez a csapatkatalógus már nem létezik.",
       "scope": "core-rust"
@@ -3987,6 +4951,17 @@
       "hu": "Az átváltáshoz előbb importáld a tartalék kulcs fájlját (Aláírókulcs importálása…).",
       "scope": "app"
     },
+    "Too many connections": {
+      "hu": "Túl sok kapcsolat",
+      "scope": "mvpn"
+    },
+    "Too many requests": {
+      "hu": "Túl sok kérés",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "Too short": {
       "hu": "Túl rövid",
       "scope": "app"
@@ -4018,6 +4993,13 @@
     "Turn on automatic unlock": {
       "hu": "Az automatikus feloldás bekapcsolása",
       "scope": "app"
+    },
+    "Turned off in Settings → Apps → Startup.": {
+      "hu": "Kikapcsolva: Gépház → Alkalmazások → Indítás.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
     },
     "Type group %d of the team key": {
       "hu": "Írd be a csapatkulcs %d. csoportját",
@@ -4058,6 +5040,13 @@
     "Uninstall MacVPN…": {
       "hu": "MacVPN eltávolítása…",
       "scope": "app"
+    },
+    "Uninstall WinVPN in Windows: Settings → Apps → Installed apps → WinVPN → Uninstall. Your connections and the vault are kept until you delete them (see the user guide).": {
+      "hu": "A WinVPN-t a Windowsban távolíthatod el: Gépház → Alkalmazások → Telepített alkalmazások → WinVPN → Eltávolítás. A kapcsolataid és a széf megmaradnak, amíg nem törlöd őket (lásd a felhasználói útmutatót).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
     },
     "Uninstall cancelled": {
       "hu": "Az eltávolítás megszakítva",
@@ -4183,6 +5172,13 @@
       "hu": "Frissítve: %@",
       "scope": "app"
     },
+    "Updating WinVPN disconnects active VPN connections.": {
+      "hu": "A WinVPN frissítése bontja az aktív VPN-kapcsolatokat.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
     "Updating the system component will disconnect active VPN connections.": {
       "hu": "A rendszerkomponens frissítése bontja az aktív VPN-kapcsolatokat.",
       "scope": "platform"
@@ -4202,6 +5198,13 @@
     "Usage: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <file> [--accept-risky names] | --swan-names <file> | --sstp-params <file> | --sstp-ca <file>": {
       "hu": "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
       "scope": "core"
+    },
+    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset>": {
+      "hu": "Használat: up|down <openvpn|wireguard> <azonosító> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <azonosító> | status | version | engine | auth-state <azonosító> | log <azonosító> <eltolás>",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
     },
     "Use": {
       "hu": "Használat",
@@ -4326,6 +5329,13 @@
       "hu": "Verzió",
       "scope": "app"
     },
+    "Version %@": {
+      "hu": "%@. verzió",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
     "Version %@ has been published, but it is not signed by the MacVPN maintainer yet. It will be offered once it is signed.": {
       "hu": "A(z) %@ verzió megjelent, de a MacVPN fejlesztője még nem írta alá. Az aláírás után kerül felajánlásra.",
       "scope": "app"
@@ -4333,6 +5343,13 @@
     "Version %@ was published less than 24 hours ago. It will be offered later, as \"Only Offer Updates Published at Least 24 Hours Ago\" is on.": {
       "hu": "A(z) %@ verzió kevesebb mint 24 órája jelent meg. Később kerül felajánlásra, mert be van kapcsolva a „Csak a legalább 24 órája megjelent frissítések felajánlása” beállítás.",
       "scope": "app"
+    },
+    "Version %@ · drivers: %@": {
+      "hu": "%@. verzió · illesztőprogramok: %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
     },
     "Version %lld": {
       "hu": "%lld. verzió",
@@ -4386,6 +5403,48 @@
       "hu": "Ha egy elem már létezik:",
       "scope": "app"
     },
+    "WinVPN Service": {
+      "hu": "WinVPN szolgáltatás",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows VPN client": {
+      "hu": "Windows VPN-kliens",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "The config and the saved passwords will be deleted, and its Windows VPN entry too.": {
+      "hu": "A config és a mentett jelszavak törlődnek, és a Windows VPN-bejegyzése is.",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "WinVPN cannot start: a program of another user holds its single-instance lock in this session. Sign out and back in, or restart Windows.": {
+      "hu": "A WinVPN nem tud elindulni: ebben a munkamenetben egy másik felhasználó programja lefoglalta azt a zárat, amely biztosítja, hogy csak egy WinVPN fusson. Jelentkezz ki, majd be újra, vagy indítsd újra a Windowst.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "WinVPN cannot start: the WinVPN that is already running did not answer. Quit it from the notification area and start WinVPN again.": {
+      "hu": "A WinVPN nem tud elindulni: a már futó WinVPN nem válaszol. Lépj ki belőle az értesítési területen, majd indítsd el újra a WinVPN-t.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "WireGuard": {
+      "hu": "WireGuard",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
     "WireGuard private key: everyone appears to the server as the same peer": {
       "hu": "WireGuard privát kulcs: a szerver mindenkit ugyanannak a peernek lát",
       "scope": "app"
@@ -4417,9 +5476,12 @@
     "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).": {
       "hu": "Az app most áthúzható a Kukába. A Homebrew csomagok megmaradtak (brew uninstall openvpn wireguard-tools strongswan sstp-client).",
       "scope": "app",
-      "only": [
-        "macos"
-      ]
+      "variants": {
+        "windows": {
+          "en": "Now uninstall MacVPN in Settings → Apps → Installed apps (opened for you): the MacVPN Service and the program files go with it.",
+          "hu": "Most távolítsd el a MacVPN-t a Gépház → Alkalmazások → Telepített alkalmazások alatt (megnyitva): a MacVPN szolgáltatás és a programfájlok vele mennek."
+        }
+      }
     },
     "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.": {
       "hu": "Az L2TP / Cisco profilokat a Rendszerbeállítások → Általános → Eszközkezelés alatt távolíthatod el.",
@@ -4434,7 +5496,13 @@
     },
     "You have to remove the installed profile yourself in the Profiles pane that opens.": {
       "hu": "A telepített profilt a megnyíló Profilok panelen neked kell eltávolítanod.",
-      "scope": "app"
+      "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "If this connection was added to Windows, remove it yourself in Settings → Network & internet → VPN.",
+          "hu": "Ha ez a kapcsolat bekerült a Windows VPN-kapcsolatai közé, a Gépház → Hálózat és internet → VPN alatt neked kell eltávolítanod."
+        }
+      }
     },
     "You will be asked when you connect": {
       "hu": "Csatlakozáskor rákérdez",
@@ -4508,7 +5576,10 @@
     },
     "cannot read Info.plist": {
       "hu": "az Info.plist nem olvasható",
-      "scope": "core"
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
     },
     "cert=ca requires a <ca> block with a PEM certificate": {
       "hu": "A cert=ca mellé PEM tanúsítványt tartalmazó <ca> blokk kell",
@@ -4620,7 +5691,10 @@
     },
     "mvpn-mgmt not found: %@ (reinstall the root layer in System Status)": {
       "hu": "A mvpn-mgmt nem található: %@ (telepítsd újra a root réteget a Rendszerállapotban)",
-      "scope": "mvpn"
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "native debug": {
       "hu": "natív debug",
@@ -4647,6 +5721,41 @@
       "scope": "mvpn",
       "only": [
         "macos"
+      ]
+    },
+    "openvpn.exe could not be started": {
+      "hu": "Az openvpn.exe nem indítható el",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "openvpn.exe did not stop": {
+      "hu": "Az openvpn.exe nem állt le",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "openvpn.exe is in a folder other users can change: %@": {
+      "hu": "Az openvpn.exe olyan mappában van, amelyet más felhasználók is módosíthatnak: %@",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "openvpn.exe is not signed by %@.": {
+      "hu": "Az openvpn.exe-t nem a(z) %@ írta alá.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "openvpn.exe is signed by %@, but not through a certificate authority WinVPN knows. Update WinVPN.": {
+      "hu": "Az openvpn.exe-t a(z) %@ írta alá, de nem a WinVPN által ismert hitelesítésszolgáltatón keresztül. Frissítsd a WinVPN-t.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
       ]
     },
     "or": {
@@ -4703,9 +5812,23 @@
         "macos"
       ]
     },
+    "The log reached its size limit; its earlier part is in %@": {
+      "hu": "A napló elérte a méretkorlátot; a korábbi része: %@",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "stale lock removed": {
       "hu": "elárvult zár eltávolítva",
       "scope": "mvpn"
+    },
+    "strongSwan credentials copied from %@: %@ (skipped: %@)": {
+      "hu": "strongSwan hitelesítő adatok átmásolva innen: %@: %@ (kihagyva: %@)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "swanctl --load-all failed": {
       "hu": "A swanctl --load-all sikertelen",
@@ -4764,11 +5887,459 @@
         "macos"
       ]
     },
+    "wireguard.dll does not match its pinned version. Repair WinVPN.": {
+      "hu": "A wireguard.dll nem egyezik a rögzített verzióval. Javítsd a WinVPN-t.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "wireguard-nt can be updated only while no WireGuard connection is up on this computer. Disconnect WireGuard, then try again.": {
+      "hu": "A wireguard-nt csak akkor frissíthető, ha ezen a gépen nincs élő WireGuard-kapcsolat. Bontsd a WireGuard-kapcsolatot, majd próbáld újra.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "wireguard-nt could not be checked for updates.": {
+      "hu": "Nem sikerült ellenőrizni, van-e újabb wireguard-nt.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "The newest wireguard-nt could not be downloaded.": {
+      "hu": "A legújabb wireguard-nt nem tölthető le.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "The downloaded wireguard-nt did not pass its checks (signer WireGuard LLC, version, processor); nothing was changed.": {
+      "hu": "A letöltött wireguard-nt nem ment át az ellenőrzésen (aláíró: WireGuard LLC, verzió, processzor); semmi sem változott.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "An update of wireguard-nt is already running.": {
+      "hu": "A wireguard-nt frissítése már folyamatban van.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "No newer wireguard-nt is available.": {
+      "hu": "Nincs újabb wireguard-nt.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "The new wireguard-nt could not be loaded; WinVPN keeps using wireguard-nt %@.": {
+      "hu": "Az új wireguard-nt nem tölthető be; a WinVPN továbbra is a(z) %@ wireguard-nt-t használja.",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
     "~/Library/Application Support/MacVPN with the vault, and in the Keychain the vault key and the old MacVPN 1.1 items": {
       "hu": "~/Library/Application Support/MacVPN a széffel, és a Keychainben a széf kulcsa és a régi MacVPN 1.1 bejegyzések",
       "scope": "app",
+      "variants": {
+        "windows": {
+          "en": "AppData\\Local\\MacVPN with the vault, and in Credential Manager the vault key (local.winvpn.vault)",
+          "hu": "AppData\\Local\\MacVPN a széffel, és a Hitelesítőadat-kezelőben a széf kulcsa (local.winvpn.vault)"
+        }
+      }
+    },
+    "the DNS ledger cannot be used, DNS not changed": {
+      "hu": "a DNS-nyilvántartás nem használható, a DNS nem változott",
+      "scope": "mvpn",
       "only": [
         "macos"
+      ]
+    },
+    "cannot list the network services, DNS not changed": {
+      "hu": "a hálózati szolgáltatások nem listázhatók, a DNS nem változott",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "cannot read the DNS settings of %@, the service is left unchanged": {
+      "hu": "a(z) %@ DNS-beállításai nem olvashatók, ez a szolgáltatás nem változik",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the connection is no longer running: its DNS settings are released": {
+      "hu": "a kapcsolat már nem fut: a DNS-beállításait felszabadítjuk",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "cannot list the network services; the DNS restore is retried later": {
+      "hu": "a hálózati szolgáltatások nem listázhatók; a DNS visszaállítását később újra megpróbáljuk",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "another MacVPN connection still holds DNS; the original DNS comes back when the last one disconnects": {
+      "hu": "egy másik MacVPN-kapcsolat még használja a DNS-t; az eredeti DNS az utolsó bontásakor áll vissza",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "another MacVPN connection still holds DNS: the newest one's DNS settings are applied": {
+      "hu": "egy másik MacVPN-kapcsolat még használja a DNS-t: a legújabb DNS-beállításai lépnek életbe",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "DNS check failed on %@ after a retry: expected %@, found %@": {
+      "hu": "a DNS ellenőrzése újrapróbálás után is hibás itt: %@; várt: %@, talált: %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "original DNS restored and verified on %@ network service(s)": {
+      "hu": "az eredeti DNS visszaállítva és ellenőrizve %@ hálózati szolgáltatáson",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "DNS set and verified on %@ network service(s)": {
+      "hu": "DNS beállítva és ellenőrizve %@ hálózati szolgáltatáson",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the DNS ledger was unreadable and has been set aside": {
+      "hu": "a DNS-nyilvántartás olvashatatlan volt, félretettük",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the original DNS settings were recovered from it": {
+      "hu": "az eredeti DNS-beállításokat visszanyertük belőle",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN's DNS settings exceed the limits (%@ servers, %@ search domains; at most %@ and %@): DNS not changed": {
+      "hu": "a VPN DNS-beállításai túllépik a korlátot (%@ szerver, %@ keresési tartomány; legfeljebb %@ és %@): a DNS nem változott",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "not running as root: DNS not changed": {
+      "hu": "nem root-ként fut: a DNS nem változott",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Cisco IPsec is not supported by Windows. Ask your VPN administrator for L2TP/IPsec or IKEv2 access, or make an L2TP/IPsec copy of this connection.": {
+      "hu": "A Windows nem támogatja a Cisco IPsec-et. Kérj L2TP/IPsec vagy IKEv2 hozzáférést a VPN-rendszergazdádtól, vagy készíts L2TP/IPsec másolatot erről a kapcsolatról.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "%@ could not be started.": {
+      "hu": "A(z) %@ nem indítható el.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "%@ ended with error %@.": {
+      "hu": "A(z) %@ %@ hibával fejeződött be.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Allow L2TP Behind NAT…": {
+      "hu": "L2TP engedélyezése NAT mögött…",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Every program on this PC will trust server and client certificates from this CA (not software it signs).": {
+      "hu": "A számítógép minden programja meg fog bízni az ettől a CA-tól származó szerver- és klienstanúsítványokban (az általa aláírt szoftverekben nem).",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "L2TP/IPsec behind NAT is allowed. Restart Windows to apply it.": {
+      "hu": "Az L2TP/IPsec NAT mögött engedélyezve. Az érvényesítéshez indítsd újra a Windowst.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Make an L2TP/IPsec Copy": {
+      "hu": "L2TP/IPsec másolat készítése",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Not available on this system": {
+      "hu": "Ezen a rendszeren nem érhető el",
+      "scope": "platform"
+    },
+    "The CA certificate could not be prepared.": {
+      "hu": "A CA-tanúsítványt nem sikerült előkészíteni.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The CA is now trusted by Windows.": {
+      "hu": "A Windows mostantól megbízik a CA-ban.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The setting was not changed.": {
+      "hu": "A beállítás nem változott.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The text contains no readable certificate.": {
+      "hu": "A szöveg nem tartalmaz olvasható tanúsítványt.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "This CA certificate has expired or is not valid yet.": {
+      "hu": "Ez a CA-tanúsítvány lejárt, vagy még nem érvényes.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "This certificate is not a CA certificate.": {
+      "hu": "Ez a tanúsítvány nem CA-tanúsítvány.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Trust This CA in Windows…": {
+      "hu": "A CA megbízhatóvá tétele a Windowsban…",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Trusted by Windows": {
+      "hu": "A Windows megbízik benne",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows did not add the CA to its trusted root store.": {
+      "hu": "A Windows nem vette fel a CA-t a megbízható legfelső szintű hitelesítésszolgáltatók közé.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Only a WinVPN installed in Program Files can add a CA to Windows.": {
+      "hu": "CA-t csak a Program Files mappába telepített WinVPN tud hozzáadni a Windowshoz.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows could not limit the CA to server and client certificates, so it was not added.": {
+      "hu": "A Windows nem tudta a CA-t szerver- és klienstanúsítványokra korlátozni, ezért nem lett hozzáadva.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "DH group %@": {
+      "hu": "DH-csoport %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Ignored on Windows: %@ (Windows itself redials a dropped connection)": {
+      "hu": "Windowson figyelmen kívül marad: %@ (a megszakadt kapcsolatot a Windows maga hívja újra)",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Ignored on Windows: %@ (the connection starts when you connect it)": {
+      "hu": "Windowson figyelmen kívül marad: %@ (a kapcsolat akkor indul, amikor csatlakozol)",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Not supported on Windows: local auth = psk (the Windows IKEv2 client cannot sign in with a pre-shared key; use EAP-MSCHAPv2 or a computer certificate)": {
+      "hu": "Windowson nem támogatott: local auth = psk (a Windows IKEv2-kliense nem tud előre megosztott kulccsal hitelesíteni; használj EAP-MSCHAPv2-t vagy számítógép-tanúsítványt)",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Not supported on Windows: more than one authentication round": {
+      "hu": "Windowson nem támogatott: egynél több hitelesítési kör",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Not supported on Windows: remote_ts = ::/0 without 0.0.0.0/0": {
+      "hu": "Windowson nem támogatott: remote_ts = ::/0 0.0.0.0/0 nélkül",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "On Windows the server address is required: set remote_addrs to the server's name or address.": {
+      "hu": "Windowson kötelező a szerver címe: a remote_addrs értéke a szerver neve vagy címe legyen.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "On Windows the server's identity must be its address: set remote_addrs to the name in the server certificate.": {
+      "hu": "Windowson a szerver azonosítójának a címének kell lennie: a remote_addrs értéke a szervertanúsítványban szereplő név legyen.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "PFS group %@": {
+      "hu": "PFS-csoport %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The config is not UTF-8 text": {
+      "hu": "A config nem UTF-8 szöveg",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows always checks the SSTP server's certificate. Choose System CA or Custom CA file.": {
+      "hu": "A Windows mindig ellenőrzi az SSTP-szerver tanúsítványát. Válaszd a Rendszer CA vagy a Saját CA fájl lehetőséget.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows supports none of these ESP proposals: %@. Windows offers: %@": {
+      "hu": "A Windows ezen ESP-javaslatok egyikét sem támogatja: %@. A Windows ezeket kínálja: %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows supports none of these IKE proposals: %@. Windows offers: %@": {
+      "hu": "A Windows ezen IKE-javaslatok egyikét sem támogatja: %@. A Windows ezeket kínálja: %@",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "On Windows: %@": {
+      "hu": "Windowson: %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "computer certificate": {
+      "hu": "számítógép-tanúsítvány",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "split tunnel": {
+      "hu": "osztott alagút",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "all traffic": {
+      "hu": "minden forgalom",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows uses its own PSK for this VPN if it has one; otherwise WinVPN stores this one there.": {
+      "hu": "A Windows a saját PSK-ját használja ehhez a VPN-hez, ha van neki; ha nincs, a WinVPN ezt tárolja el ott.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Saving writes the Windows VPN entry of this connection at once; there is nothing to approve. The password is not in it: MacVPN passes it when connecting.": {
+      "hu": "Mentéskor a kapcsolat Windows VPN-bejegyzése azonnal elkészül, nincs mit jóváhagyni. A jelszó nincs benne: a MacVPN csatlakozáskor adja át.",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Subject: %@": {
+      "hu": "Tulajdonos: %@",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Valid from %@ to %@": {
+      "hu": "Érvényes: %@ – %@",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "SHA-256 fingerprint: %@": {
+      "hu": "SHA-256 ujjlenyomat: %@",
+      "scope": "app",
+      "only": [
+        "windows"
+      ]
+    },
+    "Trust": {
+      "hu": "Megbízom benne",
+      "scope": "app",
+      "only": [
+        "windows"
       ]
     }
   },

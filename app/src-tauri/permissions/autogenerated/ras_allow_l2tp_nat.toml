@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-ras-allow-l2tp-nat"
+description = "Enables the ras_allow_l2tp_nat command without any pre-configured scope."
+commands.allow = ["ras_allow_l2tp_nat"]
+
+[[permission]]
+identifier = "deny-ras-allow-l2tp-nat"
+description = "Denies the ras_allow_l2tp_nat command without any pre-configured scope."
+commands.deny = ["ras_allow_l2tp_nat"]

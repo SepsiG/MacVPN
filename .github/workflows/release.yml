@@ -5,8 +5,51 @@ on:
 # Alapból semmi; a jobok külön kapják meg a szükséges minimumot.
 permissions: {}
 jobs:
+  # 0. CI zöld: a kiadás nem futtatja újra a teszteket, hanem megköveteli, hogy a CI workflow (ci.yml) a tagelt commit
+  #    main-re tolásakor (push) teljesen sikeres legyen (minden jobja). Csak `actions: read`, nincs checkout, nem fut
+  #    repó kód. Ha a CI még fut, legfeljebb 60 percig vár rá; ha nincs ilyen futás, vagy nem sikeres, a kiadás nem készül el.
+  ci-green:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+    steps:
+      - name: A CI sikeres a tagelt commiton
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "Unexpected GITHUB_SHA: $GITHUB_SHA"; exit 1; }
+          RUNS="repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?head_sha=$GITHUB_SHA&branch=main&event=push&per_page=100"
+          START=$SECONDS
+          while :; do
+            # The newest CI run of this commit pushed to main: "<id> <status> <conclusion>" (empty: none yet).
+            RUN=$(gh api "$RUNS" --jq '[.workflow_runs[] | select(.head_sha == env.GITHUB_SHA and .head_branch == "main" and .event == "push")] | sort_by(.run_number) | last | if . == null then "" else "\(.id) \(.status) \(.conclusion)" end')
+            read -r ID STATUS CONCLUSION <<< "$RUN" || true
+            ELAPSED=$((SECONDS - START))
+            if [ -z "${ID:-}" ]; then
+              # The main push and its CI run may only just have been created: wait 5 minutes at most.
+              [ "$ELAPSED" -lt 300 ] || { echo "::error::No CI run (ci.yml) for $GITHUB_SHA pushed to main. Push the commit to main, wait for CI to pass, then tag it."; exit 1; }
+              echo "No CI run for $GITHUB_SHA on main yet; waiting."
+            elif [ "$STATUS" != completed ]; then
+              [ "$ELAPSED" -lt 3600 ] || { echo "::error::CI run $ID for $GITHUB_SHA is still $STATUS after 60 minutes. Re-run this workflow when CI has finished."; exit 1; }
+              echo "CI run $ID is $STATUS; waiting."
+            else
+              break
+            fi
+            sleep 30
+          done
+          echo "CI run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$ID ($CONCLUSION)"
+          [ "$CONCLUSION" = success ] || { echo "::error::CI run $ID for $GITHUB_SHA concluded '$CONCLUSION', not success. Fix main, wait for a green CI, then tag the new commit."; exit 1; }
+          # Every job of the run's latest attempt must have succeeded (none skipped or cancelled).
+          JOBS=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$ID/jobs?filter=latest&per_page=100" --jq '.jobs[] | "\(.conclusion) \(.name)"')
+          echo "$JOBS"
+          [ -n "$JOBS" ] || { echo "::error::CI run $ID has no jobs"; exit 1; }
+          BAD=$(grep -v '^success ' <<< "$JOBS" || true)
+          [ -z "$BAD" ] || { echo "::error::CI run $ID has jobs that did not succeed: $(tr '\n' ';' <<< "$BAD")"; exit 1; }
+          echo "CI is green for $GITHUB_SHA."
+
   # 1. Build: csak olvasási jog. A repó kódja (tesztek, build-dmg.sh) itt fut, írási token nélkül.
   build:
+    needs: ci-green
     runs-on: macos-15
     permissions:
       contents: read
@@ -56,17 +99,8 @@ jobs:
           rustc --version
           cargo --version
           node --version
-      - name: Tesztek
-        run: |
-          cargo test --workspace --locked
-          MVPN_IMPL=rust scripts/test-root.sh
-      - name: Tesztek (release, optimalizált – ugyanaz a fordítási mód, mint a DMG-é)
-        run: cargo test --workspace --locked --release
-      - name: UI tesztek
-        working-directory: app/ui
-        run: |
-          npm ci --no-audit --no-fund
-          npm test
+      # A teszteket a ci-green job a CI sikeres futásával igazolja. A DMG tiszta buildből készül: ebben a workflow-ban
+      # nincs build cache (sem Rust, sem npm), a kiadott fájl nem függhet máshol írt cache-től.
       - name: DMG
         run: scripts/build-dmg.sh
       - name: A kész bundle ellenőrzése
@@ -96,29 +130,156 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # 1b. WinVPN build Windowson: csak olvasási jog, titok nélkül (aláíratlan MSI-k, Authenticode kikapcsolva). Minden
+  #     tagnél lefut; az MSI-ket a release job csak akkor teszi a piszkozatba, ha a WINVPN_MSI_IN_RELEASE repóváltozó
+  #     értéke `true` (2.0.0-ig nincs beállítva).
+  build-windows:
+    needs: ci-green
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        shell: bash
+    env:
+      # Az openssl-src (a SQLCipher vendorolt OpenSSL-je) a Git Bash MSYS Perljét elutasítja; az image Strawberry Perlje
+      # kell. A GitHub CI=true-t állít be, így a build-msi.sh elutasítja a WINVPN_WIX_NO_ICE-t: itt van ICE validáció.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - name: Tag ellenőrzése
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid tag: $GITHUB_REF_NAME"; exit 1; }
+      # CRLF-es checkoutnál a toolchain lépés sed-je (\r a sor végén) és a bájtra összevetett fixture-ök elromlanak.
+      - name: Checkout LF sorvégekkel
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: A tagelt commit a main ágon van
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "The tagged commit $GITHUB_SHA is not on main"; exit 1; }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.8.2"
+          # No automatic cache: release builds must not restore a cache written elsewhere.
+          package-manager-cache: false
+      - name: A verzió egyezik a taggel
+        run: |
+          # Mint a build jobban; a három verzió egyezését a build-msi.sh ellenőrzi.
+          V="${GITHUB_REF_NAME#v}"
+          CONF=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          [ "$CONF" = "$V" ] || { echo "tauri.conf.json version ($CONF) != tag ($V)"; exit 1; }
+      - name: Toolchain verziók (mindkét Windows target)
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -t x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+          node --version
+      # A tesztek: lásd a ci-green jobot. Tiszta build, cache nélkül, mint a build jobban.
+      # A rögzített wireguard-nt (SHA-256 és Authenticode-aláíró ellenőrzéssel; a build-msi.sh is lefuttatja, itt
+      # külön lépésben, hogy a letöltés és az ellenőrzés a saját naplójában látsszon).
+      - name: wireguard-nt (a rögzített wireguard.dll)
+        run: scripts/fetch-wireguard-nt.sh
+      - name: MSI-k (x64, ARM64) a kiadási kapukkal és ICE validációval
+        run: |
+          [ -z "${WINVPN_WIX_NO_ICE:-}" ] || { echo "WINVPN_WIX_NO_ICE must not be set in a release build"; exit 1; }
+          [ -z "${WINVPN_SIGN_THUMBPRINT:-}" ] || { echo "Authenticode is off in the release workflow"; exit 1; }
+          scripts/build-msi.sh
+      - name: A kész MSI-k ellenőrzése
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          for arch in x64 arm64; do
+            [ -f "dist/windows/WinVPN-$V-$arch.msi" ] || { echo "missing dist/windows/WinVPN-$V-$arch.msi"; exit 1; }
+            [ -f "dist/windows/WinVPN-$V-$arch.msi.sha256" ] || { echo "missing dist/windows/WinVPN-$V-$arch.msi.sha256"; exit 1; }
+          done
+      - name: SHA-256
+        run: cat dist/windows/WinVPN-*.msi.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: msi
+          path: |
+            dist/windows/WinVPN-*.msi
+            dist/windows/WinVPN-*.msi.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   # 2. Release: írási jog, de nem futtat repó kódot (nincs checkout), csak a build artifactjait teszi fel egy
   #    *piszkozat* (draft) kiadásba. A `.sig` aláírást itt nem készítjük: a CI soha nem fér hozzá az aláíró kulcshoz.
   #    A karbantartó a saját gépén futtatja a `scripts/sign-release.sh vX.Y.Z`-t, ami aláír, feltölti a `.sig`-et és
   #    közzéteszi a kiadást. Aláírás nélkül a 0.2.2+ appok nem ajánlják fel és nem telepítik.
+  #    A MacVPN piszkozat a Windows buildtől függetlenül elkészül, amíg a WINVPN_MSI_IN_RELEASE nem `true` (1.x: pontosan
+  #    úgy, mint eddig); ha `true`, a build-windows sikere is feltétel, és a két MSI is a piszkozatba kerül.
+  #    Build provenance (actions/attest-build-provenance): every file of the draft gets a signed SLSA attestation
+  #    (Sigstore, short-lived certificate of this workflow at this tag), stored with GitHub's attestations API. The
+  #    sign-release.sh script verifies it (`gh attestation verify`: this repository, release.yml, this tag and its
+  #    commit) for each asset before signing, so a draft whose files were swapped after the build is refused. The
+  #    attestation is made here, not in the build jobs: only this job (no repository code) gets the OIDC token.
   release:
-    needs: build
+    needs: [build, build-windows]
+    if: >-
+      !cancelled() && needs.build.result == 'success' &&
+      (needs.build-windows.result == 'success' || vars.WINVPN_MSI_IN_RELEASE != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: dmg
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: vars.WINVPN_MSI_IN_RELEASE == 'true'
+        with:
+          name: msi
+          path: dist
+      - name: SHA-256 a letöltött fájlokra (az attesztáció előtt)
+        env:
+          WINVPN_MSI_IN_RELEASE: ${{ vars.WINVPN_MSI_IN_RELEASE }}
+        run: |
+          (cd dist && sha256sum -c MacVPN-*.dmg.sha256)
+          if [ "${WINVPN_MSI_IN_RELEASE:-}" = true ]; then (cd dist && sha256sum -c WinVPN-*.msi.sha256); fi
+      - name: Build provenance (DMG)
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/MacVPN-*.dmg
+            dist/MacVPN-*.dmg.sha256
+      - name: Build provenance (MSI)
+        if: vars.WINVPN_MSI_IN_RELEASE == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/WinVPN-*.msi
+            dist/WinVPN-*.msi.sha256
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
+          WINVPN_MSI_IN_RELEASE: ${{ vars.WINVPN_MSI_IN_RELEASE }}
         run: |
           ls -l dist
+          FILES=(dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256)
           (cd dist && shasum -a 256 -c MacVPN-*.dmg.sha256)
-          gh release create "$GITHUB_REF_NAME" dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256 \
+          NOTES="Ez a kiadás csak a karbantartó offline Ed25519 aláírása (MacVPN-X.Y.Z.dmg.sig) után kerül közzétételre; a 0.2.2-es és újabb appok aláírás nélküli frissítést nem telepítenek. / This release is published only after offline signing by the maintainer (Ed25519, MacVPN-X.Y.Z.dmg.sig); apps from 0.2.2 on do not install unsigned updates. Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. Frissítés után a macOS egyszer rákérdezhet, hogy a MacVPN hozzáférhet-e a Keychainben tárolt saját elemeihez (az ad-hoc aláírás miatt): a „Mindig engedélyezés” gombot csak akkor válaszd, ha a kérdés a MacVPN-től jön (a név és az útvonal alapján, pl. /Applications/MacVPN.app). / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway. After an update macOS may ask once whether MacVPN may access its own items in the Keychain (because of the ad-hoc signature): click Always Allow only if the prompt is from MacVPN (check the name and the path, e.g. /Applications/MacVPN.app)."
+          if [ "${WINVPN_MSI_IN_RELEASE:-}" = true ]; then
+            V="${GITHUB_REF_NAME#v}"
+            # Mindkét MSI vagy egyik sem: a sign-release.sh csak így ír alá.
+            for arch in x64 arm64; do
+              [ -f "dist/WinVPN-$V-$arch.msi" ] && [ -f "dist/WinVPN-$V-$arch.msi.sha256" ] || { echo "missing WinVPN-$V-$arch.msi or its .sha256"; exit 1; }
+            done
+            (cd dist && sha256sum -c WinVPN-*.msi.sha256)
+            FILES+=(dist/WinVPN-*.msi dist/WinVPN-*.msi.sha256)
+            NOTES+=" WinVPN: a WinVPN-X.Y.Z-x64.msi és a WinVPN-X.Y.Z-arm64.msi nincs Authenticode-dal aláírva: a SmartScreen egyszer figyelmeztet („További információ” → „Futtatás mindenképp”). A telepítést rendszergazda végzi. A frissítéseket ugyanazok az offline Ed25519 aláírások védik (WinVPN-X.Y.Z-<arch>.msi.sig). / WinVPN: WinVPN-X.Y.Z-x64.msi and WinVPN-X.Y.Z-arm64.msi are not Authenticode-signed: SmartScreen warns once (More info → Run anyway). They are installed by an administrator. Updates are protected by the same offline Ed25519 signatures (WinVPN-X.Y.Z-<arch>.msi.sig). A WinVPN telepíti a WinVPN szolgáltatást (OpenVPN- és WireGuard-kapcsolatok) és a WireGuard aláírt wireguard.dll-jét; az OpenVPN Community-t szükség esetén a Rendszerállapotban telepítheted. / WinVPN installs the WinVPN Service (connects OpenVPN and WireGuard) and the signed wireguard.dll from WireGuard; OpenVPN Community is installed from System Status when needed."
+          fi
+          gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --draft \
             --title "MacVPN $GITHUB_REF_NAME" \
-            --notes "Ez a kiadás csak a karbantartó offline Ed25519 aláírása (MacVPN-X.Y.Z.dmg.sig) után kerül közzétételre; a 0.2.2-es és újabb appok aláírás nélküli frissítést nem telepítenek. / This release is published only after offline signing by the maintainer (Ed25519, MacVPN-X.Y.Z.dmg.sig); apps from 0.2.2 on do not install unsigned updates. Telepítés: nyisd meg a DMG-t, és húzd az appot az Applications mappába. Az app nincs Developer ID-vel aláírva: első indításkor Rendszerbeállítások → Adatvédelem és biztonság → „Megnyitás mindenképp”. Frissítés után a macOS egyszer rákérdezhet, hogy a MacVPN hozzáférhet-e a Keychainben tárolt saját elemeihez (az ad-hoc aláírás miatt): a „Mindig engedélyezés” gombot csak akkor válaszd, ha a kérdés a MacVPN-től jön (a név és az útvonal alapján, pl. /Applications/MacVPN.app). / Install: open the DMG and drag the app to Applications. The app is not signed with a Developer ID: on first launch use System Settings → Privacy & Security → Open Anyway. After an update macOS may ask once whether MacVPN may access its own items in the Keychain (because of the ad-hoc signature): click Always Allow only if the prompt is from MacVPN (check the name and the path, e.g. /Applications/MacVPN.app)."
+            --notes "$NOTES"

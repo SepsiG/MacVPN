@@ -99,7 +99,6 @@ fn up_stdins(f: &Fixture, c: &Connection) -> Vec<String> {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn missing_credentials_are_asked_and_saved_after_success() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -132,7 +131,6 @@ fn missing_credentials_are_asked_and_saved_after_success() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn without_save_nothing_is_written() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -148,7 +146,6 @@ fn without_save_nothing_is_written() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_stored_user_name_is_prefilled_and_not_asked() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -162,7 +159,6 @@ fn a_stored_user_name_is_prefilled_and_not_asked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn everything_stored_means_no_prompt() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -176,7 +172,6 @@ fn everything_stored_means_no_prompt() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn no_handler_connects_with_the_stored_secrets() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -186,7 +181,6 @@ fn no_handler_connects_with_the_stored_secrets() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn cancel_ends_silently() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -205,7 +199,6 @@ fn cancel_ends_silently() {
 /// Lock Now while the credential window is open (review 1.2.0 M2): the prompt is dismissed, and the connect ends
 /// before anything else is asked or the root layer is called, whatever the window answers.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_lock_while_the_credential_prompt_is_open_ends_the_connect() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -233,7 +226,6 @@ fn a_lock_while_the_credential_prompt_is_open_ends_the_connect() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn waiting_for_credentials_while_the_window_is_open() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -250,7 +242,6 @@ fn waiting_for_credentials_while_the_window_is_open() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn credentials_come_before_the_static_challenge() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, &format!("{OVPN}static-challenge \"PIN\" 1\n"));
@@ -270,7 +261,6 @@ fn credentials_come_before_the_static_challenge() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn kinds_without_credentials_never_prompt() {
     let f = Fixture::new(EN);
     let wg = Connection::new("WG", VPNKind::Wireguard);
@@ -288,7 +278,6 @@ fn kinds_without_credentials_never_prompt() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ikev2_eap_and_sstp_ask_their_fields() {
     let f = Fixture::new(EN);
     let ike = Connection::new("IKE", VPNKind::Strongswan);
@@ -313,7 +302,6 @@ fn managed_l2tp(f: &Fixture) -> Connection {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn managed_l2tp_asks_for_the_missing_psk() {
     let f = Fixture::new(EN);
     let c = managed_l2tp(&f);
@@ -335,7 +323,6 @@ fn managed_l2tp_asks_for_the_missing_psk() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_typed_native_user_name_becomes_the_account() {
     let f = Fixture::new(EN);
     let mut c = managed_l2tp(&f);
@@ -370,7 +357,6 @@ fn system_vpns_get_no_prompt() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_sign_in_failure_reprompts_once() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -397,7 +383,6 @@ fn a_sign_in_failure_reprompts_once() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_second_sign_in_failure_fails_without_a_third_prompt() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -421,7 +406,6 @@ fn a_second_sign_in_failure_fails_without_a_third_prompt() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_reprompt_does_not_ask_a_stored_key_password_again() {
     let f = Fixture::new(EN);
     let config = format!(
@@ -441,7 +425,6 @@ fn the_reprompt_does_not_ask_a_stored_key_password_again() {
 
 /// Root layer 8: strongSwan's EAP authentication failure is a sign-in failure too.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_ikev2_eap_failure_reprompts_once() {
     let f = Fixture::new(EN);
     let c = Connection::new("IKE", VPNKind::Strongswan);
@@ -462,7 +445,6 @@ fn an_ikev2_eap_failure_reprompts_once() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn other_failures_do_not_reprompt() {
     let f = Fixture::new(EN);
     let c = Connection::new("IKE", VPNKind::Strongswan);
@@ -479,7 +461,6 @@ fn other_failures_do_not_reprompt() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_cancelled_reprompt_ends_silently() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -497,7 +478,6 @@ fn a_cancelled_reprompt_ends_silently() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn disconnecting_while_the_window_is_open_dismisses_it() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -520,7 +500,6 @@ fn disconnecting_while_the_window_is_open_dismisses_it() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failed_connect_after_save_writes_nothing() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -548,7 +527,6 @@ fn wiped() -> usize {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn typed_secrets_are_wiped_after_up() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -562,7 +540,6 @@ fn typed_secrets_are_wiped_after_up() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn typed_secrets_are_wiped_when_the_connect_is_superseded() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -583,7 +560,6 @@ fn typed_secrets_are_wiped_when_the_connect_is_superseded() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn typed_secrets_are_wiped_when_the_code_prompt_is_cancelled() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, &format!("{OVPN}static-challenge \"PIN\" 1\n"));
@@ -599,7 +575,6 @@ fn typed_secrets_are_wiped_when_the_code_prompt_is_cancelled() {
 // MARK: - "Save" never overrides a later change
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_editor_change_during_the_connect_wins() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -617,7 +592,6 @@ fn an_editor_change_during_the_connect_wins() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_native_account_patches_the_fresh_meta() {
     let f = Fixture::new(EN);
     let mut c = managed_l2tp(&f);
@@ -641,7 +615,6 @@ fn the_native_account_patches_the_fresh_meta() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_changed_native_account_is_not_overwritten() {
     let f = Fixture::new(EN);
     let mut c = managed_l2tp(&f);
@@ -663,7 +636,6 @@ fn a_changed_native_account_is_not_overwritten() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_deleted_connection_gets_no_saved_items() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -683,7 +655,6 @@ fn a_deleted_connection_gets_no_saved_items() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_ready_save_of_a_deleted_connection_is_dropped() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -731,7 +702,6 @@ impl macvpn_app_core::deps::SecretWriter for WriteKinds {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn save_writes_through_save_prompted() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -750,7 +720,6 @@ fn save_writes_through_save_prompted() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn saving_does_not_block_the_refresh() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);
@@ -771,7 +740,6 @@ fn saving_does_not_block_the_refresh() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_cancelled_prompt_is_recorded_until_the_next_connect() {
     let f = Fixture::new(EN);
     let c = openvpn(&f, OVPN);

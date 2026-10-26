@@ -102,7 +102,6 @@ fn unix_in(seconds: f64) -> f64 {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn otp_appended_on_stdin() {
     let f = Fixture::new(EN);
     let c = with_otp("Office", VPNKind::Openvpn, OTPSetting::new(true, OTPSeparator::Comma));
@@ -136,7 +135,6 @@ fn otp_appended_on_stdin() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn prompt_cancelled_does_not_connect() {
     let f = Fixture::new(EN);
     let c = with_otp("Office", VPNKind::Strongswan, OTPSetting::new(true, OTPSeparator::None));
@@ -151,7 +149,6 @@ fn prompt_cancelled_does_not_connect() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn prompt_timeout_fails() {
     let f = Fixture::new(EN);
     let c = with_otp("Office", VPNKind::Sstp, OTPSetting::new(true, OTPSeparator::None));
@@ -169,7 +166,6 @@ fn prompt_timeout_fails() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn sstp_code_must_keep_password_rule() {
     let f = Fixture::new(EN);
     let c = with_otp("S", VPNKind::Sstp, OTPSetting::new(true, OTPSeparator::None));
@@ -183,7 +179,6 @@ fn sstp_code_must_keep_password_rule() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn static_challenge_packed_on_stdin() {
     let f = Fixture::new(EN);
     let c = with_otp("Office", VPNKind::Openvpn, OTPSetting::new(true, OTPSeparator::Colon));
@@ -204,7 +199,6 @@ fn static_challenge_packed_on_stdin() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_otp_in_start_options() {
     let f = Fixture::new(EN);
     let mut c = with_otp("Office L2TP", VPNKind::L2tp, OTPSetting::new(true, OTPSeparator::Colon));
@@ -247,7 +241,6 @@ fn system_service_otp() {
 /// Dynamic challenge during `up`: by the bridge's state file it asks for a code and answers with
 /// `mvpn respond`.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn dynamic_challenge_during_up() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -275,7 +268,6 @@ fn dynamic_challenge_during_up() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn expired_state_is_ignored() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -296,7 +288,6 @@ fn expired_state_is_ignored() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn static_fallback_and_cancel_responses() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -325,7 +316,6 @@ fn static_fallback_and_cancel_responses() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn web_auth_confirmation_and_http_dropped() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -358,7 +348,6 @@ fn web_auth_confirmation_and_http_dropped() {
 
 /// Disconnect while connecting: the open prompt is closed, and the bridge is told to cancel before `down`.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn disconnect_while_connecting_cancels_via_bridge() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -390,7 +379,6 @@ fn disconnect_while_connecting_cancels_via_bridge() {
 /// Rust-specific: a pending state (`AUTH_PENDING`) marks the connection as waiting for web approval while `up`
 /// runs, and the watcher is stopped (the state cleared) when `up` returns.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn pending_state_during_up_and_cleared_after() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);

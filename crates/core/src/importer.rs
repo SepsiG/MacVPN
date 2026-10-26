@@ -425,7 +425,7 @@ fn trim_quotes(s: &str) -> &str {
 
 /// A secret file's lines (inside the config's folder, read the same way, at most 1 KB, UTF-8, trailing CR cut,
 /// no control character). `None`: unreadable or unsuitable.
-fn read_credential_lines(path: &str, base: &str) -> Option<Vec<String>> {
+fn read_credential_lines(path: &str, base: &Path) -> Option<Vec<String>> {
     let data = read_inline_data(path, base).ok()?;
     if data.len() > MAX_CREDENTIALS_FILE_SIZE {
         return None;
@@ -444,9 +444,10 @@ fn read_credential_lines(path: &str, base: &str) -> Option<Vec<String>> {
 /// Turns the OpenVPN directives referring to external files into inline blocks. Only a file inside the config's
 /// folder (also after resolving symlinks), at most 1 MB, in the directive's format can be inlined.
 pub fn inline_openvpn_files(content: &str, base_directory: &Path) -> Result<InlineResult, ConfigImportError> {
+    // A canonical, UTF-8 base (a base that is not UTF-8 counts as missing).
     let base = std::fs::canonicalize(base_directory)
         .ok()
-        .and_then(|p| p.to_str().map(str::to_string))
+        .filter(|p| p.to_str().is_some())
         .ok_or_else(|| ConfigImportError::MissingFile(base_directory.to_string_lossy().into_owned()))?;
     let mut out: Vec<String> = Vec::new();
     let mut inlined: Vec<String> = Vec::new();
@@ -540,33 +541,50 @@ fn push_unique(list: &mut Vec<String>, path: String) {
     }
 }
 
-fn read_inline_file(path: &str, base: &str, directive: &str) -> Result<String, ConfigImportError> {
+fn read_inline_file(path: &str, base: &Path, directive: &str) -> Result<String, ConfigImportError> {
     swift_str::string_from_utf8_data(read_inline_data(path, base)?)
         .ok_or_else(|| ConfigImportError::WrongFormat { directive: directive.to_string(), file: path.to_string() })
 }
 
 /// Resolves `path` (relative to `base`, or absolute) and reads it. The resolved path is opened with `O_NOFOLLOW`
 /// and the opened file is checked (regular file, size), so the check and the read concern the same file.
-fn read_inline_data(path: &str, base: &str) -> Result<Vec<u8>, ConfigImportError> {
-    let joined = if swift_str::has_prefix(path, "/") { path.to_string() } else { format!("{base}/{path}") };
+/// On Windows a UNC, device or verbatim path is outside and an alternate data stream (`ca.crt:x`) is missing,
+/// both before the file system is asked ([`fsx::join_reference`], [`fsx::names_a_stream`]); a path that is not
+/// lexically below the folder, or that leads through a symlink or junction, is outside before anything is followed
+/// ([`fsx::canonicalize_reference`]), and the canonical result is checked for a stream again.
+fn read_inline_data(path: &str, base: &Path) -> Result<Vec<u8>, ConfigImportError> {
     // `realpath` takes a C string: it ends at the first NUL.
-    let joined = joined.split('\0').next().unwrap_or_default();
-    let Some(resolved) = std::fs::canonicalize(joined).ok().and_then(|p| p.to_str().map(str::to_string)) else {
-        // Missing: if it already points outside textually, say that.
-        return Err(if lexically_escapes(path) {
-            ConfigImportError::OutsideBaseDirectory(path.to_string())
-        } else {
-            ConfigImportError::MissingFile(path.to_string())
-        });
-    };
-    let prefix = if swift_str::has_suffix(base, "/") { base.to_string() } else { format!("{base}/") };
-    if !swift_str::has_prefix(&resolved, &prefix) {
+    let reference = path.split('\0').next().unwrap_or_default();
+    let Some(joined) = fsx::join_reference(base, reference) else {
         return Err(ConfigImportError::OutsideBaseDirectory(path.to_string()));
+    };
+    if fsx::names_a_stream(Path::new(reference)) {
+        return Err(ConfigImportError::MissingFile(path.to_string()));
+    }
+    let resolved = match fsx::canonicalize_reference(base, &joined) {
+        Ok(resolved) if resolved.to_str().is_some() => resolved,
+        // Windows: not below the folder lexically, or through a symlink or junction (refused before following).
+        Err(e) if fsx::is_outside_base(&e) => {
+            return Err(ConfigImportError::OutsideBaseDirectory(path.to_string()));
+        }
+        // Missing: if it already points outside textually, say that.
+        _ => {
+            return Err(if lexically_escapes(path) {
+                ConfigImportError::OutsideBaseDirectory(path.to_string())
+            } else {
+                ConfigImportError::MissingFile(path.to_string())
+            });
+        }
+    };
+    if !is_below(&resolved, base) {
+        return Err(ConfigImportError::OutsideBaseDirectory(path.to_string()));
+    }
+    if fsx::names_a_stream(&resolved) {
+        return Err(ConfigImportError::MissingFile(path.to_string()));
     }
     let missing = || ConfigImportError::MissingFile(path.to_string());
     // Not a regular file (or unreadable): missing.
-    let (file, meta) =
-        fsx::open_regular(Path::new(&resolved), OpenFor::Read, Follow::No, false).map_err(|_| missing())?;
+    let (file, meta) = fsx::open_regular(&resolved, OpenFor::Read, Follow::No, false).map_err(|_| missing())?;
     if meta.len() > MAX_INLINE_FILE_SIZE as u64 {
         return Err(ConfigImportError::FileTooLarge(path.to_string()));
     }
@@ -576,6 +594,18 @@ fn read_inline_data(path: &str, base: &str) -> Result<Vec<u8>, ConfigImportError
         return Err(ConfigImportError::FileTooLarge(path.to_string()));
     }
     Ok(data)
+}
+
+/// Whether the canonical `resolved` is below the canonical `base`: the text check of 1.5.0, Swift's
+/// Character-wise `hasPrefix` with `base` plus the separator (`/`; Windows: `\`, both sides `\\?\C:\…`). The
+/// base itself is not below it; the root as the base contains itself (then it is no regular file anyway).
+fn is_below(resolved: &Path, base: &Path) -> bool {
+    let (Some(resolved), Some(base)) = (resolved.to_str(), base.to_str()) else {
+        return false;
+    };
+    let separator = std::path::MAIN_SEPARATOR_STR;
+    let prefix = if swift_str::has_suffix(base, separator) { base.to_string() } else { format!("{base}{separator}") };
+    swift_str::has_prefix(resolved, &prefix)
 }
 
 /// DER PKCS#12 (PFX): `SEQUENCE` (short, long or indefinite length), then `INTEGER 3` (the version). Format
@@ -605,12 +635,14 @@ pub fn base64_lines(data: &[u8]) -> Vec<String> {
 }
 
 /// A relative path that gets above the starting folder with `..` (an absolute path is checked by realpath).
+/// Components are split on [`fsx::is_separator`] (`/`; on Windows also `\`).
 pub fn lexically_escapes(path: &str) -> bool {
-    if swift_str::has_prefix(path, "/") {
+    if is_absolute_reference(path) {
         return false;
     }
+    let normalized: String = path.chars().map(|c| if fsx::is_separator(c) { '/' } else { c }).collect();
     let mut depth = 0i64;
-    for part in swift_str::split(path, "/", usize::MAX, true) {
+    for part in swift_str::split(&normalized, "/", usize::MAX, true) {
         if swift_str::eq(part, "..") {
             depth -= 1;
         } else if !swift_str::eq(part, ".") {
@@ -621,6 +653,14 @@ pub fn lexically_escapes(path: &str) -> bool {
         }
     }
     false
+}
+
+/// Absolute for [`lexically_escapes`]: a root (Swift's Character-wise `hasPrefix("/")`; on Windows also `\`) or a
+/// drive / UNC / device prefix (`C:x`, `\\server\share`; Windows only).
+fn is_absolute_reference(path: &str) -> bool {
+    swift_str::has_prefix(path, "/")
+        || (fsx::is_separator('\\') && swift_str::has_prefix(path, "\\"))
+        || matches!(Path::new(path).components().next(), Some(std::path::Component::Prefix(_)))
 }
 
 /// Line terminators for Swift Regex `.` (it matches no line terminator).

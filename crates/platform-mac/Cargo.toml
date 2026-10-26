@@ -18,6 +18,7 @@ libc = "0.2.191"
 macvpn-core = { path = "../core", features = ["vault"] }
 macvpn-platform-api = { path = "../platform-api" }
 regex = "1.13.1"
+serde_json = "1.0.154"
 uuid = { version = "1.26.1", features = ["v4"] }
 zeroize = "1.9.1"
 
@@ -65,8 +66,9 @@ plist = "1.10.1"
 security-framework-sys = "2.17.0"
 
 [features]
-# Test-only API (`KeychainKeyStore::in_keychain`); enabled only by this crate's own dev-dependency on itself.
-test-support = []
+# Test-only API (`KeychainKeyStore::in_keychain`, `CurlCatalogFetcher::with_test_ca`); enabled only by this crate's
+# own dev-dependency on itself.
+test-support = ["macvpn-platform-api/test-support"]
 
 [lints]
 workspace = true

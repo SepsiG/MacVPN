@@ -52,7 +52,10 @@
         "enable": false
       },
       "capabilities": [
-        "main",
+        "menu",
+        "manage",
+        "setup",
+        "update",
         "prompt",
         "pairing",
         "credentials",

@@ -5,17 +5,18 @@
 //! validator forbids the dangerous names; this is defence in depth). Only the variables OpenVPN sets for the hook
 //! and the hook uses are read: `script_type`, `dev`, `ifconfig_local`, `foreign_option_N`; nothing else of the
 //! environment is consulted, and `networksetup` runs with an explicit minimal environment. Server-sent values are
-//! never evaluated: strict format checks only. The DNS servers go to every network service (like wg-quick) and are
-//! restored at `down` from `<run>/dns-backup`.
+//! never evaluated: strict format checks only. The DNS servers go to every network service through the DNS manager
+//! ([`crate::macos::dns`]), which keeps the originals in its persistent ledger and restores them when the last
+//! connection holding DNS goes `down` (a `<run>/dns-backup` of an older root layer is still restored).
 //!
 //! `script_type=check` prints the accepted DNS / DOMAIN values (tests); `check-env` prints the names of the
 //! variables the hook acts on (tests).
 
-use crate::macos::exec::{Cmd, EnvMode};
+use crate::macos::dns::{Dns, Manager, NetworkSetup, is_search_domain};
 use crate::macos::fsx;
+use crate::macos::log::Log;
 use crate::macos::paths::{is_dir, is_file, is_symlink};
 use std::path::{Path, PathBuf};
-use std::process::Stdio;
 
 /// The allowlisted environment.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -55,7 +56,7 @@ impl HookEnv {
                     dns.push(v.to_string());
                 }
             } else if let Some(v) = o.strip_prefix("dhcp-option DOMAIN ")
-                && is_domain(v)
+                && is_search_domain(v)
             {
                 doms.push(v.to_string());
             }
@@ -70,9 +71,9 @@ pub fn is_ipv4(s: &str) -> bool {
     p.len() == 4 && p.iter().all(|x| (1..=3).contains(&x.len()) && x.bytes().all(|b| b.is_ascii_digit()))
 }
 
-/// Hex digits and colons, at least one hex digit, at least two colons.
+/// Hex digits and colons, at least one hex digit, at least two colons, at most 39 bytes (eight full groups).
 pub fn is_ipv6(s: &str) -> bool {
-    !s.is_empty()
+    (1..=39).contains(&s.len())
         && s.bytes().all(|b| b.is_ascii_hexdigit() || b == b':')
         && s.bytes().any(|b| b.is_ascii_hexdigit())
         && s.bytes().filter(|&b| b == b':').count() >= 2
@@ -80,14 +81,6 @@ pub fn is_ipv6(s: &str) -> bool {
 
 pub fn is_dns(s: &str) -> bool {
     is_ipv4(s) || is_ipv6(s)
-}
-
-/// `^[A-Za-z0-9][A-Za-z0-9.-]*$`
-pub fn is_domain(s: &str) -> bool {
-    let b = s.as_bytes();
-    !b.is_empty()
-        && b[0].is_ascii_alphanumeric()
-        && b.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-'))
 }
 
 /// `^(utun|ppp)[0-9]+$`
@@ -113,29 +106,21 @@ pub fn parse_backup_line(line: &str) -> Option<(String, Vec<String>, Vec<String>
     Some((svc, words(dns), words(doms)))
 }
 
-/// `networksetup` with the minimal environment.
-fn networksetup<I, S>(args: I) -> Cmd
-where
-    I: IntoIterator<Item = S>,
-    S: AsRef<std::ffi::OsStr>,
-{
-    Cmd::new("/usr/sbin/networksetup").args(args)
+/// The DNS manager of the hook: only as root (the fixed ledger and `/usr/sbin/networksetup`). The hook reads no
+/// other environment, so not as root (tests, or an openvpn that dropped its privileges) it never changes DNS.
+fn hook_manager() -> Option<Manager> {
+    (crate::macos::sys::geteuid() == 0).then(|| {
+        Manager::new(
+            PathBuf::from(crate::macos::paths::DNS_BASE),
+            Box::new(NetworkSetup { program: PathBuf::from(crate::macos::paths::NETWORKSETUP) }),
+        )
+    })
 }
 
-fn ns_output(args: &[&str]) -> String {
-    crate::macos::exec::capture(&networksetup(args), EnvMode::Minimal, 1 << 20)
-        .map(|(_, o)| String::from_utf8_lossy(&o).into_owned())
-        .unwrap_or_default()
-}
-
-fn ns_run(args: &[String]) {
-    let _ = networksetup(args).command(EnvMode::Minimal).stdin(Stdio::null()).status();
-}
-
-/// `cur=$(… | tr '\n' ' ')`, "There aren't any …" → `Empty`.
-fn current_list(flag: &str, svc: &str) -> String {
-    let joined = ns_output(&[flag, svc]).replace('\n', " ");
-    if joined.contains("aren't any") { "Empty".into() } else { joined }
+/// The connection id: the run directory's name (`/var/run/macvpn/<uuid>`).
+fn run_id(run: &Path) -> Option<String> {
+    let id = run.file_name()?.to_str()?;
+    crate::shared::cli::is_uuid(id).then(|| id.to_string())
 }
 
 /// `mvpn hook ovpn-dns …`; always exits 0, like the bash hook.
@@ -167,9 +152,7 @@ fn run(env: &HookEnv, args: &[String]) {
     } else {
         macvpn_core::l10n::AppLanguage::En
     }));
-    let write_log = |s: &str| {
-        let _ = fsx::append(&log, format!("{s}\n").as_bytes());
-    };
+    let log = Log::at(log);
     match env.script_type.as_str() {
         "check-env" => {
             // The variables the hook acts on: the allowlisted ones present, and the fixed PATH / LC_ALL of its
@@ -203,71 +186,44 @@ fn run(env: &HookEnv, args: &[String]) {
                 out!("DOMAIN {v}");
             }
         }
-        "up" => up(env, &run, &write_log),
-        "down" => down(&run, &write_log),
+        "up" => up(env, &run, &log, hook_manager().as_ref()),
+        "down" => down(&run, &log, hook_manager().as_ref()),
         _ => {}
     }
 }
 
-fn up(env: &HookEnv, run: &Path, log: &dyn Fn(&str)) {
+fn up(env: &HookEnv, run: &Path, log: &Log, m: Option<&Manager>) {
     use crate::macos::ctx::tr;
     if is_tunnel_dev(&env.dev) {
         let _ = fsx::write_line(&run.join("iface"), &env.dev);
     } else {
-        log(&format!("▶ [mvpn] {}", tr("unexpected interface name, not recorded", &[])));
+        log.step(&tr("unexpected interface name, not recorded", &[]));
     }
     if is_ipv4(&env.ifconfig_local) {
         let _ = fsx::write_line(&run.join("ip"), &env.ifconfig_local);
     }
-    let (dns, doms) = env.options();
-    if dns.is_empty() {
-        log(&format!("▶ [mvpn] {}", tr("the server sent no DNS", &[])));
+    let (servers, domains) = env.options();
+    if servers.is_empty() {
+        log.step(&tr("the server sent no DNS", &[]));
         return;
     }
-    // An existing backup (a reconnect without down) is kept: otherwise the VPN's DNS would be saved as original.
-    let backup_path = run.join("dns-backup");
-    let backup = !is_file(&backup_path);
-    if backup {
-        let _ = fsx::write_file(&backup_path, b"", 0o600);
-    }
-    let services = ns_output(&["-listallnetworkservices"]);
-    for svc in services.lines().skip(1) {
-        let svc = svc.strip_prefix('*').unwrap_or(svc);
-        if backup {
-            let cur = current_list("-getdnsservers", svc);
-            let curs = current_list("-getsearchdomains", svc);
-            let _ = fsx::append(&backup_path, format!("{svc}\t{cur}\t{curs}\n").as_bytes());
-        }
-        log(&format!("$ networksetup -setdnsservers \"{svc}\" {}", dns.join(" ")));
-        let mut a = vec!["-setdnsservers".to_string(), svc.to_string()];
-        a.extend(dns.iter().cloned());
-        ns_run(&a);
-        if !doms.is_empty() {
-            log(&format!("$ networksetup -setsearchdomains \"{svc}\" {}", doms.join(" ")));
-            let mut a = vec!["-setsearchdomains".to_string(), svc.to_string()];
-            a.extend(doms.iter().cloned());
-            ns_run(&a);
-        }
+    match (m, run_id(run)) {
+        // Every network service gets the DNS; the originals are kept in the DNS manager's persistent ledger.
+        (Some(m), Some(id)) => m.acquire(&id, &Dns { servers, domains }, log),
+        _ => log.step(&tr("not running as root: DNS not changed", &[])),
     }
 }
 
-fn down(run: &Path, log: &dyn Fn(&str)) {
-    let backup_path = run.join("dns-backup");
-    if !is_file(&backup_path) {
-        return;
+fn down(run: &Path, log: &Log, m: Option<&Manager>) {
+    let Some(m) = m else { return };
+    if let Some(id) = run_id(run) {
+        m.release(&id, log);
     }
-    let data = std::fs::read(&backup_path).unwrap_or_default();
-    for line in String::from_utf8_lossy(&data).lines() {
-        let Some((svc, dns, doms)) = parse_backup_line(line) else { continue };
-        log(&format!("$ networksetup -setdnsservers \"{svc}\" {}", dns.join(" ")));
-        let mut a = vec!["-setdnsservers".to_string(), svc.clone()];
-        a.extend(dns);
-        ns_run(&a);
-        let mut a = vec!["-setsearchdomains".to_string(), svc];
-        a.extend(doms);
-        ns_run(&a);
+    // A connection set up by a root layer before the ledger: its own backup.
+    let backup = run.join("dns-backup");
+    if is_file(&backup) && !is_symlink(&backup) {
+        m.restore_legacy(&backup, log);
     }
-    fsx::remove_file(&backup_path);
 }
 
 #[cfg(test)]
@@ -298,6 +254,45 @@ mod tests {
         assert!(!is_dns("1.1.1.1;touch /tmp/x"));
     }
 
+    #[test]
+    fn pushed_domains_use_the_ledgers_rule() {
+        let long = format!("a{}", ".b".repeat(126)); // 253 bytes
+        let longer = format!("{long}c");
+        let e = env(&[
+            ("foreign_option_1", "dhcp-option DNS 10.0.0.1"),
+            ("foreign_option_2", &format!("dhcp-option DOMAIN {long}")),
+            ("foreign_option_3", &format!("dhcp-option DOMAIN {longer}")),
+            ("foreign_option_4", "dhcp-option DOMAIN _ldap.corp.example"),
+        ]);
+        assert_eq!(e.options().1, vec![long, "_ldap.corp.example".to_string()]);
+        // An IPv6 address is at most 39 bytes in this notation.
+        assert!(is_ipv6("fd00:0000:0000:0000:0000:0000:0000:0053"));
+        assert!(!is_ipv6(&format!("fd00{}", ":0".repeat(20))));
+    }
+
+    #[test]
+    fn an_oversized_pushed_dns_list_leaves_the_originals() {
+        use crate::macos::dns::tests::{FakeNet, dns};
+        let base = std::env::temp_dir().join(format!("mvpn-hook-{}", uuid::Uuid::new_v4()));
+        let run = base.join("0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0");
+        std::fs::create_dir_all(&run).unwrap();
+        let net = FakeNet::with(&[("Wi-Fi", &["192.168.1.1"], &["lan.example.com"])]);
+        let m = Manager::new(base.join("db/dns"), Box::new(net.clone()));
+        let log = Log::at(base.join("c.log"));
+        let mut vars: Vec<(String, String)> = vec![("dev".into(), "utun9".into())];
+        for i in 0..=crate::macos::dns::MAX_DOMAINS {
+            vars.push((format!("foreign_option_{}", i + 1), format!("dhcp-option DOMAIN d{i}.corp.example")));
+        }
+        vars.push((format!("foreign_option_{}", vars.len()), "dhcp-option DNS 10.0.0.53".into()));
+        let e = HookEnv::from_lookup(move |k| vars.iter().find(|(a, _)| a == k).map(|(_, b)| b.clone()));
+        up(&e, &run, &log, Some(&m));
+        assert_eq!(net.of("Wi-Fi"), dns(&["192.168.1.1"], &["lan.example.com"]));
+        assert!(std::fs::read_to_string(base.join("c.log")).unwrap().contains("exceed the limits"));
+        down(&run, &log, Some(&m));
+        assert_eq!(net.of("Wi-Fi"), dns(&["192.168.1.1"], &["lan.example.com"]));
+        fsx::remove_rf(&base);
+    }
+
     fn env_options(e: &HookEnv) -> (Vec<String>, Vec<String>) {
         e.options()
     }
@@ -326,6 +321,32 @@ mod tests {
         );
         assert_eq!(parse_backup_line("svc\t\tEmpty"), Some(("svc".into(), vec!["Empty".into()], vec![])));
         assert_eq!(parse_backup_line(""), None);
+    }
+
+    #[test]
+    fn up_and_down_go_through_the_dns_manager() {
+        use crate::macos::dns::tests::{FakeNet, dns};
+        let base = std::env::temp_dir().join(format!("mvpn-hook-{}", uuid::Uuid::new_v4()));
+        let run = base.join("0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0");
+        std::fs::create_dir_all(&run).unwrap();
+        let net = FakeNet::with(&[("Wi-Fi", &["192.168.1.1"], &[])]);
+        let m = Manager::new(base.join("db/dns"), Box::new(net.clone()));
+        let log = Log::at(base.join("c.log"));
+        let e = env(&[
+            ("dev", "utun9"),
+            ("foreign_option_1", "dhcp-option DNS 10.0.0.53"),
+            ("foreign_option_2", "dhcp-option DOMAIN corp.example"),
+        ]);
+        up(&e, &run, &log, Some(&m));
+        assert_eq!(net.of("Wi-Fi"), dns(&["10.0.0.53"], &["corp.example"]));
+        assert!(!run.join("dns-backup").exists(), "the originals live in the ledger, not in the run directory");
+        down(&run, &log, Some(&m));
+        assert_eq!(net.of("Wi-Fi"), dns(&["192.168.1.1"], &[]));
+        // Not as root (no manager): nothing changes.
+        up(&e, &run, &log, None);
+        assert_eq!(net.of("Wi-Fi"), dns(&["192.168.1.1"], &[]));
+        assert!(std::fs::read_to_string(base.join("c.log")).unwrap().contains("not running as root: DNS not changed"));
+        fsx::remove_rf(&base);
     }
 
     #[test]

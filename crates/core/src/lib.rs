@@ -13,6 +13,7 @@ pub mod credentials;
 pub mod date;
 pub mod exporter;
 pub mod fsx;
+pub mod helper_args;
 pub mod importer;
 pub mod l10n;
 pub mod log;
@@ -21,8 +22,11 @@ pub mod mfa;
 pub mod mobileconfig;
 pub mod models;
 pub mod native;
+pub mod netaddr;
 pub mod plist_xml;
 pub mod ranking;
+pub mod ras;
+pub mod service_proto;
 pub mod status;
 pub mod store;
 pub mod swift_base64;
@@ -35,6 +39,7 @@ pub mod url;
 pub mod validators;
 #[cfg(feature = "vault")]
 pub mod vault;
+pub mod vpn_networks;
 
 pub use target_os::TargetOs;
 

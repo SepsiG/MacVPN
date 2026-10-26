@@ -2,7 +2,7 @@
 
 [English version](control-api.md)
 
-Ez az útmutató fejlesztőknek szól, akik azt szeretnék, hogy egy másik program ugyanazon a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait. A legtöbb felhasználónak nincs rá szüksége; minden mást a [felhasználói útmutató](user-guide.hu.md) ír le.
+Ez az útmutató fejlesztőknek szól, akik azt szeretnék, hogy egy másik program ugyanazon a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait. A legtöbb felhasználónak nincs rá szüksége; minden mást a [felhasználói útmutató](user-guide.hu.md) ír le. A windowsos változat, a WinVPN ugyanezt az API-t egy névvel ellátott csövön (named pipe) kínálja: lásd [11.](#11-windows-winvpn)
 
 ## Tartalom
 
@@ -16,6 +16,7 @@ Ez az útmutató fejlesztőknek szól, akik azt szeretnék, hogy egy másik prog
 8. [Kompatibilitás a későbbi verziókkal](#8-kompatibilitás-a-későbbi-verziókkal)
 9. [Hogyan illeszd be egy Rust appba](#9-hogyan-illeszd-be-egy-rust-appba)
 10. [Hibaelhárítás](#10-hibaelhárítás)
+11. [Windows (WinVPN)](#11-windows-winvpn)
 
 ---
 
@@ -283,7 +284,7 @@ A hibakódok általánosak, soha nem tartalmaznak nyers eszközkimenetet.
 | `mfa_timeout` | A kód- vagy bejelentkezési ablak lejárt. | Hagyd, hogy a felhasználó újrapróbálja. |
 | `credentials_cancelled` | A felhasználó megszakította a hitelesítő adatokat kérő ablakot, vagy az 2 perc után lejárt (1.1.0-tól). | Magától ne próbálkozz újra. |
 | `locked` | A MacVPN széfje zárolva van (1.2.0-tól): a `pair`, `hello`, `list`, `up` és `status` kérést elutasítja, amíg a felhasználó fel nem oldja a MacVPN-ben. A `down` továbbra is működik, a meglévő munkamenet és a bérletei megmaradnak. `pair` vagy `hello` után a kapcsolat bezárul. | Kérd meg a felhasználót, hogy oldja fel a MacVPN-t, aztán próbáld újra. |
-| `failed` | Minden egyéb hiba. A `message`, ha van, rövid, lokalizált ok a felhasználónak. Akkor is ez jön, ha a felhasználó felépülés közben lebontotta a kapcsolatot a MacVPN-ben, vagy ha a saját `down` kérésed szakította meg az `up`-ot. | Mutasd meg az üzenetet. |
+| `failed` | Minden egyéb hiba. A `message`, ha van, rövid, lokalizált ok a felhasználónak. Akkor is ez jön, ha a felhasználó felépülés közben lebontotta a kapcsolatot a MacVPN-ben, vagy ha a saját `down` kérésed szakította meg az `up`-ot. A VPN-motor nélküli WinVPN-ben (a 2a előzetes) minden `up`, amelynek el kellene indítania egy kapcsolatot, típustól függetlenül `failed`, „A VPN-motor a WinVPN egy későbbi verziójában érkezik.” üzenettel (soha nem `setup_required`: nincs mit telepíteni). | Mutasd meg az üzenetet. |
 | `app_quitting` | A MacVPN kilép. A kapcsolat ezután bomlik (a [`closing` esemény](#510-a-closing-esemény) `reason` értéke is lehet). | Csatlakozz újra, ha a MacVPN ismét fut. |
 | `disabled` | A felhasználó kikapcsolta: **Más appok vezérelhetik a VPN-eket**. A kapcsolat ezután bomlik (a [`closing` esemény](#510-a-closing-esemény) `reason` értéke is lehet). | — |
 | `unsupported` | Ismeretlen `op`. | — |
@@ -453,3 +454,110 @@ A kapcsolat kiválasztása: hívd meg a `list` kérést (például az appod kapc
 - **A kapcsolat rögtön a csatlakozás után bomlik.** Küldd el a `hello` (vagy a `pair`) kérést 5 másodpercen belül, maradj másodpercenként 20 kérés alatt, és folyamatosan olvasd a socketet: azt a klienst, amelynél felgyűlnek a válaszok és az események, a MacVPN lecsatlakoztatja.
 - **Azonnali `denied`, ablak nélkül.** 3 elutasítás után a párosítás 10 percig szünetel.
 - **A VPN a munkamenet után is fent marad.** Már az első foglalás előtt is fent volt (korábban is futó kapcsolat), vagy egy másik socket még foglalja. Nézd meg a **Használja: …** feliratot.
+
+---
+
+## 11. Windows (WinVPN)
+
+A WinVPN pontosan ezt a protokollt beszéli (3–8. fejezet: ugyanazok a kérések, események, hibakódok és foglalási szabályok). Csak a csatorna, a kliens azonosítása és a token helye más. A bekapcsolás és a párosítás a 2. és 3. fejezet szerint működik, a WinVPN Kapcsolatok ablakában → **Párosított appok** ([WinVPN felhasználói útmutató, 5.4](winvpn-user-guide.hu.md#54-párosított-appok-vezérlő-api)).
+
+### 11.1 A cső
+
+- **Név:** `\\.\pipe\WinVPN-control-<SID>`, ahol a `<SID>` a felhasználó biztonsági azonosítója (`S-1-5-21-…`; a `whoami /user` kiírja). A példakliens `default_endpoint()` függvénye előállítja; add át ott, ahol socket-útvonal szerepel (`Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`). Nem azonos a `\\.\pipe\WinVPN` csővel, amely a WinVPN szolgáltatás saját csöve.
+- **Ki csatlakozhat:** csak az ugyanazon felhasználóként, **helyi bejelentkezésben** futó programok. A cső elutasítja a hálózati bejelentkezéseket és a távoli klienseket, így egy másik felhasználó, a hálózat, sőt ugyanaz a felhasználó SSH-n vagy más távoli parancssorból sem csatlakozhat (hozzáférés megtagadva). Amíg a **Más appok vezérelhetik a VPN-eket** ki van kapcsolva, a cső nem létezik (`NotFound`).
+- **Azonosítás:** a WinVPN a kliens felhasználóját (SID) azonosítási szintű megszemélyesítéssel a csőből, a futtatható fájl útvonalát a folyamatából olvassa ki; a párosítás ehhez az útvonalhoz kötődik, mint macOS-en. Azt a klienst, amely azonosítást nem engedve nyitja meg a csövet, lezárja.
+- **A kliens ellenőrzi a szervert:** mielőtt bármit (tokent, kérést) küldene, a példakliens ellenőrzi, hogy a csövet kiszolgáló folyamat ugyanazzal a felhasználóval fut, és a más felhasználó által előbb létrehozott csövet (névfoglalót) `PermissionDenied` hibával elutasítja. Használd a példakliens csatornáját (ez a `macvpn-winsys` `pipe` modulja, amelyet maga a WinVPN is használ), vagy végezd el ugyanezt az ellenőrzést.
+- **Élettartam:** mint macOS-en, a foglalás véget ér, amikor a cső leírója bezárul: ha a programod bezárja, kilép, vagy leállítják.
+- **A hibakódok** ugyanazok; Windowson egy OpenVPN- vagy WireGuard-kapcsolat `up` kérésére `failed` jön a szolgáltatás szövegével, ha a WinVPN szolgáltatás hiányzik vagy nem érhető el (soha nem `setup_required`), az L2TP/IPsec, IKEv2, SSTP kapcsolatoknak és a rendszer VPN-eknek pedig nem kell a szolgáltatás. Egy Cisco IPsec kapcsolat `failed` választ ad a „Windows nem támogatja” szövegével.
+
+### 11.2 A token tárolása a Hitelesítőadat-kezelőben
+
+A tokent a felhasználó Hitelesítőadat-kezelőjében tárold, saját általános hitelesítő adatként (a WinVPN sosem olvassa). **A token soha ne kerüljön parancssorba** (`cmdkey /pass:…`, programargumentum): a felhasználó minden folyamata és a folyamatlétrehozás naplózása látja a parancssorokat.
+
+A `windows-sys` crate-tel (funkciók: `Win32_Foundation`, `Win32_Security_Credentials`):
+
+```rust
+use windows_sys::Win32::Security::Credentials::{
+    CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC, CREDENTIALW, CredDeleteW, CredFree, CredReadW, CredWriteW,
+};
+
+const TARGET: &str = "com.example.remote-desktop.winvpn";
+
+fn wide(s: &str) -> Vec<u16> {
+    s.encode_utf16().chain(Some(0)).collect()
+}
+
+fn store_token(token: &str) -> std::io::Result<()> {
+    let (target, user) = (wide(TARGET), wide("control-token"));
+    let mut blob = token.as_bytes().to_vec();
+    let cred = CREDENTIALW {
+        Type: CRED_TYPE_GENERIC,
+        TargetName: target.as_ptr().cast_mut(),
+        UserName: user.as_ptr().cast_mut(),
+        CredentialBlobSize: blob.len() as u32,
+        CredentialBlob: blob.as_mut_ptr(),
+        Persist: CRED_PERSIST_LOCAL_MACHINE, // DPAPI for this user, never roams
+        ..Default::default()
+    };
+    // SAFETY: every pointer in `cred` outlives the call; CredWriteW copies the blob.
+    let ok = unsafe { CredWriteW(&cred, 0) } != 0;
+    blob.fill(0);
+    if ok { Ok(()) } else { Err(std::io::Error::last_os_error()) }
+}
+
+fn load_token() -> Option<String> {
+    let target = wide(TARGET);
+    let mut cred: *mut CREDENTIALW = std::ptr::null_mut();
+    // SAFETY: `target` is NUL-terminated; a returned credential is freed below.
+    if unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut cred) } == 0 {
+        return None;
+    }
+    // SAFETY: CredReadW succeeded: the struct and its blob are valid until CredFree, called once.
+    unsafe {
+        let c = &*cred;
+        let token = (!c.CredentialBlob.is_null())
+            .then(|| std::slice::from_raw_parts(c.CredentialBlob, c.CredentialBlobSize as usize))
+            .and_then(|bytes| String::from_utf8(bytes.to_vec()).ok());
+        CredFree(cred.cast());
+        token
+    }
+}
+
+fn forget_token() {
+    let target = wide(TARGET);
+    // SAFETY: `target` is NUL-terminated.
+    unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) };
+}
+```
+
+A párosítás magából az appból, a távoli munkamenethez kötött foglalás és a 9. fejezet többi része ugyanaz, a `default_socket_path()` helyett a `default_endpoint()` függvénnyel.
+
+### 11.3 A parancssori eszköz Windowson
+
+```powershell
+cargo build -p macvpn-control-client
+$bin = "target\debug\macvpn-control-client.exe"
+
+# 1. Párosítás. A WinVPN megmutatja az ablakát ennek a programnak az útvonalával; a token egyszer íródik ki.
+& $bin pair "My test client"
+
+# 2. Listázás vagy fenntartás: a program a szabványos bemenetén kéri: "Token (or set MACVPN_TOKEN):".
+#    Ott illeszd be a tokent; így sosem kerül parancssorba.
+& $bin list
+& $bin hold 6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01
+
+# Vagy csak ebben a PowerShell-munkamenetben tartsd, visszhang nélkül beolvasva:
+$s = Read-Host -AsSecureString "WinVPN token"
+$env:MACVPN_TOKEN = [System.Net.NetworkCredential]::new('', $s).Password
+& $bin list
+Remove-Item Env:MACVPN_TOKEN
+```
+
+A `hold` akkor ér véget, amikor a szabványos bemenete véget ér (Ctrl+Z, Enter), vagy a VPN lebomlik. A saját asztali munkamenetedben futtasd: SSH-n a cső elutasítja a kapcsolatot.
+
+### 11.4 Hibaelhárítás Windowson
+
+- **`NotFound` (a cső nem létezik):** a **Más appok vezérelhetik a VPN-eket** ki van kapcsolva, a WinVPN nem fut, vagy egy másik felhasználó munkamenetében fut.
+- **Hozzáférés megtagadva csatlakozáskor:** másik felhasználóként vagy hálózati bejelentkezésből (SSH, távoli parancssor, szolgáltatásfiók) csatlakozol. A klienst a felhasználó saját asztali munkamenetében futtasd.
+- **`PermissionDenied`, mielőtt bármi elment volna:** a csövet egy másik felhasználó folyamata szolgálja ki (egy névfoglaló lefoglalta a nevet). Jelentkezz ki, majd be; jelezd a gép rendszergazdájának.
+- **`unauthorized` újrafordítás után:** mint macOS-en, a párosítás a futtatható fájl útvonalához kötődik (a `target\debug` és a `target\release` különbözik).

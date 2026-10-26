@@ -287,6 +287,13 @@ pub struct Entry {
     pub variants: BTreeMap<TargetOs, (String, String)>,
 }
 
+impl Entry {
+    /// Whether the code paths of `os` show this text (`only` is empty or names `os`).
+    pub fn shown_on(&self, os: TargetOs) -> bool {
+        self.only.is_empty() || self.only.contains(&os)
+    }
+}
+
 fn target_os(name: &str, key: &str) -> TargetOs {
     TargetOs::parse(name).unwrap_or_else(|| panic!("l10n/strings.json: unknown OS {name:?} in {key:?}"))
 }

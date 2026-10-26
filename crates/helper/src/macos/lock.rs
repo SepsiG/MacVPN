@@ -57,6 +57,22 @@ fn reap(ctx: &Ctx, lock: &Path) {
     let _ = std::fs::remove_dir(&reap);
 }
 
+/// Takes `lock` (atomic `mkdir`, our pid inside): up to `lock_tries` × 0.5 s, reaping a stale lock.
+fn take(ctx: &Ctx, lock: &Path) -> R<bool> {
+    for _ in 0..ctx.s.lock_tries {
+        if std::fs::create_dir(lock).is_ok() {
+            let _ = fsx::write_line(&lock.join("pid"), &std::process::id().to_string());
+            return Ok(true);
+        }
+        if is_stale(lock) {
+            reap(ctx, lock);
+            continue;
+        }
+        ctx.sleep_ms(500)?;
+    }
+    Ok(false)
+}
+
 /// `acquire_lock`: up to `lock_tries` × 0.5 s. A root dry-run takes no lock (it touches nothing shared).
 pub fn acquire(ctx: &mut Ctx) -> R {
     if ctx.dry() && !ctx.s.test_mode {
@@ -66,20 +82,33 @@ pub fn acquire(ctx: &mut Ctx) -> R {
     let _ = fsx::chmod(&ctx.s.run_base, 0o700);
     let lock = ctx.s.run_base.join(format!(".{}.lock", ctx.id));
     ctx.lock.path = Some(lock.clone());
-    for _ in 0..ctx.s.lock_tries {
-        if std::fs::create_dir(&lock).is_ok() {
-            ctx.lock.held = true;
-            let _ = fsx::write_line(&lock.join("pid"), &std::process::id().to_string());
-            return Ok(());
-        }
-        if is_stale(&lock) {
-            reap(ctx, &lock);
-            continue;
-        }
-        ctx.sleep_ms(500)?;
+    if take(ctx, &lock)? {
+        ctx.lock.held = true;
+        return Ok(());
     }
     Err(ctx
         .die(tr("Another operation is already running on this connection (lock: %@)", &[&lock.display().to_string()])))
+}
+
+/// A lock shared by every connection of a kind (`<run_base>/.<name>.lock`), held while this process works on
+/// state the connections share (strongSwan: what charon has loaded); released on drop.
+#[derive(Debug)]
+pub struct Shared(PathBuf);
+
+impl Drop for Shared {
+    fn drop(&mut self) {
+        release_try(&self.0);
+    }
+}
+
+/// Takes the shared lock `name` (see [`Shared`]), waiting like [`acquire`].
+pub fn acquire_shared(ctx: &Ctx, name: &str) -> R<Shared> {
+    let lock = ctx.s.run_base.join(format!(".{name}.lock"));
+    if take(ctx, &lock)? {
+        return Ok(Shared(lock));
+    }
+    Err(ctx
+        .die(tr("Another strongSwan connection is being set up or closed (lock: %@)", &[&lock.display().to_string()])))
 }
 
 /// `release_lock`: only our own lock (pid check).
@@ -126,6 +155,25 @@ mod tests {
         assert!(!is_stale(&lock), "live pid");
         fsx::write_line(&lock.join("pid"), "999999").unwrap();
         assert!(is_stale(&lock), "dead pid");
+        fsx::remove_rf(&d);
+    }
+
+    #[test]
+    fn the_shared_lock_is_exclusive_and_released_on_drop() {
+        use crate::macos::paths::Settings;
+        use crate::macos::testmode::TestEnv;
+        use crate::shared::cli::Args;
+        let d = std::env::temp_dir().join(format!("mvpn-lock-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&d).unwrap();
+        let env = TestEnv { run_base: Some(d.display().to_string()), lock_tries: Some(1), ..TestEnv::default() };
+        let mut ctx = Ctx::new(Settings::resolve(true, env, String::new()), Args::default());
+        ctx.quiet = true;
+        let g = acquire_shared(&ctx, "strongswan").unwrap();
+        assert!(d.join(".strongswan.lock").is_dir());
+        assert!(acquire_shared(&ctx, "strongswan").is_err());
+        drop(g);
+        assert!(!d.join(".strongswan.lock").exists());
+        assert!(acquire_shared(&ctx, "strongswan").is_ok());
         fsx::remove_rf(&d);
     }
 }

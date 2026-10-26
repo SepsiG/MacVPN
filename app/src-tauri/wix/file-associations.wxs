@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- .conf (WireGuard, strongSwan) is "Open with" only: WinVPN never becomes its default app (as the macOS
+     Alternate rank). .ovpn, .sstp and .macvpncatalog come from tauri.windows.conf.json's fileAssociations.
+     The OpenWithProgids entry is a named value without data: WiX 3.14 takes Value="" (the MSI row's Value is null),
+     and "Open with" reads only the value's name. -->
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <DirectoryRef Id="INSTALLDIR">
+      <Component Id="WinVPNConfOpenWith" Guid="91CB152A-A2D5-4E75-AD31-77AB3A835A7A">
+        <RegistryValue Root="HKLM" Key="Software\Classes\WinVPN.conf" Value="VPN configuration" Type="string" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\WinVPN.conf\shell\open\command" Value="&quot;[INSTALLDIR]WinVPN.exe&quot; &quot;%1&quot;" Type="string" />
+        <RegistryValue Root="HKLM" Key="Software\Classes\.conf\OpenWithProgids" Name="WinVPN.conf" Value="" Type="string" />
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

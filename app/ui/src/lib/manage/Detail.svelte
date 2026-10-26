@@ -6,12 +6,14 @@
   import { api, type Choice, type Kind, type LogFilter, type ManageView, type Notice, type Report, type Row } from '../api';
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
+  import { engineLink } from '../format';
   import { statusLine } from '../status';
   import TypeIcon from '../TypeIcon.svelte';
   import EditorHost from './EditorHost.svelte';
   import LogPanel from './LogPanel.svelte';
   import Modal from './Modal.svelte';
   import TeamConnectionBar from '../catalog/TeamConnectionBar.svelte';
+  import AdminActionButton from './AdminActionButton.svelte';
 
   let {
     row,
@@ -78,7 +80,13 @@
     <div class="title">
       <h1>{row.name}</h1>
       <span class="subtitle {line.tone}">
-        <span class="secondary">{line.type}</span>{#if headerStatus}<span class="secondary dot" aria-hidden="true">·</span><span class="status">{headerStatus}</span>{/if}
+        <span class="secondary">{line.type}</span>{#if headerStatus}<span class="secondary dot" aria-hidden="true">·</span><span class="status">{headerStatus}</span>{/if}{#if engineLink(row)}<span class="secondary" aria-hidden="true"> – </span><button
+            class="link"
+            onclick={(e) => {
+              e.stopPropagation();
+              api.openWindow('setup').catch(console.error);
+            }}>{tr('System Status')}</button
+          >{/if}
       </span>
       {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
     </div>
@@ -111,9 +119,28 @@
     <TeamConnectionBar {id} name={row.name} badge={row.catalog} {native} {onselect} />
   {/if}
   {#if row.state === 'failed'}
-    <p class="banner error"><Icon name="warning" /><span>{row.reason}</span></p>
+    <p class="banner error">
+      <Icon name="warning" /><span class="reason">{row.reason}</span>
+      <!-- WinVPN 2c: the administrator step the error names (absent on macOS). -->
+      {#if row.adminAction}<AdminActionButton {id} action={row.adminAction} />{/if}
+    </p>
   {:else if row.state === 'awaitingAuth'}
     <p class="banner warn"><Icon name="key" /><span>{tr('Waiting for authentication')}</span></p>
+  {/if}
+  {#if row.autoReconnect !== undefined}
+    <label
+      class="reconnect"
+      title={tr('After sleep or a network change, only on the same network, and only when the VPN’s network is not directly reachable there.')}
+    >
+      <span>{tr('Reconnect Automatically')}</span>
+      <input
+        type="checkbox"
+        class="switch"
+        role="switch"
+        checked={row.autoReconnect}
+        onchange={(e) => api.setAutoReconnect(row.id, (e.currentTarget as HTMLInputElement).checked).catch(console.error)}
+      />
+    </label>
   {/if}
   <div class="tabs segmented" role="tablist">
     <button role="tab" aria-selected={tab === 'settings'} class:on={tab === 'settings'} onclick={() => (tab = 'settings')}>
@@ -134,9 +161,11 @@
 {#if confirmDelete}
   <Modal
     title={tr('Delete %@?', row.name)}
-    message={native
-      ? tr('You have to remove the installed profile yourself in the Profiles pane that opens.')
-      : tr('The config and the saved passwords will be deleted.')}
+    message={native && manage.nativeDeleteRemovesProfile
+      ? tr('The config and the saved passwords will be deleted, and its Windows VPN entry too.')
+      : native
+        ? tr('You have to remove the installed profile yourself in the Profiles pane that opens.')
+        : tr('The config and the saved passwords will be deleted.')}
     buttons={[
       { label: tr('Cancel'), kind: 'cancel', action: () => (confirmDelete = false) },
       {
@@ -217,6 +246,22 @@
     font-weight: 500;
     font-variant-numeric: tabular-nums;
   }
+  /* "… – System Status": the engine is missing, System Status installs it. */
+  .subtitle .link {
+    display: inline;
+    min-height: 0;
+    padding: 0;
+    border: none;
+    background: none;
+    box-shadow: none;
+    font: inherit;
+    font-weight: 500;
+    color: var(--accent-text);
+  }
+  .subtitle .link:hover {
+    background: none;
+    text-decoration: underline;
+  }
   .on .status {
     color: var(--state-on-text);
   }
@@ -257,11 +302,21 @@
     width: 14px;
     height: 14px;
   }
+  .banner .reason {
+    flex: 1;
+  }
   .banner.error {
     background: var(--state-fail-soft);
   }
   .banner.warn {
     background: var(--state-busy-soft);
+  }
+  .reconnect {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    align-self: flex-start;
+    margin: 0 var(--space-7) var(--space-5);
   }
   .tabs {
     align-self: flex-start;

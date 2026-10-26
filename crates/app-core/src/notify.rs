@@ -5,6 +5,7 @@
 //! The bodies are generic on purpose: a failure's reason (server, user name, system message) would be visible
 //! on the lock screen, so it stays in the app.
 
+use crate::connection_notices::{self, Notice};
 use crate::credential_prompt::CredentialPromptView;
 use crate::manager::ConnectionEvent;
 use crate::prompt::PromptView;
@@ -44,29 +45,18 @@ fn titled(name: &str, with_name: impl FnOnce(&str) -> String, generic: impl FnOn
     if name.trim().is_empty() { generic() } else { with_name(name) }
 }
 
-/// A failure or a drop. `unique`: a fresh identifier (every event is its own notification).
+/// A failure or a drop of the manager, as a connection notice without a reason (the app adds the log's category
+/// through [`crate::connection_notices`]). `unique`: a fresh identifier (every event is its own notification).
 pub fn for_event(event: &ConnectionEvent, unique: String) -> NotificationContent {
-    let (connection_id, title, body) = match event {
-        ConnectionEvent::Failed { connection_id, name, .. } => (
-            connection_id,
-            titled(
-                name,
-                |n| l10n::tr("%@: connection failed", &[Arg::Str(n)]),
-                || l10n::tr("A VPN connection failed", &[]),
-            ),
-            l10n::tr("Open MacVPN for details", &[]),
-        ),
-        ConnectionEvent::Dropped { connection_id, name } => (
-            connection_id,
-            titled(
-                name,
-                |n| l10n::tr("%@: the connection dropped", &[Arg::Str(n)]),
-                || l10n::tr("A VPN connection dropped", &[]),
-            ),
-            l10n::tr("Click to see the log.", &[]),
-        ),
+    let notice = match event {
+        ConnectionEvent::Failed { connection_id, name, .. } => {
+            Notice::Failed { key: connection_id.clone(), name: name.clone(), reason: None }
+        }
+        ConnectionEvent::Dropped { connection_id, name } => {
+            Notice::Dropped { key: connection_id.clone(), name: name.clone(), reason: None }
+        }
     };
-    NotificationContent { id: unique, title, body, user_info: (CONNECTION_KEY, connection_id.clone()) }
+    connection_notices::content(&notice, unique)
 }
 
 /// "…: authentication needed" for an open prompt (the prompt window does not take the focus; a click on this

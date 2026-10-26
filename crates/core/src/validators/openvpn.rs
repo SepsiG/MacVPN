@@ -1,7 +1,8 @@
 //! Table-driven, three-tier OpenVPN validation (port of `OpenVPNValidator`). The root layer runs it too.
 //!
 //! Rules, in order, per line:
-//! 1. control character -> error (inside blocks too);
+//! 1. control character -> error (inside blocks too); a line longer than [`MAX_LINE_BYTES`] -> "Line too long"
+//!    (inside blocks and comments too: OpenVPN would read the rest as a new line);
 //! 2. inside a data block: a trimmed line starting with `</` closes the block, and if it is not exactly `</tag>`
 //!    (lower-cased) "Invalid closing tag"; other lines are skipped;
 //! 3. empty lines and lines starting with `#` or `;` are skipped;
@@ -14,17 +15,22 @@
 //! 6. directive = first token (space/tab separated), must match `^(--)?[A-Za-z0-9-]+$`, otherwise "Invalid
 //!    directive"; lower-cased, `--` dropped;
 //! 7. tier by [`OpenVPNValidator::tier_for`] (table: `argument_specs` = SAFE, `risky_reasons` and the OS's
-//!    [`platform_reasons`] = RISKY, `forbidden` = FORBIDDEN; an unknown name matching `FORBIDDEN_PATTERN` is
-//!    FORBIDDEN, otherwise RISKY; the entry points without an OS use [`TargetOs::host`]):
+//!    [`platform_reasons`] = RISKY, `forbidden` (on Windows also [`FORBIDDEN_WINDOWS`]) = FORBIDDEN; an unknown
+//!    name matching `FORBIDDEN_PATTERN` is FORBIDDEN, otherwise RISKY; the entry points without an OS use
+//!    [`TargetOs::host`]):
 //!    - FORBIDDEN -> "Forbidden directive";
 //!    - RISKY -> error in a `<connection>` block; the arguments must pass `is_harmless_argument` (no leading `-`,
-//!      `..`, absolute path, `~`, `file:`, shell metacharacter, `/` only in a CIDR), otherwise "Invalid argument";
+//!      `..`, absolute path, `~`, `file:`, shell metacharacter, `/` only in a CIDR; on Windows no `:` but in an
+//!      IPv6 address: `is_harmless_argument_for`), otherwise "Invalid argument";
 //!      a valid line is a risky finding (not an error): `validate_full` reports only the unacknowledged names;
 //!
-//!    7b. `setenv` separately: `setenv opt <directive> ...` -> the directive goes through the same check;
-//!    `setenv NAME [value]` -> NAME must match `^[A-Za-z_][A-Za-z0-9_]*$` and not be in the denylist (these values
-//!    reach the root DNS hook), otherwise "setenv not allowed"; `setenv` without argument, or `setenv opt` without
-//!    directive -> error;
+//!    more than [`MAX_PARMS`] tokens on a line -> "Wrong number of arguments";
+//!
+//!    7b. `setenv` separately: `setenv opt <directive> ...` -> the directive goes through the same check, once (a
+//!    second `setenv opt` -> "setenv not allowed: opt"); `setenv NAME [value]` -> NAME must match
+//!    `^[A-Za-z_][A-Za-z0-9_]*$` and not be in the denylist (these values reach the root DNS hook), and on Windows
+//!    be in the allowlist ([`SETENV_WINDOWS_ALLOWED_NAMES`], [`SETENV_WINDOWS_ALLOWED_PREFIXES`]), otherwise "setenv
+//!    not allowed"; `setenv` without argument, or `setenv opt` without directive -> error;
 //! 8. arguments (SAFE): a mirror of OpenVPN's `parse_line` (space/tab boundaries, `"…"`/`'…'` only at a token
 //!    start, the closing quote ends the token, `#`/`;` at a token start comments out the rest); a backslash or an
 //!    unterminated quote -> "Invalid argument"; a `file_referencing` directive with an argument other than
@@ -270,6 +276,7 @@ pub const REASON_WEAKENS: &str = "Weakens the security of the tunnel (deprecated
 pub const REASON_ROUTING: &str = "Allows routing that can bypass or loop the tunnel";
 pub const REASON_PLATFORM: &str = "Not supported on macOS (Windows or Linux only)";
 pub const REASON_PLATFORM_WINDOWS: &str = "Not supported on Windows (Linux only)";
+/// No table uses it since 2b (the Windows tier forbids these names); kept because its text is in the l10n baseline.
 pub const REASON_SERVICE_OWNED: &str = "Set by the VPN service itself, not by a connection's config";
 pub const REASON_STANDALONE: &str = "Standalone mode: OpenVPN prints information or exits instead of connecting";
 pub const REASON_UNKNOWN: &str = "Unknown to MacVPN: its effect cannot be checked";
@@ -378,16 +385,29 @@ const NOT_ON_MACOS: [&str; 8] = [
 static PLATFORM_MACOS: LazyLock<HashMap<&'static str, &'static str>> =
     LazyLock::new(|| NOT_ON_MACOS.into_iter().map(|d| (d, REASON_PLATFORM)).collect());
 
-/// A draft for the Windows security review (phase 2): the VPN service sets these itself; `setcon` is SELinux;
-/// `cryptoapicert` is allowed with its argument checked ([`WINDOWS_ARGUMENT_SPECS`]).
-static PLATFORM_WINDOWS: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
-    let mut t: HashMap<&'static str, &'static str> = HashMap::new();
-    for d in ["service", "msg-channel", "win-sys", "allow-nonadmin", "rdns-internal", "dhcp-internal"] {
-        t.insert(d, REASON_SERVICE_OWNED);
-    }
-    t.insert("setcon", REASON_PLATFORM_WINDOWS);
-    t
+/// Windows: the WinVPN Service runs `openvpn.exe` as SYSTEM and sets these itself. `win-sys` would make OpenVPN run
+/// `route.exe` / `netsh.exe` from a folder of the config's choosing, `service` / `msg-channel` hand it an event or a
+/// pipe, `allow-nonadmin` changes a TAP adapter's permissions (TAP-Windows6 is installed), `rdns-internal` /
+/// `dhcp-internal` are internal, `windows-driver` is chosen by the service per connection (DCO or TAP-Windows6;
+/// OpenVPN 2.7 ignores the directive anyway), `cryptoapicert` would read the computer's certificate store as SYSTEM (decision 3 of the 2b plan).
+/// FORBIDDEN, never acknowledgeable.
+pub static FORBIDDEN_WINDOWS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
+    [
+        "win-sys",
+        "service",
+        "msg-channel",
+        "allow-nonadmin",
+        "rdns-internal",
+        "dhcp-internal",
+        "windows-driver",
+        "cryptoapicert",
+    ]
+    .into()
 });
+
+/// Windows: `setcon` is SELinux (Linux only).
+static PLATFORM_WINDOWS: LazyLock<HashMap<&'static str, &'static str>> =
+    LazyLock::new(|| [("setcon", REASON_PLATFORM_WINDOWS)].into());
 
 /// A draft (phase 4 revisits `setcon`): the macOS table without `setcon`.
 static PLATFORM_LINUX: LazyLock<HashMap<&'static str, &'static str>> =
@@ -531,6 +551,33 @@ pub const SETENV_DENIED_PREFIXES: [&str; 11] =
 /// Prefixes, case-sensitive (macOS framework variables, e.g. `MallocStackLoggingDirectory`,
 /// `NSObjCMessageLoggingEnabled`).
 pub const SETENV_DENIED_CASE_SENSITIVE_PREFIXES: [&str; 5] = ["Malloc", "NS", "CF", "__CF", "OBJC_"];
+
+/// On Windows, the only `setenv` names (case-insensitive), besides [`SETENV_WINDOWS_ALLOWED_PREFIXES`]. OpenVPN
+/// runs `route.exe` and `netsh.exe` as SYSTEM with its env set as their whole environment (`env_block`), so a name
+/// such as `SystemRoot`, `windir` or `__COMPAT_LAYER` would steer Windows' own DLLs in a SYSTEM process; which
+/// variables those read is not a closed list, so Windows takes an allowlist: the names OpenVPN interprets itself
+/// (`options.c`, `setenv`) and informational names seen in provider profiles.
+pub const SETENV_WINDOWS_ALLOWED_NAMES: [&str; 6] = [
+    "FORWARD_COMPATIBLE",
+    "PUSH_PEER_INFO",
+    "SERVER_POLL_TIMEOUT",
+    "REMOTE_RANDOM_HOSTNAME",
+    "CLIENT_CERT",
+    "CONFIG_VERSION",
+];
+/// On Windows, the allowed `setenv` name prefixes (case-insensitive): the peer-info variables `push-peer-info`
+/// sends to the server (`UV_` user, `IV_` client info).
+pub const SETENV_WINDOWS_ALLOWED_PREFIXES: [&str; 2] = ["UV_", "IV_"];
+
+/// The most tokens on one line, the directive included: OpenVPN's `MAX_PARMS` (`options.h`). `parse_line` silently
+/// drops the tokens after these, so a longer line is refused.
+pub const MAX_PARMS: usize = 16;
+
+/// The longest line in bytes (after a CR at its end is dropped). OpenVPN reads a configuration line into a 257-byte
+/// buffer (`OPTION_LINE_SIZE` + 1), an inline block's line into a 256-byte one (`read_inline_file`), and reads the
+/// rest of a longer line as a new line: in an inline block that rest could close the block, and the lines after it
+/// would be directives to OpenVPN but block content to the validator. 255 bytes and the line end fit both.
+pub const MAX_LINE_BYTES: usize = 255;
 
 // Argument rules. Where the full grammar is overkill, a strict character set: no leading `-`, and `/` only in a
 // mask / CIDR (route-ipv6, ifconfig-ipv6).
@@ -811,29 +858,10 @@ pub(crate) static ARGUMENT_SPECS: LazyLock<HashMap<&'static str, ArgSpec>> = Laz
     t
 });
 
-/// Set membership with Swift `Set<String>` semantics (canonical equivalence).
-/// SAFE only on Windows (they are in the platform tier elsewhere): directive -> argument spec.
-static WINDOWS_ARGUMENT_SPECS: LazyLock<HashMap<&'static str, ArgSpec>> = LazyLock::new(|| {
-    let mut t: HashMap<&'static str, ArgSpec> = HashMap::new();
-    // A certificate from the Windows certificate store: `THUMB:<hex>` (bytes optionally separated by spaces), or
-    // a `SUBJ:`, `ISSUER:` or `SELECT:` selector with text.
-    t.insert(
-        "cryptoapicert",
-        ArgSpec::new(
-            1,
-            1,
-            vec![ArgRule::Pattern("^(THUMB:[0-9A-Fa-f]{2}( ?[0-9A-Fa-f]{2})*|(SUBJ|ISSUER|SELECT):.+)$")],
-        ),
-    );
-    t
-});
-
-/// The argument spec of a SAFE directive on `os`: the shared table, then the OS's own.
-fn argument_spec_for(os: TargetOs, directive: &str) -> Option<&'static ArgSpec> {
-    map_get(&ARGUMENT_SPECS, directive).or_else(|| match os {
-        TargetOs::Windows => map_get(&WINDOWS_ARGUMENT_SPECS, directive),
-        TargetOs::MacOs | TargetOs::Linux => None,
-    })
+/// The argument spec of a SAFE directive (one table for every OS; `os` stays for the callers: the Windows tier
+/// forbids some of these names before this is consulted).
+fn argument_spec_for(_os: TargetOs, directive: &str) -> Option<&'static ArgSpec> {
+    map_get(&ARGUMENT_SPECS, directive)
 }
 
 /// The reason key of a RISKY directive on `os` (an unknown one: [`REASON_UNKNOWN`]).
@@ -844,6 +872,7 @@ fn risky_reason_for(os: TargetOs, directive: &str) -> &'static str {
         .unwrap_or(REASON_UNKNOWN)
 }
 
+/// Set membership with Swift `Set<String>` semantics (canonical equivalence).
 fn set_contains(set: &HashSet<&'static str>, s: &str) -> bool {
     set.contains(s) || (!s.is_ascii() && set.iter().any(|k| swift_str::eq(k, s)))
 }
@@ -860,9 +889,14 @@ fn hint() -> String {
 impl OpenVPNValidator {
     /// SAFE directives on this OS (the `argument_specs` keys). `setenv` is SAFE by its own rule.
     pub fn allowed() -> HashSet<&'static str> {
+        Self::allowed_for(TargetOs::host())
+    }
+
+    /// SAFE directives on `os` (the `argument_specs` keys; Windows leaves out `FORBIDDEN_WINDOWS`).
+    pub fn allowed_for(os: TargetOs) -> HashSet<&'static str> {
         let mut names: HashSet<&'static str> = ARGUMENT_SPECS.keys().copied().collect();
-        if TargetOs::host() == TargetOs::Windows {
-            names.extend(WINDOWS_ARGUMENT_SPECS.keys());
+        if os == TargetOs::Windows {
+            names.retain(|d| !FORBIDDEN_WINDOWS.contains(d));
         }
         names
     }
@@ -873,7 +907,9 @@ impl OpenVPNValidator {
     }
 
     pub fn has_argument_spec(directive: &str) -> bool {
-        argument_spec_for(TargetOs::host(), directive).is_some()
+        let host = TargetOs::host();
+        argument_spec_for(host, directive).is_some()
+            && !(host == TargetOs::Windows && set_contains(&FORBIDDEN_WINDOWS, directive))
     }
 
     /// The tier of a directive on this OS ([`OpenVPNValidator::tier_for`] with [`TargetOs::host`]).
@@ -884,6 +920,9 @@ impl OpenVPNValidator {
     /// The tier of a directive on `os`: the tables; for an unknown name `FORBIDDEN_PATTERN`, otherwise RISKY.
     pub fn tier_for(os: TargetOs, directive: &str) -> OpenVPNTier {
         if set_contains(&FORBIDDEN, directive) {
+            return OpenVPNTier::Forbidden;
+        }
+        if os == TargetOs::Windows && set_contains(&FORBIDDEN_WINDOWS, directive) {
             return OpenVPNTier::Forbidden;
         }
         if directive == "setenv" || argument_spec_for(os, directive).is_some() {
@@ -904,6 +943,15 @@ impl OpenVPNValidator {
             return true;
         }
         SETENV_DENIED_CASE_SENSITIVE_PREFIXES.iter().any(|p| swift_str::has_prefix(name, p))
+    }
+
+    /// Windows: whether a `setenv` name is in [`SETENV_WINDOWS_ALLOWED_NAMES`] or starts with one of
+    /// [`SETENV_WINDOWS_ALLOWED_PREFIXES`] (both case-insensitive, as Windows environment names are). The denylist
+    /// ([`Self::is_denied_setenv_name`]) applies too.
+    pub fn is_allowed_windows_setenv_name(name: &str) -> bool {
+        let upper = name.to_ascii_uppercase();
+        SETENV_WINDOWS_ALLOWED_NAMES.contains(&upper.as_str())
+            || SETENV_WINDOWS_ALLOWED_PREFIXES.iter().any(|p| upper.len() > p.len() && upper.starts_with(p))
     }
 
     /// The rule for the arguments of RISKY (and unknown) directives: they cannot smuggle in a file, a path or a
@@ -927,6 +975,20 @@ impl OpenVPNValidator {
             return super::wireguard::is_cidr(arg);
         }
         true
+    }
+
+    /// [`OpenVPNValidator::is_harmless_argument`] on `os`. On Windows a `:` is refused too, except in an IPv6
+    /// address or prefix (security review L-9): `C:name` names a file relative to drive C's current folder (for the
+    /// WinVPN Service, which runs `openvpn.exe` as SYSTEM, `C:\name`), `name:stream` an alternate data stream.
+    pub fn is_harmless_argument_for(os: TargetOs, arg: &str) -> bool {
+        if !Self::is_harmless_argument(arg) {
+            return false;
+        }
+        if os != TargetOs::Windows || !arg.contains(':') {
+            return true;
+        }
+        let address = arg.split_once('/').map_or(arg, |(a, _)| a);
+        address.parse::<std::net::Ipv6Addr>().is_ok()
     }
 
     /// The `ConfigValidator` interface: without acknowledgements, the risky lines are issues too.
@@ -957,6 +1019,10 @@ impl OpenVPNValidator {
         for (line_no, raw_line) in numbered_lines(text) {
             if has_control_character(raw_line) {
                 issues.push(ValidationIssue::new(line_no, control_character_message()));
+                continue;
+            }
+            if raw_line.len() > MAX_LINE_BYTES {
+                issues.push(ValidationIssue::new(line_no, l10n::tr("Line too long", &[])));
                 continue;
             }
             let line = trim_space_tab(raw_line);
@@ -1117,8 +1183,23 @@ impl OpenVPNValidator {
         Some(tokens)
     }
 
-    /// Checks a directive line split into tokens; `setenv opt <directive> ...` goes through this too.
+    /// Checks a directive line split into tokens. `setenv opt <directive> ...` is unwrapped once, as OpenVPN does
+    /// (`add_option`: `p += 2`), and the inner directive is checked by [`Self::check_unwrapped`]; a second
+    /// `setenv opt` is refused there, so there is no recursion.
     pub(crate) fn check_directive(os: TargetOs, tokens: &[String], in_connection: bool) -> LineResult {
+        if tokens.len() > MAX_PARMS {
+            let directive = Self::directive_name(&tokens[0]);
+            let message = match &directive {
+                Some(d) => l10n::tr("Wrong number of arguments: %@", &[Arg::Str(d)]),
+                None => l10n::tr("Invalid directive", &[]),
+            };
+            return LineResult { messages: vec![message], directive, risky: None };
+        }
+        Self::check_unwrapped(os, tokens, in_connection, true)
+    }
+
+    /// [`Self::check_directive`] after the token cap; `may_unwrap`: whether `setenv opt` may still be unwrapped.
+    fn check_unwrapped(os: TargetOs, tokens: &[String], in_connection: bool, may_unwrap: bool) -> LineResult {
         let Some(directive) = Self::directive_name(&tokens[0]) else {
             return LineResult { messages: vec![l10n::tr("Invalid directive", &[])], ..Default::default() };
         };
@@ -1134,17 +1215,22 @@ impl OpenVPNValidator {
                 return fail(l10n::tr("setenv: missing argument", &[]));
             }
             if swift_str::eq(&ascii_lowercased(&tokens[1]), "opt") {
+                if !may_unwrap {
+                    return fail(l10n::tr("setenv not allowed: %@", &[Arg::Str("opt")]) + &hint());
+                }
                 if tokens.len() < 3 {
                     return fail(l10n::tr("setenv opt: missing directive", &[]));
                 }
-                let mut inner = Self::check_directive(os, &tokens[2..], false);
+                let mut inner = Self::check_unwrapped(os, &tokens[2..], false, false);
                 inner.directive = Some(directive);
                 return inner;
             }
             if !matches(&tokens[1], SETENV_NAME_PATTERN) {
                 return fail(l10n::tr("setenv not allowed", &[]) + &hint());
             }
-            if Self::is_denied_setenv_name(&tokens[1]) {
+            if Self::is_denied_setenv_name(&tokens[1])
+                || (os == TargetOs::Windows && !Self::is_allowed_windows_setenv_name(&tokens[1]))
+            {
                 return fail(l10n::tr("setenv not allowed: %@", &[Arg::Str(&tokens[1])]) + &hint());
             }
             if tokens.len() > 3 {
@@ -1181,10 +1267,7 @@ impl OpenVPNValidator {
                 if in_connection {
                     return not_in_connection();
                 }
-                if args.len() > 16 {
-                    return fail(l10n::tr("Wrong number of arguments: %@", &[Arg::Str(&directive)]));
-                }
-                if !args.iter().all(|a| Self::is_harmless_argument(a)) {
+                if !args.iter().all(|a| Self::is_harmless_argument_for(os, a)) {
                     return fail(l10n::tr("Invalid argument: %@", &[Arg::Str(&directive)]));
                 }
                 let reason = risky_reason_for(os, &directive);
@@ -1306,5 +1389,34 @@ impl OpenVPNValidator {
 impl ConfigValidator for OpenVPNValidator {
     fn validate(&self, text: &str) -> Vec<ValidationIssue> {
         self.validate_text(text)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// P2-M1: neither the token cap nor the one-level unwrap depends on the other; each alone keeps a deep
+    /// `setenv opt` chain from growing the stack (the line-length cap in `validate_full_for` comes before both).
+    #[test]
+    fn deep_setenv_opt_chains_do_not_recurse() {
+        let result = std::thread::Builder::new()
+            .stack_size(256 * 1024)
+            .spawn(|| {
+                let mut tokens: Vec<String> =
+                    std::iter::repeat_n(["setenv", "opt"], 100_000).flatten().map(String::from).collect();
+                tokens.extend(["verb".to_string(), "3".to_string()]);
+                let capped = OpenVPNValidator::check_directive(TargetOs::MacOs, &tokens, false);
+                let unwrapped = OpenVPNValidator::check_unwrapped(TargetOs::Windows, &tokens, false, true);
+                (capped, unwrapped)
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+        for r in [result.0, result.1] {
+            assert_eq!(r.messages.len(), 1);
+            assert_eq!(r.directive.as_deref(), Some("setenv"));
+            assert_eq!(r.risky, None);
+        }
     }
 }

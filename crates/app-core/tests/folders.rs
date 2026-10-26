@@ -127,7 +127,6 @@ fn connected_json(cs: &[&Connection]) -> String {
 // MARK: - Order
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_tree_orders_subfolders_first_then_pinned_items_then_usage() {
     let now = Date::from_time_interval_since_1970(NOW);
     let fx_ids: Vec<Connection> = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]
@@ -183,7 +182,6 @@ fn the_tree_orders_subfolders_first_then_pinned_items_then_usage() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn without_a_folder_store_everything_is_at_the_root_in_ranking_order() {
     let fx = common::Fixture::new(AppLanguage::En);
     let a = Connection::new("B", VPNKind::Openvpn);
@@ -209,7 +207,6 @@ fn without_a_folder_store_everything_is_at_the_root_in_ranking_order() {
 // MARK: - View model
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn folder_rows_count_active_connections_in_the_whole_subtree_and_show_the_green_dot() {
     let w = world();
     let a = w.add("A");
@@ -284,7 +281,6 @@ fn folder_rows_count_active_connections_in_the_whole_subtree_and_show_the_green_
 // MARK: - Commands
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn commands_validate_ids_colours_names_and_modes() {
     let w = world();
     let c = w.add("A");
@@ -341,7 +337,6 @@ fn a_folder_cannot_move_into_itself_or_a_descendant() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_with_move_up_puts_the_contents_into_the_parent() {
     let w = world();
     let a = w.add("A");
@@ -362,7 +357,6 @@ fn delete_with_move_up_puts_the_contents_into_the_parent() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_contents_deletes_the_connections_of_the_subtree_and_keeps_system_vpns() {
     let w = world();
     let a = w.add("A");
@@ -483,7 +477,6 @@ fn vault() -> (TempDir, Arc<VaultLifecycle>) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_vault_store_round_trips_and_refuses_while_locked() {
     let (_tmp, vault) = vault();
     let store = VaultFolders::new(vault.clone());
@@ -532,7 +525,6 @@ fn the_vault_store_round_trips_and_refuses_while_locked() {
 // MARK: - Export and import
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn export_adds_the_folder_line_only_for_a_connection_in_a_folder() {
     let w = world();
     let c = w.add("Office");
@@ -567,7 +559,6 @@ fn import(w: &World, dir: &TempDir, file: &str, text: &str) -> Connection {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn import_strips_the_line_and_recreates_the_folder_path() {
     let w = world();
     let dir = TempDir::new();
@@ -606,7 +597,6 @@ fn import_strips_the_line_and_recreates_the_folder_path() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_malformed_meta_line_stays_in_the_config_as_a_comment() {
     let w = world();
     let dir = TempDir::new();

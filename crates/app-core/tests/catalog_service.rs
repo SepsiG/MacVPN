@@ -16,14 +16,13 @@ use macvpn_core::catalog::source::CatalogSource;
 use macvpn_core::catalog::subscription::{SubscriptionString, format_subscription};
 use macvpn_core::models::{SecretField, VPNKind};
 use macvpn_core::vault::{FixedEntropy, SubscriptionRecord, SubscriptionStatus};
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 use zeroize::Zeroizing;
 
 const MANUAL: RefreshTrigger = RefreshTrigger::Manual;
 
 fn source() -> CatalogSource {
-    CatalogSource::File(PathBuf::from("/Volumes/Share/team/acme.macvpncatalog"))
+    CatalogSource::File(share_file("acme.macvpncatalog"))
 }
 
 fn input(p: &Publisher) -> SubscribeInput {
@@ -70,7 +69,6 @@ fn v1() -> macvpn_core::catalog::payload::CatalogPayload {
 // MARK: - subscribe
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn subscribing_with_the_right_fingerprint_applies_the_catalog() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -111,7 +109,6 @@ fn subscribing_with_the_right_fingerprint_applies_the_catalog() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_wrong_fingerprint_is_refused_and_nothing_is_stored() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -126,7 +123,6 @@ fn a_wrong_fingerprint_is_refused_and_nothing_is_stored() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn subscribing_twice_is_refused() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -138,7 +134,6 @@ fn subscribing_twice_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_subscription_strings_catalog_id_and_min_version_bind_the_first_download() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -167,7 +162,6 @@ fn the_subscription_strings_catalog_id_and_min_version_bind_the_first_download()
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_expired_preview_cannot_be_confirmed() {
     // `PendingSubscription::is_expired` is the rule `confirm` applies.
     let f = CatalogFixture::new();
@@ -181,7 +175,6 @@ fn an_expired_preview_cannot_be_confirmed() {
 // MARK: - refresh
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn refresh_applies_new_versions_and_notifies_only_non_zero_parts() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -229,7 +222,6 @@ fn refresh_applies_new_versions_and_notifies_only_non_zero_parts() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_rotated_team_key_is_reported_once_and_the_new_key_applies() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -253,7 +245,6 @@ fn a_rotated_team_key_is_reported_once_and_the_new_key_applies() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_successor_key_is_stored_only_when_applied_and_a_catalog_it_signs_re_pins() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -289,7 +280,6 @@ fn the_successor_key_is_stored_only_when_applied_and_a_catalog_it_signs_re_pins(
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unavailable_never_notifies_and_a_failure_notifies_once_per_status_change() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -313,7 +303,6 @@ fn unavailable_never_notifies_and_a_failure_notifies_once_per_status_change() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_locked_vault_fetches_nothing() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -327,7 +316,6 @@ fn a_locked_vault_fetches_nothing() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_restored_subscription_applies_the_same_version_once_and_still_refuses_a_lower_one() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -366,7 +354,6 @@ fn a_restored_subscription_applies_the_same_version_once_and_still_refuses_a_low
 // MARK: - removals and unsubscribe
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_connection_removed_while_up_stays_until_it_disconnects() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -389,7 +376,6 @@ fn a_connection_removed_while_up_stays_until_it_disconnects() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unsubscribe_disconnects_first_keeps_a_filled_slot_and_prunes_the_allowlists() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -426,7 +412,6 @@ fn unsubscribe_disconnects_first_keeps_a_filled_slot_and_prunes_the_allowlists()
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn duplicate_makes_a_personal_copy() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -439,7 +424,6 @@ fn duplicate_makes_a_personal_copy() {
 // MARK: - secrets in the logs
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn no_log_line_or_notice_carries_a_key_a_token_a_config_or_a_subscription_string() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -473,14 +457,13 @@ fn no_log_line_or_notice_carries_a_key_a_token_a_config_or_a_subscription_string
         for secret in [team_text.as_str(), token, "n3w.t0ken", subscription.as_str(), "auth-user-pass", "remote vpn"] {
             assert!(!line.contains(secret), "{line:?} contains a secret");
         }
-        assert!(!line.contains("/Volumes/Share"), "a file source is logged by its file name at most: {line:?}");
+        assert!(!line.contains(SHARE), "a file source is logged by its file name at most: {line:?}");
     }
 }
 
 // MARK: - review fixes
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_real_backup_and_restore_brings_the_items_back() {
     use macvpn_core::vault::backup::{self, BackupPreferences, ConflictMode};
     let a = CatalogFixture::new();
@@ -512,7 +495,6 @@ fn a_real_backup_and_restore_brings_the_items_back() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn while_reapply_is_set_the_stored_validators_are_not_sent() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -524,7 +506,6 @@ fn while_reapply_is_set_the_stored_validators_are_not_sent() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_new_origin_drops_the_bearer_token_and_the_same_origin_keeps_it() {
     use macvpn_core::catalog::source::HttpsUrl;
     let f = CatalogFixture::new();
@@ -551,7 +532,6 @@ fn a_new_origin_drops_the_bearer_token_and_the_same_origin_keeps_it() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_connection_that_comes_up_while_an_apply_is_planned_is_never_deleted() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -572,7 +552,6 @@ fn a_connection_that_comes_up_while_an_apply_is_planned_is_never_deleted() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failed_allowlist_prune_is_logged() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -584,7 +563,6 @@ fn a_failed_allowlist_prune_is_logged() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_refusal_while_the_vault_locks_is_not_notified() {
     let f = CatalogFixture::new();
     let p = Publisher::new();
@@ -594,4 +572,21 @@ fn a_refusal_while_the_vault_locks_is_not_notified() {
     f.fetcher.fail(CatalogError::Io("not a regular file".into()));
     assert_eq!(f.service.refresh(catalog_id(), MANUAL), RefreshResult::Locked);
     assert!(f.notices().is_empty());
+}
+
+/// WinVPN 2c: a connection a team catalog removes (an apply, an unsubscribe) has its profile removed with it, as
+/// when the user deletes one (`NativeProfiles::remove`; nothing on macOS).
+#[test]
+fn a_removed_catalog_connection_removes_its_profile() {
+    let f = CatalogFixture::new();
+    let profiles = std::sync::Arc::new(common::MobileconfigProfiles::default());
+    f.service.set_native_profiles(profiles.clone());
+    let p = Publisher::new();
+    subscribe(&f, &p, p.seal(1, &v1()));
+    assert!(profiles.removed.lock().unwrap().is_empty());
+    f.fetcher.serve(p.seal(2, &payload(&[(1, "One")])));
+    f.service.refresh(catalog_id(), MANUAL);
+    assert_eq!(*profiles.removed.lock().unwrap(), [local(2)]);
+    f.service.unsubscribe(catalog_id()).unwrap();
+    assert_eq!(*profiles.removed.lock().unwrap(), [local(2), local(1)]);
 }

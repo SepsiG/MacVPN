@@ -8,6 +8,7 @@
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
   import TypeIcon from '../TypeIcon.svelte';
+  import AdminActionButton from './AdminActionButton.svelte';
   import CredentialSelector from './CredentialSelector.svelte';
   import { EditorSession } from './session.svelte';
   import { forgetDisabled } from './live';
@@ -67,6 +68,8 @@
     <p class="about">{tr('This connection can only be connected and disconnected here. Its settings are in System Settings or in its own app.')}</p>
     {#if row.state === 'failed'}
       <p class="error">{row.reason}</p>
+      <!-- WinVPN 2c: Allow L2TP Behind NAT… after a system L2TP VPN's error 809 (absent on macOS). -->
+      {#if row.adminAction === 'allow-l2tp-behind-nat'}<div><AdminActionButton id={row.id} action={row.adminAction} /></div>{/if}
     {/if}
   </div>
   {#if session && fields}
@@ -81,6 +84,9 @@
             disabled={removed}
           />
         </label>
+        {#if view?.platform?.pskNote && view.hasStoredSecret.psk}
+          <p class="note">{view.platform.pskNote}</p>
+        {/if}
         <CredentialSelector
           item={row.id}
           credential={view?.credential ?? null}

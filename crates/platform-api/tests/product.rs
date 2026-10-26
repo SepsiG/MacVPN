@@ -2,6 +2,7 @@
 
 use macvpn_core::TargetOs;
 use macvpn_core::l10n::TextPlatform;
+use macvpn_core::update::SignatureDomain;
 use macvpn_platform_api::{MACVPN, WINVPN};
 use std::path::{Path, PathBuf};
 
@@ -60,4 +61,10 @@ fn identity_values() {
 fn text_platform() {
     assert_eq!(MACVPN.text_platform(), TextPlatform::MACOS);
     assert_eq!(WINVPN.text_platform(), TextPlatform { os: TargetOs::Windows, product: "WinVPN" });
+}
+
+#[test]
+fn each_product_has_its_signature_domain() {
+    assert_eq!(MACVPN.signature_domain, SignatureDomain::MacVpnV1);
+    assert_eq!(WINVPN.signature_domain, SignatureDomain::WinVpnV1);
 }

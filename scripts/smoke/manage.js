@@ -109,30 +109,49 @@
     save();
     checks.sstpSaved = !!(await waitFor(() => document.querySelector('.footer .secondary')));
 
-    // Native form: the profile is generated and staged (the sandbox does not open it).
-    row('Seeded L').click();
-    await shown('Seeded L');
-    const password = await waitFor(() => document.querySelector('.form input[type=password]'));
-    setValue(password, 'native-secret');
-    await sleep(300);
-    save();
-    checks.nativeSaved = !!(await waitFor(() => document.querySelector('.footer .ok')));
-    // The stored password is never sent back: the field is empty, marked as saved, with the Remove action.
-    checks.secretHidden = !!(await waitFor(() => {
-      const field = document.querySelector('.form input[type=password]');
-      return field && field.value === '' && document.querySelector('.form .remove');
-    }));
     const invoke = window.__TAURI_INTERNALS__.invoke;
-    const nativeView = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
-    checks.noSecretInView = !JSON.stringify(nativeView).includes('native-secret') && nativeView.hasStoredSecret.password;
-    // Saving again with the field untouched keeps the stored password.
-    setValue(document.querySelector('.form .field input[type=text]'), 'Seeded L2');
-    await sleep(300);
-    save();
-    await sleep(600);
-    const again = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
-    checks.secretKept = again.hasStoredSecret.password && again.fields.password === null && !again.dirty;
+    const windows = (await invoke('get_platform')).os === 'windows';
+    if (windows) {
+      // WinVPN 2c: the L2TP form saves the Windows VPN entry at once ("Save", no profile to approve); it is not
+      // saved here (the sandbox's RAS engine would write an entry). SSTP cannot skip the certificate check.
+      checks.nativeListed = !!row('Seeded L');
+      const sstpView = await invoke('editor_open', { id: '21111111-2222-4333-8444-555555555555' });
+      checks.sstpNoVerification = !!sstpView.platform?.insecureCert;
+      const insecure = document.querySelector('.form select option[value=insecure]');
+      checks.sstpInsecureDisabled = !!insecure && insecure.disabled && insecure.title === sstpView.platform.insecureCert;
+      row('Seeded L').click();
+      await shown('Seeded L');
+      const saveLabel = { en: 'Save', hu: 'Mentés' }[vm.language];
+      checks.nativeSaveButton = !!(await waitFor(() => document.querySelector('.form .footer button.primary')?.textContent.trim() === saveLabel));
+      const nativeView = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
+      checks.nativeNoInstallStep = nativeView.platform?.noInstallStep === true && nativeView.platform.l2tpCopy === false;
+    } else {
+      // Native form: the profile is generated and staged (the sandbox does not open it).
+      row('Seeded L').click();
+      await shown('Seeded L');
+      const password = await waitFor(() => document.querySelector('.form input[type=password]'));
+      setValue(password, 'native-secret');
+      await sleep(300);
+      save();
+      checks.nativeSaved = !!(await waitFor(() => document.querySelector('.footer .ok')));
+      // The stored password is never sent back: the field is empty, marked as saved, with the Remove action.
+      checks.secretHidden = !!(await waitFor(() => {
+        const field = document.querySelector('.form input[type=password]');
+        return field && field.value === '' && document.querySelector('.form .remove');
+      }));
+      const nativeView = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
+      checks.noSecretInView = !JSON.stringify(nativeView).includes('native-secret') && nativeView.hasStoredSecret.password;
+      // Saving again with the field untouched keeps the stored password.
+      setValue(document.querySelector('.form .field input[type=text]'), 'Seeded L2');
+      await sleep(300);
+      save();
+      await sleep(600);
+      const again = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
+      checks.secretKept = again.hasStoredSecret.password && again.fields.password === null && !again.dirty;
+    }
 
+    // The native connection's name now (renamed on macOS only).
+    const l2 = windows ? 'Seeded L' : 'Seeded L2';
     // The search: typed with accents the names do not have, by server and by type; Up / Down and Return open a
     // result; the empty result and its Clear; Escape clears, then leaves the field; Cmd+F comes back to it.
     const field = document.querySelector('.sidebar input.query');
@@ -146,9 +165,9 @@
     checks.searchField = !!field && all.length >= 10;
     field.focus();
     setValue(field, 'SÉÉDED');
-    checks.searchAccents = !!(await showing(['Seeded B', 'Seeded S', 'Seeded L2'])) && !!document.querySelector('nav .tree.filtering mark');
+    checks.searchAccents = !!(await showing(['Seeded B', 'Seeded S', l2])) && !!document.querySelector('nav .tree.filtering mark');
     setValue(field, 'l2tp.example');
-    checks.searchServer = !!(await showing(['Seeded L2']));
+    checks.searchServer = !!(await showing([l2]));
     // An OpenVPN server comes from the config's `remote` (its host only: the port is not searched).
     setValue(field, 'B-GATEWAY.example');
     checks.searchOpenvpnServer = !!(await showing(['Seeded B']));
@@ -157,7 +176,7 @@
     setValue(field, 'sstp');
     checks.searchType = !!(await showing(['Seeded S']));
     setValue(field, 'seeded');
-    await showing(['Seeded B', 'Seeded S', 'Seeded L2']);
+    await showing(['Seeded B', 'Seeded S', l2]);
     const key = (k, extra = {}) => field.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true, ...extra }));
     const activeName = () => document.querySelector('nav .row.item.active .name .label')?.textContent;
     const first = activeName();
@@ -179,13 +198,14 @@
     empty?.querySelector('button.clear-search')?.click();
     checks.searchCleared = !!(await showing(all)) && field.value === '';
     setValue(field, 'seeded');
-    await showing(['Seeded B', 'Seeded S', 'Seeded L2']);
+    await showing(['Seeded B', 'Seeded S', l2]);
     checks.searchNoDrag = !!document.querySelector('nav .tree.filtering');
     key('Escape');
     checks.searchEscape = !!(await showing(all)) && field.value === '' && document.activeElement === field;
     key('Escape');
     checks.searchBlur = document.activeElement !== field;
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: true, bubbles: true, cancelable: true }));
+    // The platform's find shortcut: Cmd+F on macOS, Ctrl+F on Windows.
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: !windows, ctrlKey: windows, bubbles: true, cancelable: true }));
     checks.searchCmdF = document.activeElement === field;
     field.blur();
 

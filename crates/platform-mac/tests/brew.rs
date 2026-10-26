@@ -5,7 +5,10 @@ mod common;
 
 use common::{Scratch, mode};
 use macvpn_core::l10n::{AppLanguage, with_language};
-use macvpn_platform_mac::brew::{BrewBootstrap, BrewEnvironment, BrewInstaller};
+use macvpn_platform_api::{OutdatedPackage, PackageIndexUpdate};
+use macvpn_platform_mac::brew::{BrewBootstrap, BrewEnvironment, BrewGuard, BrewInstaller, BrewOutdated, BrewUpdate};
+use macvpn_platform_mac::command::{CommandError, CommandResult, CommandRunner};
+use macvpn_platform_mac::testing::MockCommandRunner;
 use std::collections::BTreeMap;
 use std::process::Command;
 
@@ -148,4 +151,156 @@ fn installer_stops_brew_after_the_time_limit() {
     assert_eq!(status, 15, "SIGTERM");
     assert!(output.contains("started\n"), "{output}");
     assert!(output.ends_with("\n✗ brew error (15)\n"), "{output}");
+}
+
+/// `brew outdated` runs without Homebrew's auto-update (no network, quick), in the minimal environment.
+#[test]
+fn outdated_runs_offline_with_the_packages() {
+    assert_eq!(
+        BrewOutdated::arguments(),
+        ["outdated", "--json=v2", "--formula", "openvpn", "wireguard-tools", "strongswan", "sstp-client", "bash"]
+    );
+    let env = BrewOutdated::environment(&map(&[("HOME", "/Users/bob"), ("HOMEBREW_X", "1")]), "/opt/homebrew");
+    assert_eq!(env.get("HOMEBREW_NO_AUTO_UPDATE").map(String::as_str), Some("1"));
+    assert_eq!(env.get("HOME").map(String::as_str), Some("/Users/bob"));
+    assert!(!env.contains_key("HOMEBREW_X"));
+    assert_eq!(BrewOutdated::TIMEOUT, 20.0);
+}
+
+#[test]
+fn outdated_json_is_parsed_robustly() {
+    let json = r#"Warning: a tap's notice
+{
+  "formulae": [
+    {"name": "bash", "installed_versions": ["5.2.15", "5.2.37"], "current_version": "5.3.3", "pinned": false, "pinned_version": null},
+    {"name": "openvpn", "installed_versions": ["2.6.8"], "current_version": "2.6.14", "pinned": false, "pinned_version": null},
+    {"name": "strongswan", "installed_versions": ["6.0.0"], "current_version": "6.0.2", "pinned": true, "pinned_version": "6.0.0"},
+    {"name": "openssl@3", "installed_versions": ["3.4.0"], "current_version": "3.5.0", "pinned": false},
+    {"name": "sstp-client", "installed_versions": [], "current_version": "1.0.10"},
+    {"name": "wireguard-tools", "current_version": 7},
+    {"installed_versions": ["1"], "current_version": "2"}
+  ],
+  "casks": []
+}"#;
+    let found = BrewOutdated::parse(json).unwrap();
+    let pkg = |n: &str, i: &str, a: &str| OutdatedPackage { name: n.into(), installed: i.into(), available: a.into() };
+    // In BREW_PACKAGES' order; the pinned one, a foreign formula and incomplete entries are left out.
+    assert_eq!(found, [pkg("openvpn", "2.6.8", "2.6.14"), pkg("bash", "5.2.37", "5.3.3")]);
+    assert_eq!(BrewOutdated::parse(r#"{"formulae": [], "casks": []}"#), Some(vec![]));
+    for bad in ["", "Error: No available formula", "{", "{\"casks\": []}", "{\"formulae\": {}}"] {
+        assert_eq!(BrewOutdated::parse(bad), None, "{bad}");
+    }
+}
+
+/// `brew upgrade` streams like `brew install`, with only MacVPN's formulae; a list without any never runs a bare
+/// `brew upgrade` (which would upgrade everything).
+#[test]
+fn upgrade_streams_output_with_only_our_formulae() {
+    let dir = Scratch::new("brew-upgrade");
+    let brew = dir.join("brew");
+    std::fs::write(&brew, "#!/bin/bash\necho \"args: $*\"\nexit 0\n").unwrap();
+    common::chmod(&brew, 0o755);
+    let formulae = vec!["bash".to_string(), "openssl@3".to_string(), "openvpn".to_string()];
+    let mut output = String::new();
+    let status = with_language(AppLanguage::En, || {
+        BrewInstaller::run_upgrade_for_tests(
+            &brew.to_string_lossy(),
+            &formulae,
+            "/opt/homebrew",
+            &BTreeMap::new(),
+            |s| output.push_str(s),
+        )
+    })
+    .unwrap();
+    assert_eq!(status, 0);
+    assert!(output.starts_with("$ brew upgrade openvpn bash\n"), "{output}");
+    assert!(output.contains("args: upgrade openvpn bash\n"), "{output}");
+    assert!(output.ends_with("\n✓ Done.\n"), "{output}");
+    assert_eq!(BrewInstaller::upgrade_header(&formulae), "$ brew upgrade openvpn bash\n");
+
+    let mut nothing = String::new();
+    let refused = BrewInstaller::run_upgrade_for_tests(
+        &brew.to_string_lossy(),
+        &["openssl@3".to_string()],
+        "/opt/homebrew",
+        &BTreeMap::new(),
+        |s| nothing.push_str(s),
+    );
+    assert!(refused.is_err());
+    assert!(nothing.is_empty());
+}
+
+/// The daily `brew update`: exactly `<prefix>/bin/brew update` (the prefix's brew, no `PATH` lookup), in the
+/// minimal environment (no auto-update switch: updating is the point), 120 s at most. Never a real brew: the mock
+/// answers.
+#[test]
+fn update_runs_the_prefix_brew_in_the_minimal_environment() {
+    assert_eq!(BrewUpdate::arguments(), ["update"]);
+    assert_eq!(BrewUpdate::TIMEOUT, 120.0);
+    let app = map(&[("HOME", "/Users/bob"), ("PATH", "/evil:/usr/bin"), ("HOMEBREW_BREW_GIT_REMOTE", "https://x")]);
+    let env = BrewUpdate::environment(&app, "/usr/local");
+    assert_eq!(env, BrewEnvironment::make(&app, "/usr/local"));
+    assert_eq!(
+        env.get("PATH").map(String::as_str),
+        Some("/usr/local/bin:/usr/local/sbin:/usr/bin:/bin:/usr/sbin:/sbin")
+    );
+    assert!(!env.contains_key("HOMEBREW_NO_AUTO_UPDATE") && !env.contains_key("HOMEBREW_BREW_GIT_REMOTE"));
+
+    let mock = MockCommandRunner::new();
+    let guard = BrewGuard::new();
+    assert_eq!(BrewUpdate::run(&mock, "/opt/homebrew", &guard), PackageIndexUpdate::Updated);
+    let calls = mock.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].executable, "/opt/homebrew/bin/brew");
+    assert_eq!(calls[0].command_line(), "/opt/homebrew/bin/brew update");
+    assert_eq!(calls[0].stdin, None);
+    assert!(guard.try_lock().is_some(), "released after the run");
+}
+
+/// A non-zero exit or a runner error (offline, the time limit) is a failure with a message for the log.
+#[test]
+fn a_failed_update_is_reported_for_the_log() {
+    let mock = MockCommandRunner::new();
+    mock.respond(
+        "/opt/homebrew/bin/brew update",
+        CommandResult::new(1, "", "fatal: unable to access\nError: Fetching /opt/homebrew failed!\n\n"),
+    );
+    assert_eq!(
+        BrewUpdate::run(&mock, "/opt/homebrew", &BrewGuard::new()),
+        PackageIndexUpdate::Failed("brew update exited with 1: Error: Fetching /opt/homebrew failed!".into())
+    );
+    struct TimedOut;
+    impl CommandRunner for TimedOut {
+        fn run(&self, executable: &str, _: &[String], _: Option<&str>) -> Result<CommandResult, CommandError> {
+            Err(CommandError::TimedOut(executable.into()))
+        }
+    }
+    assert!(matches!(BrewUpdate::run(&TimedOut, "/opt/homebrew", &BrewGuard::new()), PackageIndexUpdate::Failed(_)));
+}
+
+/// While another guarded brew command (an install / upgrade) holds the guard, the update is skipped without
+/// running anything; `lock` waits for a running update.
+#[test]
+fn update_never_overlaps_another_brew_command() {
+    let guard = BrewGuard::new();
+    let mock = MockCommandRunner::new();
+    {
+        let _install = guard.lock();
+        assert_eq!(BrewUpdate::run(&mock, "/opt/homebrew", &guard), PackageIndexUpdate::Busy);
+        assert!(guard.try_lock().is_none());
+    }
+    assert!(mock.calls().is_empty(), "nothing run while busy");
+    // An update in progress: an install waits for it.
+    let slow = MockCommandRunner::new();
+    slow.delay("/opt/homebrew/bin/brew update", std::time::Duration::from_millis(300));
+    std::thread::scope(|s| {
+        let update = s.spawn(|| BrewUpdate::run(&slow, "/opt/homebrew", &guard));
+        while slow.calls().is_empty() {
+            std::thread::yield_now();
+        }
+        let start = std::time::Instant::now();
+        drop(guard.lock());
+        assert!(start.elapsed() >= std::time::Duration::from_millis(100), "the install waited");
+        assert_eq!(update.join().unwrap(), PackageIndexUpdate::Updated);
+    });
 }

@@ -9,7 +9,9 @@
 
 use macvpn_core::l10n;
 use regex::Regex;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::LazyLock;
 
 fn workspace() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..").canonicalize().unwrap()
@@ -121,6 +123,7 @@ const VARIABLE_KEYS: &[(&str, &str, KeySource)] = &[
     ("openvpn.rs", "key", KeySource::MatchBefore),
     ("respond.rs", "key", KeySource::Constants),
     ("openvpn.rs", "self.reason_key", KeySource::Constants),
+    ("l2tp.rs", "key", KeySource::Constants),
     ("temp_dir.rs", "key", KeySource::Wrapper),
     ("l10n.rs", "key", KeySource::Wrapper),
     ("ctx.rs", "key", KeySource::Wrapper),
@@ -215,15 +218,59 @@ fn every_rust_text_is_in_the_table() {
     assert!(checked > 300, "only {checked} keys found");
 }
 
+/// The macOS facility names (regex fragments, matched as whole words), in English and Hungarian. A Hungarian form
+/// takes its suffixes (`Keychainben`, `Rendszerbeállításokban`, `menüsorban`, `Macen`, `Mac-en`); `MacVPN` and
+/// `Optional` are not terms, `Option-kattintás` is. The root layer (scripts under
+/// `/usr/local`, a sudoers rule) and `Info.plist` are macOS facilities too.
+const MACOS_TERMS: &[&str] = &[
+    r"Keychain\w*",
+    r"[Kk]ulcskarik\w*",
+    r"Finder\w*",
+    r"Mac(?:-?\p{Ll}+)?",
+    r"macOS",
+    r"Homebrew\w*",
+    r"brew",
+    r"System Settings",
+    r"Rendszerbeállítás\w*",
+    r"Login Items",
+    r"Bejelentkezési elem\w*",
+    r"LaunchAgent\w*",
+    r"Applications",
+    r"Device Management",
+    r"scutil",
+    r"sudo",
+    r"sudoers",
+    r"Dock\w*",
+    r"menu bar",
+    r"menüsor\w*",
+    r"Option",
+    r"Gatekeeper",
+    r"Terminal\w*",
+    r"Terminál\w*",
+    r"Info\.plist",
+    r"Profiles pane",
+    r"Profilok panel\w*",
+    r"root (?:layer|helper|scripts?|file)",
+    r"root (?:réteg|segéd|script|fájl)\w*",
+];
+
+/// Whether `text` names `term` (one of [`MACOS_TERMS`]) as a whole word.
+fn contains_term(text: &str, term: &str) -> bool {
+    static COMPILED: LazyLock<HashMap<&str, Regex>> = LazyLock::new(|| {
+        MACOS_TERMS.iter().map(|term| (*term, Regex::new(&format!(r"\b(?:{term})\b")).unwrap())).collect()
+    });
+    COMPILED.get(term).unwrap_or_else(|| panic!("not one of MACOS_TERMS: {term}")).is_match(text)
+}
+
+fn names_a_macos_term(text: &str) -> bool {
+    MACOS_TERMS.iter().any(|term| contains_term(text, term))
+}
+
 /// Every text that names a macOS facility is classified (platform-neutral refactor, Task 6): `only` (the OSes
 /// whose code paths show it) or a `windows` variant. `only` and `variants` never name the same OS, and a variant
 /// has both languages.
 #[test]
 fn macos_terms_are_classified() {
-    let terms = Regex::new(
-        r"\b(Keychain|Kulcskarika|Finder|Mac|macOS|Homebrew|brew|System Settings|Rendszerbeállítások|Login Items|LaunchAgent|Applications|Device Management|scutil|sudo|sudoers|Dock|menu bar|menüsor|Option-click|Gatekeeper)\b",
-    )
-    .unwrap();
     let json: serde_json::Value = serde_json::from_str(l10n::STRINGS_JSON).unwrap();
     let strings = json["strings"].as_object().unwrap();
     let mut unclassified = Vec::new();
@@ -246,7 +293,7 @@ fn macos_terms_are_classified() {
             }
             assert_eq!(variant.as_object().unwrap().len(), 2, "variant {os} has more than en and hu: {key}");
         }
-        if terms.is_match(key) || terms.is_match(hu) {
+        if names_a_macos_term(key) || names_a_macos_term(hu) {
             matched += 1;
             if only.is_empty() && !variants.is_some_and(|v| v.contains_key("windows")) {
                 unclassified.push(key.clone());
@@ -255,4 +302,28 @@ fn macos_terms_are_classified() {
     }
     assert!(unclassified.is_empty(), "macOS terms without `only` or a `windows` variant: {unclassified:#?}");
     assert!(matched >= 60, "only {matched} texts name a macOS term");
+}
+
+/// What WinVPN shows: every text resolved for Windows (variant, else base, product name replaced), in both
+/// languages, names no macOS facility, unless the text is never shown on Windows (`only` without "windows").
+#[test]
+fn no_macos_term_reaches_windows() {
+    use macvpn_core::TargetOs;
+    use macvpn_core::l10n::{AppLanguage, TextPlatform};
+    let windows = TextPlatform { os: TargetOs::Windows, product: "WinVPN" };
+    let mut offenders = Vec::new();
+    for entry in l10n::table() {
+        if !entry.shown_on(TargetOs::Windows) {
+            continue;
+        }
+        for language in [AppLanguage::En, AppLanguage::Hu] {
+            let text = l10n::tr_for(windows, language, &entry.key, &[]);
+            for term in MACOS_TERMS {
+                if contains_term(&text, term) {
+                    offenders.push(format!("{term}: {text}"));
+                }
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "macOS terms in Windows texts:\n{}", offenders.join("\n"));
 }

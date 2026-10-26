@@ -35,7 +35,7 @@
     checks.card = !!card;
     const v = await vm();
     const client = v.control.clients[0];
-    checks.cardPath = !!client && card?.querySelector('.path')?.textContent === client.executable && client.executable.startsWith('/');
+    checks.cardPath = !!client && card?.querySelector('.path')?.textContent === client.executable && /^(\/|[A-Za-z]:\\)/.test(client.executable);
     checks.cardName = card?.querySelector('.app-name')?.textContent === 'smoke-client';
     checks.allowedTicked = !!card?.querySelector(`input[value="${target}"]`)?.checked;
     checks.noSecret = !/token|sha256/i.test(JSON.stringify(v.control));

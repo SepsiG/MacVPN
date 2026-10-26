@@ -3,7 +3,7 @@
 # decision A). It installs nothing: the two Windows targets come from rust-toolchain.toml through rustup.
 #
 # Checked here, for x86_64-pc-windows-msvc and aarch64-pc-windows-msvc, debug and release, with --all-targets:
-#   macvpn-core (without `vault`), macvpn-helper, macvpn-control-client.
+#   macvpn-core (without `vault`), macvpn-helper, macvpn-control-client, macvpn-winsys.
 # Not checked here: the vault, platform-api, platform-win, app-core and the app. They need C code built for MSVC
 # (SQLCipher with a vendored OpenSSL, whose build needs nmake and a Windows Perl; the app's Windows resource, which
 # needs rc.exe or llvm-rc), so CI's windows-latest job checks them.
@@ -12,7 +12,7 @@ cd "$(dirname "$0")/.."
 export PATH="$HOME/.cargo/bin:$PATH"
 
 TARGETS=(x86_64-pc-windows-msvc aarch64-pc-windows-msvc)
-PACKAGES=(-p macvpn-core -p macvpn-helper -p macvpn-control-client)
+PACKAGES=(-p macvpn-core -p macvpn-helper -p macvpn-control-client -p macvpn-winsys)
 
 installed=$(rustup target list --installed) || { echo "FAIL: rustup target list"; exit 1; }
 for target in "${TARGETS[@]}"; do
@@ -37,5 +37,5 @@ if [ ${#failed[@]} -gt 0 ]; then
     echo "FAIL: the Windows check failed for: ${failed[*]}"
     exit 1
 fi
-echo "OK: macvpn-core (without vault), macvpn-helper and macvpn-control-client compile for both Windows targets"
+echo "OK: macvpn-core (without vault), macvpn-helper, macvpn-control-client and macvpn-winsys compile for both Windows targets"
 echo "The vault, platform-api, platform-win, app-core and the app are checked by CI (windows-latest)."

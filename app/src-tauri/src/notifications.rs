@@ -5,12 +5,15 @@
 
 use macvpn_app_core::ConnectionEvent;
 use macvpn_app_core::ConnectionItem;
+use macvpn_app_core::connection_notices::{self, Notice};
 use macvpn_app_core::credential_prompt::CredentialPromptView;
+use macvpn_app_core::failure_reason::{self, FailureKind};
 use macvpn_app_core::notify::{self, ClickAction, NotificationContent};
 use macvpn_app_core::prompt::PromptView;
-use macvpn_core::models::uuid_string;
+use macvpn_core::log::LogTailer;
+use macvpn_core::models::{ConnectionState, parse_uuid, uuid_string};
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, PoisonError};
 use tauri::{AppHandle, Manager};
 
 use crate::platform;
@@ -29,6 +32,24 @@ pub fn start(app: &AppHandle, state: &AppState) {
     }));
 }
 
+/// A connection notice: posted where notifications can be posted; a smoke run (debug builds) records it.
+fn post_notice(state: &AppState, content: &NotificationContent) {
+    if state.notifications_enabled() {
+        post(content);
+    }
+    #[cfg(debug_assertions)]
+    platform::smoke_notice(state, content);
+}
+
+/// Connection notices can be posted: from a real app bundle, or (debug builds) in a smoke run, which records them.
+pub fn notices_possible(state: &AppState) -> bool {
+    #[cfg(debug_assertions)]
+    if platform::smoke_records_notices(state) {
+        return true;
+    }
+    state.notifications_enabled()
+}
+
 fn post(content: &NotificationContent) {
     platform::get().notifier().post(
         &content.id,
@@ -38,10 +59,65 @@ fn post(content: &NotificationContent) {
     );
 }
 
-/// A failure or a drop.
+/// The category of the connection's current log (its last 256 KiB, the tailer's first window), for a failure's
+/// reason in plain words. Reads a file or asks the service: never on the manager's thread.
+pub fn classify(state: &AppState, key: &str) -> FailureKind {
+    let Some(id) = parse_uuid(key) else { return FailureKind::Unknown };
+    let Some(source) = state.helper.log_source(&id) else { return FailureKind::Unknown };
+    let lines = LogTailer::with_source(source).read_new();
+    failure_reason::classify(&lines)
+}
+
+/// The "Connection Notifications" switch, where notifications can be posted at all.
+fn switch_on(state: &AppState) -> bool {
+    notices_possible(state) && connection_notices::enabled(state.prefs.as_ref())
+}
+
+/// A status notice (the tracker's, or the reconnect planner's). The planner's `DisconnectedHere` carries no name:
+/// it gets the connection's current one (none when the connection is gone; empty while locked: a generic title).
+pub fn notice(state: &AppState, notice: &Notice) {
+    if !switch_on(state) {
+        return;
+    }
+    let unique = uuid_string(&uuid::Uuid::new_v4());
+    let content = match notice {
+        Notice::DisconnectedHere { key, .. } => {
+            let Some(item) = state.manager.item(key) else { return };
+            connection_notices::content_named(notice, item.name(), unique)
+        }
+        _ => connection_notices::content(notice, unique),
+    };
+    post_notice(state, &content);
+}
+
+/// A failure or a drop (`ConnectionEvent`), with the reason from the log. A disconnect the user started emits no
+/// event, so it posts nothing.
 pub fn event(state: &AppState, event: &ConnectionEvent) {
-    if state.notifications_enabled() {
-        post(&notify::for_event(event, uuid_string(&uuid::Uuid::new_v4())));
+    if !switch_on(state) {
+        return;
+    }
+    let notice = match event {
+        ConnectionEvent::Dropped { connection_id, name } => {
+            let reason = connection_notices::reason_text(classify(state, connection_id), None);
+            Notice::Dropped { key: connection_id.clone(), name: name.clone(), reason }
+        }
+        ConnectionEvent::Failed { connection_id, name, reason } => {
+            let reason = connection_notices::reason_text(classify(state, connection_id), Some(reason));
+            Notice::Failed { key: connection_id.clone(), name: name.clone(), reason }
+        }
+    };
+    self::notice(state, &notice);
+}
+
+/// A state change of a managed connection: "connected" / "reconnected" (the tracker decides).
+pub fn state_changed(state: &AppState, key: &str, new: &ConnectionState) {
+    let Some(item) = state.manager.item(key) else { return };
+    if !matches!(item, ConnectionItem::Managed(_)) {
+        return;
+    }
+    let found = state.notices.lock().unwrap_or_else(PoisonError::into_inner).on_state(key, item.name(), new);
+    if let Some(n) = found {
+        notice(state, &n);
     }
 }
 

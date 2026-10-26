@@ -1,7 +1,8 @@
 //! In-process `SCNetworkConnection` start/stop (the `SystemConfigurationDriver` of `NativeVPN.swift`).
 //! `system-configuration-sys` has no `SCNetworkConnection` bindings, so the five functions are declared here.
 //!
-//! The `SCPreferences` notification functions of the system VPN watcher (`sc_watch`) are declared here too.
+//! The `SCPreferences` notification functions of the system VPN watcher (`sc_watch`) and the `SCDynamicStore`
+//! functions of the network change watcher (`net_watch`) are declared here too.
 //!
 //! Audit notes: the connection object returned by `SCNetworkConnectionCreateWithServiceID` is owned (+1) and
 //! released when the wrapper drops; no callout or context is registered (both null), so nothing calls back into
@@ -11,9 +12,10 @@
 use core_foundation::base::{CFType, TCFType};
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::CFString;
+use core_foundation_sys::array::CFArrayRef;
 use core_foundation_sys::base::{Boolean, CFAllocatorRef, CFIndex, CFTypeRef};
 use core_foundation_sys::dictionary::CFDictionaryRef;
-use core_foundation_sys::runloop::CFRunLoopRef;
+use core_foundation_sys::runloop::{CFRunLoopRef, CFRunLoopSourceRef};
 use core_foundation_sys::string::CFStringRef;
 use macvpn_core::native::NativeStartOptions;
 use std::ffi::{CStr, c_char, c_int, c_void};
@@ -50,6 +52,22 @@ unsafe extern "C" {
         run_loop: CFRunLoopRef,
         mode: CFStringRef,
     ) -> Boolean;
+    pub(crate) fn SCDynamicStoreCreate(
+        allocator: CFAllocatorRef,
+        name: CFStringRef,
+        callout: Option<SCDynamicStoreCallBack>,
+        context: *mut SCDynamicStoreContext,
+    ) -> SCDynamicStoreRef;
+    pub(crate) fn SCDynamicStoreSetNotificationKeys(
+        store: SCDynamicStoreRef,
+        keys: CFArrayRef,
+        patterns: CFArrayRef,
+    ) -> Boolean;
+    pub(crate) fn SCDynamicStoreCreateRunLoopSource(
+        allocator: CFAllocatorRef,
+        store: SCDynamicStoreRef,
+        order: CFIndex,
+    ) -> CFRunLoopSourceRef;
 }
 
 /// An `SCPreferencesRef` (a CF object: released with `CFRelease`).
@@ -66,6 +84,23 @@ pub(crate) type SCPreferencesCallBack = extern "C" fn(prefs: SCPreferencesRef, n
 /// `SCPreferencesContext` (version 0); `retain` / `release` / `copyDescription` are not used (null).
 #[repr(C)]
 pub(crate) struct SCPreferencesContext {
+    pub version: CFIndex,
+    pub info: *mut c_void,
+    pub retain: *const c_void,
+    pub release: *const c_void,
+    pub copy_description: *const c_void,
+}
+
+/// An `SCDynamicStoreRef` (a CF object: released with `CFRelease`).
+pub(crate) type SCDynamicStoreRef = CFTypeRef;
+
+/// `SCDynamicStoreCallBack(store, changedKeys, info)`.
+pub(crate) type SCDynamicStoreCallBack =
+    extern "C" fn(store: SCDynamicStoreRef, changed: CFArrayRef, info: *mut c_void);
+
+/// `SCDynamicStoreContext` (version 0); `retain` / `release` / `copyDescription` are not used (null).
+#[repr(C)]
+pub(crate) struct SCDynamicStoreContext {
     pub version: CFIndex,
     pub info: *mut c_void,
     pub retain: *const c_void,

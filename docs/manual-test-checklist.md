@@ -1,9 +1,460 @@
-# MacVPN – kézi tesztlista (1.5.0, 1.4.1, 1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
+# MacVPN és WinVPN – kézi tesztlista (2.0.0 új funkciók; WinVPN 2c, 2b és 2a; MacVPN 1.5.0, 1.4.1, 1.4.0, 1.3.0, 1.2.0 és 1.1.0, Rust/Tauri)
 
-Előfeltétel: `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.5.0.dmg`), zöld: `cargo test --workspace`,
+Előfeltétel (MacVPN): `scripts/build-dmg.sh` lefutott (`dist/MacVPN-1.5.0.dmg`), zöld: `cargo test --workspace`,
 `scripts/test-root.sh` (Rust `mvpn`), `cd app/ui && npm test && npm run build`, `scripts/test-sign-release.sh`, a
 smoke teszt mindkét nyelven (`SMOKE_LANG=en scripts/smoke-manage.sh`, `SMOKE_LANG=hu scripts/smoke-manage.sh`), és
 az 1.0.0-s updater ellenőrzései a kész appon (lásd lent, „Frissítés v1.0.0 → v1.1.0”).
+
+## 2.0.0 – új funkciók
+
+A 2.0.0 négy új funkciója (megjelenés, kapcsolatértesítések, hiányzó motorok, automatikus újracsatlakozás; a terv: `docs/superpowers/plans/2026-10-25-features-2-0.md`), a macOS DNS-kezelő, a naplóméret-korlát, a motorfrissítések (2b terv, a 2026-10-24-es „As built” jegyzetek) és a macOS-es strongSwan-javítások (F1, F2; 2c terv). A funkciók mindkét terméket érintik: ahol nincs „macOS:” vagy „Windows:” jelölés, ott mindkettőn ellenőrizd. Az elvárt eredmény a „→” után áll.
+
+Előfeltétel: a Macen egy debug build (vagy a 2.0.0-s DMG), a Windows-gépen a `scripts/win-remote.sh msi --arch x64` által épített MSI telepítve (asztali bejelentkezéssel, nem SSH-n). Kell egy „Office VPN” nevű OpenVPN-kapcsolat jelszóval, amely a `route 10.20.30.0 255.255.255.0` sorral a 10.20.30.0/24 „irodai” hálózatot vezeti a VPN-be, egy WireGuard-kapcsolat `DNS =` sorral, egy SSTP- vagy IKEv2-kapcsolat, és egy második router (vagy egy hálózat), amely a 10.20.30.0/24-ből ad címet (az „iroda”), valamint egy másik Wi-Fi vagy telefonos hotspot (a „kávézó”). A teszt-VPN-ekhez a labor használható (`scripts/vpn-lab/`, lásd a 2c terv „MacVPN a laborral” szakaszát). Windows **build száma: ___**, macOS **verzió: ___**
+
+### Megjelenés
+
+- [ ] Nyitva a popover, a Kapcsolatok, a Rendszerállapot és egy MFA kódbekérő ablak (például a labor `openvpn-static-challenge.ovpn` kapcsolatával); **Beállítások → Megjelenés → Sötét** → mind egyszerre sötét lesz, Windowson a címsorok is
+- [ ] Ugyanígy **Világos** → mind egyszerre világos; **Rendszer szerint** → mind a rendszer módját veszi fel
+- [ ] Kilépés és újraindítás után a választott mód megmarad (a popover és az elsőként megnyitott ablak is ebben jelenik meg)
+- [ ] **Rendszer szerint** mellett a rendszer módjának átváltása futás közben (macOS: Rendszerbeállítások → Megjelenés; Windows: Gépház → Személyre szabás → Színek → Alapértelmezett alkalmazásmód) → a nyitott ablakok és a popover azonnal követik
+- [ ] A mód váltása után először megnyitott ablak (például a Rendszerállapot, ha addig nem volt nyitva) már az új módban nyílik
+- [ ] Windows: **Sötét** módban világos Windowson a fájlválasztó ablak (Import fájlból…) és a rendszergazdai megerősítés világos marad (ismert korlát), az értesítési terület ikonja a tálca színét követi
+
+### Kapcsolatértesítések
+
+- [ ] Az „Office VPN” csatlakoztatása → értesítés „Office VPN: csatlakozva” (angolul „Office VPN connected”), a szövegben „Kattints a naplóért.”
+- [ ] A WinVPN/MacVPN indulásakor már élő kapcsolatról nem jön „csatlakozva” értesítés
+- [ ] macOS: élő OpenVPN-kapcsolatnál `sudo pkill -f 'openvpn.*<azonosító>'`; Windows: a labor OpenVPN-szerverének leállítása (vagy a hálózati kábel kihúzása) → „Office VPN: megszakadt a kapcsolat”, alatta „A szerver nem válaszol.” (vagy „Kattints a naplóért.”)
+- [ ] Kattintás az értesítésre → a Kapcsolatok ablak a kapcsolat **Napló** fülén nyílik meg
+- [ ] Rossz jelszóval csatlakozva → „Office VPN: sikertelen csatlakozás”, alatta „A szerver elutasította a bejelentkezést.”
+- [ ] A saját **Bontás** és a „Leállítás és kilépés” → nincs értesítés
+- [ ] **Beállítások → Kapcsolatértesítések** ki → a fenti esetek egyikénél sem jön értesítés; egy MFA-kapcsolat „…: hitelesítés szükséges” értesítése továbbra is megjelenik; visszakapcsolva újra jönnek
+- [ ] A zárolási képernyőn (macOS: lezárt képernyő; Windows: Win+L) megjelenő értesítésben nincs szervernév, cím vagy felhasználónév, csak a kapcsolat neve és az általános ok
+- [ ] Zárolt széf mellett megszakadó kapcsolat → a cím általános: „Egy VPN-kapcsolat megszakadt”, a kapcsolat neve nem látszik
+- [ ] Windows: a telepített MSI-ből (Start menüből) indított WinVPN értesítése megjelenik (fejlesztői buildből nem jön értesítés), és a rá kattintás futó WinVPN mellett a Napló fület nyitja
+
+### Hiányzó motorok
+
+- [ ] macOS: `brew uninstall sstp-client` → az SSTP-kapcsolatok a popoverben, a Kapcsolatok listájában és a részleteknél szürkék, „SSTP · Nincs telepítve: sstp-client – Rendszerállapot” felirattal; a kapcsoló és a **Csatlakozás** gomb tiltott
+- [ ] macOS: a sorban a **Rendszerállapot** linkre kattintva megnyílik a Rendszerállapot ablak (a listában a sor nem lesz kijelölve, és nem indul húzás)
+- [ ] macOS: a Kapcsolatok ablak **Új** menüjében nincs SSTP; egy `.sstp` fájl importja (**Import fájlból…**) → „<fájl>: A(z) sstp-client nincs telepítve. Előbb telepítsd a Rendszerállapot ablakban.”, semmi nem mentődik; az ablakra ejtve és a Finderből megnyitva is ugyanez; egy `.sstp` és egy `.ovpn` együttes importjánál az `.ovpn` bekerül
+- [ ] macOS: `brew install sstp-client` a Terminálban, utána a popover megnyitása → egy percen belül az SSTP-sorok normálak, **Újraellenőrzés** nélkül
+- [ ] macOS: Homebrew nélküli gépen vagy tesztfiókban (ha van ilyen) → minden Homebrew-s típus sora „Nincs telepítve: Homebrew – Rendszerállapot”, az L2TP és a Cisco IPsec kapcsolatok használhatók; ha egyik Homebrew-s típus sem használható, az **Új** menü csak a használható típusokat mutatja
+- [ ] Windows: az OpenVPN Community eltávolítva (Gépház → Alkalmazások → Telepített alkalmazások) → az OpenVPN-sorok „Nincs telepítve: OpenVPN Community – Rendszerállapot”, a WireGuard-sorok normálak; az **Új** menüben nincs OpenVPN; egy `.ovpn` importja elutasítva a szöveggel
+- [ ] Windows: a szolgáltatás leállítva (rendszergazdai PowerShell: `sc.exe stop WinVPN`) → minden sor a szolgáltatás szövegét mutatja („A WinVPN szolgáltatás nem érhető el.”); `sc.exe start WinVPN` és a popover újranyitása → egy percen belül a sorok normálak
+- [ ] Windows (amíg a 2c natív kapcsolatai nincsenek kész): az L2TP/IKEv2-sorok a „később” szöveget mutatják, link nélkül, és az **Új** menüben nincs natív típus
+- [ ] Egy csapatkatalógus, amelyben OpenVPN-kapcsolat van, hiányzó OpenVPN mellett is szinkronizál, a kapcsolat szürkén látszik; az OpenVPN telepítése után új szinkronizálás nélkül csatlakozik
+
+### Automatikus újracsatlakozás
+
+- [ ] Egy MacVPN-ben/WinVPN-ben létrehozott kapcsolat részleteinél (Kapcsolatok ablak) ott az **Automatikus újracsatlakozás** kapcsoló, alapból bekapcsolva; rendszer VPN-nél nincs ilyen kapcsoló
+- [ ] A kikapcsolt állapot kilépés és újraindítás után megmarad; a kapcsolat törlése és ugyanannak a fájlnak az újraimportálása után a kapcsoló ismét be van kapcsolva
+- [ ] (a) Otthoni Wi-Fin egy SSTP- vagy IKEv2-kapcsolat él, a fedél 2 percre lecsukva, majd felnyitva → néhány másodpercen belül „…: újracsatlakozva”
+- [ ] (b) Ugyanez, de a fedelet egy másik Wi-Fin vagy telefonos hotspoton nyitod fel → nem csatlakozik újra, „…: nem csatlakozott újra”, alatta „Másik hálózaton vagy.”
+- [ ] (c) Az „Office VPN” otthonról felépítve, a fedél lecsukva, a gép az „irodában” (a 10.20.30.0/24-et adó második routeren) felnyitva, ha a kapcsolat közben megszakadt → nem csatlakozik újra, „A VPN hálózata itt közvetlenül elérhető.” (az elérhetőségi ellenőrzés megelőzi a hálózat összevetését); ha a kapcsolat túlélte az alvást, az (f2) szerint bomlik
+- [ ] (c2) Ugyanazon a hálózaton egy WireGuard-kapcsolat, amelynek `DNS =` sora a helyi router címére mutat: csatlakoztatva, fedél lecsukva, a kapcsolat alvás közben megszakad (például a labor WireGuard-szervere leállítva), felnyitva → „…: nem csatlakozott újra”, alatta „A VPN DNS-szervere itt közvetlenül elérhető.”
+- [ ] (d) Kézi **Bontás**, alvás, ébresztés → a kapcsolat bontva marad, nincs értesítés
+- [ ] (e) A kapcsolat **Automatikus újracsatlakozás** kapcsolója kikapcsolva, a kapcsolat alvás közben megszakad → nincs újracsatlakozás
+- [ ] (f) OpenVPN `ping-restart`-tal (a labor OpenVPN-kapcsolata): 30 másodperc alvás, ébresztés → a kapcsolat végig „Csatlakozva”, nincs értesítés, a naplóban az OpenVPN saját újraindulása (`Inactivity timeout (--ping-restart)` vagy `Restart pause`)
+- [ ] (f2) A 10.20.30.0/24-et route-oló WireGuard- vagy OpenVPN-kapcsolat otthon felépítve, a fedél lecsukva, a 10.20.30.0/24-es hálózaton („iroda”, vagy a második router) felnyitva → néhány másodpercen belül bontva, „…: megszakadt a kapcsolat”, alatta „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”; utána otthon egy újabb alvás után is bontva marad, amíg kézzel nem csatlakoztatod
+- [ ] (f3) Ugyanez a kapcsolat egy „kávézóban” (másik Wi-Fi vagy telefonos hotspot) felnyitva → csatlakozva marad, nincs értesítés
+- [ ] (g) Az Ethernet-kábel 20 másodpercre kihúzva egy olyan kapcsolattal, amely ettől megszakad → a kábel visszadugása után néhány másodpercen belül „…: újracsatlakozva”
+- [ ] (h) Windows: Modern Standby laptopon (csak ha van ilyen gép), különben a VM alvó állapotával: ugyanaz, mint (a)
+- [ ] Zárolt széffel ébresztve (macOS: **Széf zárolása most** alvás előtt) → „…: nem csatlakozott újra”, alatta „Az újracsatlakozáshoz oldd fel a széfet.”
+- [ ] Egyszer használatos kódos (MFA) kapcsolat újracsatlakozásakor a kódbekérő ablak újra megjelenik; **Mégse** → nincs további próbálkozás és nincs „nem sikerült újracsatlakozni” értesítés
+- [ ] Wi-Fin a hálózati próba élő futtatása (csak olvas) → az átjáró címe és MAC-je látszik; az SSID csak helymeghatározási engedéllyel, különben üres (akkor a MAC dönt). macOS: `cargo test --locked -p macvpn-platform-mac --test net_probe live_snapshot_of_this_mac -- --ignored --nocapture`; Windows (a laptopon, Git Bashben): `cargo test --locked -p macvpn-platform-win --test windows probe_the_network_snapshot -- --ignored --nocapture`
+- [ ] Windows: Modern Standby gépen (csak ha van ilyen gép) az alvás és az ébredés után az (a) eset működik; ha nem, jegyezd fel, hogy a Wi-Fi visszatérése (hálózatváltás) indította-e az újracsatlakozást
+
+### DNS-visszaállítás (macOS)
+
+- [ ] OpenVPN DNS-sel: csatlakozás → `scutil --dns` és `networksetup -getdnsservers Wi-Fi` a VPN DNS-ét mutatja, a naplóban „DNS set and verified on … network service(s)”; `sudo ls -l /var/db/macvpn/dns/` → a `ledger` fájl root tulajdonú, `-rw-------`, a mappa `drwx------`
+- [ ] Bontás → a DNS az eredeti (`networksetup -getdnsservers Wi-Fi` ugyanaz, mint csatlakozás előtt), a naplóban „original DNS restored and verified”, a `ledger` eltűnt
+- [ ] WireGuard `DNS =` sorral ugyanígy: csatlakozáskor a VPN DNS-e, bontáskor az eredeti, mindkettő ellenőrizve a naplóban
+- [ ] Két kapcsolat, A (OpenVPN) majd B (WireGuard), mindkettő DNS-sel: B DNS-e érvényes; A bontása → B DNS-e marad; B bontása → az eredeti DNS
+- [ ] Fordított sorrend: A, majd B, B bontása → A DNS-e jön vissza; A bontása → az eredeti DNS
+- [ ] Újraindítás kapcsolódás közben (**Kilépés, fussanak tovább**, majd az Apple-menü → Újraindítás): bejelentkezés és a MacVPN indítása után → a DNS az eredeti, a `ledger` eltűnt
+- [ ] `kill -9`: élő OpenVPN-kapcsolatnál `sudo pkill -9 -f 'openvpn.*<azonosító>'` → néhány másodpercen belül (a következő állapotlekérdezéskor) az eredeti DNS, a naplóban „original DNS restored and verified”; WireGuardnál `sudo pkill -9 wireguard-go` ugyanígy
+- [ ] Ha egy régebbi verzió VPN-DNS-t hagyott beállítva (ha előfordult): a Rendszerbeállítások → Hálózat → a szolgáltatás → Részletek… → DNS alatt kézzel visszaállítva → a weboldalak VPN nélkül megnyílnak; a 2.0 ezután nem hagy maradványt
+
+### Naplóméret-korlát
+
+- [ ] macOS: élő OpenVPN-kapcsolatnál `ps -ww -o args= -p $(pgrep -x openvpn)` → a parancssorban `--mute 20` a `--config` után
+- [ ] macOS: élő kapcsolat naplóját mesterségesen 5 MiB fölé növelve (`sudo sh -c 'head -c 6000000 /dev/zero | tr "\0" "x" | fold -w 100 >> /var/log/macvpn/<azonosító>.log'`) → a következő állapotlekérdezés után `ls -l /var/log/macvpn/<azonosító>.log*`: a `.log` kicsi, a `.log.1` legfeljebb 5 MiB; a kapcsolat él, a Napló fül tovább követi
+- [ ] macOS: egy régebbi verzióból maradt, 5 MiB-nál nagyobb `<azonosító>.log.1` a kapcsolat következő csatlakozásakor vagy bontásakor 5 MiB-ra rövidül
+- [ ] Windows: élő OpenVPN-kapcsolatnál rendszergazdai PowerShellben `Get-CimInstance Win32_Process -Filter "Name='openvpn.exe'" | Select-Object -ExpandProperty CommandLine` → benne `--mute 20`
+- [ ] Windows: hosszú, hibakereső módú OpenVPN-kapcsolat, amíg a napló eléri a 8 MiB-ot (`Get-Item C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log`) → megjelenik az `<AZONOSÍTÓ>.log.1`, az új napló első sora erről szól, a Napló fül elölről indul; a kapcsolat újbóli csatlakoztatása után a `.log.1` eltűnik
+
+### Motorfrissítések
+
+- [ ] macOS: ha `brew outdated openvpn wireguard-tools strongswan sstp-client bash` listáz valamit (ha nincs elavult csomag: **nem tesztelhető**) → a Rendszerállapot VPN-eszközök sora zöld marad, „openvpn: Frissítés elérhető: x → y”, és **Frissítés** gombot mutat; a gomb csak ezekre fut `brew upgrade`-et, a kimenet élőben; utána a sor ajánlat nélkül zöld
+- [ ] macOS: napi `brew update`: a MacVPN indítása után kb. egy perccel `defaults read local.macvpn lastBrewUpdate` friss időt mutat; 24 órán belüli újraindításkor nem fut újra (az érték nem változik); `defaults delete local.macvpn lastBrewUpdate` és újraindítás után kb. egy perccel újra lefut
+- [ ] macOS: hálózat nélkül indítva a `brew update` nem okoz hibasort a Rendszerállapotban; a hálózat visszatérése után legkésőbb egy órán belül lefut
+- [ ] Windows: a Rendszerállapot megnyitása után néhány másodperccel a WireGuard-sor „wireguard-nt 1.1.0” ajánlat nélkül (ha az 1.1 a legújabb), az OpenVPN-sor a winget vagy a hivatalos oldal ajánlatát mutatja, ha van újabb
+- [ ] Windows (rendszergazdai PowerShell): a Rendszerállapot megnyitása után a `C:\ProgramData\WinVPN\engines\wireguard-nt` mappa létezik és üres; `icacls.exe C:\ProgramData\WinVPN\engines\wireguard-nt` → csak SYSTEM és Administrators, védett; a `service.log`-ban nincs „wireguard-nt check:” sor
+- [ ] Windows: hálózat nélkül a Rendszerállapotban nincs hibasor és nincs **Frissítés**; a `service.log`-ban egy „wireguard-nt check: the listing: …” sor
+- [ ] Windows (ha megjelent újabb wireguard-nt): **Frissítés** élő WireGuard-kapcsolat mellett → „A wireguard-nt csak akkor frissíthető, ha ezen a gépen nincs élő WireGuard-kapcsolat. …”; bontás után → „A(z) <v> wireguard-nt telepítve.”, a sor `<v>`-t mutat, `Get-AuthenticodeSignature C:\ProgramData\WinVPN\engines\wireguard-nt\wireguard.dll` → WireGuard LLC, egy WireGuard-kapcsolat működik; `sc.exe stop WinVPN`, `sc.exe start WinVPN` → a sor továbbra is `<v>`, a `service.log`-ban „wireguard.dll <v> loaded (downloaded)”
+- [ ] Windows (ha a rögzítettnél újabb OpenVPN jelent meg, és a winget nem kínál újabbat): **Frissítés** → az `OpenVPN-<új>-I<nnn>-amd64.msi` a `%LOCALAPPDATA%\WinVPN\downloads` mappába töltődik, egy UAC-kérdés, az msiexec telepíti, utána a sor zöld az új verzióval
+
+### strongSwan F1 és F2 (macOS, a laborral)
+
+- [ ] A 2c terv (`docs/superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md`) „MacVPN a laborral” szakaszának 1–4. lépése a 2.0.0-s builden → minden lépés az ott leírt eredménnyel
+- [ ] F1 (a 4. lépés 5–8. pontja): a Homebrew `etc/swanctl` mappájába tett CA, kliens-tanúsítvány és kulcs mellett a PSK, az EAP és a tanúsítványos IKEv2 elsőre csatlakozik, `sudo swanctl --load-creds` nélkül; a CA elvétele után az EAP nem csatlakozik, visszatéve igen
+- [ ] F2 (a 4.9. pont): két IKEv2-kapcsolat egyszerre „Csatlakozva” marad, az első újrahitelesítése (`sudo swanctl --rekey --ike lab-psk --reauth`) a második mellett és annak bontása után is sikerül; egy ütköző nevű másolat „Egy másik aktív strongSwan-kapcsolat már definiálja ezt: connections.lab-psk” üzenettel nem csatlakozik, az első kapcsolat él tovább
+
+### Frissítés 1.5 → 2.0 (macOS)
+
+- [ ] Az 1.5.0-ról a 2.0.0-ra frissítve a Rendszerállapot „Frissítés szükséges (8 → 9)” sort mutat; addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-sorok „Nem használható: Jogosultság (root scriptek + sudoers) – Rendszerállapot”; **Engedélyezés** és egy admin jelszó után minden sor normál
+- [ ] A frissítés után a **Kapcsolatértesítések** be van kapcsolva, a **Megjelenés** „Rendszer szerint”, minden kapcsolatnál az **Automatikus újracsatlakozás** be van kapcsolva; a széf, a kapcsolatok és a mappák változatlanok
+- [ ] `node scripts/l10n-baseline.mjs --check` → zöld (egyetlen régi macOS-szöveg sem változott)
+
+## WinVPN 2c: natív VPN-ek (L2TP/IPsec, IKEv2, SSTP, Cisco IPsec), rendszer VPN-ek és paritás (2.0.0-s build)
+
+A 2.0.0 kiadása utáni ellenőrzések (a karbantartó a kiadott x64 MSI-vel futtatja; ami eltér, az hiba, a javító feladatával együtt jegyezd fel). A terv: `docs/superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md` (CP1 és CP2), a paritás-audit: `docs/superpowers/specs/2026-10-25-winvpn-parity-audit.md`. A PowerShell-parancsokban mindig a teljes `.exe` nevet írd (`sc.exe`, `reg.exe`, `certutil.exe`, `rasdial.exe`): PowerShellben az `sc` a `Set-Content` álneve. Az elvárt eredmény a „→” után áll.
+
+Előfeltétel: a 2.0.0-s `WinVPN-2.0.0-x64.msi` telepítve (rendszergazda), a tesztek egy normál felhasználó **asztali** munkamenetében (nem SSH-n); a VPN-labor (`scripts/vpn-lab/`, a `README.md` a kézikönyve). Windows **build száma: ___**
+
+### A labor előkészítése (a Macen, sudo nélkül)
+
+- [ ] Docker Desktop fut; a Mac LAN-címe: `ipconfig getifaddr en0`; `scripts/vpn-lab/up.sh --bind <LAN-cím>` → „lab up on …”; `scripts/vpn-lab/check.sh --selftest` → minden sor `ok` (macOS-en az „UDP …:500 from this Mac itself” sor lehet `info`), a végén `0 failed` mindhárom blokkban
+- [ ] Ha a macOS tűzfala megkérdezi, a Docker bejövő kapcsolatai engedélyezve
+- [ ] A Windows-profilok a teszt-gépen: `scp -r scripts/vpn-lab/.state/client/windows "$WINVPN_SSH":lab-client` (a jelszavak, a PSK, a csoportnév és az egyszeri kód a `scripts/vpn-lab/.state/client/CREDENTIALS.txt`-ben vannak; azt ne másold át)
+- [ ] A teszt-gépen böngészőben a `http://<a Mac LAN-címe>:8081/ca.crl` letölthető (a CRL; az SSTP visszavonás-ellenőrzéséhez kell)
+- [ ] Minden csatlakozás után ellenőrizhető: böngészőben `http://10.99.0.10/` → „MacVPN lab: OK” és „via: …”; `nslookup whoami.lab.test` → `10.99.0.10` (L2TP-nél és SSTP-nél a DNS-szerver az átjáró: `nslookup whoami.lab.test 10.99.16.1`, illetve `10.99.17.1`). „Minden forgalom a VPN-en” bekapcsolva a labor nem ad internetet (szándékos)
+
+### Telepítés és Rendszerállapot
+
+- [ ] Normál felhasználóként megnyitva a **Rendszerállapot** négy sort mutat: WinVPN szolgáltatás, OpenVPN Community, WireGuard és **Windows VPN-kliens** zölden („A Windows része”); nincs „a natív VPN-ek később érkeznek” megjegyzés
+- [ ] Rendszergazdai PowerShellben `sc.exe qc RasMan` → `START_TYPE` `3 DEMAND_START`
+- [ ] Rendszergazdaként `sc.exe config SstpSvc start= disabled` → a **Rendszerállapot** (Újraellenőrzés után) a Windows VPN-kliens sort pirosan mutatja a szolgáltatás nevével („A(z) Secure Socket Tunneling Protocol Service (SstpSvc) Windows-szolgáltatás le van tiltva…”), az SSTP-kapcsolatok szürkék ezzel az okkal, az L2TP és az IKEv2 nem; `sc.exe config SstpSvc start= demand` → újra zöld
+- [ ] Az **Új** menüben nincs **Cisco IPsec**; OpenVPN, WireGuard, IKEv2, SSTP és L2TP van
+
+### L2TP/IPsec
+
+- [ ] A `lab-client\l2tp.txt` értékeivel új L2TP kapcsolat (szerver, fióknév, jelszó, PSK, „Minden forgalom a VPN-en”), **Mentés** → nincs profiljóváhagyás, az űrlapon a „Mentéskor a kapcsolat Windows VPN-bejegyzése azonnal elkészül…” megjegyzés
+- [ ] Csatlakozás → a labor NAT mögött van, ezért előbb a 809-es hiba szövege jön **L2TP engedélyezése NAT mögött…** gombbal → UAC (rendszergazda) → „Az L2TP/IPsec NAT mögött engedélyezve. Az érvényesítéshez indítsd újra a Windowst.”; rendszergazdaként `reg.exe query HKLM\SYSTEM\CurrentControlSet\Services\PolicyAgent /v AssumeUDPEncapsulationContextOnSendRule` → `0x2`
+- [ ] A UAC-kérdés elutasítása → „Megszakítva”, a beállítás nem változik
+- [ ] Újraindítás után csatlakozás → „Csatlakozva”, az IP-cím (`10.99.16.x`) a kártyán; `http://10.99.0.10/` → „via: ipsec”; `ipconfig.exe` → „PPP adapter WinVPN-…”
+- [ ] A kapcsolat a Gépház → Hálózat és internet → VPN listájában **nem** jelenik meg
+- [ ] A `%LOCALAPPDATA%\WinVPN\ras\WinVPN.pbk` fájlban (Jegyzettömb) sem a jelszó, sem a PSK nincs benne
+- [ ] Bontás → „Bontva”; ugyanez „Minden forgalom” nélkül → `route.exe print` szerint az alapértelmezett útvonal a fizikai adapteren marad
+- [ ] Rossz jelszó → „Hitelesítési hiba (rossz felhasználónév vagy jelszó)”; a Napló fülön a `Windows error 691: …` sor és a lépések, jelszó nélkül; L2TP-nél nincs második kérdés
+- [ ] A Napló fülön debug mód nélkül is látszanak a tárcsázás lépései („Kapcsolódás ide: …”, „Hitelesítés…”, „Csatlakozva, IPv4: …”); debug módban (Alt+kattintás) a „Windows VPN-bejegyzés (hibakereső mód):” blokk, PSK és jelszó nélkül
+- [ ] Rossz PSK → 789-es hiba szövege („Az IPsec-egyeztetés a szerverrel nem sikerült…”)
+- [ ] Az L2TP-kapcsolat törlése → a megerősítés „…és a Windows VPN-bejegyzése is.”; nem nyílik meg a Gépház; a `WinVPN.pbk`-ból eltűnik a `[WinVPN-…]` szakasz
+
+### IKEv2
+
+- [ ] **EAP-MSCHAPv2:** a `lab-client\ikev2-eap.swanctl.conf` importálva, felhasználónév `labuser`, jelszó a `CREDENTIALS.txt`-ből; a szerkesztő alatt „Windowson: EAP-MSCHAPv2 · AES-256, SHA-256, DH-csoport 14; …” sor
+- [ ] **A CA megbízhatóvá tétele a Windowsban…** a `lab-client\lab-ca.pem`-mel → a megerősítő ablakban a tulajdonos („MacVPN Lab CA (throwaway)”), az érvényesség, az SHA-256 ujjlenyomat és a „A számítógép minden programja meg fog bízni…” figyelmeztetés → **Megbízom benne** → UAC (a telepített WinVPN.exe kéri) → „A Windows mostantól megbízik a CA-ban.”; `certutil.exe -store Root` listázza a labor-CA-t, és `certlm.msc` → a CA tulajdonságai → csak „Kiszolgálóhitelesítés” és „Ügyfélhitelesítés” célra engedélyezett (kódaláírásra nem)
+- [ ] Csatlakozás → „Csatlakozva”, `http://10.99.0.10/` → „via: ipsec”; osztott alagútnál `route.exe print` a `remote_ts` hálózatát mutatja; bontás
+- [ ] Rossz jelszó → „Hitelesítési hiba (EAP)”, és a hitelesítőadat-ablak **egyszer** újra megnyílik „Sikertelen bejelentkezés — …” sorral; jó jelszóval csatlakozik, a **Mentés a széfbe** után a jelszó a széfben marad
+- [ ] **PSK** (`ikev2-psk.swanctl.conf`) → a kártya szürke, mellette „Windowson nem támogatott: local auth = psk (…)”, a szerkesztőben sárga megjegyzés; a mentés működik
+- [ ] **Gépi tanúsítvány** (`ikev2-cert.swanctl.conf`): előbb tanúsítvány nélkül csatlakozva → „Nem található számítógép-tanúsítvány az IKEv2-höz…”; a `lab-client\lab-client.p12`-t rendszergazdaként a `certlm.msc` → Személyes tárolóba importálva (jelszava a `CREDENTIALS.txt`-ben) → csatlakozik, „via: ipsec”, jelszót nem kér
+- [ ] Nem támogatott beállítás (`local { auth = eap-tls }` vagy `version = 1`) → a kártya szürke „Windowson nem támogatott: …” szöveggel, pontosan a kulccsal; a mentés működik
+- [ ] `dpd_action = restart` a configban → szürke „Windowson figyelmen kívül marad: …” megjegyzés a szerkesztő alatt, a kapcsolat csatlakozik
+- [ ] Olyan `proposals` sor, amelyet a labor szervere nem fogad el (például `aes128-sha1-modp2048`) → a 13868-as hiba szövege, a WinVPN által kínált javaslat megnevezésével
+
+### SSTP
+
+- [ ] „Saját CA fájl” (`sstp-ca.sstp`; a CA a fenti lépésben már megbízható) → az űrlapon „A Windows megbízik benne”, csatlakozik, `http://10.99.0.10/` → „via: sstp”
+- [ ] „Rendszer CA” (`sstp-system-ca.sstp`) → csatlakozik (a CA a gép megbízható gyökerei között van)
+- [ ] A 8443-as port (`sstp-ca-alt-port.sstp`) → csatlakozik
+- [ ] „Nincs ellenőrzés” (`sstp-no-verification.sstp`) → a kártya szürke az indoklással; az űrlapon a „Nincs ellenőrzés” tiltva, a címében az ok
+- [ ] Ugyanez a CA nélkül (előbb `certlm.msc`-ben töröld a labor-CA-t) → „A szerver hitelesítésszolgáltatójában (CA) a Windows nem bízik meg…” hiba **A CA megbízhatóvá tétele a Windowsban…** gombbal; a gombbal újra megbízható, utána csatlakozik
+- [ ] IP-címmel megadott szerver (a tanúsítvány nevével nem egyező cím) → „A szerver tanúsítványa nem egyezik a szerver címével…”
+- [ ] „A szerver DNS-ének használata” kikapcsolva → `nslookup` először a fizikai adapter DNS-szerverét kérdezi (a „lehetőségekhez mérten” leírás szerint)
+- [ ] Rossz jelszó → „Hitelesítési hiba (rossz felhasználónév vagy jelszó)”, a hitelesítőadat-ablak egyszer újra megnyílik
+
+### Egyszeri kód (OTP)
+
+- [ ] Egy L2TP és egy SSTP kapcsolat `labotp` felhasználóval (jelszó ugyanaz, elválasztó „,”, a kód a `CREDENTIALS.txt`-ben), **Egyszer használatos kód kérése csatlakozáskor…** bekapcsolva → a kódbekérő ablak után csatlakozik; rossz kóddal → hitelesítési hiba
+
+### Rendszer VPN-ek
+
+- [ ] A Gépház → VPN alatt egy saját L2TP VPN felvéve (a labor adataival) → a WinVPN listájában másodperceken belül megjelenik „Rendszer-VPN”-ként „L2TP” típussal; törlése után eltűnik
+- [ ] Mentett jelszó nélkül, a Windowsban sem mentve → a Windows saját bejelentkező ablaka nyílik; kitöltve csatlakozik
+- [ ] A WinVPN-ben tárolt jelszóval és PSK-val (a részletező nézetben; a „A Windows a saját PSK-ját használja…” megjegyzés látszik) → csatlakozik; a bejegyzés a Gépházban változatlan (a WinVPN nem írja át, nem törli)
+- [ ] Egy saját IKEv2 VPN (gépi tanúsítvánnyal) a Gépházból → a WinVPN-ből csatlakozik és bont
+- [ ] Bontás a Gépházból → a WinVPN-ben is „Bontva” lesz (néhány másodpercen belül)
+
+### Cisco IPsec
+
+- [ ] Egy Cisco IPsec kapcsolat (egy MacVPN-mentésből vagy a `cisco-ipsec.txt` értékeivel a Macen készített mentésből) → a kártya szürke: „A Windows nem támogatja a Cisco IPsec-et. …”, a kapcsoló tiltott
+- [ ] A szerkesztőben **L2TP/IPsec másolat készítése** → új „<név> (L2TP)” kapcsolat ugyanabban a mappában, ugyanazzal a szerverrel, fióknévvel, jelszóval és PSK-val; a laborban csatlakozik; az eredeti Cisco kapcsolat változatlan
+
+### Titkok
+
+- [ ] A `WinVPN.pbk` egyetlen jelszót, PSK-t vagy kódot sem tartalmaz (Jegyzettömbbel keresve)
+- [ ] A Napló fülön és a `%LOCALAPPDATA%\WinVPN\logs\ras\*.log` fájlokban nincs jelszó, PSK vagy egyszeri kód (a tárcsázás debug módban is)
+- [ ] A Feladatkezelő „Parancssor” oszlopában egy csatlakozás közben egyik folyamatnál sincs titok
+
+### Életciklus
+
+- [ ] Kilépés aktív L2TP kapcsolattal → „Aktív VPN-kapcsolatok vannak” kérdés; „Kilépés, fussanak tovább” után a kapcsolat él, a WinVPN újraindítása után „Csatlakozva” látszik
+- [ ] Kijelentkezés aktív L2TP és IKEv2 kapcsolattal → újra bejelentkezve egyik sincs fenn
+- [ ] Kijelentkezés `KeepRasConnections` mellett: rendszergazdaként `reg.exe add "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v KeepRasConnections /t REG_SZ /d 1 /f`; normál felhasználóként egy WinVPN L2TP kapcsolat **és** egy saját rendszer VPN fel; kijelentkezés (nem zárolás); újra bejelentkezve → a WinVPN-kapcsolat nincs fenn, a `C:\ProgramData\WinVPN\service.log` végén „RAS connection of a logged-off user ended: WinVPN-xxxxxxxx” (vagy a kapcsolatot már a WinVPN bontotta); a rendszer VPN-hez a szolgáltatás nem nyúlt. Ha „could not be ended … 668” sor jön, jelezd a fejlesztőnek. Végül `reg.exe delete "HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon" /v KeepRasConnections /f`
+- [ ] Zárolás és felhasználóváltás után a kapcsolatok megmaradnak
+- [ ] Egy második normál felhasználó (gyors felhasználóváltás) a saját WinVPN-jében nem látja az első felhasználó L2TP kapcsolatát, és nem bonthatja (a RAS rendszerszinten listázza, a WinVPN csak a sajátját mutatja)
+- [ ] Egy L2TP és egy OpenVPN (vagy WireGuard) kapcsolat egyszerre él, mindkettő forgalmaz
+- [ ] A WinVPN szolgáltatás leállítva (rendszergazdaként `sc.exe stop WinVPN`) → az OpenVPN és a WireGuard szürke a szolgáltatás szövegével, az L2TP, az IKEv2, az SSTP és a rendszer VPN-ek csatlakoznak a popoverből és a `macvpn-control-client.exe hold`-dal is; `sc.exe start WinVPN`
+
+### Mentés, import, katalógus
+
+- [ ] Egy MacVPN-mentés L2TP, IKEv2, SSTP és Cisco kapcsolatokkal visszaállítva → a „Visszaállítás után” lapon az L2TP „Kész”, a szöveg „A WinVPN megírta az L2TP kapcsolatok Windows VPN-bejegyzéseit…”; az L2TP azonnal csatlakozik, az IKEv2/SSTP az első csatlakozáskor; a Cisco szürke, megjegyzéssel
+- [ ] Egy MacVPN-ből közzétett csapatkatalógus L2TP kapcsolata → jóváhagyás nélkül használható
+- [ ] A széf zárolása és feloldása után egy bejegyzés sem vész el; egy kézzel a `WinVPN.pbk`-ba másolt, nem létező azonosítójú `[WinVPN-…]` szakasz a következő feloldás után eltűnik, más nevű szakasz megmarad
+- [ ] Egy `.mobileconfig` importálása → „A .mobileconfig profil nem importálható a WinVPN-be. Hozd létre a kapcsolatot az Új → L2TP menüponttal…”
+
+### Vezérlő API
+
+- [ ] `macvpn-control-client.exe hold <egy L2TP kapcsolat azonosítója>` (a token a programnak a bemenetén megadva, nem parancssorban) → a kapcsolat felépül, a program kilépésekor lebomlik
+
+### Paritás (a 2c 15. feladatának pontjai)
+
+- [ ] **G-1:** a WinVPN fut, az utolsó motorellenőrzés 24 óránál régebbi → egy újabb OpenVPN (winget) vagy wireguard-nt a Rendszerállapot megnyitása nélkül „Frissítés elérhető” sorként jelenik meg (ha nincs újabb: **nem tesztelhető**)
+- [ ] **G-2:** egy L2TP kapcsolat Napló füle debug mód nélkül is a tárcsázás sorait mutatja (nincs „csak debug csatlakozáskor” szöveg)
+- [ ] **G-3:** egy L2TP kapcsolatot tartalmazó mappa törlése a kapcsolatokkal együtt → nem nyílik meg a Gépház, a bejegyzés eltűnik
+- [ ] **G-5:** rossz jelszó IKEv2 EAP-nál és SSTP-nél → egyszer újra kér (lásd fent)
+- [ ] **G-6:** OpenVPN és WireGuard debug módban → a naplóban „▶ [WinVPN] diagnosztika (előtte)” és „(utána)” blokk; WireGuardnál „▶ [WinVPN] WireGuard peer status (…)” sor, kulcs nélkül
+- [ ] **G-7:** a WinVPN tétlen, Gépház → Személyre szabás → Színek → mód váltása → az értesítési terület ikonja egy másodpercen belül átszíneződik
+- [ ] **G-8:** `scripts/win-smoke.sh en` és `hu` (a karbantartó engedélyével) a kijelentkezési kilépéskérést és a popover kerek sarkait jelenti, nem „skipped”-et
+- [ ] **G-12:** az SSTP-labor leállított szerverével csatlakozva → „A szerver nem válaszolt a portján…”; egy L2TP-bejegyzés PSK nélkül (a PSK törlése után mentés nélkül tárcsázva, ha előállítható) → „A Windows nem tárol előre megosztott kulcsot…”
+
+### WinVPN eltávolítása erről a fiókról (G-9)
+
+- [ ] Legyen egy aktív L2TP és egy aktív OpenVPN vagy WireGuard kapcsolat, és a Gépház → VPN alatt egy saját Windows VPN. **Rendszerállapot** → a Telepített alkalmazások megjegyzés alatt **WinVPN eltávolítása erről a fiókról…** → a megerősítő ablak felsorolja, mi törlődik; **Mégse** → semmi nem változik
+- [ ] Újra, a négyzet nélkül → **Eltávolítás** → minden kapcsolat bont, „A WinVPN eltávolítva erről a fiókról” üzenet, megnyílik a Gépház → Alkalmazások → Telepített alkalmazások; a `%LOCALAPPDATA%\WinVPN` megmaradt, de a `ras\WinVPN.pbk`-ban nincs `[WinVPN-…]` szakasz; a saját Windows VPN megvan
+- [ ] **Kilépés**, a WinVPN újraindítása után a kapcsolatok megvannak (az L2TP-t egyszer újra menteni kell)
+- [ ] Ismételve **A felhasználói adatok törlése is** bejelölésével → **Kilépés** után a `%LOCALAPPDATA%\WinVPN` nincs meg; a Hitelesítőadat-kezelőben nincs `local.winvpn.vault`; `reg.exe query HKCU\Software\Microsoft\Windows\CurrentVersion\Run` nem mutat WinVPN értéket; `rasdial.exe` szerint nincs WinVPN-kapcsolat
+- [ ] Végül az MSI eltávolítása a Telepített alkalmazások alatt → `sc.exe query WinVPN` → nincs ilyen szolgáltatás, a `C:\Program Files\WinVPN` eltűnt; a Gépház → VPN alatt semmi WinVPN-es
+
+### Takarítás és egyéb
+
+- [ ] `certlm.msc` → Megbízható legfelső szintű hitelesítésszolgáltatók → „MacVPN Lab CA (throwaway)” törölve, Személyes → „client.lab.test” törölve; ha nem kell NAT mögötti L2TP: `reg.exe delete HKLM\SYSTEM\CurrentControlSet\Services\PolicyAgent /v AssumeUDPEncapsulationContextOnSendRule /f`; a Macen `scripts/vpn-lab/down.sh`
+- [ ] Az SSH-n nem futtatható (tárcsázó és bontó) tesztek a forráskóddal, normál felhasználóként az asztalon, Git Bashben: `cargo test --locked -p macvpn-winsys --test ras -- --ignored` és `cargo test --locked -p macvpn-platform-win --test ras_engine --test system_vpns --test admin_steps -- --ignored` → mind zöld (az `admin_steps` UAC-kérdést hoz, és ehhez a build MSI-jének telepítve kell lennie; utána rendszergazdaként `certutil.exe -delstore Root 53cdc417ceda8000a2fcfd50eb98f4d80c9cde2f`)
+- [ ] **Smoke:** `scripts/win-smoke.sh en` és `hu` → zöld a natív szakaszokkal (csak a karbantartó engedélyével)
+- [ ] **ARM64:** az arm64 MSI egy ARM64 gépen (ha nincs: **nem tesztelt**)
+
+### MacVPN a laborral (a Macen; a 2.0.0 macOS-ellenőrzése)
+
+A laborgépen (a Macen) futó laborral az OpenVPN, a WireGuard, az SSTP és (a 4510-es porton) az IKEv2 tesztelhető; az L2TP és a Cisco IPsec csak más gépen futó laborral (a macOS saját IKE-szolgáltatása az 500/4500-as portot használja, amit a Docker foglal) — ugyanezek a szkriptek egy LAN-on lévő Linux gépen (Dockerrel) vagy egy másik Macen futnak. A profilok: `scripts/vpn-lab/.state/client/macos/`. A részletes lépések (F1 és F2 is) a 2c terv „MacVPN a laborral” szakaszában vannak.
+
+- [ ] **OpenVPN:** `openvpn-tun-dco.ovpn` (`labuser` + jelszó) → csatlakozik, `http://10.99.0.10/` → „via: openvpn”, `http://whoami.lab.test/` is betölt; `openvpn-tun-cbc.ovpn` → csatlakozik; `openvpn-static-challenge.ovpn` `labotp`-vel → a kódablak csatlakozás előtt jön; `openvpn-tun-dco.ovpn` `labotp`-vel → a kódablak csatlakozás közben jön (CRV1); rossz jelszóval → `AUTH_FAILED`
+- [ ] **WireGuard:** `wireguard-macos.conf` → csatlakozik, „via: wireguard”
+- [ ] **SSTP:** `sstp-ca.sstp` és `sstp-ca-alt-port.sstp` → csatlakozik; `sstp-system-ca.sstp` → tanúsítványhiba (elvárt: a Homebrew OpenSSL nem ismeri a labor CA-ját); `sstp-no-verification.sstp` → piros figyelmeztetéssel csatlakozik
+- [ ] **IKEv2 (F1):** a labor szabványos IKE-portok nélkül (`up.sh --bind <LAN-cím> --no-ike-standard-ports`), a labor CA-ja, kliens-tanúsítványa és kulcsa a `$(brew --prefix)/etc/swanctl/` alatt → PSK, EAP és tanúsítvány elsőre csatlakozik `sudo swanctl --load-creds` nélkül; a CA elvétele után az EAP nem csatlakozik, visszatéve igen
+- [ ] **Két IKEv2 egyszerre (F2):** a PSK és az EAP kapcsolat egyszerre „Csatlakozva”, `sudo swanctl --rekey --ike lab-psk --reauth` mindkét állapotban sikerül; az ütköző nevű másolat „Egy másik aktív strongSwan-kapcsolat már definiálja ezt: connections.lab-psk” üzenettel nem csatlakozik
+- [ ] **L2TP és Cisco IPsec** (más gépen futó laborral): a `l2tp.txt` / `cisco-ipsec.txt` értékeivel **Mentés és profil telepítése** → jóváhagyás → csatlakozik, „via: ipsec”; `labotp`-vel és kódkiegészítéssel is
+- [ ] **Takarítás:** a laborprofilok törlése a MacVPN-ből (L2TP/Cisco profilok a Rendszerbeállítások → Általános → Eszközkezelés alatt), a `$(brew --prefix)/etc/swanctl/` labor-fájljai törölve, `scripts/vpn-lab/down.sh`
+
+## WinVPN 2b: a szolgáltatás, OpenVPN, WireGuard, frissítés (2.0.0-s build)
+
+A 2.0.0 kiadása utáni ellenőrzések a WinVPN szolgáltatásra, az OpenVPN-re, a WireGuardra, a frissítésre és a HTTPS-katalógusokra (a terv: `docs/superpowers/plans/2026-10-22-winvpn-2b-service-openvpn-wireguard.md`; a CP1 és CP2 már lefutott, lásd a terv „CP1 result” és „CP2 result” jegyzetét — az itt **(CP1-ből)** jelölt pontok ott elmaradtak). A PowerShell-parancsokban a teljes `.exe` nevet írd (`sc.exe`, `reg.exe`, `icacls.exe`, `pnputil.exe`, `msiexec.exe`). Ami eltér, az hiba, a javító feladatával együtt jegyezd fel; az elvárt eredmény a „→” után áll.
+
+Előfeltétel: a kiadott `WinVPN-2.0.0-x64.msi`; egy rendszergazdai fiók, egy normál fiók (asztali bejelentkezéssel, nem SSH-n) és egy második normál fiók; a VPN-labor (`scripts/vpn-lab/`, lásd a „WinVPN 2c” szakasz előkészítését) OpenVPN- és WireGuard-profiljai. Windows **build száma: ___**
+
+### Telepítés és szolgáltatás (rendszergazda)
+
+- [ ] A 2.0.0-s MSI a korábbi WinVPN (1.5.0) fölé telepítve → frissít, nem második példány; a széf és a kapcsolatok megmaradnak
+- [ ] `sc.exe qc WinVPN` → `SERVICE_START_NAME : LocalSystem`, `START_TYPE : 2 AUTO_START`, `BINARY_PATH_NAME : "C:\Program Files\WinVPN\WinVPNService.exe" service`; `sc.exe query WinVPN` → `RUNNING`
+- [ ] `sc.exe qfailure WinVPN` → `RESET_PERIOD 86400`, `RESTART -- Delay = 5000` és `30000`; `sc.exe qfailureflag WinVPN` → TRUE; a `C:\ProgramData\WinVPN\service.log`-ban nincs „cannot set the recovery actions” sor
+- [ ] `icacls.exe C:\ProgramData\WinVPN` → csak SYSTEM és Administrators, védett (öröklés nélkül)
+- [ ] A `C:\Program Files\WinVPN` tartalma: `WinVPN.exe`, `WinVPNService.exe`, `wireguard.dll`, `THIRD-PARTY-NOTICES.txt`; `Get-AuthenticodeSignature "C:\Program Files\WinVPN\wireguard.dll"` → `Valid`, WireGuard LLC
+- [ ] `icacls.exe "C:\Program Files\WinVPN"` → védett (egyik sor sem `(I)`): SYSTEM és Administrators `(OI)(CI)(F)`, Users, Authenticated Users és a két „ALL … APPLICATION PACKAGES” csoport `(OI)(CI)(RX)`, más nincs; `icacls.exe "C:\Program Files\WinVPN\WinVPNService.exe"` → ugyanezek `(I)`-vel (biztonsági áttekintés 2. rész, P2-M2)
+- [ ] `msiexec.exe /i WinVPN-2.0.0-x64.msi INSTALLDIR=C:\WinVPN` (és a grafikus telepítő) → mappaválasztó nincs (Üdvözlő → Kész), a WinVPN mégis a `C:\Program Files\WinVPN` alá kerül, `C:\WinVPN` nem jön létre
+- [ ] Ugyanaz a 2.0.0-s MSI újra → lefut (azonos verzió frissítésként, P2-L2). Visszaléptetés: a tiltást a telepítendő csomag hordozza, ezért csak a 2.0.0-tól kiadott MSI-k tagadják meg; ha már van újabb kiadás (2.0.1+), a 2.0.0-s MSI fölötte → „A newer version of WinVPN is already installed.”, semmi nem változik (ha nincs: **nem tesztelhető**). Az 1.x MSI-k (még `AllowDowngrades`) továbbra is visszaléptetnének: ezeket ne kínáld letöltésre
+- [ ] `icacls.exe "C:\Program Files\WinVPN" /grant "*S-1-5-32-545:(OI)(CI)M"`, majd `sc.exe stop WinVPN`, `sc.exe start WinVPN` → nem indul; a `C:\ProgramData\WinVPN\service.log` utolsó sora „refusing to start: C:\Program Files\WinVPN\WinVPNService.exe is not admin-only …”; a 2.0.0-s MSI újratelepítése visszaállítja a jogosultságokat, a szolgáltatás fut
+- [ ] Élő OpenVPN-kapcsolat mellett `sc.exe stop WinVPN` → az alagút és az `openvpn.exe` eltűnik (Feladatkezelő); `sc.exe start WinVPN` → az app a kapcsolatot megszakadtként mutatja
+- [ ] Egy normál felhasználó által a telepítés **előtt** létrehozott `C:\ProgramData\WinVPN` (saját jogosultságokkal) → a szolgáltatás nem javítja; a Rendszerállapot „A(z) … mappa jogosultságai nem biztonságosak…” szöveget mutat, az OpenVPN/WireGuard kapcsolódás ezzel tér vissza; a rendszergazda törli a mappát, `sc.exe stop WinVPN`, `sc.exe start WinVPN` → rendben
+
+### Az admin teszthalmaz (CP1-ből)
+
+- [ ] Emelt Git Bashben a 2.0.0-s forrással: `cargo test --locked -p macvpn-helper --test service_admin --test wireguard_admin --test openvpn_installed -- --ignored` és `cargo test --locked -p macvpn-winsys --test service_pipe --test cert_store_admin -- --ignored` → mind zöld (a `cert_store_admin` a teszt-CA-t a gép Root tárolójába teszi csak szerver- és klienshitelesítésre, majd eltávolítja)
+
+### Rendszerállapot
+
+- [ ] Normál felhasználóként: a sorok WinVPN szolgáltatás („Fut (… verzió)”), OpenVPN Community, WireGuard és Windows VPN-kliens
+- [ ] OpenVPN nélkül az OpenVPN sor piros, **Telepítés** gombbal; az OpenVPN-kapcsolatok „Nincs telepítve: OpenVPN Community – Rendszerállapot” felirattal szürkék, a WireGuard nem
+- [ ] A szolgáltatás leállítva (`sc.exe stop WinVPN`) → „A WinVPN szolgáltatás nem érhető el.”, az OpenVPN- és WireGuard-sorok ezt mutatják, az L2TP/IKEv2/SSTP nem; `sc.exe start WinVPN`
+
+### OpenVPN telepítése és frissítése
+
+- [ ] OpenVPN nélkül **Telepítés** (Windows 11, winget) → a winget UAC-kérdése, a kimenet élőben, utána a WinVPN második UAC-kérdése; a sor zöld, a két illesztőprogramot verzióval mutatja; `pnputil.exe /enum-drivers` → ovpn-dco és tap0901, Wintun nincs; a `C:\Program Files\OpenVPN` alatt nincs GUI
+- [ ] `sc.exe qc OpenVPNServiceInteractive` → `START_TYPE : 4 DISABLED`, `sc.exe query OpenVPNServiceInteractive` → `STATE : 1 STOPPED`; `reg.exe query HKLM\SOFTWARE\WinVPN /v OpenVpnInstalledByWinVpn` → `0x1`
+- [ ] UAC elutasítva → „Megszakítva”, semmi nem települ
+- [ ] A TAP-Windows6 eltávolítva (Telepített alkalmazások → OpenVPN → Módosítás) → „Javítás” gomb, egy TAP-os kapcsolat érthető hibát ad, a DCO-s működik; **Javítás** → visszakerül, az interaktív szolgáltatás újra letiltva
+- [ ] Kézzel (GUI-val) telepített OpenVPN (`reg.exe delete HKLM\SOFTWARE\WinVPN /v OpenVpnInstalledByWinVpn /f` után) → a WinVPN használja; „Javítás”/„Frissítés” után is `OpenVPNServiceInteractive` `AUTO_START` és `RUNNING` marad
+- [ ] winget nélküli gépen (ha van ilyen) a hivatalos MSI egy UAC-kérdéssel települ; ha nincs ilyen gép: **nem tesztelt**
+- [ ] Hálózat nélkül **Telepítés** → hibaüzenet, semmi nem települ
+- [ ] Ha a telepítettnél újabb OpenVPN jelent meg: a sor „Frissítés elérhető: x → y”, a **Frissítés** egy UAC-kérdéssel telepíti, utána zöld az új verzióval (ha nincs újabb: **nem tesztelhető**)
+
+### Illesztőprogram kapcsolatonként (CP1-ből)
+
+- [ ] A labor `openvpn-tun-dco.ovpn` → DCO-val csatlakozik (a Napló fülön az OpenVPN saját sorai a DCO-t mutatják), „via: openvpn”
+- [ ] `openvpn-tun-cbc.ovpn` (`cipher AES-256-CBC`) → TAP-Windows6-tal csatlakozik
+- [ ] `openvpn-tap-l2.ovpn` (`dev tap`) → TAP-Windows6-tal csatlakozik (`10.99.12.x`)
+- [ ] Egy szerver, amely tömörítést küld (push) → az első DCO-s kísérlet után a naplóban „[WinVPN] DCO cannot run this connection (pushed options); retrying with TAP-Windows6”, és csatlakozik (ha nincs ilyen szerver: **nem tesztelhető**)
+- [ ] Két TAP-os kapcsolat egyszerre → a második érthető hibát ad
+- [ ] `windows-driver`, `win-sys` vagy `cryptoapicert` sor importáláskor → „Tiltott direktíva”, nyugtázással sem menthető
+
+### OpenVPN-kapcsolatok és MFA (CP1-ből)
+
+- [ ] Jelszavas kapcsolat (`labuser`) → csatlakozik; rossz jelszóval → „Hitelesítési hiba (AUTH_FAILED)”, a hitelesítőadat-ablak egyszer újra megnyílik
+- [ ] Statikus challenge (`openvpn-static-challenge.ovpn`, `labotp`) → a kódablak csatlakozás előtt jön, a kóddal csatlakozik
+- [ ] Dinamikus challenge (`openvpn-tun-dco.ovpn` `labotp`-vel) → a kódablak csatlakozás közben jön („Enter the lab one-time code”), a kóddal csatlakozik
+- [ ] Webes bejelentkezés (`OPEN_URL`) egy ilyen szerverrel → a böngésző a címmel nyílik, a bejelentkezés után csatlakozik (ha nincs ilyen szerver: **nem tesztelhető**)
+- [ ] A Napló fül élőben; jelszó és kód sehol, a `C:\ProgramData\WinVPN\logs` fájljaiban sem (rendszergazdaként megnyitva)
+- [ ] Debug csatlakozás (Alt+kattintás) → bővebb napló (`--verb 5`), előtte és utána „▶ [WinVPN] diagnosztika” blokk
+
+### WireGuard
+
+- [ ] `wireguard-windows.conf` → csatlakozik, „via: wireguard”; debug módban a „WireGuard peer status” sor kulcs nélkül
+- [ ] Teljes alagút (`AllowedIPs = 0.0.0.0/0, ::/0`, egy saját szerverrel, ha van) → a böngészés megy, `nslookup` az alagút DNS-ét használja, `route.exe print` mutatja az útvonalat
+- [ ] `Table = off` → nem kerül fel útvonal
+- [ ] Bontás → az adapter eltűnik (`Get-NetAdapter`)
+- [ ] Hosztnévvel megadott végpont → feloldódik, csatlakozik
+- [ ] A Rendszerállapot WireGuard-sora „wireguard-nt 1.1.0” (vagy újabb), ajánlat nélkül, ha nincs újabb; `C:\ProgramData\WinVPN\engines\wireguard-nt` létezik, üres, `icacls.exe` szerint csak SYSTEM és Administrators
+
+### Több felhasználó (CP1-ből)
+
+- [ ] Egy második normál fiók (gyors felhasználóváltás) nem látja és nem bontja az első OpenVPN-kapcsolatát (a vezérlő API-n sem)
+- [ ] Az első felhasználó kijelentkezik → az OpenVPN- és WireGuard-kapcsolatai bomlanak (a `service.log` szerint), a második felhasználóé él
+- [ ] Zárolás és felhasználóváltás → a kapcsolatok maradnak
+
+### Frissítés
+
+- [ ] A popover **Beállítások** csoportjában **Frissítések keresése most** → „A WinVPN naprakész” (vagy a 2.0.0-nál újabb kiadás felajánlva); hálózat nélkül → tiszta hibaüzenet
+- [ ] Egy későbbi kiadásnál (2.0.1 vagy újabb, ha megjelent): **Letöltés és telepítés** → kilépési kérdések, „A WinVPN frissítése bontja az aktív VPN-kapcsolatokat.”, UAC, a frissítés lefut, a szolgáltatás újraindul (`sc.exe query WinVPN`), a WinVPN magától visszajön; ha még nincs újabb kiadás: **nem tesztelhető**
+- [ ] Egy későbbi kiadás telepítése közben (a UAC-ablak nyitva, majd az msiexec futása alatt): a `WinVPN-relaunch.exe` fut, az `updates` mappa `WinVPN-<verzió>-x64.msi` és `msiexec-<verzió>.log` fájlja nem törölhető és nem nevezhető át, az `updates` mappa sem (P2-L3); UAC elutasítva → a `WinVPN-relaunch.exe` kilép, az MSI törlődik; ha még nincs újabb kiadás: **nem tesztelhető**
+- [ ] A `%LOCALAPPDATA%\WinVPN\updates` alatt a `msiexec-<verzió>.log` megvan; egy sikertelen frissítés után a következő indításkor egyszeri értesítés a napló útvonalával (csak ha előfordul)
+
+### Csapatkatalógus HTTPS-en
+
+- [ ] Feliratkozás egy HTTPS-forrásra tokennel → előnézet, feliratkozás; a **Frissítés most** és egy nem változott fájl („nem változott”) rendben
+- [ ] A token nem látszik a Feladatkezelő „Parancssor” oszlopában a `curl.exe`-nél, és a `service.log`-ban, az app naplójában sem
+- [ ] Rossz token → „A csapatkatalógus nem olvasható: hozzáférés megtagadva (ellenőrizd a hozzáférési tokent)”
+
+### Eltávolítás
+
+- [ ] Az MSI eltávolítása után (előtte a „WinVPN 2c” szakasz G-9 pontja) a szolgáltatás és a `wireguard.dll` eltűnik (`sc.exe query WinVPN` → nincs ilyen); az OpenVPN Community a két illesztőprogrammal és a TAP-adapterekkel, valamint a `C:\ProgramData\WinVPN` megmarad
+
+### Smoke és ARM64
+
+- [ ] `scripts/win-smoke.sh en` és `hu` → zöld (a `winvpn-dev` be van jelentkezve a VM konzolján; csak a karbantartó engedélyével)
+- [ ] Az arm64 MSI egy ARM64 gépen (ha nincs: **nem tesztelt**)
+
+## WinVPN 2a: Windows (1.5.0-s build, VPN-motor nélkül)
+
+A WinVPN 2a-ban minden működik a csatlakozáson kívül (a 2a terv: `docs/superpowers/plans/2026-10-21-winvpn-2a-foundations.md`). Ezek az ellenőrzések asztali munkamenetet kívánnak: a `scripts/win-remote.sh` SSH-kapcsolatának nincs asztala, nincs Hitelesítőadat-kezelő munkamenete, és a vezérlő cső nem engedi be. Az elvárt eredmény a „→” után áll; ami a jelenlegi kódtól eltér, az hiba, a javító feladatával együtt jegyezd fel.
+
+Előfeltétel: a Macen `scripts/win-remote.sh test` és `scripts/win-remote.sh msi` zöld (CI nélkül, `WINVPN_WIX_NO_ICE=1`-gyel futtatja a `scripts/build-msi.sh`-t: SSH-n a WiX ICE-ellenőrzése nem futhat, a CI-ban igen), `scripts/win-remote.sh fetch dist/windows ./dist` után megvan a `dist/windows/WinVPN-1.5.0-x64.msi` (és az `-arm64.msi`). Kell egy Windows 11 x64 gép (ha van, egy Windows 10 is), rajta egy rendszergazdai fiók a telepítéshez, egy normál fiók a teszthez (**asztali** bejelentkezéssel, nem SSH-n), és egy második normál fiók. Kell egy `.ovpn` (mellette `ca.crt`, egy `sub\client.key` és egy kétsoros `auth.cfg`), egy `.sstp`, egy WireGuard `.conf`, egy `.macvpncatalog` egy SMB-megosztáson, egy `.macvpnadminkey`, egy `.macvpnbackup` és egy MacVPN-nel (Macen) készült teljes biztonsági mentés. Példanevek: „Office VPN”, „Acme VPN”, `vpn.example.com`. Windows **build száma: ___**
+
+### Telepítés (rendszergazda)
+
+- [x] Dupla kattintás a `WinVPN-1.5.0-x64.msi`-re egy tiszta Windows 11-en: a SmartScreen egyszer figyelmeztet („A Windows megvédte a számítógépet” → **További információ** → **Futtatás mindenképp**), utána a rendszergazdai megerősítés → a telepítés hiba nélkül lefut
+- [x] A `C:\Program Files\WinVPN` mappában pontosan a `WinVPN.exe` és a `THIRD-PARTY-NOTICES.txt` van; a notices azonos a repó `THIRD-PARTY-NOTICES.windows.txt` fájljával
+- [x] A Start menüben „WinVPN”; PowerShellben `Get-StartApps WinVPN` → az AppID `local.winvpn` (az értesítések ezt az AppUserModelID-t használják)
+- [x] `reg query HKLM\Software\Classes\.ovpn`, `.sstp` és `.macvpncatalog` → az alapérték a `WinVPN.ovpn`, `WinVPN.sstp`, `WinVPN.macvpncatalog` ProgId; `reg query HKLM\Software\Classes\.conf /s` → csak az `OpenWithProgids` alatt egy `WinVPN.conf` érték, a `.conf` alapértéke nem változott; a `.macvpnadminkey`, `.macvpnbackup` és `.mobileconfig` kiterjesztéshez nincs WinVPN-bejegyzés
+- [ ] WebView2 nélküli gépen (ha van ilyen, például egy régebbi Windows 10) a telepítő letölti a WebView2 Runtime-ot, utána a WinVPN ablakai megjelennek
+- [x] Ugyanaz az MSI még egyszer → javítás (karbantartó mód), nem második példány; a **Gépház → Alkalmazások → Telepített alkalmazások** listában egy WinVPN
+- [x] Eltávolítás a **Telepített alkalmazások** alól → a `C:\Program Files\WinVPN` mappa, a Start menü bejegyzése és a fenti registry-bejegyzések eltűnnek; a `%LOCALAPPDATA%\WinVPN` és a `local.winvpn.vault` hitelesítő adat megmarad; újratelepítés után a széf kérdés nélkül megnyílik
+- [ ] Az arm64 MSI egy ARM64 gépen ugyanígy (ha nincs ilyen gép, jelöld: **nem tesztelt**)
+
+### Első indítás, ikon és popover
+
+- [x] Indítás a Start menüből → nem nyílik konzolablak; az ikon megjelenik a tálca értesítési területén (ha a **^** alatt van, áthúzható a tálcára); fölé víve „WinVPN” (2026-10-21, teszt-VM)
+- [x] A popover és minden ablak (Kapcsolatok, Rendszerállapot, a széf ablakai) a WinVPN felületét mutatja, nem üres fehér lapot (2026-10-21, teszt-VM)
+- [ ] Sötét tálcán az ikon fehér, világos tálcán fekete; a Windows mód átváltása (Gépház → Személyre szabás → Színek) után a popover következő megnyitásakor vagy a következő ikonfrissítéskor az új színű
+- [x] A popover alján „WinVPN 1.5.0” áll (nem MacVPN) (2026-10-21, teszt-VM)
+- [x] A popover az ikon **fölött** nyílik, a képernyőn belül; a Beállítások kinyitásakor felfelé nő, becsukáskor az alja a tálcánál marad (2026-10-21, teszt-VM)
+- [ ] Windows 11-en **minden** WinVPN-ablak és a popover lekerekített sarkú, Windows 10-en szögletes. **Valódi hardveren** ellenőrizendő: alap kijelző-adapterrel (VM, Microsoft Basic Display Adapter) a Windows 11 semmit nem kerekít le, a Fájlkezelőt sem (2026-10-21: a teszt-VM-en így volt)
+- [x] Egyik WinVPN-ablakban sincs menüsor; a popover **Beállítások** csoportjában nincs frissítés-tétel; a **Kilépés** kilép (a Feladatkezelőben nem marad `WinVPN.exe`)
+- [x] A Kapcsolatok, a Rendszerállapot és a széf ablakainak saját tálcagombja van, Alt+Tabbal elérhetők; ha csak a popover van nyitva, nincs tálcagomb
+- [x] Szövegmezőkben (config szerkesztő, keresőmező, jelszómező) a Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A és Ctrl+Z működik; a **Ctrl+S** ment a szerkesztőben, a **Ctrl+F** a keresőmezőbe ugrik
+- [x] A **Rendszerállapot** a VPN-motor megjegyzését mutatja („A VPN-motor a WinVPN egy későbbi verziójában érkezik. Kapcsolatokat már most is…”), Homebrew-, eszköz- és jogosultság-sorok nélkül; indításkor nem nyílik meg magától, és a popover csempéjén nincs „!” jel
+- [ ] **Súgó** → a böngészőben a GitHubon a `docs/winvpn-user-guide.hu.md` nyílik meg (angol nyelvű Windowson a `winvpn-user-guide.en.md`), nem a MacVPN útmutatója
+- [x] A Windows megjelenítési nyelve magyar → a WinVPN magyarul szól; angol → angolul (kilépés és újraindítás után)
+
+### Széf és Hitelesítőadat-kezelő
+
+- [x] A Windows gépen, **asztali** munkamenetben (nem SSH-n), a checkout mappájában: `cargo test --locked -p macvpn-platform-win --test windows` → minden teszt zöld, és a `the_credential_key_store_round_trips_and_deletes` **nem** írja ki, hogy „skipped: no Credential Manager logon session”; utána a `cmdkey /list` nem mutat `local.winvpn.test.` kezdetű bejegyzést (2026-10-21, teszt-VM)
+- [x] Széf létrehozása, a helyreállítási kulcs ellenőrzése → `cmdkey /list` → `LegacyGeneric:target=local.winvpn.vault`, típusa általános (Generic), felhasználója `dek`, tárolása helyi gépi (Local machine persistence)
+- [x] Kilépés és újraindítás → a széf kérdés nélkül feloldódik
+- [x] **Automatikus feloldás** ki → a `local.winvpn.vault` eltűnik a `cmdkey /list` listából, a következő indításkor a WinVPN a mesterjelszót kéri; vissza bekapcsolva → a bejegyzés újra megjelenik
+- [x] A `local.winvpn.vault` kézi törlése a Hitelesítőadat-kezelőben (Windows hitelesítő adatai) → a következő indításkor a WinVPN a mesterjelszót kéri, nem omlik össze
+- [x] `icacls %LOCALAPPDATA%\WinVPN` → csak két bejegyzés: a felhasználó és a SYSTEM (`NT AUTHORITY\SYSTEM`), mindkettő `(OI)(CI)(F)`, öröklött `(I)` bejegyzés nélkül; a `vault.db`, a `vault.keys`, a `preferences.json` (és futás közben a `vault.db-wal`) ugyanígy, csak `(F)`
+- [x] Rendszergazdaként, emelt parancssorban: `dir C:\Users\<a tesztfelhasználó>\AppData\Local\WinVPN` → hozzáférés megtagadva (a Rendszergazdák csoport nincs a listán); a második normál fiókból ugyanígy
+- [x] **Széf zárolása most**, feloldás, hibás jelszó után a várakozás, **Mesterjelszó módosítása…**, **Új helyreállítási kulcs…**, elfelejtett jelszó a helyreállítási kulccsal → mind működik
+- [x] A Win+V vágólap-előzmények bekapcsolva: a helyreállítási kulcs **Másolás** gombja után a kulcs beilleszthető (Ctrl+V a Jegyzettömbbe), de a Win+V előzményeiben **nem** jelenik meg; bekapcsolt felhőalapú vágólap-szinkronizálásnál egy másik eszközön sem (ha van ilyen)
+- [x] 60 másodperc múlva a vágólap üres (a Ctrl+V semmit nem illeszt be); ha közben mást másoltál, az megmarad; a **Széf zárolása most** és a **Kilépés** is törli a még ott lévő titkot
+
+### Kapcsolatok
+
+- [ ] `.ovpn` importálása a mellékelt fájlokkal (`ca.crt`, `sub\client.key`, `auth.cfg`) → beolvasva, beemelve, a hitelesítőadat-fájlra rákérdez
+- [ ] `..\ca.crt` hivatkozás → elutasítva („A hivatkozott fájl a config mappáján kívül van”); `\\<szerver>\<megosztás>\ca.crt` hivatkozás → elutasítva, hálózati forgalom nélkül; `ca.crt:hidden` (alternatív adatfolyam) → hiányzó fájlként elutasítva
+- [ ] OneDrive-mappából importálás, a fájl csak online → letöltődik és beolvasódik
+- [x] Minden kártya (OpenVPN, WireGuard, IKEv2, SSTP, L2TP, Cisco IPsec) szürke, a típusa mellett „A VPN-motor a WinVPN egy későbbi verziójában érkezik.”, sehol nincs „Hiányzó eszköz”; a kapcsolójuk és a **Csatlakozás** gomb nem kattintható
+- [ ] L2TP kapcsolat létrehozása, **Mentés és profil telepítése** → mentve, utána „A VPN-motor a WinVPN egy későbbi verziójában érkezik.”; a Windows VPN-listájában (Gépház → Hálózat és internet → VPN) nem jelenik meg semmi
+- [ ] Exportálás (`.ovpn`, kulcsokkal és kulcsok nélkül) → `icacls <fájl>` → csak a felhasználó és a SYSTEM
+- [ ] A fájlpárbeszédek (**Import fájlból…** több fájllal, exportálás, **PEM fájl kiválasztása…**, a mentés helye, a katalógusfájl kiválasztása) a Windows saját ablakai, a WinVPN ablaka előtt nyílnak; a **Mégse** semmit nem változtat; a párbeszéd alatt a többi WinVPN-ablak nem fagy le
+- [ ] Húzás a Fájlkezelőből a Kapcsolatok ablakba → import
+
+### Mentés és visszaállítás
+- [ ] Teljes biztonsági mentés WinVPN-ből → a mentés helyének ablaka a `WinVPN-backup-<dátum>.macvpnbackup` nevet ajánlja; a fájl elkészül, `icacls` szerint csak a felhasználó és a SYSTEM olvashatja
+- [ ] Egy MacVPN-mentés visszaállítása új WinVPN-széfbe (**Széf beállítása** → **Visszaállítás biztonsági mentésből…**) → a kapcsolatok, mappák, színek és közös hitelesítő adatok átjönnek, a beállítások csak bejelölés után lépnek életbe
+- [ ] Egy WinVPN-mentés visszaállítása MacVPN-ben (a Macen) → ugyanígy
+
+### Csapatkatalógus
+- [ ] Feliratkozás fájlforrásra (SMB-megosztás, majd egy OneDrive-mappa) → előnézet, ujjlenyomat, feliratkozás; egy új közzétett verzió a **Frissítés most** gombbal és magától is megjön, értesítéssel
+- [ ] HTTPS-forrás → „Ezen a rendszeren még nem érhető el” (nem elérhető forrásként), hibaértesítés nélkül
+- [ ] Közzététel WinVPN-ből egy megosztásra → egy Macen és egy másik Windows-fiókban feliratkozható; a kiírt fájlra `icacls` → a felhasználó és a SYSTEM teljes, a `BUILTIN\Users` olvasási joggal
+- [ ] **Feliratkozási kód másolása…** → nincs a Win+V előzményekben, 60 másodperc múlva törlődik
+
+### Vezérlő API (named pipe)
+- [ ] **Más appok vezérelhetik a VPN-eket** be; a saját asztali munkamenetben `cargo build -p macvpn-control-client`, majd `target\debug\macvpn-control-client.exe pair "Teszt"` → a párosító ablak megjelenik, a **Futtatható fájl** a kliens teljes útvonala; engedélyezés után a token kiíródik; `set MACVPN_TOKEN=…` és `macvpn-control-client.exe list` → az engedélyezett kapcsolatok
+- [ ] `macvpn-control-client.exe hold <egy L2TP kapcsolat azonosítója>` → `failed` hibával kilép, üzenete „A VPN-motor a WinVPN egy későbbi verziójában érkezik.”; egy OpenVPN kapcsolatra ugyanez (soha nem `setup_required`)
+- [ ] Ugyanaz a felhasználó SSH-n bejelentkezve: `macvpn-control-client.exe list` → nem csatlakozhat (hozzáférés megtagadva), a WinVPN nem mutat párosító ablakot
+- [ ] A második fiókban (`runas /user:<második fiók> cmd`), `whoami /user`-rel kiolvasott SID-del: `set MACVPN_SOCKET=\\.\pipe\WinVPN-control-<az első felhasználó SID-je>` és `macvpn-control-client.exe list` → nem csatlakozhat (hozzáférés megtagadva); ez a `another_user_is_refused_both_ways` kézi párja
+- [ ] A kapcsoló kikapcsolása → a kliens nem csatlakozik; a **Visszavonás** után a token nem működik
+
+### Fájltársítások és a Mark of the Web
+- [ ] Dupla kattintás egy `.ovpn`-re és egy `.sstp`-re → a WinVPN importálja; ha nem futott, elindul; ha futott, a futó példány kapja (a Feladatkezelőben egy `WinVPN.exe`)
+- [ ] Dupla kattintás egy `.macvpncatalog`-ra → **Csapatkatalógusok** → **Csapatkatalógus hozzáadása…**, a forrás **Fájl**, a fájl kiválasztva, a kulcs és az ujjlenyomat üres
+- [ ] A WireGuard `.conf` dupla kattintásra **nem** a WinVPN-ben nyílik; jobb gomb → **Társítás** listában ott a WinVPN, azzal megnyitva importálódik
+- [ ] `.macvpnadminkey` és `.macvpnbackup`: nem a WinVPN nyitja meg; **Társítás → Másik alkalmazás választása → WinVPN** úton → „Ezt a fájlt a WinVPN saját paneljén kell megnyitni, nem a Fájlkezelőből.”, semmi nem változik
+- [ ] Edge-ből letöltött `.ovpn`: PowerShellben `Get-Content <fájl> -Stream Zone.Identifier` → `ZoneId=3`; dupla kattintás → „Importálod a letöltött fájlt?” a fájl nevével; **Mégse** → nincs új kapcsolat; **Importálás** → import, utána a `Zone.Identifier` adatfolyam megmarad
+- [ ] Két letöltött és egy helyben létrehozott fájl együtt megnyitva → egy kérdés csak a két letöltött fájl nevével; egy helyben létrehozott fájl kérdés nélkül importálódik
+- [ ] Zárolt széfnél egy letöltött fájl → előbb a feloldó ablak, utána a kérdés, csak utána az import
+
+### Egy példány felhasználónként
+- [ ] Második indítás fájl nélkül (Start menü), nyitott Kapcsolatok ablakkal → az ablak előjön, nem indul második `WinVPN.exe`
+- [ ] Második indítás fájl nélkül, amikor csak az ikon fut (nincs nyitott ablak) → megnyílik a Kapcsolatok ablak
+- [ ] Ugyanez zárolt széffel → a feloldó ablak nyílik meg (széf nélkül a beállító ablak)
+- [ ] Második indítás fájllal (parancssorból `"C:\Program Files\WinVPN\WinVPN.exe" C:\…\teszt.ovpn`) → a futó példány importálja, a második folyamat kilép (`echo %ERRORLEVEL%` → `0`)
+
+### Indítás bejelentkezéskor
+- [ ] **Indítás bejelentkezéskor** be → `reg query HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v WinVPN` → `"C:\Program Files\WinVPN\WinVPN.exe"` (idézőjelekkel); kijelentkezés és bejelentkezés után a WinVPN magától elindul
+- [ ] **Gépház → Alkalmazások → Indítás** alatt a WinVPN kikapcsolva → a WinVPN-ben a kapcsoló ki, alatta „Kikapcsolva: Gépház → Alkalmazások → Indítás.”, az **Indítási alkalmazások beállításai…** gomb megnyitja ezt a Gépház-oldalt; bejelentkezéskor nem indul el
+- [ ] A WinVPN-ben újra bekapcsolva → a Gépházban is bekapcsolt; kikapcsolva → a `Run` érték eltűnik
+- [ ] Fejlesztői buildben (`target\debug\macvpn-app.exe`) a kapcsoló nem kattintható
+
+### Értesítések
+- [ ] A telepített MSI-ből (a Start menüből) indítva egy katalógusfrissítés értesítése megjelenik, „WinVPN” feladóval; a Gépház → Rendszer → Értesítések listájában ott a WinVPN
+- [ ] Kattintás az értesítésre futó WinVPN mellett → a hozzá tartozó ablak előjön; kilépés után kattintva → a WinVPN elindul
+- [ ] Egyetlen értesítésben sincs jelszó, kulcs, token vagy config-tartalom
+
+### Kijelentkezés, leállítás, alvás
+- [ ] A Kapcsolatok ablakban nem mentett változás, majd kijelentkezés → a „Nem mentett változások” kérdés megjelenik, a Windows a WinVPN-t „A WinVPN bezárása…” szöveggel mutatja a kijelentkezést feltartó alkalmazások között; **Mégse** → a kijelentkezés megszakítható, a WinVPN fut tovább; **Elvetés** → a kijelentkezés folytatódik
+- [ ] Nem mentett változás nélkül → a kijelentkezés várakozás nélkül megy
+- [ ] Újraindítás és leállítás ugyanígy
+- [ ] Alvás és ébresztés → a WinVPN fut tovább, a katalógus legutóbbi frissítésének ideje az ébredés ideje
+
+### Eltávolítás
+- [x] A **Rendszerállapot** ablakban nincs **WinVPN eltávolítása…** gomb; helyette „A WinVPN-t a Windowsban távolíthatod el: Gépház → Alkalmazások → Telepített alkalmazások → WinVPN → Eltávolítás. …” szöveg és a **Telepített alkalmazások megnyitása…** gomb, amely a Gépház **Telepített alkalmazások** oldalát nyitja meg; sehol nem jelenik meg „no user name” (2026-10-21, teszt-VM)
+- [ ] Eltávolítás a Gépházból, előtte **Indítás bejelentkezéskor** ki → a `Run` érték nem marad meg; ha bekapcsolva maradt, a `Run` érték megmarad (jegyezd fel)
+
+### Nyelv
+- [ ] Mindez magyarul és angolul (a Windows megjelenítési nyelvének átállításával): a WinVPN-szövegek Windows-szavakat használnak (Hitelesítőadat-kezelő, Fájlkezelő, Gépház, értesítési terület), sehol nincs „Mac”, „Finder”, „Keychain” vagy „menüsor”
 
 ## 1.5.0: belső átalakítás (Windows-előkészítés), a macOS-es app változatlan
 
@@ -171,13 +622,14 @@ Előfeltétel: `scripts/build-dmg.sh` hiba nélkül lefutott (`dist/MacVPN-1.3.0
 
 ### Fájlforrás-ellenőrzések (a spike kézi lépései)
 Lásd `docs/superpowers/spikes/2026-10-19-catalog-spike.md`, „Manual checks for the maintainer”. Az eredményeket a spike riportba is írd be; ha egy errno nincs a B2 listán, jelezd.
+
 - [ ] **SMB:** a katalógus a megosztáson; `stat -f '%d %i %z %m' <fájl>` feljegyezve; a fájl lecserélve egy másik Macről (atomikus átnevezés), újra `stat`; B frissítése megtalálja a változást
-- [ ] **SMB, leállított szerver:** a szerver hálózatát lekapcsolva `time python3 -c 'import os;os.open("<fájl>", os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)'` és `time cat <fájl>` → errno: ___, idő: ___; B-n „nem érhető el”, nincs értesítésözön, a menü közben is reagál (legfeljebb 20 s-os olvasás a háttérben); a szerver visszakapcsolása után a következő frissítés rendben
+- [ ] **SMB, leállított szerver:** a szerver hálózatát lekapcsolva `time python3 -c 'import os;os.open("<fájl>", os.O_RDONLY|os.O_NOFOLLOW|os.O_NONBLOCK)'` és `time cat <fájl>` → errno: \__\_, idő: \__\_; B-n „nem érhető el”, nincs értesítésözön, a menü közben is reagál (legfeljebb 20 s-os olvasás a háttérben); a szerver visszakapcsolása után a következő frissítés rendben
 - [ ] **NFS vagy AFP** (ha van): ugyanaz, mint az SMB-nél
 - [ ] **Le nem csatolt megosztás** (`/Volumes/<név>` nincs) → „nem érhető el”, nem hiba
-- [ ] **iCloud Drive:** a katalógus egy iCloud-mappában, Finderben „Letöltés eltávolítása”; online az `open` letölti (blokkol? meddig: ___); offline: errno ___; B-n „nem érhető el”, értesítés nélkül
-- [ ] **OneDrive:** csak online elérhető fájl, ugyanaz, mint az iCloudnál; errno/idő: ___
-- [ ] **Dropbox:** csak online elérhető fájl, ugyanaz; errno/idő: ___
+- [ ] **iCloud Drive:** a katalógus egy iCloud-mappában, Finderben „Letöltés eltávolítása”; online az `open` letölti (blokkol? meddig: \__\_); offline: errno \__\_; B-n „nem érhető el”, értesítés nélkül
+- [ ] **OneDrive:** csak online elérhető fájl, ugyanaz, mint az iCloudnál; errno/idő: \__\_
+- [ ] **Dropbox:** csak online elérhető fájl, ugyanaz; errno/idő: \__\_
 - [ ] Egy szinkronizálási ütközés vagy egy régi példány visszaállítása a felhőben → B-n a régebbi verzióra figyelmeztet, nem alkalmazza
 - [ ] A forrásfájl helyén symlink, illetve egy könyvtár → „nem szabályos fájl” jellegű hiba, a symlink célja nem olvasódik be
 - [ ] **Élő HTTPS teszt:** `MACVPN_CATALOG_TEST_URL=https://… cargo test -p macvpn-platform-mac --test catalog_http -- --ignored` érvényes tanúsítvánnyal sikeres; `http://`-re átirányító szerverbeállítással elutasít

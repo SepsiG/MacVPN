@@ -252,6 +252,23 @@ test('a merge names the team catalog items it did not restore', async () => {
   assert.ok(hu.includes('Team Two') && !hu.includes('A team catalog provides these'), hu);
 });
 
+test('WinVPN: installed profiles are ready and a refused one shows why, without a reinstall button', async () => {
+  const winvpn: RestoreOutcome = {
+    ...outcome,
+    nativeProfiles: [
+      { id: '11111111-2222-4333-8444-555555555555', name: 'Branch L2TP', installed: true },
+      { id: '11111111-2222-4333-8444-666666666666', name: 'Office Cisco', installed: false, note: 'Cisco IPsec is not supported by Windows.' },
+    ],
+  };
+  const html = await renderView('RestoreAfterView', afterProps({ outcome: winvpn }));
+  assert.ok(html.includes('Cisco IPsec is not supported by Windows.'), html);
+  assert.doesNotMatch(html, /Reinstall/);
+  // macOS: no note, the reinstall offered as before.
+  const mac = await renderView('RestoreAfterView', afterProps());
+  assert.doesNotMatch(mac, /class="caption note"/);
+  assert.match(mac, /Reinstall 1 Native Profile/);
+});
+
 function afterProps(extra: Record<string, unknown> = {}) {
   return { outcome, ticks: initialTicks(outcome.preferences), onapply: noop, onreinstall: noop, ondone: noop, ...extra };
 }

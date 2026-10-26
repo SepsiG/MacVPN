@@ -139,7 +139,7 @@ pub fn receive(app: &AppHandle, state: &Arc<AppState>, paths: Vec<PathBuf>) {
 
 /// The unlock window (locked), or the create window (no vault yet, or the old storage read-only); a create window
 /// in progress comes forward.
-fn show_vault_window(app: &AppHandle, state: &Arc<AppState>) {
+pub fn show_vault_window(app: &AppHandle, state: &Arc<AppState>) {
     let shown = match state.vault.lifecycle.state() {
         VaultState::Locked => crate::vault::open_window(app, state, UNLOCK_WINDOW),
         VaultState::Unlocked => match app.get_webview_window(CREATE_WINDOW) {
@@ -283,22 +283,26 @@ mod tests {
     use super::*;
     use std::path::Path;
 
-    const SECRET_DIR: &str = "/Users/someone/Secret Folder";
+    /// Where absolute paths start (a drive on Windows).
+    const ROOT: &str = if cfg!(windows) { "C:" } else { "" };
+    const SECRET_DIR: &str =
+        if cfg!(windows) { "C:/Users/someone/Secret Folder" } else { "/Users/someone/Secret Folder" };
 
     #[test]
     fn only_local_files_are_taken() {
+        let file = if cfg!(windows) { "file:///C:" } else { "file://" };
         let urls: Vec<Url> = [
-            "file:///Users/someone/Secret%20Folder/a.ovpn",
-            "https://example.com/b.ovpn",
-            "macvpn://open?x=/c.ovpn",
-            "file:///tmp/team.macvpncatalog",
+            format!("{file}/Users/someone/Secret%20Folder/a.ovpn"),
+            "https://example.com/b.ovpn".into(),
+            "macvpn://open?x=/c.ovpn".into(),
+            format!("{file}/tmp/team.macvpncatalog"),
         ]
         .iter()
         .map(|u| Url::parse(u).unwrap())
         .collect();
         assert_eq!(
             file_paths(&urls),
-            [PathBuf::from(format!("{SECRET_DIR}/a.ovpn")), PathBuf::from("/tmp/team.macvpncatalog")]
+            [PathBuf::from(format!("{SECRET_DIR}/a.ovpn")), PathBuf::from(format!("{ROOT}/tmp/team.macvpncatalog"))]
         );
     }
 
@@ -358,13 +362,14 @@ mod tests {
     #[test]
     fn many_refusals_make_a_short_report() {
         macvpn_core::l10n::AppLanguage::set_thread_override(Some(macvpn_core::l10n::AppLanguage::En));
-        let batch = Batch::sort((0..40).map(|i| PathBuf::from(format!("/s/{i}.macvpnbackup"))));
+        let batch = Batch::sort((0..40).map(|i| PathBuf::from(format!("{ROOT}/s/{i}.macvpnbackup"))));
         let lines = refusal_lines(&batch);
         assert_eq!(lines.len(), macvpn_app_core::open_files::MAX_REFUSED + 1);
         assert_eq!(lines.last().unwrap(), &format!("{} more files were not opened.", 40 - lines.len() + 1));
     }
 
     /// Info.plist (merged into the bundle's): the declared types and document types.
+    #[cfg(target_os = "macos")]
     fn info_plist() -> serde_json::Value {
         let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("Info.plist");
         let out = std::process::Command::new("/usr/bin/plutil")
@@ -378,6 +383,7 @@ mod tests {
 
     /// `.ovpn` and `.sstp` are data, not text: macOS treats plain text as a "safe" download that Safari may open by
     /// itself ("Open safe files after downloading"), which would hand a drive-by file to MacVPN.
+    #[cfg(target_os = "macos")]
     #[test]
     fn vpn_config_types_are_not_safe_download_types() {
         let plist = info_plist();
@@ -402,6 +408,7 @@ mod tests {
 
     /// MacVPN owns only its own type (the catalog); the imported .ovpn and .sstp types are `Default` (another app's
     /// own declaration wins), the .conf extension `Alternate`.
+    #[cfg(target_os = "macos")]
     #[test]
     fn handler_ranks_claim_only_the_own_type() {
         let plist = info_plist();

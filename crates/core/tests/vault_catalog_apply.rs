@@ -147,7 +147,6 @@ fn count(vault: &Vault, sql: &str) -> i64 {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn applying_v1_creates_the_rows_under_the_catalog_root() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -193,7 +192,6 @@ fn applying_v1_creates_the_rows_under_the_catalog_root() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_acknowledgement_survives_only_a_byte_identical_config() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -219,7 +217,6 @@ fn the_acknowledgement_survives_only_a_byte_identical_config() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn user_state_survives_an_apply_and_a_removal_drops_its_pin_and_ranking() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -255,7 +252,6 @@ fn user_state_survives_an_apply_and_a_removal_drops_its_pin_and_ranking() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_provided_secret_is_read_only_and_deleted_when_withdrawn() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -278,7 +274,6 @@ fn a_provided_secret_is_read_only_and_deleted_when_withdrawn() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_taken_slot_name_is_suffixed_and_an_own_login_is_not_linked() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -301,7 +296,6 @@ fn a_taken_slot_name_is_suffixed_and_an_own_login_is_not_linked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_in_the_middle_of_a_plan_changes_nothing() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -340,7 +334,6 @@ fn a_failure_in_the_middle_of_a_plan_changes_nothing() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_removed_connection_that_is_up_waits_for_the_disconnect() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -369,7 +362,6 @@ fn a_removed_connection_that_is_up_waits_for_the_disconnect() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unsubscribe_keeps_a_filled_slot_credential_and_refuses_while_active() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -409,7 +401,6 @@ fn unsubscribe_keeps_a_filled_slot_credential_and_refuses_while_active() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_acknowledgement_of_an_older_config_is_refused() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -430,7 +421,6 @@ fn an_acknowledgement_of_an_older_config_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn forgetting_a_catalog_item_or_its_provided_secrets_is_refused() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -445,7 +435,6 @@ fn forgetting_a_catalog_item_or_its_provided_secrets_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn duplicate_makes_an_independent_editable_copy() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -479,7 +468,6 @@ fn duplicate_makes_an_independent_editable_copy() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn subscribe_catalog_stores_and_applies_in_one_transaction() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);
@@ -538,7 +526,6 @@ fn subscribe_catalog_stores_and_applies_in_one_transaction() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_changed_native_connection_is_marked_until_its_profile_is_reinstalled() {
     let tmp = TempDir::new();
     let mut vault = new_vault(&tmp);

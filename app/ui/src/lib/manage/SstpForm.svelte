@@ -1,12 +1,16 @@
 <script lang="ts">
   // SSTP: the config as a form, the password in the vault, the server certificate mode with the CA file
-  // (the Swift `SSTPConfigForm`).
+  // (the Swift `SSTPConfigForm`). WinVPN (the backend's `platform` notes): "No verification" is disabled with
+  // Windows' reason, a custom CA can be trusted in Windows (or is shown as trusted), and the reasons Windows cannot
+  // connect the settings are shown above the form.
   import type { SstpFields } from '../api';
   import Icon from '../Icon.svelte';
   import { tr } from '../l10n.svelte';
   import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
+  import PlatformNotes from './PlatformNotes.svelte';
+  import TrustCa from './TrustCa.svelte';
   import SecretField from './SecretField.svelte';
   import Status from './Status.svelte';
 
@@ -16,6 +20,7 @@
   const view = $derived(session.view);
   /// A team catalog's connection: read-only (the user name comes from the credential slot at connect).
   const readOnly = $derived(view?.readOnly ?? null);
+  const platform = $derived(view?.platform);
 
   // As the Swift number field: an input that is not a whole number keeps the previous port.
   function setPort(event: Event) {
@@ -28,6 +33,7 @@
   {#if readOnly}
     <p class="readonly-note" role="note"><Icon name="lock" /><span>{readOnly}</span></p>
   {/if}
+  <PlatformNotes {platform} part="reasons" />
   <fieldset class="lock" disabled={readOnly !== null}>
     <section>
       <label class="field"><span>{tr('Name')}</span><input type="text" bind:value={fields.name} /></label>
@@ -56,7 +62,11 @@
         <select bind:value={fields.cert}>
           <option value="system">{tr('System CA')}</option>
           <option value="ca">{tr('Custom CA file')}</option>
-          <option value="insecure">{tr('No verification')}</option>
+          <option
+            value="insecure"
+            disabled={platform?.insecureCert ? fields.cert !== 'insecure' : false}
+            title={platform?.insecureCert ?? undefined}>{tr('No verification')}</option
+          >
         </select>
       </label>
       {#if fields.cert === 'system'}
@@ -73,6 +83,12 @@
           <span class="spacer"></span>
           <button onclick={() => session.chooseCa().catch(console.error)}>{tr('Choose PEM File…')}</button>
         </div>
+        {#if platform?.trustCa && (view?.certCount ?? 0) > 0}
+          <div class="row">
+            <span class="spacer"></span>
+            <TrustCa id={session.id} pick={false} trusted={platform.caTrusted} onchanged={() => session.open()} />
+          </div>
+        {/if}
         {#if view?.importError}
           <p class="error">{view.importError}</p>
         {/if}

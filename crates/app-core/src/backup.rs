@@ -40,9 +40,11 @@ use std::time::Instant;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// The default file name offered in the save panel: `MacVPN-backup-<YYYY-MM-DD>.macvpnbackup`.
-pub fn default_file_name(today: &str) -> String {
-    format!("MacVPN-backup-{today}.{}", format::EXTENSION)
+/// The default file name offered in the save panel: `<product>-backup-<YYYY-MM-DD>.macvpnbackup` (`product`:
+/// `Product::name`, so MacVPN's stays `MacVPN-backup-…` and WinVPN's is `WinVPN-backup-…`; the extension is the
+/// shared format's).
+pub fn default_file_name(product: &str, today: &str) -> String {
+    format!("{product}-backup-{today}.{}", format::EXTENSION)
 }
 
 /// Which password protects the new backup (the master password is checked in either case).
@@ -190,8 +192,12 @@ pub struct PreferenceChoice {
 pub struct NativeProfileView {
     pub id: String,
     pub name: String,
-    /// Reinstalled in this restore (opened for approval).
+    /// Reinstalled in this restore (opened for approval; WinVPN: its Windows VPN entry written).
     pub installed: bool,
+    /// Why the platform could not install it (WinVPN: "Cisco IPsec is not supported by Windows…"): the connection
+    /// is restored all the same and keeps its reason. Absent from the JSON otherwise (always on macOS).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
 }
 
 /// The restore is written: the preferences to confirm and the profiles to reinstall.
@@ -581,7 +587,7 @@ impl BackupService {
                     .into_iter()
                     .map(|s| s.connection)
                     .filter(|c| c.kind.is_native() && include(&c.id))
-                    .map(|c| NativeProfileView { id: uuid_string(&c.id), name: c.name, installed: false })
+                    .map(|c| NativeProfileView { id: uuid_string(&c.id), name: c.name, installed: false, note: None })
                     .collect())
             })
             .map_err(|e| restore_error_message(&e))
@@ -656,6 +662,45 @@ impl BackupService {
         if !listed {
             return Err("not a restored profile".into());
         }
+        self.install_restored(id, installer, &service_existed)?;
+        self.mark(id, None)
+    }
+
+    /// WinVPN 2c: where installing a native profile needs no approval ([`NativeProfiles::needs_approval`] false),
+    /// every restored native profile is installed right after the restore, so the restored L2TP connections are
+    /// ready at once. A profile the platform refuses keeps its reason as the row's note (Cisco IPsec on Windows);
+    /// the restore itself stands. Nothing where the user approves each profile (macOS: one at a time through
+    /// [`Self::reinstall_profile`]). Returns the list as the "After a restore" view shows it.
+    pub fn install_profiles_without_approval(
+        &self,
+        owner: &str,
+        installer: &dyn NativeProfiles,
+        service_existed: impl Fn(&Uuid) -> bool,
+    ) -> Result<Vec<NativeProfileView>, String> {
+        let pending: Vec<String> = match &guard(&self.session).restored {
+            Some(r) if r.owner == owner => r.natives.iter().filter(|n| !n.installed).map(|n| n.id.clone()).collect(),
+            _ => return Err("no restore in this window".into()),
+        };
+        let mut list = self.mark("", None)?;
+        if installer.needs_approval() {
+            return Ok(list);
+        }
+        for id in pending {
+            list = match self.install_restored(&id, installer, &service_existed) {
+                Ok(()) => self.mark(&id, None)?,
+                Err(reason) => self.mark(&id, Some(reason))?,
+            };
+        }
+        Ok(list)
+    }
+
+    /// Builds the restored connection `id`'s profile from the vault (with its PSK) and installs it.
+    fn install_restored(
+        &self,
+        id: &str,
+        installer: &dyn NativeProfiles,
+        service_existed: &dyn Fn(&Uuid) -> bool,
+    ) -> Result<(), String> {
         let (connection, psk) = self
             .vault
             .with_read(|v| {
@@ -671,12 +716,18 @@ impl BackupService {
         let psk = psk.unwrap_or_else(|| Zeroizing::new(String::new()));
         let profile = installer.build(&connection, &psk)?;
         drop(psk);
-        installer.install(&connection.id, &profile.data, &profile.file_name, service_existed(&connection.id))?;
+        installer.install(&connection.id, &profile.data, &profile.file_name, service_existed(&connection.id))
+    }
+
+    /// Marks the restored profile `id` installed (`note` `None`) or refused with `note`; returns the list. An `id`
+    /// that is not listed marks nothing.
+    fn mark(&self, id: &str, note: Option<String>) -> Result<Vec<NativeProfileView>, String> {
         let mut session = guard(&self.session);
         let restored = session.restored.as_mut().ok_or("no restore in this window")?;
         for n in &mut restored.natives {
             if n.id == id {
-                n.installed = true;
+                n.installed = note.is_none();
+                n.note = note.clone();
             }
         }
         Ok(restored.natives.clone())

@@ -13,6 +13,7 @@
   // folders, every folder open (the stored collapsed state is left alone), the matched part of the names marked and
   // the keyboard's result (`active`) highlighted; nothing is dragged then (reordering a filtered tree would confuse).
   import { api, type FolderColor, type FolderTreeRow, type Row, type TreeRow } from '../api';
+  import { engineLink } from '../format';
   import { tr } from '../l10n.svelte';
   import Icon from '../Icon.svelte';
   import TypeIcon from '../TypeIcon.svelte';
@@ -111,7 +112,16 @@
   let suppressClick = false;
 
   function subtitle(row: Row): string {
-    return row.managed ? row.typeLabel : tr('%@ · System VPN', row.typeLabel);
+    if (!row.managed) return tr('%@ · System VPN', row.typeLabel);
+    // An unavailable row says why ("OpenVPN · Not installed: OpenVPN").
+    return !row.available && row.unavailableReason ? `${row.typeLabel} · ${row.unavailableReason}` : row.typeLabel;
+  }
+
+  /// "System Status" of an unavailable row: opens the window (not the row's selection or a drag).
+  function openSetup(event: Event) {
+    event.stopPropagation();
+    event.preventDefault();
+    api.openWindow('setup').catch(console.error);
   }
 
   async function run(action: () => Promise<unknown>) {
@@ -412,6 +422,7 @@
             class="row item"
             class:selected={row.id === selected}
             class:active={row.id === active}
+            class:unavailable={!row.available}
             class:tinted={entry.color !== null}
             style:--tint={colorToken(entry.color)}
             onclick={() => clickItem(row.id)}
@@ -432,7 +443,18 @@
                 {/if}
                 {#if row.catalog}<span class="team"><TeamBadge name={row.catalog.name} /></span>{/if}
               </span>
-              <span class="type">{subtitle(row)}</span>
+              <span class="type"
+                >{subtitle(row)}{#if engineLink(row)}<span aria-hidden="true"> – </span><span
+                    class="setup-link"
+                    role="link"
+                    tabindex="-1"
+                    onpointerdown={(e) => e.stopPropagation()}
+                    onclick={openSetup}
+                    onkeydown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') openSetup(e);
+                    }}>{tr('System Status')}</span
+                  >{/if}</span
+              >
               {#if row.catalog?.pendingRemoval}<span class="removal">{tr('Removed from the team catalog — disappears after you disconnect')}</span>{/if}
               {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
               <PublishedBadges published={row.published} />
@@ -752,6 +774,19 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+  /* "… – System Status": the engine is missing, System Status installs it. */
+  .setup-link {
+    font-weight: 500;
+    color: var(--accent-text);
+    cursor: pointer;
+  }
+  .setup-link:hover {
+    text-decoration: underline;
+  }
+  .row.unavailable :global(.bubble),
+  .row.unavailable .name {
+    opacity: 0.5;
   }
   .held {
     font-size: var(--text-xs);

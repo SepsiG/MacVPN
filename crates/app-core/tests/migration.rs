@@ -320,7 +320,6 @@ fn assert_no_secret_logged(f: &Fixture, items: &[(&str, SecretField, &str)]) {
 /// The create window pauses after the check (review 1.2.0 L4, spec 2.7 step 5): the old data is still there while
 /// the window offers the backup; the next run deletes it.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_migration_can_pause_before_deleting_the_old_data() {
     let items = swift_era_items();
     let f = Fixture::new(Some("swift-era"), &items);
@@ -339,7 +338,6 @@ fn the_migration_can_pause_before_deleting_the_old_data() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_swift_era_directory_migrates_fully() {
     let items = swift_era_items();
     let f = Fixture::new(Some("swift-era"), &items);
@@ -376,7 +374,6 @@ fn the_swift_era_directory_migrates_fully() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_1_0_directory_with_paired_clients_migrates_fully() {
     let items = one_point_zero_items();
     let f = Fixture::new(Some("1.0"), &items);
@@ -427,7 +424,6 @@ fn the_1_0_directory_with_paired_clients_migrates_fully() {
 /// The file the 1.1 control API writes (`Registry::save` into the support directory) is the one the migration
 /// reads, and its clients arrive in the vault as written.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_registry_the_control_api_saves_is_migrated() {
     use macvpn_core::control::registry::{PairedClient, Registry};
     let f = Fixture::new(None, &[]);
@@ -455,7 +451,6 @@ fn the_registry_the_control_api_saves_is_migrated() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn shredded_files_are_zeroed_before_the_unlink() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     let config = f.support.join(format!("connections/{OPENVPN}/config"));
@@ -488,7 +483,6 @@ fn assert_untouched(
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_before_the_deletion_leaves_the_old_data_intact_and_a_retry_works() {
     for step in [MigrationStep::Read, MigrationStep::Import, MigrationStep::Verify] {
         let items = swift_era_items();
@@ -513,7 +507,6 @@ fn a_failure_before_the_deletion_leaves_the_old_data_intact_and_a_retry_works() 
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn verification_catches_a_tampered_vault() {
     type Tamper = fn(&mut Vault);
     let tampers: [(&str, Tamper); 6] = [
@@ -547,7 +540,6 @@ fn verification_catches_a_tampered_vault() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn verification_catches_tampered_clients() {
     let f = Fixture::new(Some("1.0"), &one_point_zero_items());
     fs::write(f.support.join("control-clients.json"), r#"{"clients":[{"id":"A","name":"x"}]}"#).unwrap();
@@ -563,7 +555,6 @@ fn verification_catches_tampered_clients() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_keychain_item_that_cannot_be_read_fails_the_read_step() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     f.keychain.denied.lock().unwrap().insert((L2TP.to_string(), "psk".to_string()));
@@ -578,7 +569,6 @@ fn a_keychain_item_that_cannot_be_read_fails_the_read_step() {
 // --- Failures during the deletion: the vault stays, the next run finishes ---------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_while_deleting_files_is_finished_by_the_next_run() {
     let items = swift_era_items();
     let f = Fixture::new(Some("swift-era"), &items);
@@ -604,7 +594,6 @@ fn a_failure_while_deleting_files_is_finished_by_the_next_run() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_while_deleting_keychain_items_is_finished_by_the_next_run() {
     let items = swift_era_items();
     let f = Fixture::new(Some("swift-era"), &items);
@@ -628,7 +617,6 @@ fn a_failure_while_deleting_keychain_items_is_finished_by_the_next_run() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_keychain_that_refuses_deletes_is_retried_later() {
     let items = swift_era_items();
     let f = Fixture::new(Some("swift-era"), &items);
@@ -646,7 +634,6 @@ fn a_keychain_that_refuses_deletes_is_retried_later() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_writing_the_marker_is_finished_by_the_next_run() {
     let items = swift_era_items();
     let f = Fixture::new(Some("swift-era"), &items);
@@ -664,7 +651,6 @@ fn a_failure_writing_the_marker_is_finished_by_the_next_run() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_cleanup_is_refused_without_a_vault() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     f.create_vault();
@@ -682,7 +668,6 @@ fn the_cleanup_is_refused_without_a_vault() {
 // --- Skipped data -----------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_corrupt_meta_json_is_skipped_and_left_in_place_with_its_secrets() {
     let mut items = swift_era_items();
     let broken = "99999999-0000-4000-8000-000000000009";
@@ -711,7 +696,6 @@ fn a_corrupt_meta_json_is_skipped_and_left_in_place_with_its_secrets() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn unreadable_ranking_otp_and_registry_files_are_skipped_and_left_in_place() {
     let f = Fixture::new(Some("1.0"), &one_point_zero_items());
     fs::write(f.support.join("connection-order.json"), b"[]").unwrap();
@@ -732,7 +716,6 @@ fn unreadable_ranking_otp_and_registry_files_are_skipped_and_left_in_place() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn duplicate_pins_are_imported_once() {
     let f = Fixture::new(Some("1.0"), &[]);
     let file = r#"{"pinned":["A","B","A"],"usage":{}}"#;
@@ -770,7 +753,6 @@ fn has_legacy_data_sees_each_source_and_the_marker_ends_it() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_empty_directory_migrates_to_just_the_marker() {
     let f = Fixture::new(None, &[]);
     f.create_vault();
@@ -782,7 +764,6 @@ fn an_empty_directory_migrates_to_just_the_marker() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_locked_vault_is_refused_and_a_non_empty_one_left_alone() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     let files_before = files(&f.support);
@@ -804,7 +785,6 @@ fn a_locked_vault_is_refused_and_a_non_empty_one_left_alone() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_successful_retry_leaves_the_legacy_read_only_mode() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     f.create_vault();
@@ -834,7 +814,6 @@ fn the_step_names_are_stable() {
 // --- Review fixes ------------------------------------------------------------------------------------------------
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn undecodable_and_vanished_keychain_items_are_skipped_and_not_deleted() {
     let mut items = swift_era_items();
     items.push((V01, SecretField::Password, "\u{FFFD}"));
@@ -864,7 +843,6 @@ fn with_cleanup_list(text: &str) -> Fixture {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_cleanup_list_naming_anything_else_is_refused() {
     for line in [
         "file vault.keys",
@@ -921,7 +899,6 @@ fn a_symlinked_connection_directory_is_not_followed() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn resuming_into_an_empty_unlocked_vault_is_refused() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     f.create_vault();
@@ -938,7 +915,6 @@ fn resuming_into_an_empty_unlocked_vault_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn an_empty_vault_from_an_earlier_session_is_rolled_back_too() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     let files_before = files(&f.support);
@@ -962,7 +938,6 @@ fn an_empty_vault_from_an_earlier_session_is_rolled_back_too() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_successful_migration_ends_the_fresh_vault_mark() {
     let f = Fixture::new(Some("swift-era"), &swift_era_items());
     f.create_vault();

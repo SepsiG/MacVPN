@@ -4,7 +4,7 @@
 //! quit), "save all" with the "Saving failed" report, and the one-time Log / Settings tab requests.
 
 use crate::deps::SecretField;
-use crate::editor::{Draft, EditorDeps, EditorFields, EditorView, Target};
+use crate::editor::{Cert, Draft, EditorDeps, EditorFields, EditorPlatformView, EditorView, Target};
 use crate::import_export::{self, ImportReport};
 use crate::manager::ConnectionItem;
 use crate::questions::{QuestionBroker, QuestionView};
@@ -13,6 +13,8 @@ use macvpn_core::importer;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
 use macvpn_core::models::{Connection, NativeSettings, VPNKind, ValidationIssue, uuid_string};
+use macvpn_core::validators::sstp::SSTPConfig;
+use macvpn_platform_api::{AdminSteps, NativeSupport};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -105,10 +107,17 @@ pub struct ManageView {
     pub editors_epoch: u64,
     /// The "New" menu: the kinds (`openvpn`, …) with their names.
     pub kinds: Vec<Choice>,
+    /// No kind can be created (every engine is missing): the "New" menu's note. Absent otherwise.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kinds_note: Option<String>,
     /// The Log tab's filter (`all`, `commands`, `errors`) with their titles.
     pub log_filters: Vec<Choice>,
     /// The selected system VPN was removed from macOS: the selection (and its detail) stays, read-only.
     pub selected_removed: bool,
+    /// Deleting a native connection removes its profile too ([`crate::deps::NativeProfiles::removes_profiles`];
+    /// WinVPN): the delete confirmation says so. Absent from the JSON when false (macOS).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub native_delete_removes_profile: bool,
 }
 
 /// A value with its (translated) title.
@@ -190,7 +199,24 @@ pub struct ConnectionsModel {
     /// The shared credentials over the vault (spec 3a): the Credentials section, the editors' selector, the
     /// import's question. `None` until the app has a vault: every credential action then says it is locked.
     credentials: Mutex<Option<SharedCredentials>>,
+    /// Which kinds cannot be added (created or imported): the localized reason, `None` = allowed. The app builds it
+    /// from the setup report; unset (and before the first check) everything is allowed.
+    kind_gate: Mutex<Option<KindGate>>,
+    /// The platform's editor notes and administrator steps ([`Self::set_native_platform`]; macOS: none).
+    native_platform: Mutex<Option<NativePlatform>>,
+    /// The last SSTP custom CA asked about and the platform's answer (the editor's updates do not ask again).
+    ca_trust: Mutex<Option<(String, Option<bool>)>>,
 }
+
+/// [`ConnectionsModel::set_native_platform`].
+#[derive(Clone)]
+struct NativePlatform {
+    support: Arc<dyn NativeSupport>,
+    admin: Arc<dyn AdminSteps>,
+}
+
+/// The kind gate of [`ConnectionsModel::set_kind_gate`].
+pub type KindGate = Box<dyn Fn(VPNKind) -> Option<String> + Send + Sync>;
 
 impl ConnectionsModel {
     pub fn new(deps: EditorDeps) -> Self {
@@ -202,7 +228,103 @@ impl ConnectionsModel {
             services_sync: Mutex::new(()),
             on_change: Mutex::new(None),
             credentials: Mutex::new(None),
+            kind_gate: Mutex::new(None),
+            native_platform: Mutex::new(None),
+            ca_trust: Mutex::new(None),
         }
+    }
+
+    /// The platform's notes on the editors' drafts and its administrator steps (WinVPN 2c): every editor view
+    /// then carries [`EditorView::platform`]. Unset (macOS): no editor has one.
+    pub fn set_native_platform(&self, support: Arc<dyn NativeSupport>, admin: Arc<dyn AdminSteps>) {
+        *self.native_platform.lock().unwrap_or_else(PoisonError::into_inner) = Some(NativePlatform { support, admin });
+    }
+
+    /// The system's trust may have changed (a **Trust This CA in Windows…** ran): the next editor view asks again.
+    pub fn ca_trust_changed(&self) {
+        *self.ca_trust.lock().unwrap_or_else(PoisonError::into_inner) = None;
+    }
+
+    /// Whether the system trusts `pem`, asked once per PEM.
+    fn ca_trusted(&self, admin: &dyn AdminSteps, pem: &str) -> Option<bool> {
+        let mut cache = self.ca_trust.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((cached, answer)) = cache.as_ref()
+            && cached == pem
+        {
+            return *answer;
+        }
+        let answer = admin.ca_trusted(pem);
+        *cache = Some((pem.to_string(), answer));
+        answer
+    }
+
+    /// The view with the platform's notes on its fields (the draft, so they follow the typing). No lock of the
+    /// window is held here: the platform may read the system (the CA store).
+    fn with_platform(&self, mut view: EditorView) -> EditorView {
+        let Some(platform) = self.native_platform.lock().unwrap_or_else(PoisonError::into_inner).clone() else {
+            return view;
+        };
+        view.platform = match &view.fields {
+            EditorFields::System(_) => platform
+                .support
+                .system_psk_note()
+                .map(|note| EditorPlatformView { psk_note: Some(note), ..EditorPlatformView::default() }),
+            fields => {
+                let Some(ConnectionItem::Managed(mut c)) = self.deps.manager.item(&view.id) else { return view };
+                let config = match fields {
+                    EditorFields::Text(f) => f.text.clone().into_bytes(),
+                    EditorFields::Sstp(f) => f.config().serialized().into_bytes(),
+                    EditorFields::Native(f) => {
+                        c.native = Some(NativeSettings {
+                            server: f.server.clone(),
+                            account: f.account.clone(),
+                            group_name: f.group_name.clone(),
+                            send_all_traffic: f.send_all_traffic,
+                        });
+                        Vec::new()
+                    }
+                    EditorFields::System(_) => Vec::new(),
+                };
+                let notes = platform.support.editor_notes(&c, &config);
+                let ca_trusted = match fields {
+                    EditorFields::Sstp(f) if notes.trust_ca && f.cert == Cert::Ca && !f.ca_pem.trim().is_empty() => {
+                        self.ca_trusted(platform.admin.as_ref(), &f.ca_pem)
+                    }
+                    _ => None,
+                };
+                (!notes.is_empty() || ca_trusted.is_some()).then_some(EditorPlatformView {
+                    reasons: notes.reasons,
+                    summary: notes.summary,
+                    warnings: notes.warnings,
+                    insecure_cert: notes.insecure_cert,
+                    trust_ca: notes.trust_ca,
+                    ca_trusted,
+                    l2tp_copy: notes.l2tp_copy,
+                    no_install_step: notes.no_install_step,
+                    psk_note: None,
+                })
+            }
+        };
+        view
+    }
+
+    /// The SSTP custom CA **Trust This CA in Windows…** trusts: the open editor's (as chosen, saved or not), else
+    /// the saved config's. An error when the connection is not SSTP or has no CA.
+    pub fn sstp_ca_pem(&self, key: &str) -> Result<String, String> {
+        self.unlocked()?;
+        let no_ca = || l10n::tr("No CA certificate loaded", &[]);
+        let draft = self.lock().drafts.get(key).map(|d| d.fields.clone());
+        let pem = match draft {
+            Some(EditorFields::Sstp(f)) => f.ca_pem,
+            Some(_) => return Err(no_ca()),
+            None => match self.deps.manager.item(key) {
+                Some(ConnectionItem::Managed(c)) if c.kind == VPNKind::Sstp => {
+                    SSTPConfig::parse(&self.deps.store.load_config(&c.id).unwrap_or_default()).ca_pem
+                }
+                _ => return Err(no_ca()),
+            },
+        };
+        if pem.trim().is_empty() { Err(no_ca()) } else { Ok(pem) }
     }
 
     pub fn deps(&self) -> &EditorDeps {
@@ -220,6 +342,17 @@ impl ConnectionsModel {
         *self.on_change.lock().unwrap_or_else(PoisonError::into_inner) = Some(hook);
     }
 
+    /// Sets which kinds cannot be added: the "New" menu leaves them out, "New" and an import of one are refused
+    /// with the gate's reason. Team catalogs are not filtered (they never go through here).
+    pub fn set_kind_gate(&self, gate: KindGate) {
+        *self.kind_gate.lock().unwrap_or_else(PoisonError::into_inner) = Some(gate);
+    }
+
+    /// Why `kind` cannot be added (`None`: it can).
+    fn unavailable(&self, kind: VPNKind) -> Option<String> {
+        self.kind_gate.lock().unwrap_or_else(PoisonError::into_inner).as_ref().and_then(|gate| gate(kind))
+    }
+
     fn changed(&self) {
         let hook = self.on_change.lock().unwrap_or_else(PoisonError::into_inner).clone();
         if let Some(hook) = hook {
@@ -232,6 +365,13 @@ impl ConnectionsModel {
     }
 
     pub fn view(&self) -> ManageView {
+        let kinds: Vec<Choice> = VPNKind::ALL
+            .into_iter()
+            .filter(|k| self.unavailable(*k).is_none())
+            .map(|k| Choice { value: k.raw_value(), title: k.display_name().to_string() })
+            .collect();
+        let kinds_note =
+            kinds.is_empty().then(|| l10n::tr("Install the VPN tools in System Status to add connections.", &[]));
         let s = self.lock();
         ManageView {
             selected: s.selected.clone(),
@@ -241,15 +381,14 @@ impl ConnectionsModel {
             settings_request: s.settings_tab_request.clone(),
             question: self.questions.current(),
             editors_epoch: s.editors_epoch,
-            kinds: VPNKind::ALL
-                .into_iter()
-                .map(|k| Choice { value: k.raw_value(), title: k.display_name().to_string() })
-                .collect(),
+            kinds,
+            kinds_note,
             log_filters: LogFilter::ALL
                 .into_iter()
                 .map(|f| Choice { value: f.raw_value(), title: f.title() })
                 .collect(),
             selected_removed: s.selected.as_ref().is_some_and(|k| s.removed_services.contains(k)),
+            native_delete_removes_profile: self.deps.profiles.removes_profiles(),
         }
     }
 
@@ -545,6 +684,10 @@ impl ConnectionsModel {
 
     /// The editor of `key`, loaded on its first use (a later open does not overwrite the editing).
     pub fn open_editor(&self, key: &str) -> Result<EditorView, String> {
+        self.open_editor_draft(key).map(|v| self.with_platform(v))
+    }
+
+    fn open_editor_draft(&self, key: &str) -> Result<EditorView, String> {
         self.unlocked()?;
         if let Some(d) = self.lock().drafts.get(key) {
             return Ok(d.view(key));
@@ -575,6 +718,10 @@ impl ConnectionsModel {
 
     /// The editor's fields after a change in the UI.
     pub fn update_editor(&self, key: &str, fields: EditorFields) -> Result<EditorView, String> {
+        self.update_draft(key, fields).map(|v| self.with_platform(v))
+    }
+
+    fn update_draft(&self, key: &str, fields: EditorFields) -> Result<EditorView, String> {
         self.with_draft(key, |d| {
             if d.removed {
                 return Err(removed_message());
@@ -586,9 +733,9 @@ impl ConnectionsModel {
 
     /// "Save" (with the editor's latest fields).
     pub fn save_editor(&self, key: &str, fields: EditorFields) -> Result<EditorView, String> {
-        self.update_editor(key, fields)?;
+        self.update_draft(key, fields)?;
         self.save_draft(key).ok_or("no editor")?.ok();
-        self.with_draft(key, |d| Ok(d.view(key)))
+        self.with_draft(key, |d| Ok(d.view(key))).map(|v| self.with_platform(v))
     }
 
     /// "Forget saved secrets" (system VPN). Allowed on a removed VPN too: deleting is not editing.
@@ -603,6 +750,7 @@ impl ConnectionsModel {
             d.removed = removed;
             Ok(d.view(key))
         })
+        .map(|v| self.with_platform(v))
     }
 
     /// The text of the chosen CA file (`None`: unreadable) into the SSTP editor.
@@ -611,6 +759,7 @@ impl ConnectionsModel {
             d.import_ca(text);
             Ok(d.view(key))
         })
+        .map(|v| self.with_platform(v))
     }
 
     // MARK: - Live system VPN list
@@ -760,6 +909,9 @@ impl ConnectionsModel {
     /// "New <kind>": saved with the kind's template and selected.
     pub fn create(&self, kind: VPNKind) -> Result<Uuid, String> {
         self.unlocked()?;
+        if let Some(reason) = self.unavailable(kind) {
+            return Err(reason);
+        }
         let mut c = Connection::new(l10n::tr("New %@", &[Arg::Str(kind.display_name())]), kind);
         if kind.is_native() {
             c.native = Some(NativeSettings::default());
@@ -769,6 +921,24 @@ impl ConnectionsModel {
         self.deps.manager.reload();
         self.select(Some(uuid_string(&c.id)));
         Ok(c.id)
+    }
+
+    /// **Make an L2TP/IPsec Copy** of a Cisco IPsec connection (WinVPN: Windows has no Cisco IPsec client; option
+    /// A of the 2c plan): the copy ([`crate::editor::l2tp_copy_of`]) is selected, so its editor opens. Follows the
+    /// kind gate for L2TP as "New" does. `Ok((id, install_error))`: the copy exists; `install_error` is what its
+    /// profile install answered (shown as after a save).
+    pub fn make_l2tp_copy(&self, key: &str) -> Result<(Uuid, Option<String>), String> {
+        self.unlocked()?;
+        let Some(ConnectionItem::Managed(original)) = self.deps.manager.item(key) else {
+            return Err(l10n::tr("The editor is no longer available", &[]));
+        };
+        if let Some(reason) = self.unavailable(VPNKind::L2tp) {
+            return Err(reason);
+        }
+        let credentials = self.shared_credentials();
+        let copy = crate::editor::l2tp_copy_of(&self.deps, &original, credentials.as_ref())?;
+        self.select(Some(uuid_string(&copy.id)));
+        Ok((copy.id, copy.install_error))
     }
 
     /// Imports the files one after the other; each imported connection is selected (through the unsaved-changes
@@ -785,7 +955,8 @@ impl ConnectionsModel {
                 let (title, message) = import_export::credential_question(files, config);
                 self.questions.ask(title, message, l10n::tr("Use", &[]), l10n::tr("Ignore", &[]))
             };
-            let mut file = import_export::import_file(&self.deps, path, &mut confirm);
+            let gate = |kind: VPNKind| self.unavailable(kind);
+            let mut file = import_export::import_file(&self.deps, path, &gate, &mut confirm);
             if let Some((id, issues)) = file.imported {
                 if let Some(imported) = &file.credential
                     && let Some(note) = self.ask_imported_credential(&id, imported)
@@ -831,6 +1002,8 @@ impl ConnectionsModel {
         let deleted = self.deps.store.delete(id).is_ok();
         if deleted {
             self.deps.secret_writer.delete_all(id);
+            // Its profile, whatever the kind (the platform knows what exists; nothing on macOS).
+            self.deps.profiles.remove(id);
         }
         self.deps.manager.reload();
         {
@@ -847,7 +1020,8 @@ impl ConnectionsModel {
     /// changed this connection" mark offers: the profile from the catalog's settings without an account (the slot's
     /// user name is passed at connect) and with the stored (team) PSK, through the same installer as the native
     /// editor. The mark is cleared only once macOS shows the profile installed (see
-    /// [`Self::system_services_changed`]): staging it is not installing it.
+    /// [`Self::system_services_changed`]): staging it is not installing it. Where installing needs no approval
+    /// (WinVPN: [`crate::deps::NativeProfiles::needs_approval`] is false) an install that succeeded clears it at once.
     pub fn install_team_profile(&self, key: &str) -> Result<(), String> {
         self.unlocked()?;
         let Some(ConnectionItem::Managed(listed)) = self.deps.manager.item(key) else {
@@ -857,32 +1031,109 @@ impl ConnectionsModel {
         if !listed.kind.is_native() || team.is_none() {
             return Err("not a team catalog profile".into());
         }
-        // The version the profile is built from: its hash before and after reading the settings must agree.
-        let built_from = team.and_then(|t| t.config_hash).ok_or("not a team catalog profile")?;
+        let (c, built_from) = self.team_profile_source(&listed.id)?;
+        let baseline = self.deps.manager.native_service_for(&c).flatten();
+        self.install_profile(&c, true)?;
+        if !self.deps.profiles.needs_approval() {
+            self.lock().pending_installs.remove(&c.id);
+            // `Ok(false)`: an apply changed it meanwhile; its own install follows that apply.
+            let _ = self.deps.store.profile_reinstalled(&c.id, &built_from);
+            self.changed();
+            return Ok(());
+        }
+        self.lock().pending_installs.insert(c.id, PendingInstall { built_from, baseline, gone: false, checked: None });
+        self.changed();
+        Ok(())
+    }
+
+    /// A team catalog connection's settings and the config hash of the version they are of (the hash before and
+    /// after reading the settings must agree).
+    fn team_profile_source(&self, id: &Uuid) -> Result<(Connection, String), String> {
+        let built_from =
+            self.deps.store.team_managed(id).and_then(|t| t.config_hash).ok_or("not a team catalog profile")?;
         let c = self
             .deps
             .store
             .list()
             .map_err(|e| e.to_string())?
             .into_iter()
-            .find(|c| c.id == listed.id)
+            .find(|c| c.id == *id)
             .ok_or("unknown connection")?;
-        if self.deps.store.team_managed(&c.id).and_then(|t| t.config_hash).as_deref() != Some(built_from.as_str()) {
+        if self.deps.store.team_managed(id).and_then(|t| t.config_hash).as_deref() != Some(built_from.as_str()) {
             return Err(crate::deps::catalog_changed_message());
         }
+        Ok((c, built_from))
+    }
+
+    /// Builds and installs the native profile of `c` with its stored PSK, as the native editor does; a team
+    /// catalog connection's (`team`) without the account (the slot's user name is passed at connect).
+    fn install_profile(&self, c: &Connection, team: bool) -> Result<(), String> {
         let mut profile = c.clone();
-        if let Some(native) = profile.native.as_mut() {
+        if team && let Some(native) = profile.native.as_mut() {
             native.account.clear();
         }
         let psk = Zeroizing::new(self.deps.secrets.get(&c.id, SecretField::Psk).unwrap_or_default());
         let built = self.deps.profiles.build(&profile, &psk)?;
         drop(psk);
-        let baseline = self.deps.manager.native_service_for(&c).flatten();
         let existed = self.deps.manager.installed_native_ids().contains(&c.id);
-        self.deps.profiles.install(&c.id, &built.data, &built.file_name, existed)?;
-        self.lock().pending_installs.insert(c.id, PendingInstall { built_from, baseline, gone: false, checked: None });
-        self.changed();
-        Ok(())
+        self.deps.profiles.install(&c.id, &built.data, &built.file_name, existed)
+    }
+
+    /// WinVPN 2c: after the vault is unlocked and after a restore. With every connection of the open vault, the
+    /// platform removes the profiles of connections that no longer exist ([`crate::deps::NativeProfiles::reconcile`]:
+    /// WinVPN's orphaned `WinVPN-<UUID>` RAS entries, their PSKs and profile files), then
+    /// [`Self::install_native_profiles`]. Nothing while the vault is locked or cannot be read: the connections of a
+    /// locked vault are unknown, never "none". (The 1.1 read-only mode lists the old store: macOS only, where
+    /// `reconcile` does nothing.) Returns the install failures, as [`Self::install_native_profiles`].
+    pub fn sync_native_profiles(&self) -> Vec<(Uuid, String)> {
+        if self.unlocked().is_err() {
+            return Vec::new();
+        }
+        let Ok(all) = self.deps.store.list() else { return Vec::new() };
+        let known: HashSet<Uuid> = all.iter().map(|c| c.id).collect();
+        self.deps.profiles.reconcile(&known);
+        self.install_all(all)
+    }
+
+    /// Where installing a native profile needs no approval (WinVPN), every L2TP / Cisco IPsec connection's profile
+    /// is installed (a team catalog's as [`Self::install_team_profile`] makes it, its "reinstall" mark cleared), so
+    /// a restored or catalog connection can connect at once; the platform skips what is already current. Nothing
+    /// where the user approves each profile (macOS) or while the vault is locked. Returns the failures (connection,
+    /// localized reason: WinVPN's "Cisco IPsec is not supported by Windows…"); the rows show their reasons anyway.
+    pub fn install_native_profiles(&self) -> Vec<(Uuid, String)> {
+        if self.deps.profiles.needs_approval() || self.unlocked().is_err() {
+            return Vec::new();
+        }
+        let Ok(all) = self.deps.store.list() else { return Vec::new() };
+        self.install_all(all)
+    }
+
+    fn install_all(&self, all: Vec<Connection>) -> Vec<(Uuid, String)> {
+        if self.deps.profiles.needs_approval() {
+            return Vec::new();
+        }
+        let mut failures = Vec::new();
+        let mut cleared = false;
+        for c in all.into_iter().filter(|c| c.kind.is_native()) {
+            let result = match self.deps.store.team_managed(&c.id) {
+                None => self.install_profile(&c, false),
+                Some(team) => self.team_profile_source(&c.id).and_then(|(c, built_from)| {
+                    self.install_profile(&c, true)?;
+                    if team.profile_outdated {
+                        self.lock().pending_installs.remove(&c.id);
+                        cleared |= self.deps.store.profile_reinstalled(&c.id, &built_from).is_ok_and(|done| done);
+                    }
+                    Ok(())
+                }),
+            };
+            if let Err(reason) = result {
+                failures.push((c.id, reason));
+            }
+        }
+        if cleared {
+            self.changed();
+        }
+        failures
     }
 
     /// "I installed it" (the UI asks first and explains the risk): the user says the profile staged by

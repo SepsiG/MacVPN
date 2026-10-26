@@ -598,6 +598,135 @@ fn message_format_is_exact() {
     assert_eq!(UpdateSignature::message("0.2.2", &format!("{}g", &DIGEST[..63])), None);
 }
 
+const X64: &str = "WinVPN-0.2.2-x64.msi";
+const ARM64: &str = "WinVPN-0.2.2-arm64.msi";
+
+fn sign_for(k: &SigningKey, domain: SignatureDomain, asset: &str, version: &str, digest: &str) -> String {
+    let message = UpdateSignature::message_for(domain, asset, version, digest).unwrap();
+    swift_base64::encode(&k.sign(&message).to_bytes()) + "\n"
+}
+
+#[test]
+fn macvpn_message_is_unchanged_whatever_the_asset() {
+    let expected = format!("macvpn-update-v1\n0.2.2\n{DIGEST}\n").into_bytes();
+    assert_eq!(UpdateSignature::message("0.2.2", DIGEST), Some(expected.clone()));
+    for asset in ["MacVPN-0.2.2.dmg", "", X64] {
+        assert_eq!(
+            UpdateSignature::message_for(SignatureDomain::MacVpnV1, asset, "0.2.2", DIGEST),
+            Some(expected.clone())
+        );
+    }
+}
+
+#[test]
+fn winvpn_message_names_the_asset() {
+    assert_eq!(
+        UpdateSignature::message_for(SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST),
+        Some(format!("winvpn-update-v1\n{X64}\n0.2.2\n{DIGEST}\n").into_bytes())
+    );
+    assert_eq!(
+        UpdateSignature::message_for(SignatureDomain::WinVpnV1, ARM64, "0.2.2", DIGEST),
+        Some(format!("winvpn-update-v1\n{ARM64}\n0.2.2\n{DIGEST}\n").into_bytes())
+    );
+}
+
+#[test]
+fn winvpn_message_refuses_any_other_asset_name() {
+    for asset in [
+        "",
+        "MacVPN-0.2.2.dmg",
+        "WinVPN-0.2.3-x64.msi",
+        "WinVPN-0.2.2-x86.msi",
+        "winvpn-0.2.2-x64.msi",
+        "WinVPN-0.2.2-x64.msi\n",
+        "WinVPN-0.2.2-x64.MSI",
+        "../WinVPN-0.2.2-x64.msi",
+    ] {
+        assert_eq!(UpdateSignature::message_for(SignatureDomain::WinVpnV1, asset, "0.2.2", DIGEST), None, "{asset:?}");
+    }
+    assert_eq!(UpdateSignature::message_for(SignatureDomain::WinVpnV1, X64, "0.2", DIGEST), None);
+    assert_eq!(UpdateSignature::message_for(SignatureDomain::WinVpnV1, X64, "0.2.2", &DIGEST[..63]), None);
+}
+
+#[test]
+fn macvpn_rejects_a_winvpn_signature() {
+    let sig = sign_for(&key(1), SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST);
+    assert!(!UpdateSignature::verify("0.2.2", DIGEST, &sig, &keys()));
+    assert!(!UpdateSignature::verify_for(
+        SignatureDomain::MacVpnV1,
+        "MacVPN-0.2.2.dmg",
+        "0.2.2",
+        DIGEST,
+        &sig,
+        &keys()
+    ));
+}
+
+#[test]
+fn winvpn_rejects_a_macvpn_signature() {
+    let sig = sign(&key(1), "0.2.2", DIGEST);
+    assert!(!UpdateSignature::verify_for(SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST, &sig, &keys()));
+}
+
+#[test]
+fn winvpn_rejects_the_x64_signature_for_the_arm64_asset() {
+    let sig = sign_for(&key(1), SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST);
+    assert!(UpdateSignature::verify_for(SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST, &sig, &keys()));
+    assert!(!UpdateSignature::verify_for(SignatureDomain::WinVpnV1, ARM64, "0.2.2", DIGEST, &sig, &keys()));
+}
+
+#[test]
+fn winvpn_signature_is_bound_to_version_and_hash() {
+    let sig = sign_for(&key(2), SignatureDomain::WinVpnV1, ARM64, "0.2.2", DIGEST);
+    assert!(UpdateSignature::verify_for(SignatureDomain::WinVpnV1, ARM64, "0.2.2", DIGEST, &sig, &keys()));
+    let other = format!("{}0", &DIGEST[..63]);
+    assert!(!UpdateSignature::verify_for(SignatureDomain::WinVpnV1, ARM64, "0.2.2", &other, &sig, &keys()));
+    assert!(!UpdateSignature::verify_for(
+        SignatureDomain::WinVpnV1,
+        "WinVPN-0.2.3-arm64.msi",
+        "0.2.3",
+        DIGEST,
+        &sig,
+        &keys()
+    ));
+}
+
+/// Signatures of released MacVPN versions (public release assets `MacVPN-<v>.dmg.sig`, the hash from
+/// `MacVPN-<v>.dmg.sha256`), made with the maintainer's real key: they still verify with the embedded keys exactly
+/// as the updaters in the field check them, and never in WinVPN's domain.
+#[test]
+fn released_macvpn_signatures_still_verify() {
+    let released = [
+        (
+            "1.0.0",
+            "1ac353e1be03e03d6ec914ae3c804d6be0e632ae3b30f663310a1104dc8ca793",
+            "9GavlM5gncZKRsJ2U6vFESMfB2JqYHAHoeQNGWFiHxFmrNlQNiUKtz4gFAGC+QyBor+LJqA2cZY8yINsGrLdAg==\n",
+        ),
+        (
+            "1.5.0",
+            "53893b777ecfa24b2d2a132f867ea062a7eb19fb8a66e5533d28372e356bb976",
+            "sUn0EpYzjMSSikB1dber+BsVT13fFN9PB8tRS8Ip1j0Ob+kQ4Yr629XRVnc8QnfVGuIuLuoYFw4PuwtxAqi0AA==\n",
+        ),
+    ];
+    for (version, digest, sig) in released {
+        assert!(UpdateSignature::verify_trusted(version, digest, sig), "{version}");
+        let dmg = format!("MacVPN-{version}.dmg");
+        assert!(
+            UpdateSignature::verify_trusted_for(SignatureDomain::MacVpnV1, &dmg, version, digest, sig),
+            "{version}"
+        );
+        for arch in ["x64", "arm64"] {
+            let msi = format!("WinVPN-{version}-{arch}.msi");
+            assert!(
+                !UpdateSignature::verify_trusted_for(SignatureDomain::WinVpnV1, &msi, version, digest, sig),
+                "{version} {arch}"
+            );
+        }
+        // Bound to its own version.
+        assert!(!UpdateSignature::verify_trusted("1.5.1", digest, sig), "{version}");
+    }
+}
+
 #[test]
 fn signature_valid() {
     assert!(verify(&sign(&key(1), "0.2.2", DIGEST), "0.2.2", DIGEST));
@@ -796,6 +925,44 @@ fn sign_release_dry_run_matches_app() {
     assert!(UpdateSignature::verify("0.2.2", &local, &sig, &[public]));
     assert!(!UpdateSignature::verify_trusted("0.2.2", &local, &sig));
     assert!(stdout.contains("not an embedded key"));
+}
+
+/// `scripts/sign-release.sh --dry-run --msi FILE --arch x64` with a throwaway key: the signature verifies in WinVPN's
+/// domain for the x64 asset only, never for the arm64 asset or as a MacVPN signature.
+#[test]
+fn sign_release_dry_run_msi_matches_app() {
+    let Some(openssl) = openssl3() else {
+        eprintln!("skipped: OpenSSL 3 not installed");
+        return;
+    };
+    let tmp = TempDir::new();
+    std::fs::create_dir_all(tmp.path()).unwrap();
+    let (pem, public) = openssl_key(openssl, tmp.path());
+    let msi = tmp.path().join("built.msi");
+    std::fs::write(&msi, (0..7000u32).map(|i| (i % 241) as u8).collect::<Vec<_>>()).unwrap();
+    let out = Command::new("/bin/bash")
+        .arg(repo_root().join("scripts/sign-release.sh"))
+        .args(["--dry-run", "--msi"])
+        .arg(&msi)
+        .args(["--arch", "x64", "--backup-key"])
+        .arg(&pem)
+        .arg("v0.2.2")
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{stdout}");
+    let line = stdout.lines().find(|l| l.starts_with("signature: ")).unwrap();
+    let sig = format!("{}\n", &line["signature: ".len()..]);
+    let local = sha256_of_file(&msi).unwrap();
+    assert!(stdout.contains(&local));
+    let win = SignatureDomain::WinVpnV1;
+    assert!(UpdateSignature::verify_for(win, "WinVPN-0.2.2-x64.msi", "0.2.2", &local, &sig, &[public]));
+    assert!(!UpdateSignature::verify_for(win, "WinVPN-0.2.2-arm64.msi", "0.2.2", &local, &sig, &[public]));
+    assert!(!UpdateSignature::verify("0.2.2", &local, &sig, &[public]));
+    assert!(!UpdateSignature::verify_trusted_for(win, "WinVPN-0.2.2-x64.msi", "0.2.2", &local, &sig));
 }
 
 /// The script reads the embedded keys from this crate's source (`UpdateSignature`): it gets the same as the app.

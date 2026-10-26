@@ -1,7 +1,8 @@
 <script lang="ts">
   // After a restore: each backed-up preference with its own checkbox (nothing is applied until "Apply Selected
   // Preferences"; the control API is never ticked at first), then the native L2TP / Cisco profiles, reinstalled one
-  // after another through the existing installer (macOS asks to approve each).
+  // after another through the existing installer (macOS asks to approve each; WinVPN installed them already and
+  // shows why one could not be, e.g. Cisco IPsec).
   import Icon from '../Icon.svelte';
   import { tr } from '../l10n.svelte';
   import type { Preference, PreferenceFailure, RestoreOutcome } from './backupApi';
@@ -48,7 +49,8 @@
     return on ? tr('On') : tr('Off');
   }
 
-  const remaining = $derived(outcome.nativeProfiles.filter((p) => !p.installed).length);
+  // A profile the platform refused (its note says why) is not offered again.
+  const remaining = $derived(outcome.nativeProfiles.filter((p) => !p.installed && !p.note).length);
   const busy = $derived(applying || installing);
 </script>
 
@@ -101,6 +103,7 @@
           <p class="profile">
             <span>{profile.name}</span>
             {#if profile.installed}<span class="caption done">{tr('Opened for approval')}</span>{/if}
+            {#if profile.note}<span class="caption note">{profile.note}</span>{/if}
           </p>
         {/each}
       </div>

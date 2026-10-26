@@ -87,18 +87,74 @@ impl LogLine {
     }
 }
 
-/// Reads the file's new, complete lines from an offset. After truncation or a file replacement (inode) it starts
-/// over. The first read only looks at the last 256 KB, a call reads at most 1 MB, and an unterminated line over
-/// 64 KB is emitted as a line.
-#[derive(Debug)]
-pub struct LogTailer {
+/// What identifies one log: the file id on macOS (the inode check), the service's generation on Windows. A new
+/// identity means a new log: the tail starts over.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LogIdentity {
+    File(FileId),
+    Generation(u64),
+}
+
+/// One read of a log: its identity, its size, and the bytes from `start` (at most what was asked).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogRead {
+    pub identity: Option<LogIdentity>,
+    pub size: u64,
+    pub start: u64,
+    pub data: Vec<u8>,
+}
+
+/// Where a [`LogTailer`] reads from.
+pub trait LogSource: Send {
+    /// The bytes from `offset` (at most `max`; none when `offset >= size`). `None`: there is no log (yet).
+    fn read(&mut self, offset: u64, max: usize) -> Option<LogRead>;
+}
+
+/// The file at `path` (macOS: `/var/log/macvpn/<id>.log`), opened for each read, as the tailer always did.
+#[derive(Debug, Clone)]
+pub struct FileLogSource {
     pub path: PathBuf,
+}
+
+impl LogSource for FileLogSource {
+    fn read(&mut self, offset: u64, max: usize) -> Option<LogRead> {
+        let mut file = File::open(&self.path).ok()?;
+        let identity = fsx::stat(&file).ok().and_then(|s| fsx::file_id(&s)).map(LogIdentity::File);
+        let size = file.seek(SeekFrom::End(0)).unwrap_or(0);
+        let mut data = Vec::new();
+        if offset < size && file.seek(SeekFrom::Start(offset)).is_ok() {
+            let _ = (&mut file).take(max as u64).read_to_end(&mut data);
+        }
+        Some(LogRead { identity, size, start: offset, data })
+    }
+}
+
+/// Reads a log's new, complete lines from an offset, through a [`LogSource`]. After truncation or a new log (a new
+/// file id or generation) it starts over. The first read only looks at the last 256 KB, a call reads at most 1 MB,
+/// and an unterminated line over 64 KB is emitted as a line.
+pub struct LogTailer {
+    /// The file's path for [`LogTailer::new`]; empty for [`LogTailer::with_source`].
+    pub path: PathBuf,
+    source: Box<dyn LogSource>,
     offset: u64,
     partial: Vec<u8>,
     started: bool,
-    inode: Option<FileId>,
+    identity: Option<LogIdentity>,
     /// Starting in the middle of the window, the first (truncated) line is dropped.
     discard_leading: bool,
+}
+
+impl std::fmt::Debug for LogTailer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("LogTailer")
+            .field("path", &self.path)
+            .field("offset", &self.offset)
+            .field("partial", &self.partial.len())
+            .field("started", &self.started)
+            .field("identity", &self.identity)
+            .field("discard_leading", &self.discard_leading)
+            .finish_non_exhaustive()
+    }
 }
 
 pub const INITIAL_WINDOW: u64 = 256 * 1024;
@@ -111,21 +167,30 @@ fn decode_lines(bytes: &[u8]) -> Vec<String> {
 }
 
 impl LogTailer {
+    /// The tail of the file at `path` ([`FileLogSource`]).
     pub fn new(path: impl Into<PathBuf>) -> Self {
+        let path = path.into();
+        let mut tailer = Self::with_source(Box::new(FileLogSource { path: path.clone() }));
+        tailer.path = path;
+        tailer
+    }
+
+    /// The tail of any source (the WinVPN Service's log).
+    pub fn with_source(source: Box<dyn LogSource>) -> Self {
         LogTailer {
-            path: path.into(),
+            path: PathBuf::new(),
+            source,
             offset: 0,
             partial: Vec::new(),
             started: false,
-            inode: None,
+            identity: None,
             discard_leading: false,
         }
     }
 
     pub fn read_new(&mut self) -> Vec<String> {
-        let Ok(mut file) = File::open(&self.path) else { return Vec::new() };
-        let ino = file.metadata().ok().and_then(|m| fsx::file_id(&m));
-        if let (Some(old), Some(new)) = (self.inode, ino)
+        let Some(mut r) = self.source.read(self.offset, MAX_READ_BYTES) else { return Vec::new() };
+        if let (Some(old), Some(new)) = (&self.identity, &r.identity)
             && old != new
         {
             self.offset = 0;
@@ -133,8 +198,8 @@ impl LogTailer {
             self.discard_leading = false;
             self.started = false; // the 256 KB window applies to the new file too
         }
-        self.inode = ino;
-        let size = file.seek(SeekFrom::End(0)).unwrap_or(0);
+        self.identity = r.identity.clone();
+        let size = r.size;
         if !self.started {
             self.started = true;
             if size > INITIAL_WINDOW {
@@ -150,11 +215,14 @@ impl LogTailer {
         if size <= self.offset {
             return Vec::new();
         }
-        if file.seek(SeekFrom::Start(self.offset)).is_err() {
-            return Vec::new();
+        // The window or a reset moved the offset after the read: read again from there (same log only).
+        if r.start != self.offset {
+            match self.source.read(self.offset, MAX_READ_BYTES) {
+                Some(again) if again.identity == self.identity && again.start == self.offset => r = again,
+                _ => return Vec::new(),
+            }
         }
-        let mut data = Vec::new();
-        let _ = (&mut file).take(MAX_READ_BYTES as u64).read_to_end(&mut data);
+        let mut data = r.data;
         self.offset += data.len() as u64;
         if self.discard_leading {
             let Some(nl) = data.iter().position(|&b| b == b'\n') else { return Vec::new() };

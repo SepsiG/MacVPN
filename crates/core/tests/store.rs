@@ -38,7 +38,6 @@ fn save_list_load_delete() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn save_without_config_keeps_existing() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -77,7 +76,6 @@ fn files_are_private_and_directory_is_tightened() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn list_skips_corrupt_meta() {
     let tmp = TempDir::new();
     let store = ConnectionStore::new(tmp.path());
@@ -188,10 +186,6 @@ fn read_through(mut fd: fs::File) -> Vec<u8> {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "shred_file skips the overwrite on Windows until it reads the real hard link count: phase 2"
-)]
 fn shred_file_zeroes_the_contents_before_unlinking() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -209,10 +203,6 @@ fn shred_file_zeroes_the_contents_before_unlinking() {
 }
 
 #[test]
-#[cfg_attr(
-    windows,
-    ignore = "shred_file skips the overwrite on Windows until it reads the real hard link count: phase 2"
-)]
 fn shred_file_handles_large_and_empty_files_and_a_missing_one() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();
@@ -234,7 +224,6 @@ fn shred_file_handles_large_and_empty_files_and_a_missing_one() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn shred_file_only_unlinks_a_file_with_other_hard_links() {
     let tmp = TempDir::new();
     fs::create_dir_all(tmp.path()).unwrap();

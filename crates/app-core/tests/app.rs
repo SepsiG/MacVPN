@@ -10,6 +10,7 @@ use macvpn_core::date::Date;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::models::{Connection, ConnectionState, VPNKind, uuid_string};
 use macvpn_core::update::{Release, ReleaseAsset};
+use macvpn_platform_api::{MACVPN, WINVPN};
 use std::cell::{Cell, RefCell};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -37,7 +38,6 @@ fn active_connections_ask() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn disconnect_and_quit_stops_managed_and_system_connections() {
     let f = Fixture::new(AppLanguage::En);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -164,7 +164,6 @@ fn poller_wait_wakes_and_stops() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn poller_loop_refreshes_the_manager_until_stopped() {
     let f = Fixture::new(AppLanguage::En);
     f.store.save(&Connection::new("Iroda", VPNKind::Openvpn), Some("remote x\n")).unwrap();
@@ -284,17 +283,26 @@ fn update_offers_follow_the_delay_option() {
 #[test]
 fn user_guide_url_follows_the_language_and_is_safe() {
     assert_eq!(
-        user_guide_url(Some("SepsiG/MacVPN"), AppLanguage::Hu).as_deref(),
+        user_guide_url(&MACVPN, Some("SepsiG/MacVPN"), AppLanguage::Hu).as_deref(),
         Some("https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.hu.md")
     );
     assert_eq!(
-        user_guide_url(None, AppLanguage::En).as_deref(),
+        user_guide_url(&MACVPN, None, AppLanguage::En).as_deref(),
         Some("https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.en.md")
     );
     // An invalid repo falls back to the default one (core `UserGuide`).
     assert_eq!(
-        user_guide_url(Some("evil.com/x?y"), AppLanguage::En).as_deref(),
+        user_guide_url(&MACVPN, Some("evil.com/x?y"), AppLanguage::En).as_deref(),
         Some("https://github.com/SepsiG/MacVPN/blob/main/docs/user-guide.en.md")
+    );
+    // WinVPN opens its own guide (`Product::user_guide_stem`).
+    assert_eq!(
+        user_guide_url(&WINVPN, None, AppLanguage::Hu).as_deref(),
+        Some("https://github.com/SepsiG/MacVPN/blob/main/docs/winvpn-user-guide.hu.md")
+    );
+    assert_eq!(
+        user_guide_url(&WINVPN, Some("SepsiG/MacVPN"), AppLanguage::En).as_deref(),
+        Some("https://github.com/SepsiG/MacVPN/blob/main/docs/winvpn-user-guide.en.md")
     );
     for bad in [
         "http://github.com/a",

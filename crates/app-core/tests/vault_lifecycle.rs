@@ -97,7 +97,6 @@ fn create_unlocks_writes_both_files_0600_and_the_auto_unlock_item() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_without_auto_unlock_leaves_no_item() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -107,7 +106,6 @@ fn create_without_auto_unlock_leaves_no_item() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_refuses_an_existing_vault_and_a_short_password() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -120,7 +118,6 @@ fn create_refuses_an_existing_vault_and_a_short_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_in_create_after_the_key_file_leaves_neither_file() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -136,7 +133,6 @@ fn a_failure_in_create_after_the_key_file_leaves_neither_file() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_new_instance_auto_unlocks_from_the_key_store() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), true).unwrap();
@@ -148,7 +144,6 @@ fn a_new_instance_auto_unlocks_from_the_key_store() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn auto_unlock_without_the_item_needs_the_password() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), true).unwrap();
@@ -165,7 +160,6 @@ fn auto_unlock_with_no_vault_reports_not_created() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_denied_or_unavailable_key_store_needs_the_password() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), true).unwrap();
@@ -180,7 +174,6 @@ fn a_denied_or_unavailable_key_store_needs_the_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_stale_item_needs_the_password_and_is_not_deleted() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), true).unwrap();
@@ -195,7 +188,6 @@ fn a_stale_item_needs_the_password_and_is_not_deleted() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn wrong_passwords_are_delayed_1_2_4_seconds_and_too_soon_skips_argon2() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), false).unwrap();
@@ -251,7 +243,6 @@ fn wrong_passwords_are_delayed_1_2_4_seconds_and_too_soon_skips_argon2() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_delay_doubles_up_to_30_seconds_with_no_lockout() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), false).unwrap();
@@ -272,7 +263,6 @@ fn the_delay_doubles_up_to_30_seconds_with_no_lockout() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn lock_closes_the_vault_and_keeps_the_key_store_item() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -301,7 +291,6 @@ fn lock_closes_the_vault_and_keeps_the_key_store_item() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn change_password_replaces_only_the_password() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -329,7 +318,6 @@ fn wrong(seconds: u64) -> UnlockError {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn reset_with_recovery_sets_a_new_password_and_unlocks() {
     let f = Fixture::new();
     let key = f.lifecycle().create(pw(PASSWORD), true).unwrap();
@@ -348,7 +336,6 @@ fn reset_with_recovery_sets_a_new_password_and_unlocks() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_wrong_recovery_key_gives_the_same_error_and_shares_the_delay() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), false).unwrap();
@@ -366,7 +353,6 @@ fn a_wrong_recovery_key_gives_the_same_error_and_shares_the_delay() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_new_recovery_key_counts_only_once_it_was_checked() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -381,7 +367,6 @@ fn a_new_recovery_key_counts_only_once_it_was_checked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_new_recovery_key_invalidates_the_old_one() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -401,7 +386,6 @@ fn a_new_recovery_key_invalidates_the_old_one() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn set_auto_unlock_writes_and_deletes_the_item() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -421,7 +405,6 @@ fn set_auto_unlock_writes_and_deletes_the_item() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn verify_password_checks_without_changing_the_state() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -467,7 +450,6 @@ impl KeyStore for CountingStore {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_auto_unlock_switch_state_never_reads_the_key() {
     let f = Fixture::new();
     f.lifecycle().create(pw(PASSWORD), true).unwrap();
@@ -484,7 +466,6 @@ fn the_auto_unlock_switch_state_never_reads_the_key() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_key_store_error_forgets_the_cached_switch_state() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -499,7 +480,6 @@ fn a_key_store_error_forgets_the_cached_switch_state() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn reset_with_recovery_while_unlocked_refuses_a_key_file_of_another_vault() {
     let f = Fixture::new();
     let v = f.lifecycle();
@@ -524,7 +504,6 @@ fn reset_with_recovery_while_unlocked_refuses_a_key_file_of_another_vault() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_vault_is_marked_as_created_for_the_migration_until_another_write() {
     let f = Fixture::new();
     let v = f.lifecycle();

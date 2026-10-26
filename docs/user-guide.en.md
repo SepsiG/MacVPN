@@ -2,11 +2,22 @@
 
 [Magyar változat](user-guide.hu.md)
 
-MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 1.5 (see [What's new in 1.5](#whats-new-in-15)). The menu's **Help** item opens it.
+MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. You can import and edit configs there, sort them into folders, and every connection has a live log. Connections and their passwords are kept in an encrypted vault. This guide describes version 2.0 (see [What's new in 2.0](#whats-new-in-20)). The menu's **Help** item opens it.
 
 For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference. Developers who want another program on this Mac to bring MacVPN connections up and down (**Paired apps** in the Connections window) should read the [Control API guide](control-api.md).
 
 > **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
+
+## What's new in 2.0
+
+- **Appearance.** **Settings → Appearance** chooses **Match System**, **Light** or **Dark** for the menu and every MacVPN window at once. See [2.2](#22-appearance).
+- **Connection notifications.** A notification when a connection connects, drops, is reconnected or fails, with the reason in plain words (for example **The server stopped responding.**); a click opens the connection's **Log** tab. **Settings → Connection Notifications** turns them off. See [2.3](#23-connection-notifications).
+- **Missing VPN tools.** A connection whose tool is not installed stays in the list, greyed, with **Not installed: OpenVPN – System Status**; **System Status** in that line opens the window where you install it. **New** and import do not offer that type until then. See [2.4](#24-missing-vpn-tools).
+- **Reconnect automatically.** After sleep or a network loss, MacVPN brings a connection back up by itself, but only on the same network as before and only when the VPN's own networks are not directly reachable there. A switch per connection turns it off. See [5.5](#55-reconnect-automatically).
+- **DNS comes back reliably.** One DNS manager in the root layer remembers the original DNS settings on disk, so they come back after the last connection that changed them disconnects, also after a crash or a restart while connected, and with several connections in any order. See [5.6](#56-dns-while-connected).
+- **Log size limits.** A connection's log can no longer fill the disk: at most 5 MiB plus one older 5 MiB part. See [6](#6-debug-mode-and-the-log).
+- **strongSwan (IKEv2):** CA, client certificates and keys in Homebrew's `etc/swanctl` folders now work (certificate sign-in included), and two IKEv2 connections can be up at the same time. See [3.3](#33-ikev2-strongswan).
+- **Root layer 9:** after the update **System Status** asks you once to press **Authorize** (admin password). See [8.4](#84-upgrading-from-15).
 
 ## What's new in 1.5
 
@@ -49,13 +60,13 @@ For short step-by-step instructions, see the [How-to guide](how-to.en.md). This 
 ## Contents
 
 1. [Installation](#1-installation)
-2. [First launch and the System Status window](#2-first-launch-and-the-system-status-window)
+2. [First launch and the System Status window](#2-first-launch-and-the-system-status-window) ([Appearance](#22-appearance), [Connection notifications](#23-connection-notifications), [Missing VPN tools](#24-missing-vpn-tools))
 3. [Adding connections by type](#3-adding-connections-by-type)
 4. [Import and export](#4-import-and-export) ([Opening VPN files from Finder](#41-opening-vpn-files-from-finder))
-5. [Connecting](#5-connecting)
+5. [Connecting](#5-connecting) ([Reconnect automatically](#55-reconnect-automatically), [DNS while connected](#56-dns-while-connected))
 6. [Debug mode and the log](#6-debug-mode-and-the-log)
 7. [Troubleshooting from the log](#7-troubleshooting-from-the-log)
-8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x), [Upgrading from 1.1](#82-upgrading-from-11), [Upgrading from 1.2](#83-upgrading-from-12))
+8. [Updates](#8-updates) ([Upgrading from 0.x](#81-upgrading-from-0x), [Upgrading from 1.1](#82-upgrading-from-11), [Upgrading from 1.2](#83-upgrading-from-12), [Upgrading from 1.5](#84-upgrading-from-15))
 9. [Uninstalling](#9-uninstalling)
 10. [Security notes](#10-security-notes)
 11. [Vault](#11-vault)
@@ -112,7 +123,7 @@ If you already have Homebrew, you can also install everything in Terminal:
 brew install openvpn wireguard-tools strongswan sstp-client bash
 ```
 
-If a tool is missing, only the connections of that type are greyed out; the other types still work.
+If a tool is missing, only the connections of that type are greyed out; the other types still work (see [2.4](#24-missing-vpn-tools)).
 
 ---
 
@@ -128,7 +139,7 @@ After launch, MacVPN appears as a shield icon in the menu bar. While one of its 
 Click the icon to open the menu. Each connection is a card with the coloured bubble of its type, its name, its type and state, and a switch (see [5](#5-connecting)); with many connections the list scrolls. Folders appear as rows you can open and close (see [12](#12-folders-and-colours)). Below the cards:
 
 - three tiles: **New Connection / Import…**, **Manage Connections…** and **System Status**;
-- the **Settings** group (click it to open or close it): **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Check for Updates Now** and **Launch at Login**; then the vault settings **Unlock automatically**, **Show “Lock Now”**, **Change Master Password…** and **New Recovery Key…** (see [11](#11-vault)), and **Back Up Everything…** and **Restore from Backup…** (see [14](#14-backup-and-restore));
+- the **Settings** group (click it to open or close it): **Appearance** (see [2.2](#22-appearance)), **Connection Notifications** (see [2.3](#23-connection-notifications)), **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Check for Updates Now** and **Launch at Login**; then the vault settings **Unlock automatically**, **Show “Lock Now”**, **Change Master Password…** and **New Recovery Key…** (see [11](#11-vault)), and **Back Up Everything…** and **Restore from Backup…** (see [14](#14-backup-and-restore));
 - **Help** (opens this guide), **Lock Now** (when shown, see [11.4](#114-lock-now)) and **Quit MacVPN**.
 
 While the vault is locked, the menu shows only an **Unlock…** row, the number of active connections and **Quit MacVPN** (see [11.5](#115-the-locked-menu)). Before the vault exists, the row says **Set Up the Vault…**.
@@ -138,7 +149,7 @@ When an update is available, an **Update available: vX.Y.Z** banner appears too.
 If anything is missing, the **System Status** window opens automatically at launch. You can open it any time from the menu (**System Status**). It shows three checks, each green or red:
 
 1. **Homebrew.** If it is missing, the **Install…** button opens Terminal with the official installer. The installer asks for your administrator password. If the installer cannot be downloaded, the Terminal window says so and stops without running anything. When it finishes, come back and press **Check Again**.
-2. **VPN tools.** Next to the list of missing tools, the **Install** button runs `brew install`. The output is shown live in the window. The installation continues even if you close the window.
+2. **VPN tools.** Next to the list of missing tools, the **Install** button runs `brew install`. The output is shown live in the window. The installation continues even if you close the window. When every tool is there but Homebrew has a newer version of one of these packages, the row lists it (**Update available: 2.6.8 → 2.6.9**) and an **Update** button runs `brew upgrade` for just those packages. MacVPN refreshes Homebrew's package list (`brew update`) in the background about once a day while it runs, so the offer stays current even if you never run `brew update` yourself.
 3. **Permissions (root scripts + sudoers).** The **Authorize** button asks for the admin password once. It installs MacVPN's root layer: the single root binary `/usr/local/libexec/macvpn/mvpn` with its `VERSION` file (root layer 8 in MacVPN 1.2), and the `/etc/sudoers.d/macvpn` rule. After that, connecting and disconnecting work without a password. The row shows **Installed (version 8)** when it is up to date. If an app update brings a newer root layer, it says **Update required (7 → 8)** (with the installed and the new version); if a file is missing, **Incomplete installation**. Press **Authorize** again. If connections are active, the window warns first: **Updating the system component will disconnect active VPN connections.**
 
 When all three are green, setup is done. L2TP and Cisco IPsec work without them.
@@ -151,6 +162,37 @@ MacVPN does not start automatically by default. To start it every time you log i
 - MacVPN is not signed with an Apple Developer ID, so macOS often cannot register it the usual way. In that case MacVPN adds a small login LaunchAgent instead (`~/Library/LaunchAgents/local.macvpn.launcher.plist`, which runs `open -b local.macvpn`). The checkbox stays ticked with the note "Enabled via a login LaunchAgent (applies at next login)." MacVPN does not start right away; it starts at your next login. The LaunchAgent opens the app by its bundle ID, so it keeps working if you move the app. It may also appear in **System Settings → General → Login Items** under **Allow in the Background**. Unticking the checkbox (or uninstalling) removes the file.
 - If turning it on fails both ways, an alert shows the reason, and the checkbox stays unticked.
 - The checkbox is disabled when MacVPN is not running from the Applications folder (`/Applications` or `~/Applications`), for example straight from the DMG or from Downloads. Drag the app to Applications, open it from there, and try again.
+
+### 2.2 Appearance
+
+**Settings → Appearance** has three choices: **Match System** (the default: MacVPN follows **System Settings → Appearance**, also when you switch it while MacVPN runs), **Light** and **Dark**. The choice applies at once to the menu and every open window (Connections, System Status, Update, the code and credential windows and the alerts), and to every window opened later. MacVPN remembers it across restarts. It is a setting of this Mac, not part of a backup.
+
+### 2.3 Connection notifications
+
+MacVPN posts a macOS notification when:
+
+- a connection **connected** (**Office VPN connected**);
+- a connection was **reconnected** automatically (**Office VPN reconnected**, see [5.5](#55-reconnect-automatically));
+- a live connection **dropped** without you disconnecting it (**Office VPN disconnected**);
+- a connect **failed** (**Office VPN: connection failed**);
+- an automatic reconnect was **not done** (**Office VPN not reconnected**) or **did not succeed** (**Office VPN could not reconnect**).
+
+The text under the title is a short reason in plain words, read from the end of the connection's log: **The server stopped responding.**, **The server could not be reached.**, **The server’s name could not be resolved.**, **The server refused the sign-in.**, **A certificate was not accepted.** or **The network connection was lost.** (the log lines behind each are in [7.12](#712-the-reasons-in-notifications)). When none of them fits, it says **Click to see the log.** (for a failed connect: **Open MacVPN for details**). Clicking a notification opens the connection in the **Connections** window, on its **Log** tab.
+
+- **What it never shows.** Notifications can be seen on the lock screen, so they name only the connection, never a server, an address, a user name or an error message from the log. While the vault is locked, not even the connection's name: the title is general (**A VPN connection dropped**, **A VPN connection connected**, …).
+- **What is not notified:** a disconnect you start (also by quitting MacVPN or when a paired app lets go of the connection), and a connection that is already up when MacVPN starts. OpenVPN's own restart after a short network break (`ping-restart`) keeps the connection up, so it gives no notification either.
+- **The switch.** **Settings → Connection Notifications** (on by default) turns all of these off. The notifications that ask you for something stay on: **…: authentication needed**, **…: credentials needed** and the team catalog notices.
+- **Permission.** macOS asks once whether MacVPN may show notifications. If you said no, or to change how they appear, use **System Settings → Notifications → MacVPN**.
+
+### 2.4 Missing VPN tools
+
+MacVPN checks the tools of each connection type in **System Status** (Homebrew, the VPN tools and the root layer, see above). When the tool of a type is missing or not usable:
+
+- **The connections of that type stay in the list, greyed out.** Their line says why, for example **OpenVPN · Not installed: OpenVPN – System Status**, or **Not ready: …** when the tool is there but cannot be used (for example the root layer needs **Authorize**). The **System Status** part is a link that opens the System Status window. The switch and **Connect** are disabled. This is shown in the menu, in the list of the **Connections** window and in the connection's details. The names are **Homebrew** (every Homebrew type when Homebrew itself is missing), **OpenVPN**, **WireGuard tools** (or **bash**), **strongSwan**, **sstp-client** and **Permissions (root scripts + sudoers)**. L2TP, Cisco IPsec and system VPNs never need a tool.
+- **New** in the Connections window lists only the types that can be used. When none can, it shows **Install the VPN tools in System Status to add connections.** and a **System Status…** item.
+- **Import refuses such a file** (from **Import from File…**, a drop on the window or a file opened from Finder) before anything is saved: **office.ovpn: OpenVPN is not installed. Install it in System Status first.** The other files of the same import are imported.
+- **Team catalogs keep their connections.** A catalog connection of a missing type is kept and shown greyed like any other; it works as soon as the tool is installed, without a new sync.
+- **Installing outside MacVPN.** After `brew install` in Terminal you do not need **Check Again**: when you open the menu or the Connections window while a type is unavailable, MacVPN checks again in the background (at most once a minute), and the rows turn normal within a minute.
 
 ---
 
@@ -182,7 +224,7 @@ The easiest way is to import the `.ovpn` file from your provider (**New → Impo
   - **Allowed** directives work as usual, for example `setenv CONFIG_VERSION "2.0.4"`, `remap-usr1 SIGTERM`, `pull-filter`, `machine-readable-output`.
   - **Risky settings** (for example `user nobody`, `group nogroup`, `route-noexec`, server-side or Windows-only options, and every directive MacVPN does not know) are shown in a yellow **Risky settings** panel, each with a short reason. Tick **I acknowledge these settings and the security risks** to save and connect. The acknowledgement covers exactly the risky directives present when you save: if you add another one later, you have to tick the box again.
   - **Forbidden** directives, for example `up`, `down`, `script-security`, `plugin`, `log`, `chroot` and `echo`, are never allowed (they would run external scripts, load code, read or write files as root, or override MacVPN's own settings). MacVPN sets up DNS itself. See [section 7.7](#77-directive-not-allowed--forbidden-directive) for details.
-- With `user` / `group`, OpenVPN drops root after connecting: add `persist-tun` so reconnects keep working. DNS is restored when you disconnect in MacVPN; if OpenVPN exits on its own, disconnect in MacVPN to restore it.
+- With `user` / `group`, OpenVPN drops root after connecting: add `persist-tun` so reconnects keep working. DNS is restored when you disconnect in MacVPN, and also when OpenVPN exits on its own (at MacVPN's next status check, see [5.6](#56-dns-while-connected)).
 - The arguments of the allowed directives are checked too: for example `dev` can only be `tun`, `tap` or `utunN`, ports and timers must be numbers, and host names and cipher names cannot contain `/` or start with `-`. `<connection>` blocks are supported; their lines go through the same checks.
 
 ### 3.2 WireGuard
@@ -234,8 +276,12 @@ connections {
 
 - The **Username** field must match `eap_id`. Put the password into **Password**. These are not stored in the config. MacVPN adds them in a `secrets` block when connecting.
 - If the server uses a pre-shared key (PSK), set `auth = psk` on both sides and put the key into **Pre-shared key (PSK)**.
-- If the server certificate is not signed by a well-known authority, its CA certificate must go into the strongSwan certificate directory (with Homebrew usually `/opt/homebrew/etc/swanctl/x509ca/`). Ask the server operator for help with this.
+- **Certificates and keys** go into strongSwan's own directories in the Homebrew folder (`/opt/homebrew/etc/swanctl/`, on an Intel Mac `/usr/local/etc/swanctl/`): a CA certificate that is not signed by a well-known authority into `x509ca/`; for certificate login (`auth = pubkey` and `certs = <file name>` in `local`) your certificate into `x509/` and its private key into `private/` (or both in a PKCS#12 file in `pkcs12/`). Ask the server operator for these files.
+  - On every connect MacVPN copies these files into the connection's own folder, which only the system can read, because strongSwan reads them from there; the copies are deleted when the connection closes. No `swanctl --load-creds` is needed, and a file added later is used from the next connect.
+  - Only plain files with plain names are copied (letters, digits, `_`, `.`, `-`; no symlinks, no hidden files), at most 1 MB each.
+  - The private key must not be password protected (MacVPN cannot pass a key password to strongSwan). Keep it readable only by you: `chmod 700 /opt/homebrew/etc/swanctl/private`.
 - `include`, `updown`, and `secrets` that refer to a file (`file = …`) are not allowed.
+- **Several IKEv2 connections at once** work: MacVPN loads the configs of all active IKEv2 connections into strongSwan together, and each connection's password or PSK is bound to its own server identity (`remote.id`), so connecting or disconnecting one leaves the others up. Two connections cannot be up at the same time when they use the same name under `connections` (or `secrets`, `pools`, `authorities`), or the same `remote.id` with a PSK or EAP password: strongSwan could not tell them apart. The second connect then stops with a message that names the clash, for example **Another active strongSwan connection already defines connections.office**; give the copy its own names and `remote.id`.
 - Only the documented `swanctl.conf` keys are accepted, each in its own section. `certs`, `cacerts`, `cacert` and `pubkeys` take plain file names only (no `/` or `..`); strongSwan looks them up in its own certificate directories (for example `x509ca/`). `crl_uris`, `ocsp_uris` and `file:` URIs are not allowed.
 
 ### 3.4 L2TP/IPsec and Cisco IPsec
@@ -367,8 +413,8 @@ Double-click a `.ovpn` or `.sstp` file in Finder, or drop it on MacVPN's icon: M
   - **Held by …** under the card: a paired app holds the connection (see [5.4](#54-paired-apps-control-api))
 - **From the Connections window:** the **Connect** / **Disconnect** button.
 - Several connections can be active at the same time.
-- If a tool is missing for a type, the connection is greyed out and shows **Missing tool**. Check the **System Status** window.
-- **Notifications.** When a connection fails, a macOS notification appears ("…: connection failed", with the text **Open MacVPN for details**). The notification does not contain the error message itself, because notifications can be seen on the lock screen; the full reason is shown in MacVPN. Clicking it opens the connection in the **Connections** window, on its **Log** tab. You also get a notification if a live connection drops unexpectedly ("…: the connection dropped"), and when a connection waits for a code or a sign-in ("…: authentication needed"; clicking it brings the code window forward). macOS asks once for permission to show notifications. There is no automatic reconnect.
+- If a tool is missing for a type, the connection is greyed out and shows **Not installed: <tool> – System Status** (see [2.4](#24-missing-vpn-tools)).
+- **Notifications** when a connection connects, drops, is reconnected or fails, and when it waits for a code or a sign-in ("…: authentication needed"; clicking it brings the code window forward): see [2.3](#23-connection-notifications). After sleep or a network loss MacVPN can bring a connection back by itself: see [5.5](#55-reconnect-automatically).
 - **On quit** (**Quit MacVPN**, ⌘Q, and also logout, restart or shutdown), MacVPN first asks about unsaved changes in the Connections window (**Save**, **Discard** or **Cancel**). Then, if a connection is active, it asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**. Cancel keeps MacVPN running (and cancels the logout). MacVPN recognizes connections that kept running on its next launch.
 
 ### 5.1 Order of connections
@@ -431,6 +477,34 @@ In **Paired apps** every program is listed with its executable path, **Last used
 
 Developers: the protocol, the security model and an example client are in the [Control API guide](control-api.md).
 
+### 5.5 Reconnect automatically
+
+When a connection goes down because the Mac slept or the network went away, MacVPN can connect it again by itself. It does so only when both of these hold:
+
+1. **You are on the same network as when the connection came up.** MacVPN compares the router (the default gateway's address and hardware address) and, where macOS tells it, the Wi-Fi name. macOS shows the Wi-Fi name only to apps with location permission; MacVPN does not ask for that, so usually the router's hardware address decides. If the network cannot be identified, MacVPN does not reconnect.
+2. **None of the VPN's own networks is directly reachable there.** These are the routes of the connection (OpenVPN `route` lines and the routes the server pushes, WireGuard `AllowedIPs`; a "send everything" route such as `0.0.0.0/0` does not count) and its DNS servers. If one of them is a network the Mac is directly connected to, the tunnel would take that local network away from you, so MacVPN leaves the connection down.
+
+**An example.** At home you connect "Office VPN", which routes the office network 10.20.30.0/24. You close the lid and open it again at home: the network is the same, and 10.20.30.0/24 is not your home network, so the connection comes back (**Office VPN reconnected**). You open the lid in the office instead, where the Mac gets an address in 10.20.30.0/24: that is a different network, and the office network is directly reachable anyway, so MacVPN does not reconnect: **Office VPN not reconnected** / **The VPN’s network is directly reachable here.** (This is checked first. On another network where nothing of the VPN is local, a café for example, the reason is **You are on a different network.**)
+
+- **When it runs.** For a connection that was up when the Mac went to sleep and is down after waking (or drops within 3 minutes after waking), and for a connection that drops while the network is gone or within a minute after a network change. MacVPN waits a few seconds after waking or a network change, then tries up to 3 times (at once, after 10 seconds, after 30 seconds). Without a network it waits until the network is back.
+- **What it never reconnects:** a connection you disconnected yourself (also by quitting MacVPN, or when a paired app let it go), a connect you started that failed, a connection whose server refused the sign-in or did not accept a certificate (a new password or certificate is needed), and a connection whose code or credential window you cancelled. If you connect or disconnect the connection yourself in the meantime, MacVPN stops trying.
+- **Notifications** (see [2.3](#23-connection-notifications)): **reconnected** after a success, **not reconnected** with the reason (**You are on a different network.**, **The network could not be identified.**, **The VPN’s network is directly reachable here.**, **The VPN’s DNS server is directly reachable here.**, **Unlock the vault to reconnect.**), or **could not reconnect** with the reason of the last failure. A reconnect is a normal connect: a connection with a one-time code asks for the code again, and missing credentials are asked for.
+- **The vault.** The passwords come from the vault, so a locked vault means no reconnect (**Unlock the vault to reconnect.**).
+- **Tunnels that survive the sleep.** OpenVPN's own restart (`ping-restart`) and WireGuard can keep a tunnel up through a short sleep, so after waking the connection is still connected. Once after every wake, MacVPN checks such a connection against the new network: if one of its networks or DNS servers is directly reachable there (the office in the example above), MacVPN **disconnects it** and tells you why (**Office VPN disconnected** / **The VPN’s network is directly reachable here, so it was disconnected.**), because routing the local network into the tunnel would cut it off. On any other network (a café, another home network) the tunnel stays up. A connection disconnected this way counts as disconnected by you: it is not reconnected automatically until you connect it again. This check runs whatever the switch below says.
+- **The switch.** Every connection created in MacVPN has **Reconnect Automatically** in its details in the Connections window (on by default; system VPNs do not have it). Turn it off for a connection that should stay down after sleep. The setting is kept on this Mac (not in a backup or export); a deleted and imported-again connection has it on again.
+- **Limits.** The routes pushed by an OpenVPN server are read from the connection's log, so keep the default log level (`verb 3`; `verb 1` or `2` hides them). IKEv2, SSTP, L2TP and Cisco IPsec connections give MacVPN no list of their networks: for them only the "same network" rule applies. Plugging in a cable or joining another Wi-Fi without sleeping does not trigger the check of surviving tunnels.
+
+### 5.6 DNS while connected
+
+OpenVPN (with DNS from the server), WireGuard (a `DNS =` line) and SSTP (**Use the server's DNS**) set the VPN's DNS servers on every network service of the Mac while connected. One DNS manager in MacVPN's root layer does this for all three:
+
+- **The original settings are kept on disk** (readable only by the system), taken before the first connection changes anything. When the last connection that set DNS disconnects, MacVPN puts the originals back and checks that they took (the log says **original DNS restored and verified**).
+- **Several connections:** the DNS of the connection that came up last is in effect. When it disconnects, the DNS of the newest remaining one comes back; the originals return only with the last one, in whatever order you disconnect them.
+- **Crashes and restarts:** if a VPN program stops without a disconnect, or the Mac restarts or shuts down while connected, MacVPN restores the DNS at its next status check (when MacVPN starts, and regularly while it runs).
+- Each change is read back and set once more if it did not take; the result is in the connection's log (**DNS set and verified on 2 network service(s)**, or a **DNS check failed** line naming the service).
+- IKEv2 (strongSwan applies the server's DNS itself, without changing your settings), L2TP, Cisco IPsec and system VPNs are handled by macOS.
+- **Once, after updating from 1.5 or earlier:** an older MacVPN could leave a VPN's DNS server set after a crash or a restart while connected. 2.0 cannot know about such a leftover. If websites do not open on your normal network while no VPN is connected, open **System Settings → Network**, select the service (Wi-Fi or Ethernet) → **Details…** → **DNS**, and remove the VPN's DNS servers (or restore your own). You need to do this only once.
+
 ---
 
 ## 6. Debug mode and the log
@@ -464,6 +538,8 @@ In debug mode:
 | other | the tool's own output (openvpn, wg-quick, charon, sstpc, pppd) |
 
 **The Log tab** shows the last 5000 lines of the connection's log and follows it live, also outside debug mode (L2TP and Cisco IPsec only have a log in debug mode: **Native connections only have a log when connected in debug mode.**). The log files themselves are in `/var/log/macvpn`.
+
+**Log size.** A connection's log (`/var/log/macvpn/<id>.log`) is at most 5 MiB. When it is full, its newest lines become the older part `<id>.log.1` (also at most 5 MiB) and the log starts again, while the connection keeps running; so a connection never takes more than about 10 MB, however long it stays up. The VPN programs' own working logs are cut the same way. OpenVPN is started with `--mute 20`: after 20 lines of the same kind in a row it writes only a count, so a message repeated millions of times (for example `Network is unreachable` while the network is gone) cannot flood the log; a config's own `mute` or a higher `verb` does not change this. A large log left by an older MacVPN is cut to this size at the next connect or disconnect.
 
 **Log actions:** filters (**All**, **Commands**, **Errors**), **Search**, **Follow** (auto-scroll), **Copy** (copies the filtered lines), **Save…** (saves the log as `<name>-log.txt`, readable only by you). Passwords, PSKs and private keys never appear in the log, so you can share a saved log (for example with your network administrator). A debug log of an SSTP connection is the exception, see above.
 
@@ -588,6 +664,21 @@ Message: **Authentication failed (wrong user name or password)**. Typical log li
 - **mvpn-mgmt not found** (the OpenVPN helper of the root binary `mvpn` could not start; `mvpn-mgmt` is the name it runs under), or **Incomplete installation** in **System Status**: the root layer is from an older version or incomplete. Click **Authorize** in **System Status** to reinstall it.
 - The `[mgmt]` lines in the log are the helper's steps (for example `hold released`, `credentials sent`, `dynamic challenge received`). They never contain the code or the password, and for a sign-in address only its host is logged.
 
+### 7.12 The reasons in notifications
+
+A notification about a drop or a failure (see [2.3](#23-connection-notifications)) gives one of these reasons. MacVPN takes it from the last matching line of the connection's log; open the **Log** tab and search for the text in the right column.
+
+| Reason | Log lines behind it (examples) | Automatic reconnect |
+|---|---|---|
+| **The server stopped responding.** | `Inactivity timeout (--ping-restart)`, `Inactivity timeout (--ping-exit)` (OpenVPN), `giving up after 5 retransmits` (IKEv2), `peer not responding` | tried |
+| **The server could not be reached.** | `TLS key negotiation failed`, `Connection refused`, `Connection timed out` | tried |
+| **The server’s name could not be resolved.** | `Cannot resolve host address` | tried |
+| **The server refused the sign-in.** | `AUTH_FAILED`, `AUTHENTICATION_FAILED` | not tried |
+| **A certificate was not accepted.** | `VERIFY ERROR`, `certificate verify failed` | not tried |
+| **The network connection was lost.** | `Network is unreachable`, `No route to host` | tried |
+
+Anything else gives **Click to see the log.** (**Open MacVPN for details** for a failed connect). The reason is only a hint: the sections above explain each error in full.
+
 ---
 
 ## 8. Updates
@@ -649,6 +740,15 @@ MacVPN 1.3 is the usual in-app update. The root layer stays 8, so **System Statu
 - **Keychain:** macOS may ask once whether MacVPN may read the vault key (only with **Unlock automatically** on), as after every update. Allow it only for MacVPN's own prompt (see [8](#8-updates)).
 - **Team catalogs** need MacVPN 1.3 on every Mac that publishes or subscribes.
 - **When to delete `vault.db.bak-v1`:** once you are happy with 1.3 (you will not go back to 1.2, and you have a fresh full backup, see [14.2](#142-back-up-everything)), delete it. It holds your data as it was before the upgrade, encrypted with the same vault key, so whoever can open your vault can open it too; MacVPN never updates or uses it.
+
+### 8.4 Upgrading from 1.5
+
+MacVPN 2.0 is the usual in-app update. The vault does not change.
+
+- **Root layer 8 → 9.** The DNS manager, the log size limits and the strongSwan changes are in the root layer, so **System Status** shows **Update required (8 → 9)**. Click **Authorize** and enter the admin password once. Active VPN connections are disconnected first. Until then, OpenVPN, WireGuard, IKEv2 and SSTP connections show **Not ready: Permissions (root scripts + sudoers) – System Status**.
+- **New settings, on by default:** **Connection Notifications** ([2.3](#23-connection-notifications)) and **Reconnect Automatically** for every connection ([5.5](#55-reconnect-automatically)). **Appearance** starts at **Match System**.
+- **DNS left over by an older version:** if a VPN's DNS server stayed set after a crash or a restart under 1.5 or earlier, reset it once by hand (see the end of [5.6](#56-dns-while-connected)).
+- **A very large log** of an older version (for example a `.log.1` of several gigabytes in `/var/log/macvpn`) is cut to 5 MiB at the connection's next connect or disconnect.
 
 ---
 

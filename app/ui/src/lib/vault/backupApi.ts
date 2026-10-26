@@ -45,6 +45,8 @@ export interface NativeProfileView {
   id: string;
   name: string;
   installed: boolean;
+  /// Why the platform could not install it (WinVPN: Cisco IPsec); absent on macOS.
+  note?: string;
 }
 
 export interface RestoreOutcome {

@@ -1,6 +1,7 @@
 //! The system status check (port of `SetupChecker.swift`): Homebrew, the VPN tools, the root layer's VERSION
-//! against the bundled one, and whether `sudo -n mvpn` works.
+//! against the bundled one, whether `sudo -n mvpn` works, and which of the Homebrew formulae are outdated.
 
+use crate::brew::BrewOutdated;
 use crate::command::CommandRunner;
 use crate::mvpn_client::{INSTALL_DIR, MvpnClient};
 use macvpn_core::l10n::AppLanguage;
@@ -64,9 +65,18 @@ impl<'a> SetupChecker<'a> {
         vec![format!("{prefix}/bin/{tool}"), format!("{prefix}/sbin/{tool}")]
     }
 
+    /// The first of [`Self::BREW_PREFIXES`] with an executable `bin/brew` (never a `PATH` lookup).
+    pub fn find_brew_prefix(file_exists: impl Fn(&str) -> bool) -> Option<String> {
+        Self::BREW_PREFIXES.iter().find(|p| file_exists(&format!("{p}/bin/brew"))).map(|p| p.to_string())
+    }
+
+    /// [`Self::find_brew_prefix`] on the real file system.
+    pub fn installed_brew_prefix() -> Option<String> {
+        Self::find_brew_prefix(|p| crate::sys::is_executable_file(Path::new(p)))
+    }
+
     pub fn check(&self) -> SetupReport {
-        let prefix =
-            Self::BREW_PREFIXES.iter().find(|p| (self.file_exists)(&format!("{p}/bin/brew"))).map(|p| p.to_string());
+        let prefix = Self::find_brew_prefix(&self.file_exists);
         let mut missing: Vec<String> = Vec::new();
         for (_, tools) in Self::REQUIRED_TOOLS {
             for tool in tools {
@@ -107,6 +117,24 @@ impl<'a> SetupChecker<'a> {
             bundled_root_version: bundled,
             sudo_works: sudo,
             missing_root_files: missing_root,
+            engine_missing: None,
+            engine: None,
+            later_kinds: Vec::new(),
+            outdated_packages: Vec::new(),
+            ras: None,
+            ras_unsupported_kinds: Vec::new(),
         }
+    }
+
+    /// Fills `report.outdated_packages` from `brew outdated` (`brew_runner`: [`BrewOutdated::environment`] and
+    /// [`BrewOutdated::TIMEOUT`]), only when the tools row is green: Homebrew is there and no tool is missing (a
+    /// missing tool is installed by "Install", which brings the newest version anyway). Unknown stays empty.
+    pub fn check_outdated(report: &mut SetupReport, brew_runner: &dyn CommandRunner) {
+        report.outdated_packages.clear();
+        let Some(prefix) = report.package_manager.as_deref() else { return };
+        if !report.missing_tools.is_empty() {
+            return;
+        }
+        report.outdated_packages = BrewOutdated::check(brew_runner, prefix);
     }
 }

@@ -1,6 +1,6 @@
 [package]
 name = "macvpn-platform-win"
-description = "MacVPN platform layer for Windows, phase 1: a stub that answers \"not supported\" everywhere"
+description = "MacVPN platform layer for Windows (WinVPN)"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,11 +13,59 @@ name = "macvpn_platform_win"
 [lints]
 workspace = true
 
-# Phase 1: core and platform-api (no `windows-sys`); compiles and is tested on every OS. `uuid` and `zeroize` only
-# name the types of the trait signatures (already platform-api's dependencies, same versions).
+# `pure` compiles on every OS (tested on macOS too); `win` only on Windows.
 [dependencies]
 # `vault` for the `KeyStore`, `Entropy` and `LegacyKeychain` it returns.
 macvpn-core = { path = "../core", features = ["vault"] }
 macvpn-platform-api = { path = "../platform-api" }
 uuid = "1.26.1"
 zeroize = "1.9.1"
+
+[target.'cfg(windows)'.dependencies]
+macvpn-winsys = { path = "../winsys" }
+# The version Tauri already brings (no new crate in Cargo.lock), pinned exactly.
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Globalization",
+    "Win32_Graphics_Dwm",
+    "Win32_Graphics_Gdi",
+    "Win32_Security",
+    "Win32_Security_Credentials",
+    "Win32_Storage_FileSystem",
+    "Win32_System_Com",
+    "Win32_System_DataExchange",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
+    "Win32_System_Ole",
+    "Win32_System_Power",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Shutdown",
+    "Win32_System_Threading",
+    "Win32_System_Time",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Shell",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# WinRT toasts and the COM file dialogs; the version Tauri already brings (no new crate in Cargo.lock).
+windows = { version = "=0.62.2", features = [
+    "Data_Xml_Dom",
+    "Foundation",
+    "UI_Notifications",
+    "Win32_Foundation",
+    "Win32_System_Com",
+    "Win32_UI_Shell",
+    "Win32_UI_Shell_Common",
+] }
+
+[dev-dependencies]
+# `tests/update.rs`: throwaway signing keys (the version core already uses; no new crate in Cargo.lock).
+ed25519-dalek = "3.0.0"
+uuid = { version = "1.26.1", features = ["v4"] }
+# `tests/ras_pure.rs`: the RAS error log lines against `failure_reason::classify`; `tests/control_pipe.rs`: the
+# app-core control server over the real pipe transport.
+macvpn-app-core = { path = "../app-core" }
+
+# `tests/control_pipe.rs`: the example client over the real pipe transport.
+[target.'cfg(windows)'.dev-dependencies]
+macvpn-control-client = { path = "../../examples/macvpn-control-client" }

@@ -1,6 +1,6 @@
-//! The control server over a real Unix socket in a short temp directory and over TCP loopback (every test runs
-//! over both, see `over_both!`), with a fake host whose connections follow a script, and a fake transport (the
-//! peer identity is set by the test). The harness is in `control_support`.
+//! The control server over a real Unix socket in a short temp directory (Unix) or a real named pipe (Windows), and
+//! over TCP loopback (every test runs over both, see `over_both!`), with a fake host whose connections follow a
+//! script, and a fake transport (the peer identity is set by the test). The harness is in `control_support`.
 
 mod common;
 mod control_support;
@@ -298,6 +298,40 @@ fn up_checks_allowlist_existence_and_setup(t: Kind) {
     h.host.setup_missing.store(true, Ordering::SeqCst);
     c.send(json!({"id":4,"op":"up","connection":key}));
     assert_eq!(c.read(), json!({"id":4,"ok":false,"error":"setup_required"}));
+    assert!(h.host.calls().is_empty());
+}
+
+/// Without a VPN engine (WinVPN 2a) every `up` that has to start a connection, of any type, is `failed` with the
+/// engine's answer as the message, and nothing starts (not `setup_required`: there is nothing to set up). A
+/// connection that is already up would be joined as usual (none can be, without an engine).
+fn without_an_engine_up_fails_with_the_engine_note(t: Kind) {
+    let h = Harness::over(t);
+    let (openvpn, item) = managed("Office");
+    h.host.add(item);
+    let l2tp_conn = Connection::new("Branch", VPNKind::L2tp);
+    let l2tp = uuid_string(&l2tp_conn.id);
+    h.host.add(ConnectionItem::Managed(l2tp_conn));
+    h.host.add(ConnectionItem::System(SystemVpn::new(SYSTEM_KEY, "Office IKEv2", "IKEv2", "Disconnected")));
+    let mut c = h.authed(&[&openvpn, &l2tp, SYSTEM_KEY]);
+    *h.host.engine_missing.lock().unwrap() = Some("Later.".into());
+    for (id, key) in [(1, &openvpn), (2, &l2tp), (3, &SYSTEM_KEY.to_string())] {
+        c.send(json!({"id":id,"op":"up","connection":key}));
+        assert_eq!(c.read(), json!({"id":id,"ok":false,"error":"failed","message":"Later."}));
+    }
+    assert!(h.host.calls().is_empty());
+}
+
+/// WinVPN 2b: an `up` of a kind that comes later (a native VPN) is `failed` with the kind's reason, and nothing
+/// starts; the other kinds are not affected.
+fn a_later_kind_fails_with_its_reason(t: Kind) {
+    let h = Harness::over(t);
+    let l2tp_conn = Connection::new("Branch", VPNKind::L2tp);
+    let l2tp = uuid_string(&l2tp_conn.id);
+    h.host.add(ConnectionItem::Managed(l2tp_conn));
+    let mut c = h.authed(&[&l2tp]);
+    h.host.later.lock().unwrap().insert(l2tp.clone(), "Later.".into());
+    c.send(json!({"id":1,"op":"up","connection":l2tp}));
+    assert_eq!(c.read(), json!({"id":1,"ok":false,"error":"failed","message":"Later."}));
     assert!(h.host.calls().is_empty());
 }
 
@@ -1264,7 +1298,8 @@ fn the_unix_endpoint_is_displayed_as_its_path() {
     assert!(h.host.logs().contains(&format!("listening on {path}")));
 }
 
-/// Every test above runs over the Unix socket (Unix only) and over TCP loopback (every OS).
+/// Every test above runs over TCP loopback (every OS) and over the real local endpoint: the Unix socket (Unix) or a
+/// named pipe (Windows).
 macro_rules! over_both {
     ($($(#[$attr:meta])* $name:ident),* $(,)?) => {
         #[cfg(unix)]
@@ -1276,108 +1311,71 @@ macro_rules! over_both {
             use super::*;
             $( $(#[$attr])* #[test] fn $name() { super::$name(Kind::Loopback) } )*
         }
+        #[cfg(windows)]
+        mod pipe {
+            use super::*;
+            $( $(#[$attr])* #[test] fn $name() { super::$name(Kind::Pipe) } )*
+        }
     };
 }
 
 over_both!(
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     pair_approved_then_token_works_in_hello,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     approved_keys_are_limited_to_the_offered_ones,
     pair_denied_three_times_blocks_pairing,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_second_pairing_while_one_is_pending_is_busy,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     wrong_token_is_unauthorized_after_the_delay,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_malformed_token_fails_like_a_wrong_one,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     another_executable_path_is_unauthorized,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_moved_executable_is_flagged_until_a_good_hello,
     a_peer_of_another_user_is_closed_at_once,
     requests_before_hello_are_unauthorized,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     malformed_and_unknown_requests_get_their_codes,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     list_shows_only_the_allowed_connections_in_order,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     up_streams_progress_then_replies_connected,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     up_checks_allowlist_existence_and_setup,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     setup_required_only_when_the_connect_needs_the_setup,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
+    without_an_engine_up_fails_with_the_engine_note,
+    a_later_kind_fails_with_its_reason,
     down_releases_and_disconnects,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     locked_refuses_everything_but_down,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     client_eof_disconnects,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     client_killed_mid_connect_disconnects,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     two_clients_disconnect_only_after_both_close,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_second_client_joins_a_connect_in_progress,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_preexisting_connection_is_not_disconnected,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_connecting_key_without_a_lease_is_busy,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_synchronous_connect_error_fails_and_ends_the_lease,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_failed_connect_replies_failed_and_a_later_up_reconnects,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     mfa_timeout_and_cancel_get_their_codes,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     up_waits_for_credentials_then_connects,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     cancelled_credentials_get_their_code_and_release_the_lease,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     user_disconnect_ends_the_lease_without_reconnect,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     user_disconnect_during_up_answers_it,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_drop_is_reported_to_the_holders,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     status_subscribes_to_the_allowed_connections,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     revoke_closes_the_socket_and_disconnects,
     the_ninth_client_is_refused,
     a_silent_client_is_closed_after_the_auth_timeout,
     a_connection_that_says_nothing_and_closes_is_not_logged,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_flood_is_closed,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     stop_closes_everything_and_removes_the_socket,
     a_registry_that_cannot_be_read_stops_the_start_and_is_kept,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     down_of_the_key_in_the_connect_gap_leaves_nothing_up,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     close_in_the_connect_gap_leaves_nothing_up,
     a_dripping_client_is_closed_at_the_auth_deadline,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     the_server_times_the_pairing_window_out,
     a_client_gone_before_the_approval_is_not_paired,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_duplicate_pending_up_is_busy_and_pending_ups_are_capped,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     stop_detach_keeps_the_connections_up,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     stop_tells_every_authenticated_client_why_it_closes,
     stop_ends_the_accept_thread_without_the_socket_file,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     the_relay_forwards_manager_changes_to_the_current_server,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     up_asks_the_setup_outside_the_server_lock,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     up_and_a_setup_reader_asking_the_server_do_not_deadlock_with_a_queued_writer,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     a_peer_path_with_control_or_format_characters_cannot_pair_or_hello,
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     forget_keys_prunes_the_allowlists_and_saves_them,
     #[cfg(unix)]
-    #[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
     forget_keys_keeps_the_pruned_allowlist_even_when_saving_fails,
     peer_connected_follows_the_client,
     stop_removes_only_the_endpoints_socket_file

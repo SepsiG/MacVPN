@@ -45,6 +45,9 @@ rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher"], optional = t
 # nothing, and the release gate in scripts/build-dmg.sh checks that the app links no OpenSSL. Linux comes later.
 [target.'cfg(windows)'.dependencies]
 rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }
+# The Win32 calls of `fsx` on Windows (core itself has no `unsafe`): the current user's SID, the handle-based
+# owner, ACL, identity and link count (plan 2a, Tasks 4 and 8).
+macvpn-winsys = { path = "../winsys" }
 
 [features]
 # The vault code (key hierarchy, database). Only the app side (app-core, platform-mac) enables it; the root layer

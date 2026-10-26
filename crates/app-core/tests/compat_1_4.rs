@@ -678,7 +678,6 @@ fn write_compat_fixtures() {
 // MARK: - the checks
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn backup_matches_and_opens() {
     assert_same(&backup_files());
     let payload = backup::open(&read_fixture("backup.macvpnbackup"), PASSWORD).unwrap();
@@ -703,7 +702,6 @@ fn catalog_matches_and_opens() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn exports_match_and_import() {
     assert_same(&export_files());
     // The exported config imports again: its metadata line, then the config itself.
@@ -725,7 +723,6 @@ fn exports_match_and_import() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn store_files_match_and_load() {
     assert_same(&store_files());
     let tmp = TempDir::new();
@@ -744,13 +741,11 @@ fn store_files_match_and_load() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn vault_dump_matches() {
     assert_same(&vault_files());
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn view_model_matches() {
     assert_same(&[("view-model.json", view_model_json())]);
 }

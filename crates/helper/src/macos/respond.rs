@@ -17,7 +17,7 @@ use zeroize::Zeroizing;
 pub fn run(ctx: &mut Ctx) -> R {
     let run = ctx.s.run_dir(&ctx.id);
     ctx.run = Some(run.clone());
-    ctx.log = crate::macos::log::open(&ctx.s.log_base, &ctx.id, None, ctx.owner_uid());
+    ctx.log = crate::macos::log::open(&ctx.s.log_base, &ctx.id, ctx.s.log_max, false, ctx.owner_uid());
     let waiting = is_dir(&run)
         && !is_symlink(&run)
         && fsx::cat(&run.join("kind")) == "openvpn"

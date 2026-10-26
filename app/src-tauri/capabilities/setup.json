@@ -1,0 +1,22 @@
+{
+  "identifier": "setup",
+  "description": "The System Status window (setup, local content only): the check, the installers and the uninstaller (each also checks the calling window in Rust), launch at login; the view model, the platform (its texts) and listening to events.",
+  "windows": [
+    "setup"
+  ],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "allow-get-view-model",
+    "allow-get-platform",
+    "allow-set-launch-at-login",
+    "allow-open-login-items-settings",
+    "allow-setup-check",
+    "allow-setup-install-homebrew",
+    "allow-setup-install-tools",
+    "allow-setup-install-root",
+    "allow-setup-uninstall",
+    "allow-setup-open-system-uninstall",
+    "allow-quit-after-uninstall"
+  ]
+}

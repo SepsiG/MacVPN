@@ -1,74 +1,35 @@
-//! The updater's network layer (port of `HTTPClient` / `URLSessionHTTPClient` in `UpdateChecker.swift`).
-//!
-//! [`CurlHttpClient`] uses the system `/usr/bin/curl` (the system trust store, no extra TLS stack in the app)
-//! and follows redirects itself, one hop at a time, so every target is checked against
-//! [`UpdateURLPolicy::is_allowed_redirect`] before it is requested (the URLSession delegate's rule). curl only
-//! gets canonical URLs: release assets as [`UpdateURLPolicy::canonical_download_url`], redirect targets as
-//! [`canonical_redirect_url`]. Only HTTPS,
-//! no cookies, `User-Agent: MacVPN-Updater`, 30 s per request and 600 s per download.
+//! The updater's network layer on macOS: the shared curl layer (`macvpn_platform_api::curl::http`: the redirect
+//! policy, the canonical URLs, the argument list) with the macOS flavour ([`mac_curl`]: `/usr/bin/curl`, no extra
+//! arguments, `mkdtemp` directories in the user's private temporary directory) and the macOS runner (curl's fixed
+//! environment, the download time limit plus a margin).
 
-use crate::command::{CommandError, CommandRunner, ProcessCommandRunner};
+use crate::command::{CommandRunner, ProcessCommandRunner};
 use crate::temp_dir::{make_private_temp_directory, temporary_directory};
-use macvpn_core::update::{UpdateError, UpdateURLPolicy};
+use macvpn_platform_api::curl::Curl;
+use macvpn_platform_api::curl::http::{self as shared, RESOURCE_TIMEOUT};
+pub use macvpn_platform_api::curl::http::{HttpClient, HttpError, HttpResponse, canonical_redirect_url};
 use std::collections::BTreeMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct HttpResponse {
-    pub status: i64,
-    pub data: Vec<u8>,
-}
-
-impl HttpResponse {
-    pub fn new(status: i64, data: &[u8]) -> Self {
-        HttpResponse { status, data: data.to_vec() }
+/// The macOS flavour: `/usr/bin/curl`, no extra arguments, private directories as `mkdtemp(3)` 0700 directories in
+/// the user's private temporary directory.
+pub fn mac_curl() -> Curl {
+    Curl {
+        executable: "/usr/bin/curl".to_string(),
+        extra_args: Vec::new(),
+        private_dir: private_directory,
+        temp_base: || temporary_directory().map_err(|e| e.0),
     }
 }
 
-#[derive(Debug)]
-pub enum HttpError {
-    Update(UpdateError),
-    Command(CommandError),
-    Io(std::io::Error),
-    /// curl failed (no response): its exit code and message.
-    Transport(i32, String),
+/// A fresh private (0700) directory `<user temp>/<prefix>.XXXXXX`.
+fn private_directory(prefix: &str) -> Result<PathBuf, String> {
+    let base = temporary_directory().map_err(|e| e.0)?;
+    make_private_temp_directory(prefix, &base).map_err(|e| e.0)
 }
 
-impl std::fmt::Display for HttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HttpError::Update(e) => e.fmt(f),
-            HttpError::Command(e) => e.fmt(f),
-            HttpError::Io(e) => e.fmt(f),
-            HttpError::Transport(code, message) => {
-                if message.is_empty() {
-                    write!(f, "curl ({code})")
-                } else {
-                    f.write_str(message)
-                }
-            }
-        }
-    }
-}
-
-impl std::error::Error for HttpError {}
-
-/// The network layer (mockable in tests). HTTPS and the allowed hosts only.
-pub trait HttpClient: Send + Sync {
-    fn get(&self, url: &str) -> Result<HttpResponse, HttpError>;
-    /// Downloads into a temporary file; the file belongs to the caller (move or delete it).
-    fn download(&self, url: &str) -> Result<(PathBuf, i64), HttpError>;
-}
-
-pub struct CurlHttpClient {
-    runner: Box<dyn CommandRunner>,
-    max_redirects: usize,
-}
-
-const CURL: &str = "/usr/bin/curl";
-const REQUEST_TIMEOUT: &str = "30";
-const RESOURCE_TIMEOUT: f64 = 600.0;
-const USER_AGENT: &str = "MacVPN-Updater";
+/// The shared [`shared::CurlHttpClient`] with the macOS flavour.
+pub struct CurlHttpClient(shared::CurlHttpClient);
 
 impl Default for CurlHttpClient {
     fn default() -> Self {
@@ -78,7 +39,7 @@ impl Default for CurlHttpClient {
 
 impl CurlHttpClient {
     pub fn new(runner: Box<dyn CommandRunner>) -> Self {
-        CurlHttpClient { runner, max_redirects: 10 }
+        CurlHttpClient(shared::CurlHttpClient::with_curl(runner, mac_curl()))
     }
 
     /// curl's whole environment: nothing of the app's, so `SSLKEYLOGFILE`, `CURL_CA_BUNDLE`, `SSL_CERT_FILE`,
@@ -98,181 +59,24 @@ impl CurlHttpClient {
         ProcessCommandRunner::new(RESOURCE_TIMEOUT + 30.0).with_environment(Self::environment())
     }
 
-    /// The common arguments: HTTPS only, no redirect following by curl, no URL globbing, no config file (`-q`
-    /// first), timeouts, user agent.
+    /// The common arguments of the macOS flavour (no extra arguments): see
+    /// [`shared::CurlHttpClient::base_arguments`].
     pub fn base_arguments(accept: Option<&str>, max_time: f64, user_agent: &str) -> Vec<String> {
-        let mut args: Vec<String> = [
-            "-q",
-            // A URL is taken literally: `[]` and `{}` are never curl's globbing.
-            "--globoff",
-            "--silent",
-            "--show-error",
-            "--proto",
-            "=https",
-            "--max-redirs",
-            "0",
-            // No URL globbing: `[ ] { }` in a URL (a redirect target) never fans out into many requests.
-            "--globoff",
-            "--connect-timeout",
-            REQUEST_TIMEOUT,
-            "--max-time",
-        ]
-        .iter()
-        .map(|s| s.to_string())
-        .collect();
-        args.push(format!("{}", max_time as i64));
-        args.push("--user-agent".into());
-        args.push(user_agent.into());
-        if let Some(accept) = accept {
-            args.push("--header".into());
-            args.push(format!("Accept: {accept}"));
-        }
-        args
+        shared::CurlHttpClient::base_arguments(accept, max_time, user_agent, &mac_curl().extra_args)
     }
 
     /// Parses `<status> <redirect url>`, curl's `--write-out` output.
     pub fn parse_trailer(trailer: &str) -> Option<(i64, String)> {
-        let line = trailer.trim();
-        let (status, rest) = line.split_once(' ').unwrap_or((line, ""));
-        Some((status.parse().ok()?, rest.trim().to_string()))
-    }
-
-    /// One request without following redirects, the body written to `output`: status and redirect target.
-    fn request(
-        &self,
-        url: &str,
-        output: &Path,
-        accept: Option<&str>,
-        max_time: f64,
-    ) -> Result<(i64, String), HttpError> {
-        // A previous hop's body (a 3xx page) must never be taken as this hop's data.
-        remove_output(output).map_err(HttpError::Io)?;
-        let mut args = Self::base_arguments(accept, max_time, USER_AGENT);
-        args.extend(["--write-out".to_string(), "%{http_code} %{redirect_url}".to_string()]);
-        args.extend(["--output".to_string(), output.to_string_lossy().into_owned()]);
-        args.extend(["--".to_string(), url.to_string()]);
-        let result = self.runner.run(CURL, &args, None).map_err(HttpError::Command)?;
-        match Self::parse_trailer(&result.stdout) {
-            Some((status, redirect)) if result.exit_code == 0 && status != 0 => Ok((status, redirect)),
-            _ => Err(HttpError::Transport(result.exit_code, result.stderr.trim().to_string())),
-        }
-    }
-
-    /// Follows redirects hop by hop while the target is allowed; a disallowed target ends the chain and its 3xx
-    /// response is returned (as URLSession does when the delegate declines).
-    fn follow(&self, url: &str, output: &Path, accept: Option<&str>, max_time: f64) -> Result<i64, HttpError> {
-        let mut current = url.to_string();
-        for _ in 0..=self.max_redirects {
-            let (status, redirect) = self.request(&current, output, accept, max_time)?;
-            if (300..400).contains(&status)
-                && let Some(next) = canonical_redirect_url(&redirect)
-            {
-                current = next;
-                continue;
-            }
-            if (300..400).contains(&status) {
-                // A redirect that is not followed: its body is no data.
-                remove_output(output).map_err(HttpError::Io)?;
-            }
-            return Ok(status);
-        }
-        remove_output(output).map_err(HttpError::Io)?;
-        Err(HttpError::Transport(47, "too many redirects".into()))
-    }
-
-    /// Runs `body` with a fresh private directory, removed afterwards.
-    fn with_private_directory<T>(body: impl FnOnce(&Path) -> Result<T, HttpError>) -> Result<T, HttpError> {
-        with_private_directory("macvpn-download", body)
-            .map_err(|e| HttpError::Io(std::io::Error::other(e)))
-            .and_then(|r| r)
-    }
-}
-
-/// Runs `body` with a fresh private (0700) directory `<user temp>/<prefix>.XXXXXX`, removed afterwards whatever
-/// `body` returned. `Err`: the directory could not be made (the message).
-pub(crate) fn with_private_directory<T>(prefix: &str, body: impl FnOnce(&Path) -> T) -> Result<T, String> {
-    let base = temporary_directory().map_err(|e| e.0)?;
-    let dir = make_private_temp_directory(prefix, &base).map_err(|e| e.0)?;
-    let result = body(&dir);
-    let _ = std::fs::remove_dir_all(&dir);
-    Ok(result)
-}
-
-/// A redirect target as handed to curl: only if [`UpdateURLPolicy::is_allowed_redirect`] accepts it and its host
-/// is written as plain ASCII (letters, digits, `-`, `.`; no percent-encoding, no non-ASCII, no IP literal), then
-/// re-serialised as `https://<lower-case host><percent-encoded path>[?<query>]` (no port, no user info, no
-/// fragment). The query (signed asset URLs carry one) must be printable ASCII.
-pub fn canonical_redirect_url(url: &str) -> Option<String> {
-    if !UpdateURLPolicy::is_allowed_redirect(url) {
-        return None;
-    }
-    let u = macvpn_core::url::parse(url)?;
-    let raw_host = u.authority_without_port.as_deref()?;
-    if raw_host.is_empty() || !raw_host.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-' || b == b'.') {
-        return None;
-    }
-    let host = raw_host.to_ascii_lowercase();
-    if u.host.as_deref().map(str::to_ascii_lowercase).as_deref() != Some(host.as_str()) {
-        return None;
-    }
-    let path = &u.percent_encoded_path;
-    if !path.starts_with('/') || !path.bytes().all(|b| (0x21..0x7f).contains(&b)) {
-        return None;
-    }
-    let mut out = format!("https://{host}{path}");
-    if u.query.is_some() {
-        // The query as written (the authority and path cannot contain `?`).
-        let raw = &u.original[u.original.find('?')? + 1..];
-        let raw = raw.split('#').next().unwrap_or("");
-        if !raw.bytes().all(|b| (0x21..0x7f).contains(&b)) {
-            return None;
-        }
-        out.push('?');
-        out.push_str(raw);
-    }
-    Some(out)
-}
-
-/// Deletes the output file of a hop (missing is fine).
-pub(crate) fn remove_output(output: &Path) -> std::io::Result<()> {
-    match std::fs::remove_file(output) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e),
+        shared::CurlHttpClient::parse_trailer(trailer)
     }
 }
 
 impl HttpClient for CurlHttpClient {
     fn get(&self, url: &str) -> Result<HttpResponse, HttpError> {
-        // A release asset in its canonical form; otherwise (the API) an allowed host written as plain ASCII.
-        let Some(url) = UpdateURLPolicy::canonical_download_url(url).or_else(|| canonical_redirect_url(url)) else {
-            return Err(HttpError::Update(UpdateError::UntrustedUrl(url.to_string())));
-        };
-        let url = url.as_str();
-        Self::with_private_directory(|dir| {
-            let file = dir.join("response");
-            let status = self.follow(url, &file, Some("application/vnd.github+json"), 30.0)?;
-            let data = std::fs::read(&file).unwrap_or_default();
-            Ok(HttpResponse { status, data })
-        })
+        self.0.get(url)
     }
 
     fn download(&self, url: &str) -> Result<(PathBuf, i64), HttpError> {
-        // curl only ever sees `https://github.com<percent-encoded path>`.
-        let Some(url) = UpdateURLPolicy::canonical_download_url(url) else {
-            return Err(HttpError::Update(UpdateError::UntrustedUrl(url.to_string())));
-        };
-        let url = url.as_str();
-        Self::with_private_directory(|dir| {
-            let file = dir.join("download");
-            let status = self.follow(url, &file, None, RESOURCE_TIMEOUT)?;
-            // The caller owns one plain file (as with URLSession's download task): moved out of the private
-            // directory to a unique name.
-            let base = temporary_directory().map_err(|e| HttpError::Io(std::io::Error::other(e.0)))?;
-            let target = base.join(format!("macvpn-dl-{}", uuid::Uuid::new_v4()));
-            if file.exists() { std::fs::rename(&file, &target) } else { std::fs::write(&target, b"") }
-                .map_err(HttpError::Io)?;
-            Ok((target, status))
-        })
+        self.0.download(url)
     }
 }

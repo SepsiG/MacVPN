@@ -12,3 +12,6 @@ app/ui/dist
 
 # Tauri build output (regenerated on every build)
 app/src-tauri/gen/
+
+# The VPN test lab's generated state (throwaway credentials, keys, profiles): scripts/vpn-lab/profiles.sh
+scripts/vpn-lab/.state*/

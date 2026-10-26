@@ -28,6 +28,10 @@ pub fn native_window(w: &tauri::WebviewWindow) -> Option<NativeWindow> {
     w.ns_window().ok().map(NativeWindow)
 }
 
+pub fn native_window_of(w: &tauri::Window) -> Option<NativeWindow> {
+    w.ns_window().ok().map(NativeWindow)
+}
+
 pub fn configure_app(app: &mut tauri::App) {
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 }
@@ -50,6 +54,31 @@ pub fn on_run_event(app: &AppHandle, event: &tauri::RunEvent) {
     }
 }
 
+/// macOS has no DLL search to restrict.
+pub fn harden_dll_search() {}
+
+pub fn helper_mode() -> Option<i32> {
+    None
+}
+
+/// The DMG update's helper is a script, never the app itself.
+pub fn relaunch() -> bool {
+    false
+}
+
+#[cfg(debug_assertions)]
+pub fn test_install_mode() -> Option<i32> {
+    None
+}
+
 pub fn supported() -> Result<(), String> {
     Ok(())
+}
+
+pub fn claim_instance() -> bool {
+    true
+}
+
+pub fn uses_app_menu() -> bool {
+    true
 }

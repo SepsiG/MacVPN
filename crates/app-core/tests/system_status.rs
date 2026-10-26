@@ -13,7 +13,8 @@ use macvpn_app_core::setup::*;
 use macvpn_core::l10n::{AppLanguage, with_language};
 use macvpn_core::models::{Connection, NativeSettings, VPNKind};
 use macvpn_core::vault::{KeyStore, MemoryKeyStore};
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
+use std::collections::HashSet;
 use std::sync::{Arc, Mutex};
 
 fn facts() -> SetupFacts {
@@ -24,6 +25,7 @@ fn facts() -> SetupFacts {
         bundled_root_version: Some("8".into()),
         root_ok: true,
         missing_root_files: vec![],
+        outdated: vec![],
     }
 }
 
@@ -86,6 +88,45 @@ fn rows_and_the_upgrade_notice() {
     });
 }
 
+/// A green tools row with outdated formulae keeps its mark, lists each update and offers "Update"; nothing else
+/// changes, and without an update the JSON has no `toolsAction` (MacVPN's view model is unchanged).
+#[test]
+fn outdated_formulae_offer_an_update_on_the_green_tools_row() {
+    use macvpn_platform_api::setup::OutdatedPackage;
+    let pkg = |n: &str, i: &str, a: &str| OutdatedPackage { name: n.into(), installed: i.into(), available: a.into() };
+    let (brew, ops) = (BrewRun::default(), SetupOps::default());
+    with_language(AppLanguage::En, || {
+        let plain = SetupView::build(Some(&facts()), &brew, &ops, NOTICE.into());
+        assert_eq!(plain.tools_action, None);
+        assert!(!serde_json::to_string(&plain).unwrap().contains("toolsAction"));
+
+        let outdated =
+            SetupFacts { outdated: vec![pkg("openvpn", "2.6.8", "2.6.14"), pkg("bash", "5.2", "5.3")], ..facts() };
+        let view = SetupView::build(Some(&outdated), &brew, &ops, NOTICE.into());
+        let tools = view.tools.as_ref().unwrap();
+        assert!(tools.ok, "an update keeps the row green");
+        assert_eq!(tools.detail, "openvpn: Update available: 2.6.8 → 2.6.14; bash: Update available: 5.2 → 5.3");
+        assert_eq!(view.tools_action, Some("update"));
+        assert!(view.can_install_tools);
+        assert!(serde_json::to_string(&view).unwrap().contains("\"toolsAction\":\"update\""));
+        // While it runs the button is disabled (the same `brew_running` as "Install").
+        let mut running = BrewRun::default();
+        running.start();
+        assert!(!SetupView::build(Some(&outdated), &running, &ops, NOTICE.into()).can_install_tools);
+        // A missing tool wins: "Install" (which brings the newest versions anyway), no update offer.
+        let missing = SetupFacts { missing_tools: vec!["sstpc".into()], ..outdated.clone() };
+        let view = SetupView::build(Some(&missing), &brew, &ops, NOTICE.into());
+        assert_eq!((view.tools_action, view.tools.unwrap().detail.as_str()), (None, "Missing: sstpc"));
+        // The engine rows (WinVPN) and the engine note take the offer away with the row.
+        let view = SetupView::build(Some(&outdated), &brew, &ops, NOTICE.into());
+        assert_eq!(view.clone().with_engine_note(Some("Later.".into())).tools_action, None);
+    });
+    with_language(AppLanguage::Hu, || {
+        let outdated = SetupFacts { outdated: vec![pkg("openvpn", "2.6.8", "2.6.14")], ..facts() };
+        assert_eq!(tools_detail(&outdated), "openvpn: Frissítés elérhető: 2.6.8 → 2.6.14");
+    });
+}
+
 #[test]
 fn brew_run_output() {
     let mut run = BrewRun::default();
@@ -114,6 +155,11 @@ struct Recorder {
     calls: RefCell<Vec<&'static str>>,
     helper_error: Option<String>,
     login_item_error: bool,
+    /// WinVPN: the app removes itself from the account; the helper (the MSI's service) disconnects nothing.
+    account_cleanup: bool,
+    /// The profiles whose removals `remove_user_files` counts (they must come before the files).
+    profiles: Option<Arc<MobileconfigProfiles>>,
+    removed_before_files: Cell<Option<usize>>,
 }
 
 impl UninstallSystem for Recorder {
@@ -134,6 +180,12 @@ impl UninstallSystem for Recorder {
     }
     fn remove_user_files(&self) {
         self.calls.borrow_mut().push("userFiles");
+        if let Some(p) = &self.profiles {
+            self.removed_before_files.set(Some(p.removed.lock().unwrap().len()));
+        }
+    }
+    fn helper_disconnects(&self) -> bool {
+        !self.account_cleanup
     }
 }
 
@@ -168,9 +220,22 @@ struct Setup {
     manager: Arc<macvpn_app_core::ConnectionManager>,
     model: ConnectionsModel,
     native: Connection,
+    profiles: Arc<MobileconfigProfiles>,
+    /// A WireGuard connection, connected through the helper when made by [`setup_with_wireguard`].
+    wireguard: Option<Connection>,
 }
 
 fn setup() -> Setup {
+    setup_with(false, false)
+}
+
+/// The connected L2TP connection and a connected WireGuard one; `removes`: the platform removes native profiles
+/// itself (WinVPN's RAS engine).
+fn setup_with_wireguard(removes: bool) -> Setup {
+    setup_with(true, removes)
+}
+
+fn setup_with(wireguard: bool, removes: bool) -> Setup {
     let fx = Fixture::new(AppLanguage::En);
     let mut native = Connection::new("Home", VPNKind::L2tp);
     native.native =
@@ -179,21 +244,34 @@ fn setup() -> Setup {
     fx.store.save(&native, None).unwrap();
     fx.secrets.set("pw", &native.id, SecretField::Password);
     fx.native.set_list(Ok(vec![SystemVpn::new("SVC-1", "Home", "L2TP", "Connected")]));
+    let wireguard = wireguard.then(|| {
+        let c = Connection::new("WG", VPNKind::Wireguard);
+        fx.store.save(&c, Some("[Interface]")).unwrap();
+        fx.helper.respond(
+            "status",
+            Ok(&format!(
+                r#"[{{"id":"{}","kind":"wireguard","state":"connected","iface":null,"ip":null,"since":null}}]"#,
+                macvpn_core::models::uuid_string(&c.id)
+            )),
+        );
+        c
+    });
     let manager = fx.manager();
     manager.refresh();
+    let profiles = Arc::new(MobileconfigProfiles::default());
+    profiles.removes.store(removes, std::sync::atomic::Ordering::SeqCst);
     let model = ConnectionsModel::new(EditorDeps {
         manager: manager.clone(),
         store: fx.store.clone(),
         secrets: fx.secrets.clone(),
         secret_writer: fx.secrets.clone(),
-        profiles: Arc::new(MobileconfigProfiles::default()),
+        profiles: profiles.clone(),
         clock: clock_at(0.0),
     });
-    Setup { fx, manager, model, native }
+    Setup { fx, manager, model, native, profiles, wireguard }
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failed_root_uninstall_stops_everything() {
     let s = setup();
     let (key_store, old) = stores();
@@ -215,7 +293,6 @@ fn a_failed_root_uninstall_stops_everything() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn uninstall_order_and_final_message() {
     let s = setup();
     assert!(s.manager.state(&macvpn_core::models::uuid_string(&s.native.id)).is_active());
@@ -238,10 +315,90 @@ fn uninstall_order_and_final_message() {
     assert!(done.message.starts_with("You can now drag the app to the Trash."));
     assert!(done.message.contains("L2TP / Cisco profiles"), "{}", done.message);
     assert!(!done.message.contains("login items"));
+    // macOS: the profiles stay for System Settings (the platform does not remove them).
+    assert!(s.profiles.removed.lock().unwrap().is_empty());
+    assert!(s.profiles.reconciled.lock().unwrap().is_empty());
+}
+
+/// macOS: the root layer's uninstall script takes the helper's connections down; the app disconnects only the
+/// native ones (unchanged).
+#[test]
+fn macos_leaves_the_helper_connections_to_the_root_layer() {
+    let s = setup_with_wireguard(false);
+    let wg = s.wireguard.clone().unwrap();
+    assert!(s.manager.state(&macvpn_core::models::uuid_string(&wg.id)).is_active());
+    let (key_store, old) = stores();
+    let system = Recorder::default();
+    uninstall(
+        &s.manager,
+        &s.model,
+        s.fx.secrets.as_ref(),
+        &system,
+        UserDataStores { key_store: &key_store, legacy_keychain: &old },
+        UninstallChoice { remove_user_data: true },
+    )
+    .unwrap();
+    assert!(!s.fx.helper.lines().contains(&down_line(VPNKind::Wireguard, &wg.id)));
+    assert_eq!(s.fx.native.stops(), ["SVC-1"]);
+    assert!(s.profiles.removed.lock().unwrap().is_empty());
+}
+
+/// WinVPN (G-9): "Remove WinVPN from This Account…" disconnects every connection (the MSI's service is not
+/// uninstalled, so nothing else takes them down), deletes every connection's Windows VPN entry and its PSK, then
+/// sweeps any `WinVPN-<UUID>` entry left (a locked vault lists only the active connections); the user's data and
+/// the keys stay without "Also delete user data", and no "remove the profiles yourself" line is added.
+#[test]
+fn uninstall_removes_every_native_entry() {
+    let s = setup_with_wireguard(true);
+    let wg = s.wireguard.clone().unwrap();
+    assert!(s.manager.state(&macvpn_core::models::uuid_string(&wg.id)).is_active());
+    let (key_store, old) = stores();
+    let system = Recorder { account_cleanup: true, ..Default::default() };
+    let done = uninstall(
+        &s.manager,
+        &s.model,
+        s.fx.secrets.as_ref(),
+        &system,
+        UserDataStores { key_store: &key_store, legacy_keychain: &old },
+        UninstallChoice { remove_user_data: false },
+    )
+    .unwrap();
+    assert_eq!(*system.calls.borrow(), ["helper", "stopPolling", "loginItem", "staleLoginEntries"]);
+    assert_eq!(s.fx.native.stops(), ["SVC-1"]);
+    assert!(s.fx.helper.lines().contains(&down_line(VPNKind::Wireguard, &wg.id)), "{:?}", s.fx.helper.lines());
+    let removed: HashSet<_> = s.profiles.removed.lock().unwrap().iter().copied().collect();
+    assert_eq!(removed, HashSet::from([s.native.id, wg.id]));
+    assert_eq!(*s.profiles.reconciled.lock().unwrap(), [HashSet::new()], "every leftover entry is swept");
+    assert_eq!(s.fx.secrets.get(&s.native.id, SecretField::Password).as_deref(), Some("pw"), "user data kept");
+    assert!(key_store.exists().unwrap() && old.items().len() == 2, "the keys are kept too");
+    assert!(!done.message.contains("L2TP / Cisco profiles"), "{}", done.message);
+}
+
+/// WinVPN (G-9) with "Also delete user data": the vault key (`local.winvpn.vault` in Credential Manager) and the
+/// secrets go, and the Windows VPN entries are removed before the data folder (their PSKs are in Windows' store,
+/// not in the folder).
+#[test]
+fn uninstall_with_user_data_deletes_the_vault_key() {
+    let s = setup_with_wireguard(true);
+    let (key_store, old) = stores();
+    let system = Recorder { account_cleanup: true, profiles: Some(s.profiles.clone()), ..Default::default() };
+    uninstall(
+        &s.manager,
+        &s.model,
+        s.fx.secrets.as_ref(),
+        &system,
+        UserDataStores { key_store: &key_store, legacy_keychain: &old },
+        UninstallChoice { remove_user_data: true },
+    )
+    .unwrap();
+    assert_eq!(*system.calls.borrow(), ["helper", "stopPolling", "loginItem", "staleLoginEntries", "userFiles"]);
+    assert_eq!(system.removed_before_files.get(), Some(2), "the entries go before the data folder");
+    assert_eq!(s.fx.secrets.count(&s.native.id), 0);
+    assert!(!key_store.exists().unwrap());
+    assert!(old.items().is_empty());
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn uninstall_with_user_data_and_a_login_item_left() {
     let s = setup();
     let (key_store, old) = stores();
@@ -264,4 +421,120 @@ fn uninstall_with_user_data_and_a_login_item_left() {
     assert!(done.message.ends_with(
         "MacVPN could not be removed from the login items. You can remove it in System Settings → General → Login Items."
     ));
+}
+
+#[test]
+fn an_engine_note_replaces_the_rows_and_stays_out_of_the_json_on_macos() {
+    let facts = SetupFacts::default();
+    let plain = SetupView::build(Some(&facts), &BrewRun::default(), &SetupOps::default(), String::new());
+    let json = serde_json::to_string(&plain).unwrap();
+    assert!(!json.contains("engineNote"), "absent when None: the 1.4 view-model JSON is unchanged");
+    let noted = plain.with_engine_note(Some("Later.".into()));
+    assert_eq!(noted.engine_note.as_deref(), Some("Later."));
+    assert!(noted.homebrew.is_none() && noted.tools.is_none() && noted.root.is_none());
+    assert!(!noted.can_install_tools);
+    assert!(serde_json::to_string(&noted).unwrap().contains("\"engineNote\":\"Later.\""));
+}
+
+/// Where the app is uninstalled through the system (WinVPN: the MSI, in Settings → Apps), System Status shows that
+/// note and a button to the system's page instead of its own "Uninstall"; absent from the JSON on macOS.
+#[test]
+fn a_system_uninstall_note_replaces_the_uninstall_and_stays_out_of_the_json_on_macos() {
+    let plain =
+        SetupView::build(Some(&SetupFacts::default()), &BrewRun::default(), &SetupOps::default(), String::new());
+    assert!(!serde_json::to_string(&plain).unwrap().contains("systemUninstall"));
+    assert_eq!(plain.clone().with_system_uninstall(None), plain);
+    let noted = plain.with_system_uninstall(Some("Use Settings.".into()));
+    assert_eq!(noted.system_uninstall.as_deref(), Some("Use Settings."));
+    assert!(serde_json::to_string(&noted).unwrap().contains("\"systemUninstall\":\"Use Settings.\""));
+}
+
+/// WinVPN (G-9): next to the system uninstall note, "Remove WinVPN from This Account…" (the in-app clean-up);
+/// absent from the JSON on macOS.
+#[test]
+fn an_account_cleanup_is_offered_only_where_the_platform_has_one() {
+    let plain =
+        SetupView::build(Some(&SetupFacts::default()), &BrewRun::default(), &SetupOps::default(), String::new());
+    assert!(!serde_json::to_string(&plain).unwrap().contains("accountCleanup"));
+    assert_eq!(plain.clone().with_account_cleanup(false), plain);
+    let offered = plain.with_account_cleanup(true);
+    assert!(offered.account_cleanup);
+    assert!(serde_json::to_string(&offered).unwrap().contains("\"accountCleanup\":true"));
+}
+
+/// WinVPN 2b: the service, OpenVPN and WireGuard rows replace the Homebrew, tools and root rows; the OpenVPN row's
+/// action enables "Install" (the installer's output keeps its box); absent from the JSON on macOS.
+#[test]
+fn engine_rows_replace_the_rows_and_stay_out_of_the_json_on_macos() {
+    use macvpn_platform_api::setup::{EngineReport, EngineRow};
+    let facts = SetupFacts::default();
+    let brew = BrewRun { output: "Installing OpenVPN…\n".into(), running: false, finished: 0 };
+    let plain = SetupView::build(Some(&facts), &brew, &SetupOps::default(), "Notice.".into());
+    assert!(!serde_json::to_string(&plain).unwrap().contains("\"engine\""), "absent when None");
+    assert_eq!(plain.clone().with_engine(None, Some("Later.".into())), plain, "no report: unchanged");
+    let row = |ok: bool, detail: &str, action: Option<&'static str>| EngineRow {
+        ok,
+        usable: ok,
+        detail: detail.into(),
+        action,
+    };
+    let report = EngineReport {
+        service: row(true, "Running (version 1)", None),
+        openvpn: row(false, "Not installed", Some("install")),
+        wireguard: row(true, "wireguard-nt 1.1.0", None),
+    };
+    let view = plain.clone().with_engine(Some(&report), Some("Later.".into()));
+    assert!(view.homebrew.is_none() && view.tools.is_none() && view.root.is_none() && view.upgrade_notice.is_none());
+    assert_eq!(view.brew_output, "Installing OpenVPN…\n");
+    assert!(view.can_install_tools);
+    let engine = view.engine.as_ref().unwrap();
+    assert_eq!(engine.service, CheckRow { ok: true, detail: "Running (version 1)".into() });
+    assert_eq!(engine.openvpn, CheckRow { ok: false, detail: "Not installed".into() });
+    assert_eq!(engine.wireguard, CheckRow { ok: true, detail: "wireguard-nt 1.1.0".into() });
+    assert_eq!(engine.openvpn_action, Some("install"));
+    assert_eq!(engine.later_note, "Later.");
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["engine"]["openvpnAction"], "install");
+    assert_eq!(json["engine"]["laterNote"], "Later.");
+    assert_eq!(json["engine"]["service"]["ok"], true);
+    // No action: no button, and the action is absent from the JSON.
+    let ready = EngineReport { openvpn: row(true, "2.6.14", None), ..report.clone() };
+    let view = plain.clone().with_engine(Some(&ready), None);
+    assert!(!view.can_install_tools);
+    assert_eq!(view.engine.as_ref().unwrap().later_note, "");
+    assert!(serde_json::to_value(&view).unwrap()["engine"].get("openvpnAction").is_none());
+    assert!(serde_json::to_value(&view).unwrap()["engine"].get("wireguardAction").is_none());
+    // The WireGuard row's "Update" (fix4) enables the button on its own.
+    let wg = EngineReport {
+        wireguard: row(true, "wireguard-nt 1.1.0 Update available: 1.1.0 → 1.2.0", Some("update")),
+        ..ready.clone()
+    };
+    let view = plain.clone().with_engine(Some(&wg), None);
+    assert!(view.can_install_tools);
+    assert_eq!(view.engine.as_ref().unwrap().wireguard_action, Some("update"));
+    assert_eq!(serde_json::to_value(&view).unwrap()["engine"]["wireguardAction"], "update");
+    // While the installer runs its button is disabled.
+    let running = BrewRun { running: true, ..brew };
+    let view =
+        SetupView::build(Some(&facts), &running, &SetupOps::default(), String::new()).with_engine(Some(&report), None);
+    assert!(!view.can_install_tools && view.brew_running);
+}
+
+/// WinVPN 2c Task 11: the Windows VPN client row, with the service's rows or with the engine note (the native
+/// VPNs need no service); absent from the JSON on macOS.
+#[test]
+fn the_windows_vpn_client_row_is_shown_with_or_without_the_service() {
+    use macvpn_platform_api::setup::EngineRow;
+    let plain =
+        SetupView::build(Some(&SetupFacts::default()), &BrewRun::default(), &SetupOps::default(), String::new());
+    assert!(!serde_json::to_string(&plain).unwrap().contains("\"ras\""), "absent when None");
+    assert_eq!(plain.clone().with_ras(None), plain);
+    let row =
+        EngineRow { ok: false, usable: false, detail: "The Windows service SstpSvc is disabled.".into(), action: None };
+    let view = plain.with_engine_note(Some("No service.".into())).with_ras(Some(&row));
+    assert_eq!(view.ras, Some(CheckRow { ok: false, detail: "The Windows service SstpSvc is disabled.".into() }));
+    assert_eq!(view.engine_note.as_deref(), Some("No service."));
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["ras"]["ok"], false);
+    assert_eq!(json["ras"]["detail"], "The Windows service SstpSvc is disabled.");
 }

@@ -32,7 +32,6 @@ fn row<'a>(vm: &'a ViewModel, id: &str) -> &'a RowView {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn the_view_model_shows_catalogs_and_publishing_but_never_a_secret_and_nothing_while_locked() {
     let f = CatalogFixture::new();
     // The subscriber side: a catalog over HTTPS with a query in the URL and an access token.

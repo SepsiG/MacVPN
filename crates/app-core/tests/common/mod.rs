@@ -178,6 +178,8 @@ pub struct MockNative {
     starts: Mutex<Vec<Start>>,
     stops: Mutex<Vec<String>>,
     start_error: Mutex<Option<String>>,
+    /// `managed_service_id` (WinVPN's own RAS entries); empty: `None` for every connection (macOS).
+    managed: Mutex<HashMap<Uuid, String>>,
 }
 
 impl Default for MockNative {
@@ -189,6 +191,7 @@ impl Default for MockNative {
             starts: Mutex::new(Vec::new()),
             stops: Mutex::new(Vec::new()),
             start_error: Mutex::new(None),
+            managed: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -204,6 +207,10 @@ impl MockNative {
 
     pub fn set_start_error(&self, error: Option<&str>) {
         *self.start_error.lock().unwrap() = error.map(str::to_string);
+    }
+
+    pub fn set_managed(&self, connection: &Uuid, service_id: &str) {
+        self.managed.lock().unwrap().insert(*connection, service_id.to_string());
     }
 
     pub fn shows(&self) -> usize {
@@ -243,6 +250,10 @@ impl NativeController for MockNative {
     fn stop(&self, service_id: &str) -> Result<(), String> {
         self.stops.lock().unwrap().push(service_id.to_string());
         Ok(())
+    }
+
+    fn managed_service_id(&self, connection: &Uuid) -> Option<String> {
+        self.managed.lock().unwrap().get(connection).cloned()
     }
 }
 
@@ -291,7 +302,18 @@ impl MemorySecrets {
 pub struct MobileconfigProfiles {
     pub installs: Mutex<Vec<(Uuid, String, String, bool)>>,
     pub fail: Mutex<Option<String>>,
+    /// The `remove` calls (WinVPN 2c), in order.
+    pub removed: Mutex<Vec<Uuid>>,
+    /// `removes_profiles` (WinVPN: true; macOS: false).
+    pub removes: std::sync::atomic::AtomicBool,
+    /// WinVPN's installer (Task 13): no approval step, and a Cisco IPsec profile refused with [`CISCO_REFUSED`].
+    pub silent: std::sync::atomic::AtomicBool,
+    /// The `reconcile` calls (WinVPN 2c Task 13), each with its known connections.
+    pub reconciled: Mutex<Vec<std::collections::HashSet<Uuid>>>,
 }
+
+/// [`MobileconfigProfiles::silent`]'s answer to a Cisco IPsec install.
+pub const CISCO_REFUSED: &str = "Cisco IPsec is not supported by Windows.";
 
 impl macvpn_app_core::deps::NativeProfiles for MobileconfigProfiles {
     fn build(&self, connection: &Connection, psk: &str) -> Result<macvpn_app_core::deps::NativeProfile, String> {
@@ -304,6 +326,9 @@ impl macvpn_app_core::deps::NativeProfiles for MobileconfigProfiles {
         if let Some(e) = self.fail.lock().unwrap().clone() {
             return Err(e);
         }
+        if self.silent.load(std::sync::atomic::Ordering::SeqCst) && String::from_utf8_lossy(profile).contains("XAuth") {
+            return Err(CISCO_REFUSED.into());
+        }
         self.installs.lock().unwrap().push((
             *id,
             String::from_utf8_lossy(profile).into_owned(),
@@ -311,6 +336,22 @@ impl macvpn_app_core::deps::NativeProfiles for MobileconfigProfiles {
             service_existed,
         ));
         Ok(())
+    }
+
+    fn remove(&self, id: &Uuid) {
+        self.removed.lock().unwrap().push(*id);
+    }
+
+    fn reconcile(&self, known: &std::collections::HashSet<Uuid>) {
+        self.reconciled.lock().unwrap().push(known.clone());
+    }
+
+    fn removes_profiles(&self) -> bool {
+        self.removes.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    fn needs_approval(&self) -> bool {
+        !self.silent.load(std::sync::atomic::Ordering::SeqCst)
     }
 }
 

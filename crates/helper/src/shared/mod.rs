@@ -7,6 +7,7 @@ pub mod framing;
 pub mod l10n;
 pub mod limits;
 pub mod mask;
+pub mod ovpn_log;
 pub mod respond;
 pub mod status_json;
 pub mod validate;

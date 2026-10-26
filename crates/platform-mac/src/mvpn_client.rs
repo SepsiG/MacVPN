@@ -6,7 +6,6 @@ use macvpn_core::mfa::{AuthResponseKind, MFAError};
 use macvpn_core::models::{Secrets, VPNKind, uuid_string};
 use macvpn_core::status::{RootStatus, StatusParseError, parse_status};
 use macvpn_core::swift_str;
-use std::collections::BTreeSet;
 use std::path::PathBuf;
 use uuid::Uuid;
 use zeroize::Zeroizing;
@@ -141,30 +140,11 @@ impl<'a> MvpnClient<'a> {
 
     /// The framed stdin of `mvpn up` (see [`MvpnClient::up`]).
     pub fn up_stdin(config: &[u8], secrets: &Secrets) -> Zeroizing<Vec<u8>> {
-        let lines = secrets.stdin_payload();
-        let header = format!("config {}\n", config.len());
-        let mut payload = Zeroizing::new(Vec::with_capacity(header.len() + config.len() + lines.len()));
-        payload.extend_from_slice(header.as_bytes());
-        payload.extend_from_slice(config);
-        payload.extend_from_slice(lines.as_bytes());
-        payload
+        macvpn_core::helper_args::up_stdin(config, secrets)
     }
 
     pub fn up_arguments(kind: VPNKind, id: &Uuid, debug: bool, accept_risky: &[String]) -> Vec<String> {
-        let mut args = vec!["up".to_string(), kind.raw_value().to_string(), uuid_string(id)];
-        if debug {
-            args.push("--debug".into());
-        }
-        let names: BTreeSet<&str> = accept_risky
-            .iter()
-            .map(String::as_str)
-            .filter(|n| !n.is_empty() && n.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-'))
-            .collect();
-        if kind == VPNKind::Openvpn && !names.is_empty() {
-            args.push("--accept-risky".into());
-            args.push(names.into_iter().collect::<Vec<_>>().join(","));
-        }
-        args
+        macvpn_core::helper_args::up_arguments(kind, id, debug, accept_risky)
     }
 
     /// `mvpn respond openvpn <id>`: the user's answer for the management bridge (MFA). The code goes only on stdin.

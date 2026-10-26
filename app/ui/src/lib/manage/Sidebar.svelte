@@ -22,6 +22,7 @@
     palette = [],
     selected,
     kinds,
+    kindsNote = null,
     onselect,
     onimport,
     paired = false,
@@ -49,6 +50,8 @@
     palette?: FolderColor[];
     selected: string | null;
     kinds: Choice<Kind>[];
+    /// No kind can be added (every engine is missing): the menu says so and offers System Status.
+    kindsNote?: string | null;
     onselect: (id: string) => void;
     onimport: () => void;
     /// The Paired apps section is shown.
@@ -169,6 +172,17 @@
         {#each kinds as kind (kind.value)}
           <button role="menuitem" onclick={() => create(kind.value)}>{kind.title}</button>
         {/each}
+        {#if kinds.length === 0 && kindsNote}
+          <p class="note">{kindsNote}</p>
+          <button
+            role="menuitem"
+            data-action="system-status"
+            onclick={() => {
+              menuOpen = false;
+              api.openWindow('setup').catch(console.error);
+            }}>{tr('System Status…')}</button
+          >
+        {/if}
         <hr />
         {#if foldersEnabled}
           <button
@@ -507,6 +521,13 @@
     color: var(--on-accent);
     box-shadow: none;
     outline: none;
+  }
+  .menu .note {
+    max-width: 260px;
+    margin: 4px 10px;
+    font-size: var(--text-sm);
+    line-height: 1.3;
+    color: var(--secondary);
   }
   .menu hr {
     border: none;

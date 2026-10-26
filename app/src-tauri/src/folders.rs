@@ -74,9 +74,11 @@ pub async fn folder_move(state: Shared<'_>, id: String, parent: Option<String>, 
 }
 
 /// `mode`: `moveUp` or `deleteContents`. The deleted connections get the delete's usual clean-up (their native
-/// log collection stopped, the Profiles pane opened for a native one), then a refresh.
+/// log collection stopped, the Profiles pane opened for a native one where the platform does not remove its
+/// profile itself), then a refresh.
 #[tauri::command]
-pub async fn folder_delete(state: Shared<'_>, id: String, mode: String) -> Result<(), String> {
+pub async fn folder_delete(window: tauri::Window, state: Shared<'_>, id: String, mode: String) -> Result<(), String> {
+    crate::guard::only(&window, "folder_delete", crate::manage::MANAGE_WINDOW)?;
     ids(&[Some(&id)])?;
     let shared = state.inner().clone();
     blocking(move || {
@@ -84,7 +86,12 @@ pub async fn folder_delete(state: Shared<'_>, id: String, mode: String) -> Resul
         for c in &deleted {
             shared.native_logs.remove(&c.id);
         }
-        if deleted.iter().any(|c| c.kind.is_native()) && !shared.env.sandbox {
+        if deleted.iter().any(|c| c.kind.is_native())
+            && crate::manage::opens_native_settings_after_delete(
+                shared.native_profiles.removes_profiles(),
+                shared.env.sandbox,
+            )
+        {
             crate::platform::get().shell().open_native_profile_settings();
         }
         if !deleted.is_empty() {

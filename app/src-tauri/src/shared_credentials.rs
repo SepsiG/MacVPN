@@ -72,7 +72,7 @@ pub fn check_links(link: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// Whether a window may use these commands: only the Connections window (the menu shares the main capability).
+/// Whether a window may use these commands: only the Connections window (its capability grants them; checked here too).
 fn is_manage(label: &str) -> bool {
     label == crate::manage::MANAGE_WINDOW
 }

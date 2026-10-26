@@ -11,7 +11,9 @@ use crate::updates::Notice;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::uuid_string;
 use macvpn_core::vault::KeyStore;
+use macvpn_platform_api::setup::{EngineReport, EngineRow, OutdatedPackage};
 use serde::Serialize;
+use std::collections::HashSet;
 
 /// What the system check found (the platform's `SetupReport`, mapped by the app).
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -24,6 +26,8 @@ pub struct SetupFacts {
     /// Installed, the bundled version, complete, and `sudo -n mvpn` works.
     pub root_ok: bool,
     pub missing_root_files: Vec<String>,
+    /// The Homebrew formulae with a newer version (checked only when no tool is missing; empty when unknown).
+    pub outdated: Vec<OutdatedPackage>,
 }
 
 /// One row: green or red, and its detail line. The row's action is shown only when it is not ok.
@@ -32,6 +36,29 @@ pub struct SetupFacts {
 pub struct CheckRow {
     pub ok: bool,
     pub detail: String,
+}
+
+impl From<&EngineRow> for CheckRow {
+    fn from(row: &EngineRow) -> CheckRow {
+        CheckRow { ok: row.ok, detail: row.detail.clone() }
+    }
+}
+
+/// System Status' engine rows (WinVPN); absent from the JSON on macOS.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EngineRowsView {
+    pub service: CheckRow,
+    pub openvpn: CheckRow,
+    pub wireguard: CheckRow,
+    /// "install" / "repair" / "update" / none: the OpenVPN row's button.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub openvpn_action: Option<&'static str>,
+    /// "update" / none: the WireGuard row's button (the WinVPN Service updates wireguard-nt itself).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wireguard_action: Option<&'static str>,
+    /// The note under the rows: native Windows VPNs come later.
+    pub later_note: String,
 }
 
 /// The System Status window.
@@ -45,6 +72,11 @@ pub struct SetupView {
     pub root: Option<CheckRow>,
     /// "Install" of the tools can be used: Homebrew is there and no install runs.
     pub can_install_tools: bool,
+    /// `"update"`: the tools row is green but a formula has a newer version, and the row offers "Update" (`brew
+    /// upgrade`, through the same command as "Install"). Absent from the JSON otherwise (MacVPN's view model is
+    /// unchanged without an update).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools_action: Option<&'static str>,
     /// The `brew install` output (header, live chunks, the result line).
     pub brew_output: String,
     pub brew_running: bool,
@@ -55,6 +87,27 @@ pub struct SetupView {
     /// Shown before "Authorize" when a root layer is installed: the install takes its connections down.
     pub upgrade_notice: Option<String>,
     pub uninstalling: bool,
+    /// The platform's note when it has no VPN engine yet (WinVPN 2a); the rows are then not shown. Absent from the
+    /// JSON when `None`, so MacVPN's view model stays byte-identical.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine_note: Option<String>,
+    /// The app is uninstalled through the system (WinVPN: Settings → Apps): this note and a button to the system's
+    /// page replace the "Uninstall" button. Absent from the JSON when `None` (MacVPN's view model is unchanged).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub system_uninstall: Option<String>,
+    /// The app removes itself from the user's account before the system uninstall (WinVPN: "Remove WinVPN from
+    /// This Account…", `SystemSetup::account_cleanup`). Absent from the JSON when `false` (MacVPN's view model is
+    /// unchanged).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub account_cleanup: bool,
+    /// The WinVPN Service, OpenVPN and WireGuard rows (WinVPN 2b), shown instead of the Homebrew, tools and root
+    /// rows. Absent from the JSON when `None` (MacVPN's view model is unchanged).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub engine: Option<EngineRowsView>,
+    /// The Windows VPN client row (WinVPN 2c: L2TP/IPsec, IKEv2 and SSTP through Windows' own client), shown under
+    /// the engine rows, also without the WinVPN Service. Absent from the JSON when `None` (MacVPN).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ras: Option<CheckRow>,
 }
 
 /// The Swift `SetupView.rootDetail`.
@@ -82,6 +135,25 @@ pub fn root_detail(f: &SetupFacts) -> String {
     )
 }
 
+/// The tools row's detail: what is missing, or that all are installed, or (green, with an update) each outdated
+/// formula with its versions ("openvpn: Update available: 2.6.8 → 2.6.9").
+pub fn tools_detail(f: &SetupFacts) -> String {
+    if !f.missing_tools.is_empty() {
+        return l10n::tr("Missing: %@", &[Arg::Str(&f.missing_tools.join(", "))]);
+    }
+    if f.brew_prefix.is_none() || f.outdated.is_empty() {
+        return l10n::tr("All tools are installed", &[]);
+    }
+    f.outdated
+        .iter()
+        .map(|p| {
+            let update = l10n::tr("Update available: %@ → %@", &[Arg::Str(&p.installed), Arg::Str(&p.available)]);
+            format!("{}: {update}", p.name)
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
 /// The app-side state of the window's operations.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct SetupOps {
@@ -91,6 +163,66 @@ pub struct SetupOps {
 }
 
 impl SetupView {
+    /// The view with the platform's engine note: the Homebrew, tools and helper rows (and their actions) are
+    /// replaced by it. `None` returns the view unchanged.
+    pub fn with_engine_note(mut self, note: Option<String>) -> SetupView {
+        if note.is_some() {
+            self.homebrew = None;
+            self.tools = None;
+            self.root = None;
+            self.can_install_tools = false;
+            self.tools_action = None;
+            self.upgrade_notice = None;
+            self.engine_note = note;
+        }
+        self
+    }
+
+    /// The view with the service's engine rows (`SetupReport::engine`): they replace the Homebrew, tools and root
+    /// rows and the root layer's notice; the installer's output (`brew_output`, `brew_running`) stays, as OpenVPN's
+    /// installer writes there, and "Install" of the tools is the OpenVPN row's action. `later_note`: the line under
+    /// the rows (`SystemSetup::later_note`). `None` returns the view unchanged.
+    pub fn with_engine(mut self, report: Option<&EngineReport>, later_note: Option<String>) -> SetupView {
+        let Some(report) = report else { return self };
+        self.homebrew = None;
+        self.tools = None;
+        self.root = None;
+        self.upgrade_notice = None;
+        self.tools_action = None;
+        self.can_install_tools =
+            (report.openvpn.action.is_some() || report.wireguard.action.is_some()) && !self.brew_running;
+        self.engine = Some(EngineRowsView {
+            service: (&report.service).into(),
+            openvpn: (&report.openvpn).into(),
+            wireguard: (&report.wireguard).into(),
+            openvpn_action: report.openvpn.action,
+            wireguard_action: report.wireguard.action,
+            later_note: later_note.unwrap_or_default(),
+        });
+        self
+    }
+
+    /// The platform's Windows VPN client row (`SetupReport::ras`). `None` returns the view unchanged.
+    pub fn with_ras(mut self, row: Option<&EngineRow>) -> SetupView {
+        if let Some(row) = row {
+            self.ras = Some(row.into());
+        }
+        self
+    }
+
+    /// The platform's note that the app is uninstalled through the system (`SystemSetup::system_uninstall_note`):
+    /// the window shows it instead of its own "Uninstall". `None` returns the view unchanged.
+    pub fn with_system_uninstall(mut self, note: Option<String>) -> SetupView {
+        self.system_uninstall = note;
+        self
+    }
+
+    /// The platform's in-app clean-up before the system uninstall (`SystemSetup::account_cleanup`).
+    pub fn with_account_cleanup(mut self, offered: bool) -> SetupView {
+        self.account_cleanup = offered;
+        self
+    }
+
     /// `facts`: `None` until the first check finished. `upgrade_notice`: the platform's text ("Updating the system
     /// component will disconnect active VPN connections."), shown when a root layer is installed but needs
     /// installing again (another version, incomplete, or `sudo` does not work).
@@ -107,14 +239,7 @@ impl SetupView {
                         )
                     }),
                 ),
-                row(
-                    f.missing_tools.is_empty(),
-                    if f.missing_tools.is_empty() {
-                        l10n::tr("All tools are installed", &[])
-                    } else {
-                        l10n::tr("Missing: %@", &[Arg::Str(&f.missing_tools.join(", "))])
-                    },
-                ),
+                row(f.missing_tools.is_empty(), tools_detail(f)),
                 row(f.root_ok, root_detail(f)),
                 (f.installed_root_version.is_some() && !f.root_ok).then_some(upgrade_notice),
             ),
@@ -123,6 +248,9 @@ impl SetupView {
         SetupView {
             checked: facts.is_some(),
             can_install_tools: facts.is_some_and(|f| f.brew_prefix.is_some()) && !brew.running,
+            tools_action: facts
+                .is_some_and(|f| f.brew_prefix.is_some() && f.missing_tools.is_empty() && !f.outdated.is_empty())
+                .then_some("update"),
             homebrew,
             tools,
             root,
@@ -132,6 +260,11 @@ impl SetupView {
             install_error: ops.install_error.clone(),
             upgrade_notice: notice,
             uninstalling: ops.uninstalling,
+            engine_note: None,
+            system_uninstall: None,
+            account_cleanup: false,
+            engine: None,
+            ras: None,
         }
     }
 }
@@ -200,6 +333,11 @@ pub trait UninstallSystem {
     fn remove_stale_login_entries(&self) -> Result<(), String>;
     /// The app's data directory (`Product::data_dir`), the update cache and the app's preferences.
     fn remove_user_files(&self);
+    /// [`Self::uninstall_helper`] took the helper's connections down (macOS: the root layer's script). `false`
+    /// (WinVPN: the WinVPN Service is the MSI's and stays): the app disconnects every active connection itself.
+    fn helper_disconnects(&self) -> bool {
+        true
+    }
 }
 
 /// The keys the user data has outside its files: the vault key's key-store item (`local.macvpn.vault`, for the
@@ -218,10 +356,12 @@ pub struct UninstallChoice {
 
 /// The Swift `AppModel.uninstall` after the confirmation. The root layer goes first (its script disconnects the
 /// root connections); if that fails, nothing else happens (`Err`: the "Uninstall failed" alert, then the system is
-/// checked again). Then the active native connections are disconnected, polling stops, the login item is
-/// unregistered, and with `remove_user_data` the saved secrets, the vault key, the old Keychain items, the unsaved
-/// edits and the user files go. `Ok`:
-/// the final message ("MacVPN has been uninstalled"; the window's button quits).
+/// checked again). Then the active native connections are disconnected (every active connection where the helper
+/// disconnects none: WinVPN), polling stops, the login item is unregistered, where the platform removes native
+/// profiles itself (WinVPN: the RAS entries and the PSKs Windows keeps for them) every connection's profile is
+/// removed and the leftovers swept, and with `remove_user_data` the saved secrets, the vault key, the old Keychain
+/// items, the unsaved edits and the user files go. `Ok`: the final message ("MacVPN has been uninstalled"; on
+/// WinVPN "… removed from this account"; the window's button quits).
 pub fn uninstall(
     manager: &ConnectionManager,
     connections: &ConnectionsModel,
@@ -234,7 +374,8 @@ pub fn uninstall(
         return Err(Notice { title: l10n::tr("Uninstall failed", &[]), message });
     }
     let all = manager.connections();
-    for c in all.iter().filter(|c| c.kind.is_native()) {
+    let helper_disconnects = system.helper_disconnects();
+    for c in all.iter().filter(|c| c.kind.is_native() || !helper_disconnects) {
         if manager.state(&uuid_string(&c.id)).is_active() {
             manager.disconnect(c);
         }
@@ -244,6 +385,17 @@ pub fn uninstall(
     // No orphaned login item.
     let mut login_item_left = system.unregister_login_item().is_err();
     login_item_left |= system.remove_stale_login_entries().is_err();
+    // WinVPN: its Windows VPN entries and their PSKs (in Windows' own store, outside the data folder), before the
+    // folder goes. Then every `WinVPN-<UUID>` entry left (a locked vault lists only the active connections): no
+    // connection is kept. Never anything else (the platform removes only its own entries).
+    let profiles = &connections.deps().profiles;
+    let removes_profiles = profiles.removes_profiles();
+    if removes_profiles {
+        for c in &all {
+            profiles.remove(&c.id);
+        }
+        profiles.reconcile(&HashSet::new());
+    }
     if choice.remove_user_data {
         for c in &all {
             manager.forget_saves(&c.id);
@@ -263,7 +415,7 @@ pub fn uninstall(
         "You can now drag the app to the Trash. The Homebrew packages were kept (brew uninstall openvpn wireguard-tools strongswan sstp-client).",
         &[],
     );
-    if had_native {
+    if had_native && !removes_profiles {
         message.push_str("\n\n");
         message.push_str(&l10n::tr(
             "You can remove the L2TP / Cisco profiles in System Settings → General → Device Management.",

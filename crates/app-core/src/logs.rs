@@ -1,12 +1,13 @@
 //! The Log tab without a UI (port of `LogViewModel`, `LogView`'s filtering and `NativeLogCollector`): the live
-//! tail of `/var/log/macvpn/<id>.log` (core `LogTailer`) or, for a native connection, the system log collected
-//! during a debug connect (`log stream`, at most 60 s, stopped once the connection settles), kept to the last
-//! 5000 lines, with the All / Commands / Errors filter and the search.
+//! tail of the helper's log (core `LogTailer` over the helper's `LogSource`; on macOS `/var/log/macvpn/<id>.log`)
+//! or, for a native connection, the system log collected during a debug connect (`log stream`, at most 60 s,
+//! stopped once the connection settles), kept to the last 5000 lines, with the All / Commands / Errors filter and
+//! the search.
 
 use crate::deps::Clock;
 use macvpn_core::date::Date;
 use macvpn_core::l10n::{self, Arg};
-use macvpn_core::log::{LogFilter, LogLine, LogLineKind, LogTailer};
+use macvpn_core::log::{FileLogSource, LogFilter, LogLine, LogLineKind, LogSource, LogTailer};
 use macvpn_core::models::{Connection, ConnectionState};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
@@ -163,6 +164,11 @@ impl NativeLogCollector {
         self.lock().handle.is_some()
     }
 
+    /// The platform has a system log stream to collect ([`LogStreamSpawner::is_available`]).
+    pub fn is_available(&self) -> bool {
+        self.spawner.is_available()
+    }
+
     /// Starts a new collection (stopping a running one). Returns its generation.
     pub fn start(&self) -> u64 {
         self.stop();
@@ -291,6 +297,28 @@ impl NativeLogs {
         (collector, generation)
     }
 
+    /// A debug connect's collection: [`Self::start`] where the platform has a system log stream; `None` (nothing
+    /// started, nothing kept) where it has none (WinVPN: the native kinds have their own log, see
+    /// [`LogFeed::with_native_source`]).
+    pub fn start_for_debug(&self, id: &Uuid) -> Option<(Arc<NativeLogCollector>, u64)> {
+        let collector = {
+            let mut collectors = self.collectors.lock().unwrap_or_else(PoisonError::into_inner);
+            match collectors.get(id) {
+                Some(c) => c.clone(),
+                None => {
+                    let c = Arc::new((self.make)());
+                    if !c.is_available() {
+                        return None;
+                    }
+                    collectors.insert(*id, c.clone());
+                    c
+                }
+            }
+        };
+        let generation = collector.start();
+        Some((collector, generation))
+    }
+
     pub fn stop(&self, id: &Uuid) {
         if let Some(c) = self.get(id) {
             c.stop();
@@ -355,9 +383,31 @@ pub struct LogFeed {
 }
 
 impl LogFeed {
-    /// `log_path`: the root layer's log of the connection (`/var/log/macvpn/<id>.log`).
-    pub fn new(c: &Connection, log_path: PathBuf, native_logs: Arc<NativeLogs>) -> LogFeed {
-        let source = if c.kind.is_native() { Source::Native(None) } else { Source::Tail(LogTailer::new(log_path)) };
+    /// `source`: the helper's log of the connection (macOS: the root layer's `/var/log/macvpn/<id>.log`; `None`:
+    /// the helper keeps none, which reads nothing). A native connection follows its debug collection.
+    pub fn new(c: &Connection, source: Option<Box<dyn LogSource>>, native_logs: Arc<NativeLogs>) -> LogFeed {
+        LogFeed::with_native_source(c, source, None, native_logs)
+    }
+
+    /// [`Self::new`], with the platform's own log of a native connection (`NativeController::log_source`; WinVPN:
+    /// the RAS log): `Some` is tailed as a helper kind's log is; `None` (macOS) follows the debug collection.
+    pub fn with_native_source(
+        c: &Connection,
+        source: Option<Box<dyn LogSource>>,
+        native_source: Option<Box<dyn LogSource>>,
+        native_logs: Arc<NativeLogs>,
+    ) -> LogFeed {
+        let source = if c.kind.is_native()
+            && let Some(native) = native_source
+        {
+            Source::Tail(LogTailer::with_source(native))
+        } else if c.kind.is_native() {
+            Source::Native(None)
+        } else {
+            // An empty path opens nothing.
+            let source = source.unwrap_or_else(|| Box::new(FileLogSource { path: PathBuf::new() }));
+            Source::Tail(LogTailer::with_source(source))
+        };
         LogFeed { id: c.id, source, buffer: LogBuffer::default(), native_logs, started: false }
     }
 

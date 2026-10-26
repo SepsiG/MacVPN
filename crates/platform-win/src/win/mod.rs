@@ -1,0 +1,29 @@
+//! The Windows implementation (Win32 through `windows-sys` and `macvpn-winsys`).
+
+pub(crate) mod admin_steps;
+pub(crate) mod chrome;
+pub(crate) mod clipboard;
+pub(crate) mod control;
+pub(crate) mod curl_runner;
+pub(crate) mod elevate;
+pub(crate) mod https;
+pub mod instance;
+pub(crate) mod keystore;
+pub(crate) mod lifecycle;
+pub(crate) mod locale;
+pub(crate) mod login_item;
+pub(crate) mod msgwin;
+pub(crate) mod net;
+pub(crate) mod openvpn_install;
+pub(crate) mod panels;
+pub mod platform;
+pub(crate) mod ras_engine;
+pub(crate) mod ras_paths;
+pub(crate) mod ras_watch;
+pub(crate) mod registry;
+pub(crate) mod service_client;
+pub(crate) mod shell;
+pub(crate) mod system;
+pub(crate) mod system_vpns;
+pub(crate) mod toast;
+pub(crate) mod updater;

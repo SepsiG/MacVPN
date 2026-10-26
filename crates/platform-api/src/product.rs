@@ -6,6 +6,7 @@
 
 use macvpn_core::TargetOs;
 use macvpn_core::l10n::TextPlatform;
+use macvpn_core::update::SignatureDomain;
 use std::path::{Path, PathBuf};
 
 /// One product of the workspace (MacVPN, WinVPN).
@@ -20,6 +21,9 @@ pub struct Product {
     pub repo: &'static str,
     /// The user guide's file stem: `docs/<stem>.<lang>.md`.
     pub user_guide_stem: &'static str,
+    /// The update signature's domain (`UpdateSignature::message_for`): MacVPN's message names no asset, WinVPN's
+    /// names the MSI, so a signature of one product or architecture never verifies for another.
+    pub signature_domain: SignatureDomain,
 }
 
 pub const MACVPN: Product = Product {
@@ -28,6 +32,7 @@ pub const MACVPN: Product = Product {
     app_id: "local.macvpn",
     repo: "SepsiG/MacVPN",
     user_guide_stem: "user-guide",
+    signature_domain: SignatureDomain::MacVpnV1,
 };
 
 pub const WINVPN: Product = Product {
@@ -36,6 +41,7 @@ pub const WINVPN: Product = Product {
     app_id: "local.winvpn",
     repo: "SepsiG/MacVPN",
     user_guide_stem: "winvpn-user-guide",
+    signature_domain: SignatureDomain::WinVpnV1,
 };
 
 impl Product {

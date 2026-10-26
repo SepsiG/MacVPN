@@ -1,0 +1,33 @@
+# wireguard-nt, the prebuilt signed DLL WinVPN bundles (docs/superpowers/plans/2026-10-22-winvpn-2b-service-openvpn-wireguard.md,
+# Task 14; the maintainer chose 1.1 over the plan's 0.10.1 on 2026-10-22). Fields: key<TAB>value.
+# scripts/fetch-wireguard-nt.sh checks the zip and both DLLs against these hashes and, on Windows, each DLL's
+# Authenticode status (Valid) and signer; the WinVPN Service compiles the DLL hash of its architecture in
+# (crates/helper/src/windows/wg_pins.rs) and refuses any other wireguard.dll next to its exe at load time.
+# Since fix4 (2026-10-24) this is the minimum and the offline fallback: the service updates wireguard-nt itself to
+# the newest version listed there (signer checked, no pin; 2b plan, decision 6 as amended 2026-10-24).
+# Source: https://download.wireguard.com/wireguard-nt/ (the official WireGuardNT SDK; 1.1 is its only listed release).
+# The zip's SHA-256 equals the one the official WireGuard for Windows build pins for 1.1 (wireguard-windows build.bat,
+# commit 305e40248e54 "build: bump wireguard-nt to 1.1", 2026-05-07:
+# `call :download wireguard-nt.zip …/wireguard-nt-1.1.zip dceb30a9…`). The zip holds bin/{amd64,arm64,x86}/wireguard.dll
+# (DLLs dated 2026-05-07), include/wireguard.h, LICENSE.txt, README.md. Recorded 2026-10-22.
+# 1.1's wireguard.h against 0.10.1's: WIREGUARD_ALLOWED_IP gains `Flags` (WIREGUARD_ALLOWED_IP_FLAG, offset 20, in the
+# former padding; 0 = add the allowed IP), WIREGUARD_PEER_UPDATE is renamed WIREGUARD_PEER_UPDATE_ONLY, the prototypes
+# are unchanged; the sizes stay 80/136/24 (checked with MSVC, scripts/wg-nt-layout.c).
+# signer_ca_spki_sha256 (M-1 of the 2.0.0 security review, 2026-10-25): the service loads a wireguard.dll (bundled or
+# downloaded) only when its Authenticode chain, as WinVerifyTrust built it, has a CA above the signer whose key's SHA-256
+# (of the DER SubjectPublicKeyInfo) is in this comma-separated list: a "WireGuard LLC" certificate from any other CA
+# (an operator CA trusted on the PC, a TLS-inspection root) is refused. 1.1's DLLs (both, same chain; `openssl pkcs7
+# -print_certs` of the PE signature): leaf CN=WireGuard LLC (EV, valid 2026-03-30 to 2027-03-30, SPKI SHA-256
+# 97d260d874a49220032a702875d9bc59f445f5192682d5acb9538df584ed4087) issued by "Sectigo Public Code Signing CA EV R36"
+# (SHA-256 thumbprint 710ebdeed44ce7586d887570e220d3ffcc7bb68464920bea20c67cd9b6617722, valid to 2036-03-21; pinned
+# key below) under "Sectigo Public Code Signing Root R46". Pinned: the issuing CA's key, so a renewed leaf from the
+# same CA needs no change. When WireGuard LLC changes CA, a downloaded DLL is refused (the service log says
+# "… not under a pinned CA …") and the bundled DLL stays in use until a WinVPN release adds the new CA's key here:
+# docs/RELEASING.md, "Signer pins".
+version	1.1
+zip_url	https://download.wireguard.com/wireguard-nt/wireguard-nt-1.1.zip
+zip_sha256	dceb30a9bc4be48cce0f74160fc88a585a2c2627366e8f846fc6658f9038dace
+dll_amd64_sha256	b1b85e072c45d81358be29d94c599dc76652f912be8c0f0a41e2d5d89a6461d3
+dll_arm64_sha256	75bcdc025d6c00e8315af5d62b869d760ca6a253fc82d70f146e789f059a3e0c
+signer	WireGuard LLC
+signer_ca_spki_sha256	4c2655992d5a342a1082d3c3f0ba8ade37dfb425d15d3f4a3c091609af60c112

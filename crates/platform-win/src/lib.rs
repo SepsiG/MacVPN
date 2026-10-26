@@ -1,539 +1,537 @@
-//! The Windows platform, phase 1: a stub. Every fallible call answers [`PlatformError::Unsupported`] (or its
-//! localized message, "Not available on this system yet"); every call that cannot fail is inert. It fails closed:
-//! no auto-unlock key, no entropy (so no vault can be created by mistake), no control endpoint, no helper or
-//! native VPN action, no catalog fetch, no file written.
+//! The Windows platform (WinVPN). OpenVPN and WireGuard through the WinVPN Service (`\\.\pipe\WinVPN`,
+//! `win::service_client`); L2TP, IKEv2 and SSTP through RAS in the app's own process (`win::ras_engine`, 2c).
 //!
-//! No `cfg`, no `unsafe` and no `windows-sys`: it compiles on every OS, so the macOS checks cover it. Phase 2
-//! replaces it with the real Windows platform. The Windows app exits at `platform::supported()` before any window
-//! opens, so none of this is shown in phase 1.
+//! `pure`: the logic without system calls (texts, System Status from the service's facts, the Mark-of-the-Web
+//! parser, date formats, …), compiled and tested on every OS. `win`: the Windows implementation (Win32 through
+//! `windows-sys` and `macvpn-winsys`), Windows only. The storage identifiers (the credential `local.winvpn.vault`,
+//! the Run value `WinVPN`, the pipe and mutex names) are literals here and never derive from `Product`.
 
-#![forbid(unsafe_code)]
+pub mod pure;
 
-use macvpn_core::catalog::fetch::{CatalogFetcher, FetchOutcome, FetchRequest};
-use macvpn_core::catalog::format::CatalogError;
-use macvpn_core::date::Date;
-use macvpn_core::fsx::FileOwner;
-use macvpn_core::l10n::{self, AppLanguage};
-use macvpn_core::mfa::AuthResponseKind;
-use macvpn_core::models::{Connection, SecretField, Secrets, VPNKind};
-use macvpn_core::native::NativeKind;
-use macvpn_core::status::RootStatus;
-use macvpn_core::update::{self, Release};
-use macvpn_core::vault::{Entropy, KeyStore, KeyStoreError, LegacyKeychain, LegacyRead};
-use macvpn_platform_api::{
-    AppLifecycle, AuthStateReader, BootstrapTexts, BoundEndpoint, ClipboardMark, ControlTransport, DownloadMark,
-    FilePanels, HelperClient, LegacySecrets, LogStreamSpawner, LoginItemView, LoginItems, MemoryPreferences,
-    NativeController, NativeProfile, NativeProfiles, NativeWindow, NoAuthState, Notifier, Platform, PlatformError,
-    PreferenceStore, Product, ReleaseSource, SecretClipboard, SetupReport, Shell, StreamHandle, SystemInfo,
-    SystemSetup, SystemVpn, SystemVpnWatch, TerminateReply, UpdateOutcome, Updater, WINVPN, WindowChrome,
-};
-use std::collections::BTreeMap;
-use std::io;
-use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use uuid::Uuid;
-use zeroize::Zeroizing;
+#[cfg(windows)]
+#[allow(unsafe_code)]
+mod win;
 
-/// The Windows platform of phase 1.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct WinPlatform;
+#[cfg(windows)]
+pub use win::instance::{Claim, InstanceGuard, claim, show_claim_failure};
+#[cfg(windows)]
+pub use win::platform::WinPlatform;
 
-/// `what` of every unsupported facility (for the code; the message never shows it).
-fn unsupported(what: &'static str) -> PlatformError {
-    PlatformError::Unsupported { what }
-}
+/// The smoke run's hooks (debug builds only; `app/src-tauri/src/platform/smoke`).
+#[cfg(all(windows, debug_assertions))]
+pub mod smoke {
+    use macvpn_platform_api::NativeWindow;
 
-/// The localized "Not available on this system yet", for the traits whose errors are messages.
-fn message(what: &'static str) -> String {
-    unsupported(what).message()
-}
-
-/// An I/O error of kind `Unsupported` (the message is not shown to the user).
-fn io_unsupported(what: &'static str) -> io::Error {
-    io::Error::new(io::ErrorKind::Unsupported, format!("{what}: not supported on this platform yet"))
-}
-
-impl Platform for WinPlatform {
-    fn product(&self) -> &'static Product {
-        &WINVPN
+    /// Sends `WM_QUERYENDSESSION` to the app's lifecycle window, as Windows does at a logoff: the terminate handler
+    /// answers (`Some(0)`: blocked for now or for good, `Some(1)`: Windows may end; `None`: no window).
+    pub fn query_end_session() -> Option<isize> {
+        crate::win::lifecycle::query_end_session_for_tests()
     }
 
-    /// Only the text platform: collation and the preferred languages keep core's defaults.
-    fn install_core_hooks(&self) {
-        l10n::set_text_platform(WINVPN.text_platform());
-    }
-
-    fn system(&self) -> &dyn SystemInfo {
-        self
-    }
-
-    fn shell(&self) -> &dyn Shell {
-        self
-    }
-
-    fn setup(&self) -> &dyn SystemSetup {
-        self
-    }
-
-    fn updater(&self) -> &dyn Updater {
-        self
-    }
-
-    fn windows(&self) -> &dyn WindowChrome {
-        self
-    }
-
-    fn file_panels(&self) -> &dyn FilePanels {
-        self
-    }
-
-    fn notifier(&self) -> &dyn Notifier {
-        self
-    }
-
-    fn clipboard(&self) -> &dyn SecretClipboard {
-        self
-    }
-
-    fn lifecycle(&self) -> &dyn AppLifecycle {
-        self
-    }
-
-    fn download_mark(&self) -> &dyn DownloadMark {
-        self
-    }
-
-    fn system_vpn_watch(&self) -> &dyn SystemVpnWatch {
-        self
-    }
-
-    fn control_transport(&self) -> Arc<dyn ControlTransport> {
-        Arc::new(WinPlatform)
-    }
-
-    fn helper_client(&self) -> Arc<dyn HelperClient> {
-        Arc::new(WinPlatform)
-    }
-
-    fn native_controller(&self) -> Arc<dyn NativeController> {
-        Arc::new(WinPlatform)
-    }
-
-    fn native_profiles(&self, _staging: &Path, _open: bool) -> Arc<dyn NativeProfiles> {
-        Arc::new(WinPlatform)
-    }
-
-    fn auth_state(&self) -> Arc<dyn AuthStateReader> {
-        Arc::new(NoAuthState)
-    }
-
-    fn log_streams(&self) -> Arc<dyn LogStreamSpawner> {
-        Arc::new(WinPlatform)
-    }
-
-    fn release_source(&self) -> Arc<dyn ReleaseSource> {
-        Arc::new(WinPlatform)
-    }
-
-    fn https_catalog_fetcher(&self) -> Arc<dyn CatalogFetcher> {
-        Arc::new(WinPlatform)
-    }
-
-    fn key_store(&self) -> Arc<dyn KeyStore> {
-        Arc::new(WinPlatform)
-    }
-
-    fn entropy(&self) -> Arc<dyn Entropy> {
-        Arc::new(WinPlatform)
-    }
-
-    fn legacy_keychain(&self) -> Arc<dyn LegacyKeychain> {
-        Arc::new(WinPlatform)
-    }
-
-    fn legacy_secrets(&self) -> Arc<dyn LegacySecrets> {
-        Arc::new(WinPlatform)
-    }
-
-    fn migrate_legacy_service(&self) {}
-
-    fn preferences(&self) -> Arc<dyn PreferenceStore> {
-        Arc::new(MemoryPreferences::default())
-    }
-
-    fn login_items(&self, _home: &Path, _app: Option<&Path>, _sandbox: bool) -> Box<dyn LoginItems> {
-        Box::new(WinPlatform)
+    /// Whether the window holds Windows 11's round corners (DWM's corner preference; Windows 10: `false`).
+    pub fn corners_round(w: NativeWindow) -> bool {
+        crate::win::chrome::corners_round(w)
     }
 }
 
-// MARK: - System
+/// Restricts the process' DLL search to System32 (`macvpn_winsys::dll::harden_process_search`: no application
+/// folder, current directory or `PATH`); aborts if it cannot. `WinVPN.exe` calls it first thing in `main`, before
+/// any mode (the elevated steps and the relauncher included).
+#[cfg(windows)]
+pub fn harden_dll_search() {
+    macvpn_winsys::dll::harden_process_search();
+}
 
-impl SystemInfo for WinPlatform {
-    fn home_directory(&self) -> Option<PathBuf> {
-        None
-    }
+/// The elevated step of the OpenVPN install (`WinVPN.exe --winvpn-openvpn-step …`, started elevated by System
+/// Status: `pure::openvpn_install`): its exit code when `args` (without the program name) are such a step, else
+/// `None` (the app starts normally). The app calls it first thing, before any window or instance check.
+#[cfg(windows)]
+pub fn openvpn_elevated_step(args: &[String]) -> Option<u32> {
+    win::openvpn_install::elevated_main(args)
+}
 
-    /// Windows' roaming app data under `home` (phase 2 reads the known folder).
-    fn app_data_root(&self, home: &Path) -> PathBuf {
-        home.join("AppData").join("Roaming")
-    }
+/// The elevated step of **Trust This CA in Windows…** (`WinVPN.exe --winvpn-trust-ca-step <file>`, started
+/// elevated by the app: `pure::admin_steps`): its exit code when `args` (without the program name) are that step,
+/// else `None`. The app calls it first thing, before any window or instance check.
+#[cfg(windows)]
+pub fn trust_ca_elevated_step(args: &[String]) -> Option<u32> {
+    win::admin_steps::elevated_trust_main(args)
+}
 
-    /// No owner can be read on Windows in phase 1 (`FileOwner` has no value there, core's `fsx`).
-    fn user_owner(&self) -> Result<FileOwner, PlatformError> {
-        Err(unsupported("file owner"))
-    }
+/// Tests only: the OpenVPN MSI's signer check (the pinned `OPENVPN_SIGNER`), as the install runs it before any
+/// elevation.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn verify_openvpn_msi_for_tests(path: &std::path::Path) -> Result<(), String> {
+    win::openvpn_install::verify_signer(path)
+}
 
-    fn user_name(&self) -> Option<String> {
-        None
-    }
+/// Tests only: [`openvpn_elevated_step`] copying the MSI into `<root>\installer\…` (a private folder of this user;
+/// production: `C:\ProgramData\WinVPN`, Administrators only) and calling `msiexec` with msiexec's parameters
+/// instead of running it (its exit code, or `None`: not started).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn openvpn_elevated_step_staged_for_tests(
+    args: &[String],
+    root: &std::path::Path,
+    msiexec: &dyn Fn(&str) -> Option<u32>,
+) -> Option<u32> {
+    win::openvpn_install::elevated_main_with(args, || win::openvpn_install::Staging::for_tests(root), msiexec)
+}
 
-    fn temporary_directory(&self) -> Result<PathBuf, PlatformError> {
-        Err(unsupported("temporary directory"))
-    }
+/// Tests only: the elevated step's copy of `source` into `<root>\installer\<random>\` (see
+/// [`openvpn_elevated_step_staged_for_tests`]): its path; the folder is removed when the guard drops.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn stage_openvpn_msi_for_tests(
+    source: &std::path::Path,
+    root: &std::path::Path,
+) -> std::io::Result<(std::path::PathBuf, Box<dyn std::any::Any>)> {
+    let bytes = std::fs::read(source)?;
+    let staged = win::openvpn_install::stage(source, &bytes, &win::openvpn_install::Staging::for_tests(root)?)?;
+    Ok((staged.msi.clone(), Box::new(staged)))
+}
 
-    /// `YYYY-MM-DD` (UTC; phase 2 uses the system's format).
-    fn local_date(&self, unix: f64) -> String {
-        Date::from_time_interval_since_1970(unix).iso8601().chars().take(10).collect()
-    }
+/// Tests only: a Credential Manager key store over the generic credential `target` (user name `dek`). The tests
+/// use `local.winvpn.test.<uuid>` and delete it; never the production target.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn credential_key_store_for_tests(target: &str) -> Box<dyn macvpn_core::vault::KeyStore> {
+    assert!(target != win::keystore::VAULT_TARGET, "tests never touch the production credential");
+    Box::new(win::keystore::CredentialKeyStore::new(target, win::keystore::VAULT_USER))
+}
 
-    /// ISO 8601 (UTC; phase 2 uses the system's format).
-    fn local_date_time(&self, unix: f64, _language: AppLanguage) -> String {
-        Date::from_time_interval_since_1970(unix).iso8601()
-    }
+/// Tests only: writes, reads and deletes a string and a binary value under `HKCU\Software\WinVPN-test-<random>`
+/// (the key is removed afterwards); whether every step matched.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn registry_round_trip_for_tests() -> bool {
+    win::registry::round_trip_for_tests()
+}
 
-    fn app_location(&self) -> Option<PathBuf> {
-        None
-    }
+/// Tests only: the launch-at-login item over the Run value `value` (`WinVPN-test-…`, never WinVPN's own).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn run_key_item_for_tests(exe: &std::path::Path, value: &str) -> Box<dyn macvpn_platform_api::LoginItems> {
+    assert_test_value(value);
+    Box::new(win::login_item::RunKeyItem { exe: exe.to_path_buf(), value: value.to_owned() })
+}
 
-    fn bundled_helper_dir(&self, _app: &Path) -> Option<PathBuf> {
-        None
-    }
+#[cfg(windows)]
+fn assert_test_value(value: &str) {
+    assert!(value.starts_with("WinVPN-test-"), "tests never touch WinVPN's own Run value");
+}
 
-    fn update_info(&self, _app: &Path) -> Option<update::Info> {
-        None
+/// Tests only: the Run value `value` (`WinVPN-test-…`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn run_value_for_tests(value: &str) -> Option<String> {
+    assert_test_value(value);
+    win::registry::read_string(win::login_item::RUN, value)
+}
+
+/// Tests only: writes the Run value `value` (`WinVPN-test-…`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn set_run_value_for_tests(value: &str, data: &str) {
+    assert_test_value(value);
+    win::registry::write_string(win::login_item::RUN, value, data).expect("the test Run value");
+}
+
+/// Tests only: sets (`Some`) or deletes the StartupApproved value `value` (`WinVPN-test-…`), as Settings does.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn startup_approved_for_tests(value: &str, data: Option<&[u8]>) {
+    assert_test_value(value);
+    match data {
+        Some(d) => win::registry::write_binary(win::login_item::APPROVED, value, d).expect("the test value"),
+        None => win::registry::delete_value(win::login_item::APPROVED, value).expect("the test value"),
     }
 }
 
-impl Shell for WinPlatform {
-    fn open_path(&self, _path: &Path) -> Result<(), PlatformError> {
-        Err(unsupported("open file"))
+/// Tests only: removes the Run and StartupApproved values `value` (`WinVPN-test-…`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn remove_run_values_for_tests(value: &str) {
+    assert_test_value(value);
+    let _ = win::registry::delete_value(win::login_item::RUN, value);
+    let _ = win::registry::delete_value(win::login_item::APPROVED, value);
+}
+
+/// Tests only: what the lifecycle window answers to `WM_QUERYENDSESSION` (`None`: no window yet).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn lifecycle_query_end_session_for_tests() -> Option<isize> {
+    win::lifecycle::query_end_session_for_tests()
+}
+
+/// Tests only: what the lifecycle window answers to a resume (`WM_POWERBROADCAST`, `PBT_APMRESUMEAUTOMATIC`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn lifecycle_resume_for_tests() -> Option<isize> {
+    win::lifecycle::resume_for_tests()
+}
+
+/// Tests only: what the lifecycle window answers to a suspend (`WM_POWERBROADCAST`, `PBT_APMSUSPEND`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn lifecycle_suspend_for_tests() -> Option<isize> {
+    win::lifecycle::suspend_for_tests()
+}
+
+/// Tests only: `WM_ENDSESSION` for a logoff (`true`) or a shutdown (`false`), as Windows sends it after the session
+/// was allowed to end.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn lifecycle_end_session_for_tests(logoff: bool) -> Option<isize> {
+    win::lifecycle::end_session_for_tests(logoff)
+}
+
+/// Tests only: `WM_SETTINGCHANGE` with the changed area `area` (its `lParam` string; `None`: no string), as Windows
+/// broadcasts it to top-level windows.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn lifecycle_setting_change_for_tests(area: Option<&str>) -> Option<isize> {
+    win::lifecycle::setting_change_for_tests(area)
+}
+
+/// Tests only: registers a logoff observer (the RAS engine's hang-up registers itself the same way).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn lifecycle_observe_logoff_for_tests(on_logoff: Box<dyn Fn() + Send + Sync>) {
+    win::lifecycle::observe_logoff(on_logoff);
+}
+
+/// Tests only: whether the clipboard now offers the three formats that keep a secret out of clipboard monitors,
+/// Windows' clipboard history and cloud sync.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn clipboard_excludes_for_tests() -> [bool; 3] {
+    use win::clipboard::{CLOUD, EXCLUDE_FROM_MONITORS, HISTORY, has_format};
+    [has_format(EXCLUDE_FROM_MONITORS), has_format(HISTORY), has_format(CLOUD)]
+}
+
+/// Tests only: the control transport over the pipe `name` (not the production `WinVPN-control-<SID>`), with the
+/// choice of network logons (the Windows test machine runs the tests over SSH, a network logon that the production
+/// DACL refuses).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn control_transport_for_tests(
+    name: &str,
+    network: macvpn_winsys::pipe::NetworkLogons,
+) -> std::sync::Arc<dyn macvpn_platform_api::ControlTransport> {
+    std::sync::Arc::new(win::control::PipeTransport::with_name(name, network))
+}
+
+/// Tests only: a RAS engine over a test data directory (its phonebook, profiles and logs live there), with the
+/// platform traits the app uses it through. Entries are named `WinVPN-<UUID>` of the test's own connections.
+#[cfg(windows)]
+#[doc(hidden)]
+pub struct RasEngineForTests(std::sync::Arc<win::ras_engine::RasEngine>);
+
+#[cfg(windows)]
+impl RasEngineForTests {
+    pub fn controller(&self) -> &dyn macvpn_platform_api::NativeController {
+        &*self.0
     }
 
-    fn open_url(&self, _url: &str) -> Result<(), PlatformError> {
-        Err(unsupported("open URL"))
+    pub fn profiles(&self) -> &dyn macvpn_platform_api::NativeProfiles {
+        &*self.0
     }
 
-    fn open_native_profile_settings(&self) {}
+    pub fn support(&self) -> &dyn macvpn_platform_api::NativeSupport {
+        &*self.0
+    }
 
-    fn copy_text(&self, _text: &str) -> Result<(), PlatformError> {
-        Err(unsupported("clipboard"))
+    /// The app's `HelperClient` with this engine; the WinVPN Service part points at a test pipe nobody serves.
+    pub fn helper(&self) -> Box<dyn macvpn_platform_api::HelperClient> {
+        let mut random = [0u8; 16];
+        macvpn_winsys::random::fill(&mut random).expect("system randomness");
+        let pipe = format!(r"\\.\pipe\WinVPN-test-{}", uuid::Uuid::from_bytes(random));
+        Box::new(win::ras_engine::RasHelper {
+            service: win::service_client::ServiceClient::trusting_system(&pipe),
+            ras: self.0.clone(),
+        })
+    }
+
+    pub fn phonebook(&self) -> std::path::PathBuf {
+        self.0.phonebook_path().expect("the test engine is ready")
+    }
+
+    pub fn log_path(&self, id: &uuid::Uuid) -> std::path::PathBuf {
+        self.0.log_path(id).expect("the test engine is ready")
+    }
+
+    pub fn hang_up_all(&self) {
+        self.0.hang_up_all();
+    }
+
+    /// The `CustomIPSecPolicies` hex the engine writes for `policy`.
+    pub fn policy_hex(policy: &macvpn_core::ras::WindowsPolicy) -> String {
+        win::ras_engine::ipsec_policy(policy).to_hex()
     }
 }
 
-impl SystemSetup for WinPlatform {
-    /// Nothing found: no helper-run kind is available.
-    fn check(&self, _bundled_helper_dir: Option<&Path>) -> SetupReport {
-        SetupReport::unknown()
+/// Tests only: the RAS engine over the test data directory `data` (made private here, as WinVPN's own).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn ras_engine_for_tests(data: &std::path::Path) -> RasEngineForTests {
+    ras_engine_with_system_books_for_tests(data, Vec::new())
+}
+
+/// Tests only: [`ras_engine_for_tests`] whose user's own Windows VPNs are the entries of the phonebook files
+/// `books` (temp files standing in for Windows' default phonebooks; none: no system VPN).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn ras_engine_with_system_books_for_tests(
+    data: &std::path::Path,
+    books: Vec<std::path::PathBuf>,
+) -> RasEngineForTests {
+    let private = data.join(macvpn_core::ras::names::PHONEBOOK_DIR).join(macvpn_core::ras::names::PHONEBOOK_FILE);
+    let system = win::system_vpns::SystemVpns::for_test(books, Some(private));
+    RasEngineForTests(std::sync::Arc::new(win::ras_engine::RasEngine::with_system(Some(data), system)))
+}
+
+/// Tests only: the WinVPN Service's client as the app uses it, over a test pipe.
+#[cfg(windows)]
+#[doc(hidden)]
+pub struct ServiceClientForTests(win::service_client::ServiceClient);
+
+#[cfg(windows)]
+impl ServiceClientForTests {
+    pub fn helper(&self) -> &dyn macvpn_platform_api::HelperClient {
+        &self.0
     }
 
-    fn install_package_manager(
-        &self,
-        _texts: &BootstrapTexts,
-        _parent: &Path,
-        _sandbox: bool,
-    ) -> Result<(), PlatformError> {
-        Err(unsupported("package manager"))
+    pub fn auth_state(&self) -> &dyn macvpn_platform_api::AuthStateReader {
+        &self.0
     }
 
-    fn install_tools(&self, _report: &SetupReport, _output: &mut dyn FnMut(&str)) -> Result<(), PlatformError> {
-        Err(unsupported("VPN tools"))
+    /// What System Status learns from the service.
+    pub fn reach(&self) -> pure::engine::Reach {
+        self.0.reach()
     }
 
-    fn install_helper(&self, _source_dir: &Path, _user: &str) -> Result<(), PlatformError> {
-        Err(unsupported("helper"))
+    /// The service's wireguard-nt check (fix4).
+    pub fn wireguard_check(&self) -> pure::wireguard_update::Offer {
+        self.0.wireguard_check()
     }
 
-    fn uninstall_helper(&self, _user: &str) -> Result<(), PlatformError> {
-        Err(unsupported("helper"))
-    }
-
-    fn helper_upgrade_notice(&self) -> String {
-        message("helper")
+    /// The service's wireguard-nt update (fix4).
+    pub fn wireguard_update(&self) -> Result<String, String> {
+        self.0.wireguard_update()
     }
 }
 
-impl Updater for WinPlatform {
-    fn install(
-        &self,
-        _release: &Release,
-        _app: &Path,
-        _home: &Path,
-        _stage: &dyn Fn(String),
-        _confirm_quit: Box<dyn FnOnce() -> bool + '_>,
-    ) -> Result<UpdateOutcome, String> {
-        Err(message("update installer"))
-    }
+#[cfg(windows)]
+fn assert_test_pipe(pipe: &str) {
+    assert!(pipe.starts_with(r"\\.\pipe\WinVPN-test-"), "tests never use the service's own pipe");
+}
 
-    fn launch_housekeeping(
-        &self,
-        _app: &Path,
-        _home: &Path,
-        _noticed: Option<&str>,
-    ) -> (Vec<PathBuf>, Option<(String, String)>) {
-        (Vec::new(), None)
-    }
+/// Tests only (debug builds): the client of the service's console mode on `pipe` (`\\.\pipe\WinVPN-test-…`), which
+/// this user owns. The production client trusts only SYSTEM ([`service_client_trusting_system_for_tests`]).
+#[cfg(all(windows, debug_assertions))]
+#[doc(hidden)]
+pub fn service_client_for_tests(pipe: &str) -> ServiceClientForTests {
+    assert_test_pipe(pipe);
+    ServiceClientForTests(win::service_client::ServiceClient::trusting_this_user(pipe))
+}
 
-    fn cache_directory(&self, _home: &Path) -> Option<PathBuf> {
-        None
+/// Tests only: the production client (it trusts only a SYSTEM-owned pipe) on a test pipe name.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn service_client_trusting_system_for_tests(pipe: &str) -> ServiceClientForTests {
+    assert_test_pipe(pipe);
+    ServiceClientForTests(win::service_client::ServiceClient::trusting_system(pipe))
+}
+
+/// Tests only (debug builds): the helper's debug `mvpn.exe`, which has the service's console mode: next to this
+/// test binary's directory (`target/<triple>/debug/deps/…` → `target/<triple>/debug/mvpn.exe`). Build it first
+/// (`cargo build -p macvpn-helper`; `scripts/win-remote.sh test` builds it with the helper's tests).
+#[cfg(all(windows, debug_assertions))]
+#[doc(hidden)]
+pub fn helper_console_for_tests() -> std::path::PathBuf {
+    let exe = std::env::current_exe().expect("the test binary");
+    let dir = exe.parent().and_then(std::path::Path::parent).expect("target/<profile>");
+    let mvpn = dir.join("mvpn.exe");
+    assert!(mvpn.is_file(), "{} is missing: cargo build -p macvpn-helper first", mvpn.display());
+    mvpn
+}
+
+/// The updater's relauncher (`WinVPN-relaunch.exe --relaunch --target <exe> --msi <msi> --sha256 <hex> --log <log>`,
+/// parsed by `pure::update::parse_relaunch`): holds the MSI (re-hashed) and msiexec's log until msiexec has exited,
+/// records the outcome for the next launch, starts the new WinVPN. The app calls it first thing in `main` (no Tauri,
+/// no window, no single-instance claim).
+#[cfg(windows)]
+pub fn relaunch_after(relaunch: &pure::update::Relaunch) {
+    win::updater::relaunch_after(relaunch);
+}
+
+/// Debug builds only (CP2): installs a local MSI as an update would (held deny-write, msiexec elevated through UAC,
+/// the relauncher), without download or signature. The message says what happened.
+#[cfg(all(windows, debug_assertions))]
+#[doc(hidden)]
+pub fn test_install_msi(msi: &std::path::Path) -> Result<String, String> {
+    win::updater::test_install_msi(msi)
+}
+
+/// Tests only: opens `path` as the updater holds a verified MSI (share mode read only, no reparse point).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn hold_for_tests(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    win::updater::hold(path)
+}
+
+/// Tests only: creates msiexec's log as the updater does and returns its hold (read, no delete sharing).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn create_log_for_tests(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    win::updater::create_log(path)
+}
+
+/// Tests only: the relauncher's wait for process `pid` named `image`: `Some(exit code)`, or `None` when it is gone,
+/// another program or still running after `timeout`.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn wait_for_exit_for_tests(pid: u32, image: &str, timeout: std::time::Duration) -> Result<u32, String> {
+    match win::updater::wait_for(pid, image, timeout) {
+        win::updater::Waited::Exited(code) => Ok(code),
+        other => Err(format!("{other:?}")),
     }
 }
 
-impl DownloadMark for WinPlatform {
-    fn is_marked(&self, _path: &Path) -> bool {
-        false
-    }
+/// Tests only: the relauncher's notice, written into `dir` (a test folder).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn write_notice_for_tests(
+    dir: &std::path::Path,
+    exit_code: u32,
+    log: &std::path::Path,
+) -> std::io::Result<pure::update::Notice> {
+    win::updater::write_notice(dir, exit_code, log)
 }
 
-impl SystemVpnWatch for WinPlatform {
-    fn start(&self, _on_change: Box<dyn Fn() + Send>) -> io::Result<Box<dyn Send>> {
-        Err(io_unsupported("system VPN watch"))
-    }
+/// Tests only: the curl flavour WinVPN uses (System32's `curl.exe`, `--ssl-revoke-best-effort`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn windows_curl_for_tests() -> macvpn_platform_api::curl::Curl {
+    win::curl_runner::windows_curl()
 }
 
-// MARK: - UI
-
-impl WindowChrome for WinPlatform {
-    fn popover_corner_radius(&self) -> f64 {
-        0.0
-    }
-
-    fn round_corners(&self, _w: NativeWindow, _radius: f64) -> bool {
-        false
-    }
-
-    fn fit_viewport(&self, _w: NativeWindow, _width: f64, _viewport: f64, _center: bool) -> Option<f64> {
-        None
-    }
-
-    fn order_front_regardless(&self, _w: NativeWindow) {}
+/// Tests only: the Windows runner of the curl layer with a time limit of `timeout` seconds.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn curl_runner_for_tests(timeout: f64) -> Box<dyn macvpn_platform_api::curl::CommandRunner> {
+    Box::new(win::curl_runner::WinCurlRunner::new(timeout))
 }
 
-/// No panel opens: `done` is called at once, as on cancel.
-impl FilePanels for WinPlatform {
-    fn choose_files(&self, _parent: NativeWindow, _multiple: bool, done: Box<dyn FnOnce(Vec<PathBuf>)>) {
-        done(Vec::new());
-    }
-
-    fn choose_save_path(
-        &self,
-        _parent: NativeWindow,
-        _suggested: &str,
-        _message: Option<&str>,
-        done: Box<dyn FnOnce(Option<PathBuf>)>,
-    ) {
-        done(None);
-    }
+/// Tests only: the production HTTPS catalog fetcher (System32's `curl.exe`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn catalog_fetcher_for_tests() -> std::sync::Arc<dyn macvpn_core::catalog::fetch::CatalogFetcher> {
+    std::sync::Arc::new(win::https::catalog_fetcher())
 }
 
-impl Notifier for WinPlatform {
-    fn start(&self, _on_click: Box<dyn Fn(BTreeMap<String, String>) + Send + Sync>) {}
+/// One recorded run: the executable, the arguments and stdin.
+#[cfg(windows)]
+#[doc(hidden)]
+pub type RecordedRun = (String, Vec<String>, Option<String>);
 
-    fn post(&self, _identifier: &str, _title: &str, _body: &str, _user_info: (&str, &str)) {}
+/// Tests only: the production catalog fetcher over a runner that records every run and answers `200` without
+/// starting anything.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn catalog_fetcher_recording_for_tests()
+-> (std::sync::Arc<dyn macvpn_core::catalog::fetch::CatalogFetcher>, std::sync::Arc<std::sync::Mutex<Vec<RecordedRun>>>)
+{
+    use macvpn_platform_api::curl::{CommandError, CommandResult, CommandRunner};
+    use std::sync::{Arc, Mutex};
 
-    fn remove_delivered(&self, _identifier: &str) {}
+    struct Recorder(Arc<Mutex<Vec<RecordedRun>>>);
+
+    impl CommandRunner for Recorder {
+        fn run(&self, exe: &str, args: &[String], stdin: Option<&str>) -> Result<CommandResult, CommandError> {
+            self.0.lock().unwrap().push((exe.to_string(), args.to_vec(), stdin.map(String::from)));
+            Ok(CommandResult::stdout("200 "))
+        }
+    }
+
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    (Arc::new(win::https::catalog_fetcher_with(Box::new(Recorder(seen.clone())))), seen)
 }
 
-impl SecretClipboard for WinPlatform {
-    fn write_secret(&self, _text: &str) -> Result<ClipboardMark, PlatformError> {
-        Err(unsupported("secret clipboard"))
-    }
-
-    fn clear_if_unchanged(&self, _mark: ClipboardMark) -> bool {
-        false
-    }
+/// Tests only: the system VPNs over the phonebook files `books` (temp files standing in for Windows' default
+/// phonebooks), with `private` as WinVPN's own phonebook (never listed).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn system_vpns_for_tests(
+    books: Vec<std::path::PathBuf>,
+    private: Option<std::path::PathBuf>,
+) -> std::sync::Arc<dyn macvpn_platform_api::NativeController> {
+    std::sync::Arc::new(win::system_vpns::SystemVpns::for_test(books, private))
 }
 
-impl AppLifecycle for WinPlatform {
-    fn install_terminate_handler(&self, _handler: Box<dyn Fn() -> TerminateReply + Send + Sync>) -> bool {
-        false
-    }
-
-    fn reply_to_terminate(&self, _terminate: bool) {}
-
-    fn observe_wake(&self, _on_wake: Box<dyn Fn() + Send + Sync>) {}
+/// Tests only: the live system VPN list's watch over the folders `dirs` (test folders).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn system_vpn_watch_for_tests(dirs: Vec<std::path::PathBuf>) -> Box<dyn macvpn_platform_api::SystemVpnWatch> {
+    Box::new(win::ras_watch::RasWatch { dirs })
 }
 
-// MARK: - Control endpoint
-
-impl ControlTransport for WinPlatform {
-    fn bind(&self, _dir: &Path) -> io::Result<BoundEndpoint> {
-        Err(io_unsupported("control endpoint"))
-    }
-
-    fn random_32(&self) -> io::Result<[u8; 32]> {
-        Err(io_unsupported("system randomness"))
-    }
-
-    fn is_already_closed(&self, _e: &io::Error) -> bool {
-        false
-    }
-
-    fn prepare_dir(&self, _dir: &Path) -> io::Result<()> {
-        Err(io_unsupported("control endpoint"))
-    }
+/// Tests only: the folders the production watch watches (Windows' two default phonebook folders, WinVPN's `ras`).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn system_vpn_watch_folders_for_tests() -> Vec<std::path::PathBuf> {
+    win::ras_watch::folders()
 }
 
-// MARK: - VPNs
-
-impl HelperClient for WinPlatform {
-    fn status(&self) -> Result<Vec<RootStatus>, String> {
-        Err(message("helper"))
-    }
-
-    fn up(
-        &self,
-        _kind: VPNKind,
-        _id: &Uuid,
-        _config: &[u8],
-        _secrets: &Secrets,
-        _debug: bool,
-        _accept_risky: &[String],
-    ) -> Result<(), String> {
-        Err(message("helper"))
-    }
-
-    fn down(&self, _kind: VPNKind, _id: &Uuid) -> Result<(), String> {
-        Err(message("helper"))
-    }
-
-    fn respond(&self, _id: &Uuid, _kind: AuthResponseKind, _response: &str) -> Result<(), String> {
-        Err(message("helper"))
-    }
+/// Tests only: the production system VPNs (Windows' default phonebooks), WinVPN's private phonebook skipped.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn system_vpns_production_for_tests() -> std::sync::Arc<dyn macvpn_platform_api::NativeController> {
+    std::sync::Arc::new(win::system_vpns::SystemVpns::new(None))
 }
 
-impl NativeController for WinPlatform {
-    fn list(&self) -> Result<Vec<SystemVpn>, String> {
-        Err(message("native VPN"))
-    }
-
-    fn remote_address(&self, _service_id: &str) -> Option<String> {
-        None
-    }
-
-    fn start(&self, _service_id: &str, _kind: Option<NativeKind>, _secrets: &Secrets) -> Result<(), String> {
-        Err(message("native VPN"))
-    }
-
-    fn stop(&self, _service_id: &str) -> Result<(), String> {
-        Err(message("native VPN"))
-    }
+/// Tests only: the administrator steps (2c Task 12) without a platform object (the trust and NAT steps prompt for
+/// UAC: only the desktop-ignored tests call them).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn admin_steps_for_tests() -> std::sync::Arc<dyn macvpn_platform_api::AdminSteps> {
+    std::sync::Arc::new(win::admin_steps::WinAdminSteps { trust_exe: None })
 }
 
-impl NativeProfiles for WinPlatform {
-    fn build(&self, _connection: &Connection, _psk: &str) -> Result<NativeProfile, String> {
-        Err(message("native VPN profile"))
-    }
-
-    fn install(&self, _id: &Uuid, _profile: &[u8], _file_name: &str, _service_existed: bool) -> Result<(), String> {
-        Err(message("native VPN profile"))
-    }
+/// Tests only: the administrator steps with `exe` (the installed `WinVPN.exe`) as the program of the elevated trust
+/// step, instead of the test's own exe.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn admin_steps_with_trust_exe_for_tests(
+    exe: &std::path::Path,
+) -> std::sync::Arc<dyn macvpn_platform_api::AdminSteps> {
+    std::sync::Arc::new(win::admin_steps::WinAdminSteps { trust_exe: Some(exe.to_path_buf()) })
 }
 
-impl LogStreamSpawner for WinPlatform {
-    /// No command runs.
-    fn command_line(&self) -> String {
-        String::new()
-    }
-
-    fn spawn(
-        &self,
-        _on_lines: Box<dyn FnMut(Vec<String>) + Send>,
-        _on_exit: Box<dyn FnOnce() + Send>,
-    ) -> Result<Box<dyn StreamHandle>, String> {
-        Err(message("system log stream"))
-    }
+/// Tests only: the CA file the trust step reads, staged in `dir` as `trust_ca` stages it: its path and the guard that
+/// holds it (dropping the guard deletes it).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn stage_ca_for_tests(
+    dir: &std::path::Path,
+    der: &[u8],
+) -> Result<(std::path::PathBuf, Box<dyn std::any::Any>), String> {
+    let staged = win::admin_steps::StagedCa::write_in(dir, der)?;
+    Ok((staged.path.clone(), Box::new(staged)))
 }
 
-// MARK: - Network
-
-impl ReleaseSource for WinPlatform {
-    fn latest_release(&self, _repo_id: i64, _repo: &str) -> Result<Release, String> {
-        Err(message("update check"))
-    }
-}
-
-/// `Unavailable`: the catalog service shows the source as unavailable, without an error notification.
-impl CatalogFetcher for WinPlatform {
-    fn fetch(&self, _req: &FetchRequest) -> Result<FetchOutcome, CatalogError> {
-        Err(CatalogError::Unavailable(message("HTTPS catalog fetch")))
-    }
-}
-
-// MARK: - Keys and storage
-
-/// No item is ever stored, so there is no auto-unlock (fail closed).
-impl KeyStore for WinPlatform {
-    fn get(&self) -> Result<Option<Zeroizing<Vec<u8>>>, KeyStoreError> {
-        Ok(None)
-    }
-
-    fn exists(&self) -> Result<bool, KeyStoreError> {
-        Ok(false)
-    }
-
-    fn set(&self, _key: &[u8]) -> Result<(), KeyStoreError> {
-        Err(KeyStoreError::Unavailable(message("key store")))
-    }
-
-    /// A missing item is not an error.
-    fn delete(&self) -> Result<(), KeyStoreError> {
-        Ok(())
-    }
-}
-
-/// No randomness, so no key, salt or nonce, and no vault, can be made by mistake.
-impl Entropy for WinPlatform {
-    fn fill(&self, _buf: &mut [u8]) -> io::Result<()> {
-        Err(io_unsupported("system randomness"))
-    }
-}
-
-/// The 1.1 Keychain items exist only on macOS: an empty source.
-impl LegacyKeychain for WinPlatform {
-    fn items(&self) -> Vec<(String, SecretField)> {
-        Vec::new()
-    }
-
-    fn read(&self, _item: &str, _field: SecretField) -> LegacyRead {
-        LegacyRead::Missing
-    }
-
-    fn delete(&self, _item: &str, _field: SecretField) {}
-}
-
-impl LegacySecrets for WinPlatform {
-    fn get(&self, _id: &Uuid, _field: SecretField) -> Option<String> {
-        None
-    }
-}
-
-/// No login item can be registered.
-impl LoginItems for WinPlatform {
-    fn state(&self) -> LoginItemView {
-        LoginItemView::default()
-    }
-
-    fn set_enabled(&mut self, _on: bool) -> Result<(), PlatformError> {
-        Err(unsupported("login item"))
-    }
-
-    fn unregister_if_registered(&mut self) -> Result<bool, PlatformError> {
-        Ok(false)
-    }
-
-    fn open_settings(&self) {}
-
-    fn remove_stale_entries(&self) -> Result<(), PlatformError> {
-        Ok(())
-    }
+/// Tests only: the PSK step of a system VPN's start for the entry `name` of the phonebook `book` (a temp file):
+/// whether WinVPN's stored PSK `stored` was written into Windows' RAS credential store.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn system_vpn_provide_psk_for_tests(
+    book: &std::path::Path,
+    name: &str,
+    stored: Option<&str>,
+) -> Result<bool, String> {
+    let book = macvpn_winsys::ras::Phonebook::at(book).map_err(|e| e.to_string())?;
+    let entry = book.read(name).map_err(|e| e.to_string())?;
+    win::system_vpns::provide_psk(&book, &entry, stored).map_err(|e| e.to_string())
 }

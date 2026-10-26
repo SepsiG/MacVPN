@@ -5,15 +5,16 @@
 //!   questions. The method is added to the delegate's class at run time and asks a Rust handler: now, cancel, or
 //!   later (the Swift `.terminateLater`, answered with [`reply_to_terminate`]). Tauri's own `app.exit` stops the
 //!   event loop without `terminate:`, so it does not come through here.
-//! - the `NSWorkspace` wake notification (the Swift `didWakeNotification` refresh);
+//! - the `NSWorkspace` wake notification (the Swift `didWakeNotification` refresh) and the will-sleep one (the
+//!   auto-reconnect notes which connections were up);
 //! - activating the app and ordering a window front without making it key (the MFA prompt does not steal the
 //!   focus: the Swift `orderFrontRegardless`).
 //!
 //! Audit notes: `class_addMethod` adds (never replaces) the method on the live delegate's class, with the type
 //! encoding of `- (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication *)sender` (`Q@:@`); the
 //! IMP has exactly that C signature. It is only added when the class does not respond to the selector already.
-//! The window pointer comes from Tauri's `ns_window()` for an open window, used on the main thread only. The wake
-//! observer's token is kept for the rest of the process.
+//! The window pointer comes from Tauri's `ns_window()` for an open window, used on the main thread only. The wake and
+//! sleep observers' tokens are kept for the rest of the process.
 #![allow(unsafe_code)]
 
 use block2::RcBlock;
@@ -21,8 +22,10 @@ use objc2::MainThreadMarker;
 use objc2::rc::Retained;
 use objc2::runtime::{AnyClass, AnyObject, Imp, Sel};
 use objc2::sel;
-use objc2_app_kit::{NSApplication, NSWindow, NSWorkspace, NSWorkspaceDidWakeNotification};
-use objc2_foundation::NSNotification;
+use objc2_app_kit::{
+    NSApplication, NSWindow, NSWorkspace, NSWorkspaceDidWakeNotification, NSWorkspaceWillSleepNotification,
+};
+use objc2_foundation::{NSNotification, NSNotificationName};
 use std::ffi::c_void;
 use std::ptr::NonNull;
 use std::sync::OnceLock;
@@ -132,13 +135,29 @@ pub fn observe_wake(on_wake: impl Fn() + Send + Sync + 'static) {
     if STARTED.set(()).is_err() {
         return;
     }
-    let block = RcBlock::new(move |_note: NonNull<NSNotification>| on_wake());
+    // SAFETY: an immutable AppKit string constant.
+    observe_workspace(unsafe { NSWorkspaceDidWakeNotification }, on_wake);
+}
+
+/// Calls `on_sleep` when the Mac is about to sleep (`NSWorkspaceWillSleepNotification`, on the posting thread).
+/// Once per process; a second call does nothing.
+pub fn observe_sleep(on_sleep: impl Fn() + Send + Sync + 'static) {
+    static STARTED: OnceLock<()> = OnceLock::new();
+    if STARTED.set(()).is_err() {
+        return;
+    }
+    // SAFETY: an immutable AppKit string constant.
+    observe_workspace(unsafe { NSWorkspaceWillSleepNotification }, on_sleep);
+}
+
+/// Calls `f` for every `name` notification of the shared workspace's notification center, on the posting thread.
+/// The observer lives as long as the process.
+fn observe_workspace(name: &NSNotificationName, f: impl Fn() + Send + Sync + 'static) {
+    let block = RcBlock::new(move |_note: NonNull<NSNotification>| f());
     let center = NSWorkspace::sharedWorkspace().notificationCenter();
     // SAFETY: a valid notification name, no object filter, no queue (the posting thread), and a block that only
-    // calls `on_wake`.
-    let token = unsafe {
-        center.addObserverForName_object_queue_usingBlock(Some(NSWorkspaceDidWakeNotification), None, None, &block)
-    };
+    // calls `f`.
+    let token = unsafe { center.addObserverForName_object_queue_usingBlock(Some(name), None, None, &block) };
     // The observer lives as long as the process.
     std::mem::forget::<Retained<_>>(token);
 }

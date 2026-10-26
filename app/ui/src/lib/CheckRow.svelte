@@ -1,10 +1,16 @@
 <script lang="ts">
-  // One System Status row (the Swift `CheckRow`): green / red mark, title, detail; the action only when not ok.
+  // One System Status row (the Swift `CheckRow`): green / red mark, title, detail; the action only when not ok
+  // (or when `showAction`: WinVPN's OpenVPN row and MacVPN's tools row offer "Update" while they are green).
   import type { Snippet } from 'svelte';
   import type { CheckRow } from './api';
   import Icon from './Icon.svelte';
 
-  let { row, title, children }: { row: CheckRow; title: string; children?: Snippet } = $props();
+  let {
+    row,
+    title,
+    showAction = false,
+    children,
+  }: { row: CheckRow; title: string; showAction?: boolean; children?: Snippet } = $props();
 </script>
 
 <div class="check-row">
@@ -13,7 +19,7 @@
     <strong>{title}</strong>
     <span class="detail">{row.detail}</span>
   </div>
-  {#if !row.ok}
+  {#if !row.ok || showAction}
     <div class="action">{@render children?.()}</div>
   {/if}
 </div>

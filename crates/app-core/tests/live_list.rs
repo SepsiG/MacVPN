@@ -328,7 +328,6 @@ fn a_removed_selection_without_an_editor_is_still_marked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_managed_connection_is_never_marked_removed() {
     let w = window();
     let c = Connection::new("Office", VPNKind::Openvpn);
@@ -467,7 +466,6 @@ fn a_removal_during_an_editor_load_is_kept() {
 /// A service that a managed connection takes over leaves the system list but is still listed by macOS: the
 /// selection is not marked removed.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_service_that_becomes_managed_is_not_removed() {
     let w = window();
     w.fx.native.set_list(Ok(vec![SystemVpn::new(SERVICE, "Office L2TP", "L2TP", "Disconnected")]));

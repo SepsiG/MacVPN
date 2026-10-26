@@ -16,6 +16,7 @@ name = "mvpn"
 path = "src/main.rs"
 
 [dependencies]
+base64 = "0.23.1"
 macvpn-core = { path = "../core" }
 regex = "1.13.1"
 uuid = { version = "1.26.1", features = ["v4"] }
@@ -23,6 +24,31 @@ zeroize = "1.9.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.191"
+
+# The WinVPN Service's Win32 calls (src/windows/sys). Pinned exactly: the version Tauri already brings.
+# miniz_oxide (already in Cargo.lock through flate2/png; `#![forbid(unsafe_code)]`): raw deflate of the one member of
+# the wireguard-nt SDK zip the service takes (2b plan, fix4).
+[target.'cfg(windows)'.dependencies]
+macvpn-winsys = { path = "../winsys" }
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Storage_FileSystem",
+    "Win32_System_JobObjects",
+    "Win32_System_Registry",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_Services",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+] }
+
+# The zip tests of `windows::wg_update` (every OS) build their archives with it.
+[dev-dependencies]
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
 
 [lints]
 workspace = true

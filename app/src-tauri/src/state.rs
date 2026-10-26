@@ -3,6 +3,7 @@
 use macvpn_app_core::app::{Poller, PreferenceStore};
 use macvpn_app_core::connections::ConnectionsModel;
 use macvpn_app_core::credential_prompt::{CredentialBroker, CredentialPromptView};
+use macvpn_app_core::deps::HelperClient;
 use macvpn_app_core::live::LiveReload;
 use macvpn_app_core::logs::{LogFeed, NativeLogs};
 use macvpn_app_core::notify::PromptTracker;
@@ -22,6 +23,9 @@ use crate::platform::Environment;
 
 pub struct AppState {
     pub manager: Arc<ConnectionManager>,
+    /// The manager's helper (a smoke run's stand-in in a smoke run): the connection logs are read through it, never
+    /// through the platform's own (`platform::get()`), which would ask the real root helper or WinVPN Service.
+    pub helper: Arc<dyn HelperClient>,
     pub broker: Arc<PromptBroker>,
     /// The credential prompts (`cred-<id>` windows).
     pub credential_broker: Arc<CredentialBroker>,
@@ -36,6 +40,8 @@ pub struct AppState {
     pub setup: RwLock<SetupReport>,
     /// The first system check finished (the System Status rows are shown).
     pub setup_checked: AtomicBool,
+    /// When the popover or the Connections window last started a background check (`system::recheck_if_incomplete`).
+    pub setup_rechecked: Mutex<Option<Instant>>,
     /// `brew install` (owned here, so it survives closing the System Status window).
     pub brew: Mutex<BrewRun>,
     /// The System Status window's root install / uninstall state.
@@ -84,10 +90,14 @@ pub struct AppState {
     /// Files opened from Finder waiting for the vault, and their outcome for the Connections window (paths stay
     /// here; never in the view model).
     pub open_files: crate::open_files::OpenFilesApp,
+    /// The last state seen per managed connection, for the "connected" / "reconnected" notices.
+    pub notices: Mutex<macvpn_app_core::connection_notices::NoticeTracker>,
+    /// Auto-reconnect (decision 4): the planner, its driver's events and the network watcher.
+    pub reconnect: crate::reconnect::Reconnect,
 }
 
 impl AppState {
-    /// Quitting: the status poller, the live reload, the watcher and the team catalog scheduler stop (the
+    /// Quitting: the status poller, the live reload, the watchers and the team catalog scheduler stop (the
     /// scheduler is joined).
     pub fn stop_polling(&self) {
         self.catalog.stop_scheduler();
@@ -97,6 +107,7 @@ impl AppState {
         self.live.stop();
         // Dropping the watcher stops it (and joins its thread).
         drop(self.watcher.lock().unwrap_or_else(PoisonError::into_inner).take());
+        self.reconnect.stop();
     }
 
     /// Re-reads launch at login from the system (menu open, after the switch) and publishes it.
@@ -121,10 +132,36 @@ impl AppState {
             self.broker.pending(),
             setup.is_complete(),
         );
+        // Without a VPN engine (WinVPN 2a) every row that needs it says so, instead of "Missing tool" (WinVPN 2c:
+        // the native kinds and the system VPNs run without the WinVPN Service).
+        vm.set_engine_missing_where(setup.engine_missing.as_deref(), &|kind| setup.needs_service(kind));
+        // The kinds that come later (WinVPN: the native VPNs) say so on their rows.
+        vm.set_later_kinds(&setup.later_kinds);
+        // The connections the platform cannot connect with their settings (WinVPN 2c; read at the last reload, no
+        // config is read here; none on macOS).
+        vm.set_unsupported(&self.manager.unsupported_reasons());
+        // Rows whose engine is missing (only once the check ran: unknown is not missing).
+        if self.setup_checked.load(std::sync::atomic::Ordering::SeqCst) {
+            vm.set_unavailable_kinds(&|kind| {
+                setup.unavailable_text(kind).map(|text| (text, setup.missing_engine(kind).is_some()))
+            });
+        }
+        // A failure whose text names an administrator step offers its button (WinVPN 2c: allow L2TP behind NAT,
+        // trust the SSTP CA; none on macOS).
+        let admin = crate::platform::get().admin_steps();
+        vm.set_admin_actions(&|reason| admin.offered_action(reason));
         // The configs' server hosts for the search, as the last reload read them (no config is read here).
         vm.set_server_hosts(&self.manager.server_hosts());
         vm.update = self.updates.view();
         vm.login_item = self.login_item.read().unwrap_or_else(PoisonError::into_inner).clone();
+        vm.appearance = Some(macvpn_app_core::appearance::Appearance::load(self.prefs.as_ref()).raw_value());
+        vm.connection_notifications = crate::notifications::notices_possible(self)
+            .then(|| macvpn_app_core::connection_notices::enabled(self.prefs.as_ref()));
+        // "Reconnect Automatically" per managed connection (default on).
+        vm.set_auto_reconnect(&|id| {
+            macvpn_core::models::parse_uuid(id)
+                .is_some_and(|u| macvpn_app_core::reconnect::is_enabled(self.prefs.as_ref(), &u))
+        });
         vm.manage = self.connections.view();
         let facts = self.setup_checked.load(std::sync::atomic::Ordering::SeqCst).then(|| setup_facts(&setup));
         vm.setup = SetupView::build(
@@ -132,7 +169,15 @@ impl AppState {
             &self.brew.lock().unwrap_or_else(PoisonError::into_inner),
             &self.setup_ops.lock().unwrap_or_else(PoisonError::into_inner),
             crate::platform::get().setup().helper_upgrade_notice(),
-        );
+        )
+        // Without a usable engine (WinVPN: no service, another version, degraded) its reason replaces the rows;
+        // macOS has neither.
+        .with_engine_note(crate::platform::get().setup().engine_note().or_else(|| setup.engine_missing.clone()))
+        .with_engine(setup.engine.as_ref(), crate::platform::get().setup().later_note())
+        // The Windows VPN client row (WinVPN 2c), also while the service is missing; none on macOS.
+        .with_ras(setup.ras.as_ref())
+        .with_system_uninstall(crate::platform::get().setup().system_uninstall_note())
+        .with_account_cleanup(crate::platform::get().setup().account_cleanup());
         vm.quit = self.quit.question();
         // The control API: the "Held by" labels, the quit question's note, the Paired apps section, the pairings.
         vm.set_holders(&self.control.holders());
@@ -168,6 +213,7 @@ pub fn setup_facts(r: &SetupReport) -> SetupFacts {
         bundled_root_version: r.bundled_root_version.clone(),
         root_ok: r.root_ok(),
         missing_root_files: r.missing_root_files.clone(),
+        outdated: r.outdated_packages.clone(),
     }
 }
 

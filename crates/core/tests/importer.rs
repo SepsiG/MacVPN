@@ -4,7 +4,7 @@
 mod common;
 
 use common::*;
-use macvpn_core::importer::{self, ConfigImportError, MAX_INLINE_FILE_SIZE};
+use macvpn_core::importer::{self, ConfigImportError, MAX_INLINE_FILE_SIZE, lexically_escapes};
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::models::VPNKind;
 use macvpn_core::validators::{ConfigValidator, OpenVPNValidator, StrongSwanValidator};
@@ -40,6 +40,13 @@ impl Env {
         fs::write(self.dir.join(name), content).unwrap();
     }
 
+    /// The config's folder as a user would write it in a config: on Windows without the `\\?\` prefix of the
+    /// canonical path (the importer refuses verbatim paths).
+    fn shown(&self) -> String {
+        let shown = self.dir.display().to_string();
+        if cfg!(windows) { shown.strip_prefix(r"\\?\").map(str::to_string).unwrap_or(shown) } else { shown }
+    }
+
     fn put_in(&self, base: &Path, name: &str, content: &str) {
         fs::write(base.join(name), content).unwrap();
     }
@@ -54,7 +61,8 @@ impl Env {
     }
 
     fn openssl(&self, args: &[&str]) -> bool {
-        Command::new("/usr/bin/openssl")
+        // Windows: the `openssl` on the PATH (Git for Windows ships one; so do the CI runners).
+        Command::new(if cfg!(windows) { "openssl" } else { "/usr/bin/openssl" })
             .args(args)
             .current_dir(&self.dir)
             .stdout(std::process::Stdio::null())
@@ -93,6 +101,28 @@ fn mobileconfig_is_rejected_with_finder_hint() {
     );
 }
 
+/// G-11 (WinVPN 2c Task 13): on Windows the same error names WinVPN's own way (no Finder, no profile approval),
+/// in both languages; macOS keeps its text.
+#[test]
+fn mobileconfig_on_windows_names_winvpns_way() {
+    use macvpn_core::TargetOs;
+    use macvpn_core::l10n::{self, TextPlatform};
+    const WINDOWS: TextPlatform = TextPlatform { os: TargetOs::Windows, product: "WinVPN" };
+    let key = "A .mobileconfig profile cannot be imported into MacVPN. Double-click it in Finder: macOS installs it as a profile, then approve it in System Settings → General → Device Management (Profiles).";
+    for language in [AppLanguage::En, AppLanguage::Hu] {
+        lang(language);
+        assert_eq!(ConfigImportError::NativeProfile.message(), l10n::tr_for(TextPlatform::MACOS, language, key, &[]));
+    }
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::En, key, &[]),
+        "A .mobileconfig profile cannot be imported into WinVPN. Create the connection with New → L2TP, or restore a backup that has it."
+    );
+    assert_eq!(
+        l10n::tr_for(WINDOWS, AppLanguage::Hu, key, &[]),
+        "A .mobileconfig profil nem importálható a WinVPN-be. Hozd létre a kapcsolatot az Új → L2TP menüponttal, vagy állíts vissza egy mentést, amelyben benne van."
+    );
+}
+
 #[test]
 fn path_extension_like_nsstring() {
     for (name, ext) in [
@@ -118,7 +148,6 @@ fn path_extension_like_nsstring() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn inlines_referenced_files() {
     let env = Env::new();
     env.put("ca.crt", CERT);
@@ -137,7 +166,6 @@ fn inlines_referenced_files() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn inlines_every_directive_with_its_format() {
     let env = Env::new();
     env.put("ca.crt", CERT);
@@ -158,11 +186,10 @@ fn inlines_every_directive_with_its_format() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn absolute_path_inside_base_is_allowed() {
     let env = Env::new();
     env.put("ca.crt", CERT);
-    let path = format!("{}/ca.crt", env.dir.display());
+    let path = format!("{}/ca.crt", env.shown());
     assert_eq!(env.inline(&format!("ca {path}\n")).unwrap().inlined_files, [path]);
 }
 
@@ -180,7 +207,6 @@ fn parent_directory_escape_is_rejected() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn absolute_path_outside_base_is_rejected() {
     let env = Env::new();
     env.rejected("ca /etc/hosts", ConfigImportError::OutsideBaseDirectory("/etc/hosts".into()));
@@ -198,12 +224,227 @@ fn symlink_escaping_base_is_rejected() {
     env.rejected("ca up/outside.crt", ConfigImportError::OutsideBaseDirectory("up/outside.crt".into()));
 }
 
+/// The importer's decisions on Unix, pinned: every case keeps what the text-based check of 1.5.0 decided.
+#[test]
+#[cfg(unix)]
+fn unix_decisions_are_unchanged() {
+    let env = Env::new();
+    env.put("ca.crt", CERT);
+    fs::create_dir_all(env.dir.join("sub")).unwrap();
+    env.put("sub/ca.crt", CERT);
+    env.put("a:b.crt", CERT); // a colon is an ordinary file name character on Unix
+    env.put("a\\b.crt", CERT); // so is a backslash
+    env.put("\u{301}x.crt", CERT);
+    let base = env.dir.display().to_string();
+    for ok in [
+        "ca.crt",
+        "./ca.crt",
+        "sub/../ca.crt",
+        "sub//ca.crt",
+        "a:b.crt",
+        "a\\b.crt",
+        &format!("{base}/ca.crt"),
+        &format!("{base}/sub/ca.crt"),
+        &format!("{base}/sub/../ca.crt"),
+        &format!("{base}//ca.crt"),
+    ] {
+        assert!(env.inline(&format!("ca {ok}\n")).is_ok(), "{ok}");
+    }
+    env.rejected("ca ../x.crt", ConfigImportError::OutsideBaseDirectory("../x.crt".into()));
+    env.rejected("ca /etc/hosts", ConfigImportError::OutsideBaseDirectory("/etc/hosts".into()));
+    env.rejected("ca missing.crt", ConfigImportError::MissingFile("missing.crt".into()));
+    env.rejected("ca ../missing.crt", ConfigImportError::OutsideBaseDirectory("../missing.crt".into()));
+    env.rejected("ca /missing.crt", ConfigImportError::MissingFile("/missing.crt".into()));
+    env.rejected("ca .", ConfigImportError::OutsideBaseDirectory(".".into()));
+    env.rejected("ca sub/..", ConfigImportError::OutsideBaseDirectory("sub/..".into()));
+    env.rejected(&format!("ca {base}"), ConfigImportError::OutsideBaseDirectory(base.clone()));
+    env.rejected(&format!("ca {base}/"), ConfigImportError::OutsideBaseDirectory(format!("{base}/")));
+    env.rejected("ca sub", ConfigImportError::MissingFile("sub".into()));
+    env.rejected("ca ca.crt:x", ConfigImportError::MissingFile("ca.crt:x".into()));
+    env.rejected("ca ..\\x.crt", ConfigImportError::MissingFile("..\\x.crt".into()));
+    // Swift's `hasPrefix` compares Characters: a name that starts with a combining mark joins the `/` before it
+    // into one Character, so the text check of 1.5.0 refused it, and it still does.
+    env.rejected("ca ./\u{301}x.crt", ConfigImportError::OutsideBaseDirectory("./\u{301}x.crt".into()));
+    assert!(lexically_escapes("../x"));
+    assert!(lexically_escapes("a/../../b"));
+    assert!(!lexically_escapes("a/../b"));
+    assert!(!lexically_escapes("/../x"), "absolute: checked after resolving");
+    assert!(!lexically_escapes("a\\..\\..\\b"), "a backslash is a name character on Unix");
+    assert!(!lexically_escapes("C:\\x\\..\\..\\y"));
+}
+
+/// Windows forms of the same decisions: `\` and `/` separate, a drive-absolute path inside the folder is fine, and
+/// everything that could reach outside the folder (another drive, UNC and device paths, `\\?\`, `\??\`, a rooted
+/// path without a drive, a drive-relative path) is refused before the file system is asked. Alternate data
+/// streams and reserved device names never name a file.
+#[test]
+#[cfg(windows)]
+fn windows_paths_resolve_like_unix_ones() {
+    let env = Env::new();
+    env.put("ca.crt", CERT);
+    fs::create_dir_all(env.dir.join("sub")).unwrap();
+    env.put("sub/ca.crt", CERT);
+    let base = env.shown();
+    let lower = format!("{}{}", base[..1].to_lowercase(), &base[1..]);
+    for ok in [
+        "ca.crt",
+        "sub\\ca.crt",
+        "sub/ca.crt",
+        ".\\sub\\..\\ca.crt",
+        "sub\\\\ca.crt",
+        "CA.CRT",
+        &format!("{base}\\ca.crt"),
+        &format!("{base}/sub/ca.crt"),
+        &format!("{base}\\sub\\..\\ca.crt"),
+        &format!("{lower}\\ca.crt"),
+    ] {
+        assert!(env.inline(&format!("ca \"{ok}\"\n")).is_ok(), "{ok}");
+    }
+    let outside =
+        |path: &str| env.rejected(&format!("ca {path}"), ConfigImportError::OutsideBaseDirectory(path.into()));
+    let missing = |path: &str| env.rejected(&format!("ca {path}"), ConfigImportError::MissingFile(path.into()));
+    outside("..\\x.crt");
+    outside("../x.crt");
+    outside("sub\\..\\..\\x.crt");
+    outside(".");
+    outside("sub\\..");
+    outside(&base);
+    outside("C:\\Windows\\win.ini");
+    outside("C:/Windows/win.ini");
+    // Refused lexically, before the file system is asked: a missing file outside would otherwise be "missing".
+    outside("C:\\winvpn-missing-folder\\x.crt");
+    env.put_in(&env.root, "x.crt", CERT);
+    outside(&format!("{base}\\..\\x.crt"));
+    // Never joined, never resolved: no SMB connection, no device opened.
+    outside("\\\\localhost\\c$\\x.crt");
+    outside("//localhost/c$/x.crt");
+    outside("\\\\127.0.0.1\\share\\ca.crt");
+    outside(&format!("\\\\?\\{base}\\ca.crt"));
+    outside(&format!("//?/{base}/ca.crt"));
+    outside("\\\\?\\UNC\\localhost\\c$\\x.crt");
+    outside(&format!("\\\\.\\{base}\\ca.crt"));
+    outside("\\\\.\\CON");
+    outside("\\\\.\\pipe\\x");
+    outside("\\\\.\\PhysicalDrive0");
+    outside(&format!("\\??\\{base}\\ca.crt"));
+    outside("\\??\\UNC\\localhost\\c$\\x.crt");
+    outside("\\Windows\\win.ini");
+    outside("/etc/hosts");
+    outside("C:ca.crt");
+    outside(&format!("{}ca.crt", &base[..2]));
+    // Alternate data streams: never a referenced file.
+    missing("ca.crt:hidden");
+    missing("ca.crt::$DATA");
+    missing("sub\\ca.crt:x:$DATA");
+    missing(&format!("{base}\\ca.crt:hidden"));
+    // Reserved device names and Win32's trailing dot trimming: the names are taken literally.
+    for name in ["CON", "NUL", "nul.crt", "COM1", "LPT1.txt", "AUX", "sub\\PRN", "ca.crt."] {
+        missing(name);
+    }
+    missing(&format!("{base}\\NUL"));
+    assert!(lexically_escapes("..\\x"));
+    assert!(lexically_escapes("a\\..\\..\\b"));
+    assert!(lexically_escapes("a/..\\..\\b"));
+    assert!(!lexically_escapes("a\\..\\b"));
+    assert!(!lexically_escapes("C:\\x\\..\\..\\y"), "absolute: checked after resolving");
+    assert!(!lexically_escapes("\\x\\..\\..\\y"));
+    assert!(!lexically_escapes("\\\\server\\share\\..\\..\\y"));
+}
+
+/// A junction or a symlink inside the folder that points outside it is refused. A standard user's junction may not
+/// be followable at all on current Windows (`ERROR_UNTRUSTED_MOUNT_POINT`): then the file is missing, which is a
+/// refusal too. A symlink needs a privilege (or Developer Mode): without it that part is skipped.
+#[test]
+#[cfg(windows)]
+fn junction_or_symlink_escaping_base_is_rejected() {
+    let env = Env::new();
+    env.put_in(&env.root, "outside.crt", CERT);
+    let refused = |path: &str| {
+        let err = env.inline(&format!("ca {path}\n")).unwrap_err();
+        assert!(
+            matches!(&err, ConfigImportError::OutsideBaseDirectory(p) | ConfigImportError::MissingFile(p) if p == path),
+            "{path}: {err:?}"
+        );
+    };
+    let junction = env.dir.join("up");
+    let made = Command::new("cmd")
+        .args(["/C", "mklink", "/J"])
+        .arg(&junction)
+        .arg(env.shown().strip_suffix("\\vpn").unwrap())
+        .stdout(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(made.success(), "mklink /J needs no privilege");
+    refused("up\\outside.crt");
+    refused("up/vpn/../outside.crt");
+    if std::os::windows::fs::symlink_file(env.root.join("outside.crt"), env.dir.join("ca.crt")).is_ok() {
+        refused("ca.crt");
+    }
+    if std::os::windows::fs::symlink_dir(&env.root, env.dir.join("up2")).is_ok() {
+        refused("up2\\outside.crt");
+    }
+}
+
+/// A symlink or junction inside the folder is refused before it is followed, whatever its target: one pointing at a
+/// UNC path (say from a mounted VHDX) would otherwise open an SMB session, sending the user's NTLM credentials, while
+/// the path is canonicalized (review M1). `mklink /J` refuses a UNC target, so the junction is written with
+/// `FSCTL_SET_REPARSE_POINT`; a symlink needs a privilege (or Developer Mode) and is skipped without it (1314).
+#[test]
+#[cfg(windows)]
+fn a_link_to_a_unc_path_inside_the_folder_is_refused_without_following_it() {
+    use std::time::{Duration, Instant};
+    let env = Env::new();
+    let unc = r"\\127.0.0.1\nonexistent\x";
+    let refused_quickly = |path: &str| {
+        let started = Instant::now();
+        env.rejected(&format!("ca {path}"), ConfigImportError::OutsideBaseDirectory(path.into()));
+        assert!(started.elapsed() < Duration::from_secs(2), "{path}: {:?}", started.elapsed());
+    };
+    let junction = env.dir.join("share");
+    fs::create_dir(&junction).unwrap();
+    macvpn_winsys::file::make_junction_for_tests(&junction, r"\??\UNC\127.0.0.1\nonexistent\x").unwrap();
+    refused_quickly("share\\ca.crt");
+    refused_quickly("share/sub/ca.crt");
+    // A junction to a folder inside is refused as well: no link is followed.
+    fs::create_dir(env.dir.join("real")).unwrap();
+    env.put("real/ca.crt", CERT);
+    let inner = env.dir.join("inner");
+    fs::create_dir(&inner).unwrap();
+    let target = format!(r"\??\{}", env.dir.join("real").display().to_string().trim_start_matches(r"\\?\"));
+    macvpn_winsys::file::make_junction_for_tests(&inner, &target).unwrap();
+    refused_quickly("inner\\ca.crt");
+    assert!(env.inline("ca real\\ca.crt\n").is_ok());
+    match std::os::windows::fs::symlink_file(unc, env.dir.join("ca.crt")) {
+        Ok(()) => refused_quickly("ca.crt"),
+        Err(e) if e.raw_os_error() == Some(1314) => eprintln!("symlink part skipped: no symlink privilege"),
+        Err(e) => panic!("symlink: {e}"),
+    }
+    match std::os::windows::fs::symlink_dir(unc, env.dir.join("dirlink")) {
+        Ok(()) => refused_quickly("dirlink\\ca.crt"),
+        Err(e) if e.raw_os_error() == Some(1314) => eprintln!("symlink part skipped: no symlink privilege"),
+        Err(e) => panic!("symlink: {e}"),
+    }
+}
+
+/// The credential files follow the same rules on Windows: nothing outside the folder is read.
+#[test]
+#[cfg(windows)]
+fn credential_files_outside_the_folder_are_not_read() {
+    let env = Env::new();
+    fs::write(env.root.join("outside.txt"), "u\np\n").unwrap();
+    for name in ["..\\outside.txt", "../outside.txt", "C:\\Windows\\win.ini", "\\\\localhost\\c$\\x.txt", "x.txt:s"] {
+        let prepared =
+            importer::prepare("x.ovpn", &format!("client\nremote a 1194\nauth-user-pass {name}\n"), &env.dir).unwrap();
+        assert_eq!(prepared.credentials.username, None, "{name}");
+        assert_eq!(prepared.credentials.unread_files, [name], "{name}");
+    }
+}
+
 fn wrong(directive: &str, file: &str) -> ConfigImportError {
     ConfigImportError::WrongFormat { directive: directive.into(), file: file.into() }
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn wrong_format_is_rejected() {
     let env = Env::new();
     env.put("hosts", "127.0.0.1 localhost\n");
@@ -224,7 +465,6 @@ fn wrong_format_is_rejected() {
 /// the other directives keep the strict check (`\r\n` does not match it), a leading BOM is dropped when reading, and
 /// a NUL ends the path given to realpath.
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn foundation_reading_rules() {
     let env = Env::new();
     env.put("crlf.crt", &CERT.replace('\n', "\r\n"));
@@ -243,7 +483,6 @@ fn foundation_reading_rules() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn oversize_file_is_rejected() {
     let env = Env::new();
     env.put("big.crt", &format!("{CERT}{}", "#".repeat(MAX_INLINE_FILE_SIZE)));
@@ -259,7 +498,6 @@ fn directory_and_missing_file_are_rejected() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn prepare_validates_but_keeps_the_config() {
     let env = Env::new();
     env.put("ca.crt", CERT);
@@ -339,7 +577,6 @@ fn check_p12(env: &Env, p12: &[u8], name: &str) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn imports_pkcs12_without_password() {
     let env = Env::new();
     let p12 = make_p12(&env, "nopass.p12", "");
@@ -347,7 +584,6 @@ fn imports_pkcs12_without_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn imports_pkcs12_with_password() {
     let env = Env::new();
     let p12 = make_p12(&env, "client.p12", "s3cret");
@@ -355,7 +591,6 @@ fn imports_pkcs12_with_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn rejects_non_pkcs12_and_escapes() {
     let env = Env::new();
     env.put("fake.p12", "-----BEGIN CERTIFICATE-----\nX\n-----END CERTIFICATE-----\n");
@@ -370,7 +605,6 @@ fn rejects_non_pkcs12_and_escapes() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn encrypted_pem_keys_are_inlined() {
     let env = Env::new();
     assert!(env.openssl(&[
@@ -470,16 +704,10 @@ fn make_router_files(env: &Env, legacy_key: bool) {
         "1",
     ]));
     if legacy_key {
-        assert!(env.openssl(&[
-            "rsa",
-            "-in",
-            "plain.key",
-            "-aes256",
-            "-passout",
-            "pass:exportpass",
-            "-out",
-            "client.key"
-        ]));
+        // OpenSSL 3 (Windows) writes PKCS#8 unless told otherwise; macOS' LibreSSL writes the legacy form anyway.
+        let traditional: &[&str] = if cfg!(windows) { &["-traditional"] } else { &[] };
+        let args = ["rsa", "-in", "plain.key", "-aes256", "-passout", "pass:exportpass", "-out", "client.key"];
+        assert!(env.openssl(&[&args[..], traditional].concat()));
     } else {
         assert!(env.openssl(&[
             "pkcs8",
@@ -497,7 +725,6 @@ fn make_router_files(env: &Env, legacy_key: bool) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn routeros_v6_wiki_with_files_imports_cleanly() {
     lang(AppLanguage::En);
     for legacy in [false, true] {
@@ -553,7 +780,6 @@ fn credentials_file_rules() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn askpass_file_goes_to_keychain_field() {
     let env = Env::new();
     env.put("pass.txt", "exportpass\n");
@@ -568,7 +794,6 @@ fn askpass_file_goes_to_keychain_field() {
 /// SecurityReviewTests L5: the import is a pure function: it only returns candidates (the file names for the
 /// confirmation), it stores nothing.
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn credential_files_are_only_candidates() {
     let env = Env::new();
     env.put("auth.cfg", "u\np\n");
@@ -667,7 +892,6 @@ fn assert_key_password_required(prepared: &importer::PreparedImport) {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn combined_cert_and_pkcs8_encrypted_key() {
     let prepared = import_combined("cert-pkcs8key.pem");
     let source = pem_fixture("cert-pkcs8key.pem");
@@ -685,7 +909,6 @@ fn combined_cert_and_pkcs8_encrypted_key() {
 
 /// A combined file made on Windows (CRLF line ends): the blocks are inlined with `\n`.
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn combined_with_crlf_line_ends() {
     let env = Env::new();
     env.put("ca.crt", &pem_fixture("ca.crt"));
@@ -700,7 +923,6 @@ fn combined_with_crlf_line_ends() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn combined_legacy_encrypted_rsa_key_keeps_its_headers() {
     let prepared = import_combined("legacykey-cert.pem");
     let blocks = pem_blocks(&pem_fixture("legacykey-cert.pem"));
@@ -714,7 +936,6 @@ fn combined_legacy_encrypted_rsa_key_keeps_its_headers() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn combined_with_bag_attributes_drops_the_text_around_the_blocks() {
     let source = pem_fixture("bag-attributes.pem");
     assert!(source.contains("Bag Attributes"));
@@ -733,7 +954,6 @@ fn combined_with_bag_attributes_drops_the_text_around_the_blocks() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn combined_chain_plus_key() {
     let env = Env::new();
     let source = pem_fixture("chain-key.pem");
@@ -751,7 +971,6 @@ fn combined_chain_plus_key() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn key_file_with_two_keys_is_refused() {
     let env = Env::new();
     env.put("two.pem", &pem_fixture("two-keys.pem"));
@@ -764,7 +983,6 @@ fn key_file_with_two_keys_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn key_only_file_is_refused_for_certificate_directives() {
     let env = Env::new();
     env.put("key.pem", &pem_fixture("key-only.pem"));
@@ -779,7 +997,6 @@ fn key_only_file_is_refused_for_certificate_directives() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn tag_injection_in_a_combined_file_is_refused() {
     let env = Env::new();
     let cert = pem_fixture("client.crt");
@@ -801,7 +1018,6 @@ fn tag_injection_in_a_combined_file_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "the importer resolves file paths as Unix strings: phase 2")]
 fn single_type_files_inline_byte_for_byte() {
     let env = Env::new();
     for (name, directive) in [("ca.crt", "ca"), ("client.crt", "cert"), ("key-only.pem", "key")] {

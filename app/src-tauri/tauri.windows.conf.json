@@ -2,11 +2,53 @@
   "productName": "WinVPN",
   "mainBinaryName": "WinVPN",
   "identifier": "local.winvpn",
+  "app": {
+    "windows": [
+      {
+        "label": "menu",
+        "create": false,
+        "title": "WinVPN",
+        "url": "index.html",
+        "width": 330,
+        "height": 360,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "decorations": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true,
+        "acceptFirstMouse": true,
+        "shadow": true,
+        "focus": true,
+        "useHttpsScheme": true
+      }
+    ],
+    "security": {
+      "csp": {
+        "connect-src": "ipc: https://ipc.localhost"
+      }
+    }
+  },
   "bundle": {
     "targets": ["msi"],
+    "copyright": "WinVPN",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/icon.ico"],
+    "resources": { "../../THIRD-PARTY-NOTICES.windows.txt": "THIRD-PARTY-NOTICES.txt" },
+    "fileAssociations": [
+      { "ext": ["ovpn"], "name": "OpenVPN configuration", "description": "OpenVPN configuration", "role": "Viewer" },
+      { "ext": ["sstp"], "name": "SSTP connection", "description": "SSTP connection", "role": "Viewer" },
+      { "ext": ["macvpncatalog"], "name": "Team catalog", "description": "MacVPN / WinVPN team catalog", "role": "Editor" }
+    ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" }
+      "webviewInstallMode": { "type": "embedBootstrapper" },
+      "allowDowngrades": false,
+      "wix": {
+        "upgradeCode": "72446277-03C5-4DBB-AC44-49785F029CF8",
+        "fragmentPaths": ["wix/file-associations.wxs"],
+        "componentRefs": ["WinVPNConfOpenWith"]
+      }
     }
   }
 }

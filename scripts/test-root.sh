@@ -43,7 +43,7 @@ SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=8
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=9
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
@@ -330,8 +330,9 @@ COMPAT=crates/app-core/tests/fixtures/compat-1.4.0
 compat_out() { "$SH" "$MVPN" "$@" </dev/null 2>&1; echo "exit $?"; }
 compat_out | cmp -s - "$COMPAT/mvpn-usage.txt" && ok "1.4.0 fixture: mvpn (argumentum nélkül)" \
   || { nok "1.4.0 fixture: mvpn (argumentum nélkül)"; compat_out | diff "$COMPAT/mvpn-usage.txt" - ; }
-compat_out version | cmp -s - "$COMPAT/mvpn-version.txt" && ok "1.4.0 fixture: mvpn version" \
-  || { nok "1.4.0 fixture: mvpn version"; compat_out version | diff "$COMPAT/mvpn-version.txt" - ; }
+# The output's form is 1.4.0's; the number is the current root layer's (1.4.0 shipped 8).
+compat_out version | cmp -s - <(sed "1s/.*/$EXPECT_VERSION/" "$COMPAT/mvpn-version.txt") && ok "1.4.0 fixture: mvpn version" \
+  || { nok "1.4.0 fixture: mvpn version"; compat_out version | diff <(sed "1s/.*/$EXPECT_VERSION/" "$COMPAT/mvpn-version.txt") - ; }
 OUT=$(printf 'Szép ÁRVÍZTŰRŐ\n' | env LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 MVPN_MASK_1=ŰR "$SH" "$MVPN" __mask)
 [ "$OUT" = "Szép ÁRVÍZT***Ő" ] && ok "mask felhasználói locale mellett is bájt-alapú" || nok "mask felhasználói locale mellett is bájt-alapú ($OUT)"
 # Ugyanez a Rust forrásban: a charon pid-ek csak a `pgrep -U 0 -x charon` (root) találatai lehetnek.
@@ -441,20 +442,20 @@ rm -rf "$MVPN_RUN_BASE/$LIVE"
 BIG=$(new_conn "$GOOD_OVPN"); head -c 1100000 /dev/zero | tr '\0' '#' >>"$CFG/$BIG"
 DESC="1 MB-nál nagyobb config elutasítva"; expect_fail "$SH" "$MVPN" up openvpn "$BIG" --dry-run
 
-# Napló forgatás (5 MB fölött, up-nál), symlink-biztosan
+# Napló forgatás (5 MB fölött), symlink-biztosan: a .1 a legújabb teljes sorokat tartja, legfeljebb 5 MiB-ot
 RID=$(new_conn "$GOOD_OVPN"); RL="$MVPN_LOG_BASE/$RID.log"
-{ echo OLDMARKER; head -c 5300000 /dev/zero | tr '\0' x; } >"$RL"
+{ head -c 5300000 /dev/zero | tr '\0' x; echo; echo OLDMARKER; } >"$RL"
 echo victim >"$T/victim"; ln -s "$T/victim" "$RL.1"
 DESC="up forgatással"; expect_ok "$SH" "$MVPN" up openvpn "$RID" --dry-run
-[ ! -L "$RL.1" ] && head -1 "$RL.1" | grep -q OLDMARKER && ok "napló .1 a régi tartalommal" || nok "napló .1 a régi tartalommal"
+[ ! -L "$RL.1" ] && grep -q OLDMARKER "$RL.1" && [ "$(stat -f %z "$RL.1")" -le 5242880 ] && ok "napló .1 a régi tartalommal" || nok "napló .1 a régi tartalommal"
 [ "$(cat "$T/victim")" = victim ] && ok "symlink cél érintetlen" || nok "symlink cél érintetlen"
 [ "$(stat -f %z "$RL")" -lt 100000 ] && ! grep -q OLDMARKER "$RL" && ok "új napló kicsi" || nok "új napló kicsi"
 [ "$(stat -f %Lp "$RL.1")" = 600 ] && [ "$(stat -f %Lp "$RL")" = 600 ] && ok "napló jogosultság 600" || nok "napló jogosultság 600"
-{ echo NEWMARKER; head -c 5300000 /dev/zero | tr '\0' y; } >"$RL"
+{ head -c 5300000 /dev/zero | tr '\0' y; echo; echo NEWMARKER; } >"$RL"
 "$SH" "$MVPN" up openvpn "$RID" --dry-run < <(feed "$RID") >/dev/null 2>&1
-head -1 "$RL.1" | grep -q NEWMARKER && [ ! -e "$RL.2" ] && ok "csak egy .1 marad" || nok "csak egy .1 marad"
+grep -q NEWMARKER "$RL.1" && ! grep -q OLDMARKER "$RL.1" && [ ! -e "$RL.2" ] && ok "csak egy .1 marad" || nok "csak egy .1 marad"
 SZ=$(stat -f %z "$RL"); "$SH" "$MVPN" down openvpn "$RID" --dry-run </dev/null >/dev/null 2>&1
-head -1 "$RL.1" | grep -q NEWMARKER && [ "$(stat -f %z "$RL")" -ge "$SZ" ] && ok "down nem forgat" || nok "down nem forgat"
+grep -q NEWMARKER "$RL.1" && [ "$(stat -f %z "$RL")" -ge "$SZ" ] && ok "down nem forgat" || nok "down nem forgat"
 
 # A "kapcsolódva" minta minden valódi OpenVPN 2.7 naplóformátumra illeszkedik, és a hamisítványokra nem.
 # A minta a Rust forrásban van: a sorokat a tesztmódú `__ovpn-done` parancs ítéli meg.
@@ -531,6 +532,78 @@ MVPN_RUN_BASE="$FB" MVPN_LOG_BASE="$FLG" "$SH" "$MVPN" status >/dev/null
 grep -q KEEPMARKER "$FLG/$F1.log" && ! grep -q LEAK "$FLG/$F1.log" && ok "status: átmásolás jelszó/auth sorok nélkül" || { nok "status: átmásolás jelszó/auth sorok nélkül"; cat "$FLG/$F1.log"; }
 [ ! -e "$FB/.$F1.lock" ] && ok "status: a zár elengedve" || nok "status: a zár elengedve"
 kill "$FP" 2>/dev/null; wait "$FP" 2>/dev/null
+
+# DNS-kezelő (tartós nyilvántartás): a status / dns-reconcile visszaállítja a már nem futó kapcsolat DNS-ét (összeomlás,
+# újraindítás). Tesztmódban csak hamis networksetup-pal (MVPN_NETWORKSETUP) és saját nyilvántartással (MVPN_DNS_BASE).
+NSD="$T/ns"; mkdir -p "$NSD"; DNSDB="$T/dnsdb"; mkdir -m 700 "$DNSDB"
+cat >"$NSD/networksetup" <<FAKE
+#!/bin/bash
+echo "\$*" >>"$NSD/calls"
+case "\$1" in
+  -listallnetworkservices) echo "An asterisk (*) denotes that a network service is disabled."; echo "Wi-Fi" ;;
+  -getdnsservers) if [ -s "$NSD/srv" ]; then cat "$NSD/srv"; else echo "There aren't any DNS Servers set on \$2."; fi ;;
+  -getsearchdomains) if [ -s "$NSD/dom" ]; then cat "$NSD/dom"; else echo "There aren't any Search Domains set on \$2."; fi ;;
+  -setdnsservers) shift 2; if [ "\$1" = Empty ]; then : >"$NSD/srv"; else printf '%s\\n' "\$@" >"$NSD/srv"; fi ;;
+  -setsearchdomains) shift 2; if [ "\$1" = Empty ]; then : >"$NSD/dom"; else printf '%s\\n' "\$@" >"$NSD/dom"; fi ;;
+esac
+FAKE
+chmod 755 "$NSD/networksetup"
+DNSID=$(uuidgen); DNSRUN="$T/dnsrun"; DNSLOG="$T/dnslog"; mkdir -p "$DNSRUN" "$DNSLOG"; : >"$DNSLOG/$DNSID.log"
+dns_ledger() {
+  printf 'macvpn-dns-ledger 1\norig\tWi-Fi\t192.168.1.1\tlan.example.com\nowner\t%s\t10.8.0.1\tcorp.example\n' "$DNSID" >"$DNSDB/ledger"
+  printf '10.8.0.1\n' >"$NSD/srv"; printf 'corp.example\n' >"$NSD/dom"
+}
+dns_ledger
+MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" "$SH" "$MVPN" status >/dev/null
+[ "$(cat "$NSD/srv")" = 10.8.0.1 ] && [ -f "$DNSDB/ledger" ] && [ ! -e "$NSD/calls" ] \
+  && ok "dns: tesztmódban hamis networksetup nélkül a DNS-hez nem nyúl" || nok "dns: tesztmódban hamis networksetup nélkül a DNS-hez nem nyúl"
+MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" status >/dev/null
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ "$(cat "$NSD/dom")" = lan.example.com ] && [ ! -e "$DNSDB/ledger" ] \
+  && grep -q 'original DNS restored and verified on 1 network service' "$DNSLOG/$DNSID.log" \
+  && ok "dns: status a halott kapcsolat DNS-ét visszaállítja (ellenőrizve, naplózva)" || { nok "dns: status a halott kapcsolat DNS-ét visszaállítja"; cat "$DNSLOG/$DNSID.log" "$NSD/calls"; }
+dns_ledger
+MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" dns-reconcile
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ ! -e "$DNSDB/ledger" ] && ok "dns: dns-reconcile ugyanígy" || nok "dns: dns-reconcile ugyanígy"
+# Élő tulajdonos (futó openvpn, kész openvpn.log) DNS-e marad.
+dns_ledger; "$T/bin/openvpn" 30 & DP=$!
+mkdir -p "$DNSRUN/$DNSID"; echo openvpn >"$DNSRUN/$DNSID/kind"; echo "$DP" >"$DNSRUN/$DNSID/pid"; echo utun7 >"$DNSRUN/$DNSID/iface"
+echo "2026-10-17 00:00:00 Initialization Sequence Completed" >"$DNSRUN/$DNSID/openvpn.log"
+MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" dns-reconcile
+[ "$(cat "$NSD/srv")" = 10.8.0.1 ] && [ -f "$DNSDB/ledger" ] && ok "dns: futó kapcsolat DNS-e marad" || nok "dns: futó kapcsolat DNS-e marad"
+kill "$DP" 2>/dev/null; wait "$DP" 2>/dev/null
+
+# M-2: túl hosszú DNS-lista (WireGuard `DNS =`, ~1040 db 253 bájtos tartomány, a nyilvántartás korlátja fölött).
+# A DNS-kezelő az egészet elutasítja (nem csonkít), az eredeti DNS marad, és a bontás után is az eredeti van érvényben;
+# egy korlát fölötti (régi / sérült) nyilvántartásból az eredeti értékek visszanyerhetők.
+WGB="$T/wgdnsbrew"; mkdir -p "$WGB/bin"
+for t in wg-quick bash wireguard-go; do printf '#!/bin/bash\nexit 0\n' >"$WGB/bin/$t"; chmod 755 "$WGB/bin/$t"; done
+dns_orig() { rm -f "$DNSDB/ledger" "$DNSDB/ledger.bad" "$NSD/calls"; printf '192.168.1.1\n' >"$NSD/srv"; printf 'lan.example.com\n' >"$NSD/dom"; }
+wgd() { env MVPN_TEST_ALLOW_UP=1 MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$WGB" MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" \
+  MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" "$@"; }
+dns_orig; WGOK=$(new_conn "${GOOD_WG/Address/DNS = 10.8.0.1, corp.example${NL}Address}")
+wgd up wireguard "$WGOK" < <(feed "$WGOK") >"$T/wgd.out" 2>&1
+[ "$(cat "$NSD/srv")" = 10.8.0.1 ] && [ "$(cat "$NSD/dom")" = corp.example ] && ok "dns M-2: wireguard DNS a korláton belül beáll (kontroll)" \
+  || { nok "dns M-2: wireguard DNS a korláton belül beáll (kontroll)"; cat "$T/wgd.out" "$DNSLOG/$WGOK.log"; }
+wgd down wireguard "$WGOK" </dev/null >/dev/null 2>&1
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ "$(cat "$NSD/dom")" = lan.example.com ] && [ ! -e "$DNSDB/ledger" ] \
+  && ok "dns M-2: kontroll bontás után az eredeti DNS" || { nok "dns M-2: kontroll bontás után az eredeti DNS"; cat "$DNSLOG/$WGOK.log"; }
+D253="a$(printf '.b%.0s' $(seq 126))"; HUGE="10.8.0.1"
+for i in $(seq 1040); do HUGE="$HUGE, $(printf 'd%04d' "$i")${D253:5}"; done
+dns_orig; WGBIG=$(new_conn "${GOOD_WG/Address/DNS = $HUGE${NL}Address}")
+wgd up wireguard "$WGBIG" < <(feed "$WGBIG") >"$T/wgd.out" 2>&1
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ "$(cat "$NSD/dom")" = lan.example.com ] && [ ! -e "$DNSDB/ledger" ] && ! grep -q -- '-set' "$NSD/calls" 2>/dev/null \
+  && grep -q "the VPN's DNS settings exceed the limits (1 servers, 1040 search domains; at most 16 and 32): DNS not changed" "$DNSLOG/$WGBIG.log" \
+  && ok "dns M-2: túl hosszú DNS-lista elutasítva, az eredeti DNS marad (naplózva)" || { nok "dns M-2: túl hosszú DNS-lista elutasítva"; cat "$T/wgd.out" "$DNSLOG/$WGBIG.log"; }
+wgd down wireguard "$WGBIG" </dev/null >/dev/null 2>&1
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ "$(cat "$NSD/dom")" = lan.example.com ] && [ ! -e "$DNSDB/ledger" ] \
+  && ok "dns M-2: túl hosszú DNS-lista: bontás után is az eredeti DNS" || { nok "dns M-2: túl hosszú DNS-lista: bontás után is az eredeti DNS"; cat "$DNSLOG/$WGBIG.log"; }
+dns_orig; { printf 'macvpn-dns-ledger 1\norig\tWi-Fi\t192.168.1.1\tlan.example.com\nowner\t%s\t10.8.0.1\t' "$DNSID"
+  for i in $(seq 1100); do printf 'd%04d%s ' "$i" "${D253:5}"; done; printf '\n'; } >"$DNSDB/ledger"
+printf '10.8.0.1\n' >"$NSD/srv"; printf 'd0001\n' >"$NSD/dom"
+[ "$(wc -c <"$DNSDB/ledger")" -gt 262144 ] || nok "dns M-2: a teszt-nyilvántartás nem lépi túl a korlátot"
+MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" dns-reconcile
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ "$(cat "$NSD/dom")" = lan.example.com ] && [ ! -e "$DNSDB/ledger" ] && [ -f "$DNSDB/ledger.bad" ] \
+  && ok "dns M-2: korlát fölötti nyilvántartásból az eredeti DNS visszaáll" || { nok "dns M-2: korlát fölötti nyilvántartásból az eredeti DNS visszaáll"; cat "$NSD/srv" "$NSD/dom"; ls -la "$DNSDB"; }
 
 # Inline hitelesítő blokkok (<auth-user-pass>, <http-proxy-user-pass>) tartalma nem kerül a naplóba (debug pillanatkép).
 IAID=$(new_conn $'client\ndev tun\n<auth-user-pass>\nremote INLINELEAK1\nremote INLINELEAK2\n</auth-user-pass>\nremote vpn.example.com 1194\n<connection>\nremote alt.example.com 443\nhttp-proxy proxy.example.com 8080 [inline]\n<http-proxy-user-pass>\nremote INLINELEAK3\nremote INLINELEAK4\n</http-proxy-user-pass>\n</connection>\n<ca>\nx\n</ca>')
@@ -806,6 +879,125 @@ OUT=$({ feed "$EID"; printf 'password=EapFailS3cret\n'; } | env MVPN_TEST_ALLOW_
 EID=$(new_conn "$GOOD_SWAN")
 OUT=$({ feed "$EID"; printf 'password=EapFailS3cret\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$SWB" FAKE_SWAN_MODE=eapfail "$SH" "$MVPN" up strongswan "$EID" --lang hu 2>&1)
 [ "$OUT" = "Hitelesítési hiba (EAP)" ] && ok "strongswan eapfail magyarul" || nok "strongswan eapfail magyarul ($OUT)"
+
+# F1: a `swanctl --load-all --file <run>/config` a hitelesítő adatokat (x509ca/, x509/, private/, …) a <config> mellől
+# olvassa (strongSwan swanctl.c: swanctl_dir = dirname(--file)), a Homebrew etc/swanctl-t nem; amit ott nem talál
+# (kulcs, közös titok), azt a charonból ki is tölti. Az mvpn ezért a <brew>/etc/swanctl/<könyvtár>/ sima fájljait
+# a futási könyvtárba másolja (könyvtár 0700, fájl 0600; symlink, rejtett fájl, más könyvtár nem), a bontás törli.
+CRB="$T/credbrew"; SC="$CRB/etc/swanctl"; CRO="$T/credout"
+mkdir -p "$CRB/bin" "$CRB/opt/strongswan/libexec/ipsec" "$SC/x509ca" "$SC/x509" "$SC/private" "$SC/pkcs12" "$SC/other" "$CRO"
+printf '#!/bin/bash\nexit 0\n' >"$CRB/opt/strongswan/libexec/ipsec/charon"
+printf 'LAB-CA\n' >"$SC/x509ca/lab-ca.pem"; printf 'LAB-CLIENT\n' >"$SC/x509/lab-client.pem"
+printf 'KeyMaterialS3cret\n' >"$SC/private/lab-client.key"; printf 'P12\n' >"$SC/pkcs12/c.p12"
+printf 'outside\n' >"$T/outside.key"; ln -s "$T/outside.key" "$SC/private/link.key"; printf 'h\n' >"$SC/private/.hidden.key"
+printf 'o\n' >"$SC/other/o.pem"; printf 'connections {\n}\n' >"$SC/swanctl.conf"
+# L-7: kemény link (máshol lévő fájl) és symlinkelt hitelesítő könyvtár: nem másolódik.
+mkdir -p "$T/credoutside"; printf 'RootOnlyS3cret\n' >"$T/credoutside/root-only"; ln "$T/credoutside/root-only" "$SC/x509/hard.pem"
+printf 'crl\n' >"$T/credoutside/crl.pem"; ln -s "$T/credoutside" "$SC/x509crl"
+cat >"$CRB/bin/swanctl" <<'FAKE'
+#!/bin/bash
+case " $* " in
+  *" --load-all "*)
+    printf '%s\n' "$*" >"$CRED_OUT/argv"
+    f=""; prev=""; for a in "$@"; do [ "$prev" = --file ] && f=$a; prev=$a; done
+    d=$(dirname "$f")
+    (cd "$d" && find . -mindepth 1 -exec stat -f '%Lp %N' {} \; | LC_ALL=C sort) >"$CRED_OUT/tree"
+    cat "$d/x509ca/lab-ca.pem" >"$CRED_OUT/ca" 2>/dev/null ;;
+esac
+exit 0
+FAKE
+chmod 755 "$CRB/bin/swanctl" "$CRB/opt/strongswan/libexec/ipsec/charon"
+CRID=$(new_conn "$(swan_local 'certs = lab-client.pem')")
+OUT=$({ feed "$CRID"; printf 'psk=PskCredS3cret\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$CRB" CRED_OUT="$CRO" "$SH" "$MVPN" up strongswan "$CRID" 2>&1); RC=$?
+[ "$RC" = 0 ] || { nok "strongswan tanúsítvány: up ($RC)"; echo "$OUT"; cat "$MVPN_LOG_BASE/$CRID.log"; }
+TREE=$(cat "$CRO/tree" 2>/dev/null)
+for want in "700 ./x509ca" "600 ./x509ca/lab-ca.pem" "700 ./x509" "600 ./x509/lab-client.pem" "700 ./private" \
+  "600 ./private/lab-client.key" "700 ./pkcs12" "600 ./pkcs12/c.p12"; do
+  grep -qxF "$want" <<<"$TREE" && ok "strongswan hitelesítő adat a futási könyvtárban: $want" || { nok "strongswan hitelesítő adat a futási könyvtárban: $want"; echo "$TREE"; }
+done
+! grep -q 'link.key\|hidden\|other\|swanctl.conf' <<<"$TREE" && ok "strongswan: symlink, rejtett fájl, más könyvtár, swanctl.conf nem másolódik" \
+  || { nok "strongswan: symlink, rejtett fájl, más könyvtár, swanctl.conf nem másolódik"; echo "$TREE"; }
+! grep -q 'hard.pem\|x509crl\|crl.pem' <<<"$TREE" && ok "strongswan L-7: kemény link és symlinkelt könyvtár nem másolódik" \
+  || { nok "strongswan L-7: kemény link és symlinkelt könyvtár nem másolódik"; echo "$TREE"; }
+[ "$(cat "$CRO/ca" 2>/dev/null)" = "LAB-CA" ] && ok "strongswan: a CA tartalma a másolatban" || nok "strongswan: a CA tartalma a másolatban"
+grep -q -- '--load-all --noprompt --file ' "$CRO/argv" && ! grep -q 'S3cret' "$CRO/argv" && ok "strongswan --load-all --noprompt, titok nincs az argv-ben" \
+  || { nok "strongswan --load-all --noprompt, titok nincs az argv-ben"; cat "$CRO/argv"; }
+grep -qF "strongSwan credentials copied from $SC: 4 (skipped: 3)" "$MVPN_LOG_BASE/$CRID.log" && ok "strongswan: a másolás a naplóban (darabszám)" \
+  || { nok "strongswan: a másolás a naplóban (darabszám)"; cat "$MVPN_LOG_BASE/$CRID.log"; }
+! grep -q 'S3cret' "$MVPN_LOG_BASE/$CRID.log" && ok "strongswan: kulcs és PSK nincs a naplóban" || nok "strongswan: kulcs és PSK nincs a naplóban"
+env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$CRB" CRED_OUT="$CRO" "$SH" "$MVPN" down strongswan "$CRID" >/dev/null 2>&1
+[ ! -e "$MVPN_RUN_BASE/$CRID" ] && ok "strongswan down: a futási könyvtár (kulcsmásolat) törölve" || { nok "strongswan down: a futási könyvtár (kulcsmásolat) törölve"; ls -laR "$MVPN_RUN_BASE/$CRID"; }
+# L-7: ha a prefix `etc` könyvtára symlink (pl. /var/db felé), semmi sem másolódik.
+CRL="$T/credbrewlink"; mkdir -p "$CRL"; cp -R "$CRB/bin" "$CRB/opt" "$CRL/"; ln -s "$CRB/etc" "$CRL/etc"; rm -f "$CRO/tree"
+CRID2=$(new_conn "$(swan_local 'certs = lab-client.pem')")
+{ feed "$CRID2"; printf 'psk=PskCredS3cret\n'; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$CRL" CRED_OUT="$CRO" "$SH" "$MVPN" up strongswan "$CRID2" >/dev/null 2>&1
+grep -qF "strongSwan credentials copied from $CRL/etc/swanctl: 0 (skipped: 0)" "$MVPN_LOG_BASE/$CRID2.log" && ! grep -q 'pem\|key\|p12' "$CRO/tree" 2>/dev/null \
+  && ok "strongswan L-7: symlinkelt etc könyvtáron át nem másol" || { nok "strongswan L-7: symlinkelt etc könyvtáron át nem másol"; cat "$MVPN_LOG_BASE/$CRID2.log" "$CRO/tree"; }
+env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$CRL" CRED_OUT="$CRO" "$SH" "$MVPN" down strongswan "$CRID2" >/dev/null 2>&1
+
+# F2: két strongSwan kapcsolat egyszerre. A `swanctl --load-all --file F` (strongSwan 6.1 load_conns.c,
+# load_creds.c) mindent kitölt a charonból, ami nincs az F-ben: kapcsolatot, privát kulcsot, közös titkot. A hamis
+# swanctl ezt utánozza: a betöltés után a "charon" pontosan az F-ben álló connections.<név> / secrets.<név>
+# szakaszokat tartja ($SWS/loaded). Az mvpn ezért minden betöltésnél az összes aktív (betöltött) strongSwan
+# kapcsolat configját együtt tölti be, egyedi (azonosítós) titoknevekkel; a bontás a többit újratölti.
+TWB="$T/twobrew"; SWS="$T/twostate"; mkdir -p "$TWB/bin" "$TWB/opt/strongswan/libexec/ipsec" "$SWS"
+printf '#!/bin/bash\nexit 0\n' >"$TWB/opt/strongswan/libexec/ipsec/charon"
+cat >"$TWB/bin/swanctl" <<'FAKE'
+#!/bin/bash
+printf '%s\n' "$*" >>"$SWAN_STATE/argv"
+case " $* " in
+  *" --load-all "*)
+    f=""; prev=""; for a in "$@"; do [ "$prev" = --file ] && f=$a; prev=$a; done
+    awk '{ l=$0; sub(/#.*/, "", l)
+           if (match(l, /^[ \t]*[A-Za-z0-9_.-]+[ \t]*\{/)) { n=l; sub(/^[ \t]*/, "", n); sub(/[ \t]*\{.*/, "", n)
+             if (d == 0) top=n; else if (d == 1) print top "." n; d++ ; sub(/\{/, "", l) }
+           d -= gsub(/\}/, "", l) }' "$f" | LC_ALL=C sort >"$SWAN_STATE/loaded" ;;
+  *" --terminate "*) printf '%s\n' "$*" >>"$SWAN_STATE/terminated" ;;
+esac
+exit 0
+FAKE
+chmod 755 "$TWB/bin/swanctl" "$TWB/opt/strongswan/libexec/ipsec/charon"
+swan_conf() { # $1 = kapcsolatnév, $2 = local auth, $3 = remote id (üres: nincs)
+  printf 'connections {\n  %s {\n    remote_addrs = 192.0.2.10\n    local {\n      auth = %s\n    }\n    remote {\n      auth = %s\n%s    }\n    children {\n      %s {\n        remote_ts = 10.99.0.0/24\n      }\n    }\n  }\n}\n' \
+    "$1" "$2" "$([ "$2" = psk ] && echo psk || echo pubkey)" "${3:+      id = $3$NL}" "$1"
+}
+swup() { env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$TWB" SWAN_STATE="$SWS" "$SH" "$MVPN" up strongswan "$@"; }
+swdown() { env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$TWB" SWAN_STATE="$SWS" "$SH" "$MVPN" down strongswan "$1"; }
+PA=$(new_conn "$(swan_conf lab-psk psk lab.example)")
+OUT=$({ feed "$PA"; printf 'psk=TwoPskS3cret\n'; } | swup "$PA" 2>&1) || { nok "F2: első (PSK) up"; echo "$OUT"; cat "$MVPN_LOG_BASE/$PA.log"; }
+EB=$(new_conn "$(swan_conf lab-eap eap-mschapv2 lab.example)")
+OUT=$({ feed "$EB"; printf 'username=labuser\npassword=TwoEapS3cret\n'; } | swup "$EB" 2>&1) || { nok "F2: második (EAP) up"; echo "$OUT"; cat "$MVPN_LOG_BASE/$EB.log"; }
+LOADED=$(cat "$SWS/loaded" 2>/dev/null)
+for want in connections.lab-psk connections.lab-eap "secrets.ike-mvpn-$PA" "secrets.eap-mvpn-$EB"; do
+  grep -qxF "$want" <<<"$LOADED" && ok "F2: két kapcsolat után is betöltve: $want" || { nok "F2: két kapcsolat után is betöltve: $want"; echo "$LOADED"; }
+done
+grep -q -- "--initiate --child lab-eap --ike lab-eap " "$SWS/argv" && ok "F2: az --initiate a saját IKE-configot nevezi meg (--ike)" \
+  || { nok "F2: az --initiate a saját IKE-configot nevezi meg (--ike)"; cat "$SWS/argv"; }
+! grep -q 'S3cret' "$SWS/argv" "$MVPN_LOG_BASE/$PA.log" "$MVPN_LOG_BASE/$EB.log" && ok "F2: titok nincs az argv-ben és a naplóban" || nok "F2: titok nincs az argv-ben és a naplóban"
+[ -z "$(find "$MVPN_RUN_BASE" -name 'load*.conf' 2>/dev/null)" ] && ok "F2: az összefűzött betöltőfájl nem marad meg" || { nok "F2: az összefűzött betöltőfájl nem marad meg"; find "$MVPN_RUN_BASE"; }
+# Ugyanaz a kapcsolatnév egy harmadikban: érthető hiba, az első kettő betöltve marad.
+DUP=$(new_conn "$(swan_conf lab-psk psk other.example)")
+OUT=$({ feed "$DUP"; printf 'psk=DupS3cret\n'; } | swup "$DUP" 2>&1); RC=$?
+[ "$RC" = 1 ] && [ "$OUT" = "Another active strongSwan connection already defines connections.lab-psk" ] && [ ! -e "$MVPN_RUN_BASE/$DUP" ] \
+  && [ "$(cat "$SWS/loaded")" = "$LOADED" ] && ok "F2: azonos kapcsolatnév: érthető hiba, a többi érintetlen" \
+  || { nok "F2: azonos kapcsolatnév: érthető hiba, a többi érintetlen"; echo "$RC $OUT"; cat "$SWS/loaded"; }
+# Két PSK ugyanarra a távoli azonosítóra: a charon nem tudná, melyiket használja → érthető hiba.
+AMB=$(new_conn "$(swan_conf lab-psk2 psk lab.example)")
+OUT=$({ feed "$AMB"; printf 'psk=AmbS3cret\n'; } | swup "$AMB" --lang hu 2>&1); RC=$?
+[ "$RC" = 1 ] && [ "$OUT" = "Egy másik aktív strongSwan-kapcsolat már tart titkot ugyanezekhez az azonosítókhoz (adj meg eltérő remote id-t)" ] \
+  && [ "$(cat "$SWS/loaded")" = "$LOADED" ] && ok "F2: két PSK ugyanarra a remote id-re: érthető hiba (magyarul)" \
+  || { nok "F2: két PSK ugyanarra a remote id-re: érthető hiba (magyarul)"; echo "$RC $OUT"; }
+# Az egyik bontása a másikat betöltve hagyja (és csak a sajátját bontja).
+: >"$SWS/terminated"
+swdown "$EB" >/dev/null 2>&1
+LOADED=$(cat "$SWS/loaded" 2>/dev/null)
+grep -qxF connections.lab-psk <<<"$LOADED" && grep -qxF "secrets.ike-mvpn-$PA" <<<"$LOADED" && ! grep -q 'lab-eap\|eap-mvpn' <<<"$LOADED" \
+  && ok "F2: a második bontása után az első betöltve marad, a második kitöltve" || { nok "F2: a második bontása után az első betöltve marad, a második kitöltve"; echo "$LOADED"; }
+[ "$(cat "$SWS/terminated")" = "--terminate --ike lab-eap --timeout 10" ] && ok "F2: a bontás csak a saját IKE SA-t bontja" \
+  || { nok "F2: a bontás csak a saját IKE SA-t bontja"; cat "$SWS/terminated"; }
+[ ! -e "$MVPN_RUN_BASE/$EB" ] && [ -d "$MVPN_RUN_BASE/$PA" ] && ok "F2: csak a bontott futási mappája törlődik" || nok "F2: csak a bontott futási mappája törlődik"
+swdown "$PA" >/dev/null 2>&1
+[ ! -e "$MVPN_RUN_BASE/$PA" ] && ok "F2: az első bontása" || nok "F2: az első bontása"
 
 # ---------- MFA: management közvetítő (mvpn-mgmt) ----------
 # Hamis openvpn + hamis management szerver (perl, unix socket a futási könyvtárban): a valódi közvetítő a valódi

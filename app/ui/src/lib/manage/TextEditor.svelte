@@ -1,15 +1,20 @@
 <script lang="ts">
   // OpenVPN, WireGuard, strongSwan: the config text with the error list and the risky panel, the vault
-  // secrets, the one-time code setting (the Swift `TextConfigEditor`).
+  // secrets, the one-time code setting (the Swift `TextConfigEditor`). WinVPN, IKEv2 (the backend's `platform`
+  // notes): the settings Windows cannot run as yellow notes above the config (not save errors: the config stays
+  // valid for macOS), Windows' summary of the entry and the settings it ignores in grey under it, and **Trust This
+  // CA in Windows…** with a PEM file the user picks.
   import type { TextFields } from '../api';
   import Icon from '../Icon.svelte';
   import { tr } from '../l10n.svelte';
   import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
+  import PlatformNotes from './PlatformNotes.svelte';
   import RiskyPanel from './RiskyPanel.svelte';
   import SecretField from './SecretField.svelte';
   import Status from './Status.svelte';
+  import TrustCa from './TrustCa.svelte';
 
   let { session, kind }: { session: EditorSession; kind: string } = $props();
 
@@ -20,6 +25,7 @@
   const showsKeyPassword = $derived(kind === 'openvpn');
   /// A team catalog's connection: everything is read-only but the risky settings' checkbox (saved with "Save").
   const readOnly = $derived(view?.readOnly ?? null);
+  const platform = $derived(view?.platform);
 
   /// A refused save of a read-only editor (the catalog changed the config since it was loaded): the draft loads
   /// again from the new version, and the reason stays shown above it.
@@ -45,6 +51,7 @@
     <p class="readonly-note" role="note"><Icon name="lock" /><span>{readOnly}</span></p>
     {#if refused}<p class="warn" role="alert">{refused}</p>{/if}
   {/if}
+  <PlatformNotes {platform} part="reasons" />
   <input class="wide" type="text" placeholder={tr('Name')} aria-label={tr('Name')} disabled={readOnly !== null} bind:value={fields.name} />
   <textarea
     class="config"
@@ -61,6 +68,14 @@
         <li>{issue}</li>
       {/each}
     </ul>
+  {/if}
+  {#if platform && (platform.summary || platform.warnings.length > 0 || platform.trustCa)}
+    <div class="platform">
+      <div class="platform-notes"><PlatformNotes {platform} part="summary" /></div>
+      {#if platform.trustCa}
+        <TrustCa id={session.id} pick={true} />
+      {/if}
+    </div>
   {/if}
   {#if view && view.risky.length > 0}
     <RiskyPanel findings={view.risky} acknowledged={view.acknowledgesRisk} onchange={acknowledge} />
@@ -119,3 +134,18 @@
     >
   </div>
 </div>
+
+<style>
+  .platform {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-4);
+  }
+  .platform-notes {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+</style>

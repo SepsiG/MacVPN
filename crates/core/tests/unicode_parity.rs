@@ -7,6 +7,7 @@ mod common;
 use common::lang;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::models::VPNKind;
+use macvpn_core::target_os::TargetOs;
 use macvpn_core::validators::validator;
 
 fn display(kind: VPNKind, text: &str) -> Vec<String> {
@@ -34,7 +35,12 @@ fn validators_match_swift_on_unicode_edge_cases() {
         (
             VPNKind::Openvpn,
             "remote a 1\nfuture-option file:\u{301}x\n",
-            &["Line 2: Risky directive, acknowledgement required: future-option"],
+            // Windows refuses any `:` outside an IPv6 address in a RISKY argument (security review L-9).
+            if TargetOs::host() == TargetOs::Windows {
+                &["Line 2: Invalid argument: future-option"]
+            } else {
+                &["Line 2: Risky directive, acknowledgement required: future-option"]
+            },
         ),
         (VPNKind::Openvpn, "remote a 1\ndhcp-option DN\u{17f} 1.1.1.1\n", &["Line 2: Invalid argument: dhcp-option"]),
         (VPNKind::Openvpn, "remote a\u{85} 1\n", &["Line 1: Invalid argument: remote", "Missing remote directive"]),

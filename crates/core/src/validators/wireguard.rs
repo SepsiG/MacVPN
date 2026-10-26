@@ -12,6 +12,8 @@ use super::{ConfigValidator, control_character_message, has_control_character, m
 use crate::l10n::{self, Arg};
 use crate::models::ValidationIssue;
 use crate::swift_str::{self, ascii_lowercased, trim_space_tab};
+use crate::target_os::TargetOs;
+use std::collections::HashSet;
 
 pub const FORBIDDEN_KEYS: [&str; 5] = ["preup", "postup", "predown", "postdown", "saveconfig"];
 pub const INTERFACE_KEYS: [&str; 7] = ["privatekey", "listenport", "fwmark", "address", "dns", "mtu", "table"];
@@ -21,7 +23,46 @@ pub const PEER_KEYS: [&str; 5] = ["publickey", "presharedkey", "allowedips", "en
 pub struct WireGuardValidator;
 
 impl ConfigValidator for WireGuardValidator {
+    /// The checks for this OS ([`WireGuardValidator::validate_for`] with [`TargetOs::host`]).
     fn validate(&self, text: &str) -> Vec<ValidationIssue> {
+        self.validate_for(TargetOs::host(), text)
+    }
+}
+
+impl WireGuardValidator {
+    /// The checks of [`ConfigValidator::validate`] for `os`. Windows (wireguard-nt): `FwMark` has no equivalent,
+    /// `Table` only `auto` or `off`. Only lines without another issue are checked; whole-file issues (line 0)
+    /// stay last.
+    pub fn validate_for(&self, os: TargetOs, text: &str) -> Vec<ValidationIssue> {
+        let mut issues = self.validate_common(text);
+        if os == TargetOs::Windows {
+            let flagged: HashSet<i64> = issues.iter().map(|i| i.line).collect();
+            for (line_no, key, value) in key_values(text) {
+                if flagged.contains(&line_no) {
+                    continue;
+                }
+                let unsupported = match key.as_str() {
+                    "fwmark" => true,
+                    "table" => {
+                        let value = ascii_lowercased(value);
+                        !(swift_str::eq(&value, "auto") || swift_str::eq(&value, "off"))
+                    }
+                    _ => false,
+                };
+                if unsupported {
+                    issues.push(ValidationIssue::new(
+                        line_no,
+                        l10n::tr("Not supported on Windows: %@", &[Arg::Str(&key)]),
+                    ));
+                }
+            }
+            issues.sort_by_key(|i| (i.line == 0, i.line));
+        }
+        issues
+    }
+
+    /// The platform-independent checks (the 1.4 validator).
+    fn validate_common(&self, text: &str) -> Vec<ValidationIssue> {
         let mut issues = Vec::new();
         let mut section = String::new();
         let (mut interface_count, mut peer_count) = (0, 0);
@@ -93,6 +134,22 @@ impl ConfigValidator for WireGuardValidator {
         }
         issues
     }
+}
+
+/// `(line number, lower-cased key, trimmed value)` of the `key = value` lines (comments cut, section headers and
+/// lines without `=` skipped). Whether a line is valid is [`WireGuardValidator::validate_common`]'s business.
+fn key_values(text: &str) -> impl Iterator<Item = (i64, String, &str)> {
+    numbered_lines(text).filter_map(|(line_no, raw_line)| {
+        let before_comment = swift_str::split(raw_line, "#", 1, false).into_iter().next().unwrap_or("");
+        let line = trim_space_tab(before_comment);
+        if line.is_empty() || (swift_str::has_prefix(line, "[") && swift_str::has_suffix(line, "]")) {
+            return None;
+        }
+        let eq = swift_str::first_index(line, "=")?;
+        let key = ascii_lowercased(trim_space_tab(&line[..eq]));
+        let value = trim_space_tab(&line[eq + swift_str::char_len_at(line, eq)..]);
+        Some((line_no, key, value))
+    })
 }
 
 /// The value format per key (the usual forms wg / wg-quick accept).

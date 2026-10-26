@@ -47,7 +47,6 @@ fn count(vault: &Vault, sql: &str) -> i64 {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_list_update_and_read_the_password() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -81,7 +80,6 @@ fn create_list_update_and_read_the_password() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn names_are_unique_and_validated() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -108,7 +106,6 @@ fn names_are_unique_and_validated() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn link_replaces_the_items_own_username_and_password_and_keeps_the_rest() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -144,7 +141,6 @@ fn link_replaces_the_items_own_username_and_password_and_keeps_the_rest() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_system_vpn_service_id_can_be_linked() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -157,7 +153,6 @@ fn a_system_vpn_service_id_can_be_linked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn linking_to_an_unknown_credential_or_an_empty_item_is_refused() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -171,7 +166,6 @@ fn linking_to_an_unknown_credential_or_an_empty_item_is_refused() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn relinking_moves_the_item_to_the_other_credential() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -187,7 +181,6 @@ fn relinking_moves_the_item_to_the_other_credential() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn prompted_writes_to_a_linked_item_go_to_the_credential() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -225,7 +218,6 @@ fn prompted_writes_to_a_linked_item_go_to_the_credential() {
 /// Review M4: the editors' write (`set_item_secret`) never reaches the shared credential. Editing connection One
 /// must not change the user name and password every other linked connection uses.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn editor_writes_to_a_linked_item_are_refused_and_change_nothing() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -259,7 +251,6 @@ fn editor_writes_to_a_linked_item_are_refused_and_change_nothing() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn deleting_all_secrets_and_credentials_is_one_transaction() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -275,7 +266,6 @@ fn deleting_all_secrets_and_credentials_is_one_transaction() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn delete_is_restricted_while_linked() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -308,7 +298,6 @@ fn delete_is_restricted_while_linked() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn copy_into_connections_gives_every_item_its_own_copy() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -344,7 +333,6 @@ fn copy_into_connections_gives_every_item_its_own_copy() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn deleting_a_connection_removes_its_link_but_keeps_the_credential() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -357,7 +345,6 @@ fn deleting_a_connection_removes_its_link_but_keeps_the_credential() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn matching_items_finds_exact_username_and_password_matches_only() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -395,7 +382,6 @@ fn matching_items_finds_exact_username_and_password_matches_only() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn create_from_connection_creates_and_links_in_one_go() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -443,7 +429,6 @@ fn create_from_connection_creates_and_links_in_one_go() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn credential_values_are_stored_as_blobs_and_errors_quote_nothing() {
     let tmp = TempDir::new();
     let (_dir, mut vault) = new_vault(&tmp);
@@ -460,7 +445,6 @@ fn credential_values_are_stored_as_blobs_and_errors_quote_nothing() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_newer_database_refuses_credential_writes() {
     let tmp = TempDir::new();
     let (dir, mut vault) = new_vault(&tmp);

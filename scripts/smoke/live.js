@@ -22,7 +22,10 @@
   const checks = {};
   try {
     const vm = await invoke('get_view_model');
-    const banner = { en: 'This VPN was removed from macOS', hu: 'Ezt a VPN-t eltávolították a macOS-ből' }[vm.language];
+    const windows = (await invoke('get_platform')).os === 'windows';
+    const banner = windows
+      ? { en: 'This VPN was removed from Windows', hu: 'Ezt a VPN-t eltávolították a Windowsból' }[vm.language]
+      : { en: 'This VPN was removed from macOS', hu: 'Ezt a VPN-t eltávolították a macOS-ből' }[vm.language];
     const a = await waitFor(() => row('Smoke Live A'));
     checks.listed = !!a;
     a.click();

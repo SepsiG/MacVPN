@@ -22,10 +22,27 @@ pub trait WindowChrome: Send + Sync {
     fn popover_corner_radius(&self) -> f64;
     /// Rounds the window's corners; `false`: not applied (not the main thread, no window).
     fn round_corners(&self, w: NativeWindow, radius: f64) -> bool;
+    /// The radius [`round_corners`](Self::round_corners) gives every window once it is created; `None`: the
+    /// system's own corners stay (macOS: AppKit rounds its windows by itself). Windows 11: rounded (8); on Windows
+    /// 10 the call fails and the corners stay square.
+    fn window_corner_radius(&self) -> Option<f64> {
+        None
+    }
     /// Fits the window to the web view's content `viewport` height at `width`; the height set, if any.
     fn fit_viewport(&self, w: NativeWindow, width: f64, viewport: f64, center: bool) -> Option<f64>;
     /// Brings the window to the front even when the app is not active.
     fn order_front_regardless(&self, w: NativeWindow);
+    /// Moves and resizes the window's outer frame in one step (physical pixels, screen coordinates), so it never
+    /// shows the new size at the old place; main thread only. `false`: not done here (the caller moves and
+    /// resizes in two steps). Windows: the popover above the taskbar keeps its bottom edge while it resizes.
+    fn set_outer_frame(&self, _w: NativeWindow, _x: i32, _y: i32, _width: u32, _height: u32) -> bool {
+        false
+    }
+    /// The colour the tray icon is drawn in: `None` keeps the template image (the system tints it: macOS);
+    /// `Some(rgb)` recolours its opaque pixels (Windows: white on a dark taskbar, black on a light one).
+    fn tray_tint(&self) -> Option<[u8; 3]> {
+        None
+    }
 }
 
 /// Open and save panels, as sheets on `parent`. Main thread only; they return at once and call `done` later
@@ -71,7 +88,7 @@ pub enum TerminateReply {
     Cancel,
 }
 
-/// The app's quit request and the system's wake.
+/// The app's quit request and the system's sleep and wake.
 pub trait AppLifecycle: Send + Sync {
     /// Routes the system's quit request to `handler` (called on the main thread). `false`: not installed.
     fn install_terminate_handler(&self, handler: Box<dyn Fn() -> TerminateReply + Send + Sync>) -> bool;
@@ -79,4 +96,11 @@ pub trait AppLifecycle: Send + Sync {
     fn reply_to_terminate(&self, terminate: bool);
     /// Calls `on_wake` when the system wakes from sleep.
     fn observe_wake(&self, on_wake: Box<dyn Fn() + Send + Sync>);
+    /// Calls `on_sleep` when the system is about to sleep (it may not be called at all, e.g. Windows Modern Standby
+    /// without a registration). Default: never.
+    fn observe_sleep(&self, _on_sleep: Box<dyn Fn() + Send + Sync>) {}
+    /// Calls `on_change` when the system's light/dark theme changes (Windows: the taskbar's, which the tray icon's
+    /// tint follows), on the platform's event thread. Default: never (macOS: the template image is tinted by the
+    /// system).
+    fn observe_appearance(&self, _on_change: Box<dyn Fn() + Send + Sync>) {}
 }

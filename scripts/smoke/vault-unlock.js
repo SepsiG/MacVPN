@@ -22,9 +22,11 @@
     return b && !b.disabled ? b : null;
   };
   const vm = await window.__TAURI_INTERNALS__.invoke('get_view_model');
+  // The product's name (MacVPN, WinVPN) as the platform reports it.
+  const product = (await window.__TAURI_INTERNALS__.invoke('get_platform')).productName;
   const texts = {
-    en: { locked: 'MacVPN is locked', reset: 'Reset the master password' },
-    hu: { locked: 'A MacVPN zárolva van', reset: 'A mesterjelszó visszaállítása' },
+    en: { locked: `${product} is locked`, reset: 'Reset the master password' },
+    hu: { locked: `A ${product} zárolva van`, reset: 'A mesterjelszó visszaállítása' },
   }[vm.language];
   const title = () => document.querySelector('.unlock h1')?.textContent.trim();
   await waitFor(() => title() === texts.locked);

@@ -6,3 +6,6 @@ pub const SRC_MAX: u64 = 1_048_576;
 pub const SECRETS_MAX: u64 = 64 * 1024;
 /// The longest stdin accepted (the header, the largest config, the secrets, one byte to detect excess).
 pub const STDIN_MAX: u64 = SRC_MAX + SECRETS_MAX + 16;
+
+// The WinVPN Service's pipe carries the same body as the root layer's stdin.
+const _: () = assert!(STDIN_MAX == macvpn_core::service_proto::BODY_MAX);

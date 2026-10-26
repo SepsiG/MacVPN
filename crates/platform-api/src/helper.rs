@@ -1,5 +1,6 @@
 //! The privileged helper (on macOS the root layer `mvpn`), its UI state files and the 1.1 secrets.
 
+use macvpn_core::log::{FileLogSource, LogSource};
 use macvpn_core::mfa::{AuthResponseKind, AuthUIState};
 use macvpn_core::models::{SecretField, Secrets, VPNKind};
 use macvpn_core::status::RootStatus;
@@ -27,6 +28,11 @@ pub trait HelperClient: Send + Sync {
     /// The helper's log file of the connection (the Log tab reads it); `None`: this helper keeps none.
     fn log_path(&self, _id: &Uuid) -> Option<PathBuf> {
         None
+    }
+    /// The connection's log as the Log tab reads it. Default: the file at [`Self::log_path`] (macOS); `None`: no
+    /// log.
+    fn log_source(&self, id: &Uuid) -> Option<Box<dyn LogSource>> {
+        self.log_path(id).map(|path| Box::new(FileLogSource { path }) as Box<dyn LogSource>)
     }
 }
 

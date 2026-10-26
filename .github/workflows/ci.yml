@@ -1,6 +1,9 @@
 name: CI
 on:
+  # Branch pushes and pull requests; not tag pushes: the release workflow checks the CI run of the main push of
+  # the tagged commit, so a second run on the tag would only repeat it.
   push:
+    branches: ['**']
   pull_request:
 permissions:
   contents: read
@@ -20,16 +23,43 @@ jobs:
           [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
           rustc --version
           cargo --version
+      # Rust build cache (dependencies only: the action drops the workspace crates' own artifacts before saving).
+      # Safe here: CI only checks; release artifacts are built in release.yml, which uses no cache at all. Saved only
+      # by pushes to main and develop, so a pull request or another branch never writes a cache that main restores.
+      # One key per job, OS and target set, so macOS, Windows and the target triples never share an entry.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: macos-aarch64-check
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: cargo test
         run: cargo test --workspace --locked
+      - name: Ignored tests are the same on every OS
+        run: scripts/check-ignored.sh
       - name: Root layer tests (the Rust mvpn)
         run: MVPN_IMPL=rust scripts/test-root.sh
       - name: Release signing script (dry run, throwaway key, no network)
         run: scripts/test-sign-release.sh
+      - name: Windows test machine script (print mode, no SSH)
+        run: scripts/test-win-remote.sh
+      - name: Windows smoke script (print mode, no SSH)
+        run: scripts/test-win-smoke.sh
+      # The VPN test lab without Docker (WinVPN 2c, Task 4): the generated PKI, keys and client profiles through
+      # MacVPN's import and validators. Needs OpenSSL 3 (the image's Homebrew openssl@3; without it the step only
+      # warns); the compose checks skip themselves without `docker compose` (the macOS runner has no Docker).
+      - name: VPN test lab (profiles, PKI, dry runs; no Docker, no network)
+        run: |
+          if bash -c '. scripts/vpn-lab/lib.sh && find_openssl' >/dev/null; then
+            scripts/test-vpn-lab.sh
+          else
+            echo "::warning::OpenSSL 3 not found on the runner: scripts/test-vpn-lab.sh skipped"
+          fi
+      - name: CI's OpenVPN install script (dry run from the pins, no network)
+        run: scripts/ci-install-openvpn.sh --dry-run
       - name: No unbraced $VAR right before non-ASCII text (breaks under UTF-8 locales)
         run: |
           if perl -ne 'print "$ARGV:$.: $_" if /\$[A-Za-z_][A-Za-z0-9_]*[\x80-\xff]/; close ARGV if eof' scripts/*.sh | grep .; then
@@ -79,6 +109,12 @@ jobs:
           rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t aarch64-apple-darwin,x86_64-apple-darwin,x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
           [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
           rustc --version
+      # Rust build cache: see job rust (checks only, never release artifacts; saved only on main and develop).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: macos-universal-release
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
       - name: DMG build (universal app, signed mvpn, Info.plist checks)
         run: scripts/build-dmg.sh
       - name: Bundle check
@@ -115,6 +151,12 @@ jobs:
           [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
           rustc --version
           cargo --version
+      # Rust build cache: see job rust (checks only, never release artifacts; saved only on main and develop).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: windows-x64-arm64-check
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
       - name: cargo fmt
         run: cargo fmt --all --check
       - name: cargo clippy (x64)
@@ -123,12 +165,143 @@ jobs:
         run: |
           cargo check --workspace --all-targets --locked --target aarch64-pc-windows-msvc
           cargo check --workspace --all-targets --locked --release --target aarch64-pc-windows-msvc
-      - name: cargo test (platform-independent crates)
-        run: CI=1 cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper --lib --tests --no-fail-fast
-      - name: Tests ignored on Windows (private files, phase 2 drives this to zero)
+      # The service's tests load the pinned wireguard.dll (target/wireguard-nt), and platform-win's client tests start
+      # the helper's debug console (target/<triple>/debug/mvpn.exe), which cargo test does not build for them.
+      - name: wireguard-nt (the pinned SDK) and the helper's debug console
         run: |
-          CI=1 cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper --lib --tests -- --list --ignored > "$RUNNER_TEMP/ignored.txt"
-          echo "ignored tests: $(grep -c ': test' "$RUNNER_TEMP/ignored.txt" || true)"
+          scripts/fetch-wireguard-nt.sh
+          cargo build --locked --target x86_64-pc-windows-msvc -p macvpn-helper
+      # Every test binary of these crates (`--tests`), WinVPN 2c's RAS tests included: winsys `ras`, platform-win
+      # `ras_engine`, `system_vpns`, `ras_sweep`, `admin_steps` (private phonebooks in temp folders and the PSK store:
+      # a standard user's calls, no dial), the pure `ras_pure`, `ras_connect`, `ras_editor`, `system_vpns_pure`, core
+      # `ras_plan`, helper `ras_logoff`. The dial tests need an interactive logon session (`desktop:`) and the CA
+      # trust test a UAC prompt: they stay ignored (scripts/ignored-everywhere.txt; the 2c checklist runs them).
+      - name: cargo test (the Windows test set, the app included)
+        run: CI=1 cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper -p macvpn-winsys -p macvpn-control-client -p macvpn-app --lib --tests --no-fail-fast
+      - name: Ignored tests are the same on every OS
+        run: scripts/check-ignored.sh --target x86_64-pc-windows-msvc
+  msi:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      # As in job windows: openssl-src needs the image's Strawberry Perl. GitHub sets CI=true, so build-msi.sh refuses
+      # WINVPN_WIX_NO_ICE: the MSIs are linked with WiX's ICE validation here (the runner reaches the Windows Installer
+      # service). Unsigned: no WINVPN_SIGN_THUMBPRINT, no secret.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.8.2"
+          # No automatic cache: release builds must not restore a cache written elsewhere.
+          package-manager-cache: false
+      - name: Rust toolchain (both Windows targets)
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -t x86_64-pc-windows-msvc,aarch64-pc-windows-msvc
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+      # Rust build cache: see job rust (checks only, never release artifacts; saved only on main and develop).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: windows-x64-arm64-release
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
+      - name: MSIs (x64, ARM64) with the release gates and ICE validation
+        run: |
+          [ -z "${WINVPN_WIX_NO_ICE:-}" ] || { echo "WINVPN_WIX_NO_ICE must not be set in CI"; exit 1; }
+          scripts/build-msi.sh
+      - name: SHA-256
+        run: cat dist/windows/WinVPN-*.msi.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: winvpn-msi
+          path: |
+            dist/windows/WinVPN-*.msi
+            dist/windows/WinVPN-*.msi.sha256
+          if-no-files-found: error
+          retention-days: 7
+  # The administrator job: GitHub's Windows runners run as an administrator, so this job installs what the standard
+  # user tests cannot (OpenVPN Community with its drivers, the MSI built by job msi with the WinVPN Service) and runs
+  # the admin test set (ignored everywhere else): the installed service and its pipe, the data directory, the
+  # recovery settings, a WireGuard adapter, the installed OpenVPN's trust checks, and OpenVPN end to end through the
+  # service to a local server on loopback (DCO and TAP-Windows6). It changes the runner, never anything else.
+  windows-admin:
+    needs: msi
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    env:
+      # As in job windows.
+      OPENSSL_SRC_PERL: C:\Strawberry\perl\bin\perl.exe
+    steps:
+      - name: Check out with LF line endings
+        run: git config --global core.autocrlf false
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The MSIs job msi built and gated (ICE validation included) in this run.
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: winvpn-msi
+          path: dist/windows
+      - name: Rust toolchain (x64)
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -t x86_64-pc-windows-msvc
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+      # Rust build cache: see job rust (checks only, never release artifacts; saved only on main and develop).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: windows-x64-admin
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
+      - name: OpenVPN Community (the pinned MSI with DCO and TAP-Windows6, decision 4)
+        run: scripts/ci-install-openvpn.sh
+      - name: Install WinVPN (the x64 MSI of job msi)
+        run: |
+          (cd dist/windows && sha256sum -c WinVPN-*-x64.msi.sha256)
+          MSI=$(ls dist/windows/WinVPN-*-x64.msi)
+          MSYS_NO_PATHCONV=1 msiexec.exe /i "$(cygpath -w "$MSI")" /qn /norestart /l*v "$(cygpath -w "$RUNNER_TEMP/winvpn-install.log")"
+          for _ in $(seq 30); do
+            MSYS_NO_PATHCONV=1 sc.exe query WinVPN | grep -q RUNNING && break
+            sleep 1
+          done
+          MSYS_NO_PATHCONV=1 sc.exe qc WinVPN
+          MSYS_NO_PATHCONV=1 sc.exe query WinVPN | grep -q RUNNING || { echo "the WinVPN service is not running"; exit 1; }
+      - name: wireguard-nt for the console test
+        run: scripts/fetch-wireguard-nt.sh
+      - name: The admin test set
+        run: |
+          cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-helper --test service_admin --test wireguard_admin --test openvpn_installed --test openvpn_e2e -- --ignored --test-threads=1
+          cargo test --locked --target x86_64-pc-windows-msvc -p macvpn-winsys --test service_pipe --test cert_store_admin -- --ignored
+      - name: Logs on failure
+        if: failure()
+        run: |
+          for log in "$RUNNER_TEMP/openvpn-install.log" "$RUNNER_TEMP/winvpn-install.log"; do
+            [ -f "$log" ] || continue
+            echo "--- $log (last 200 lines)"
+            tr -d '\000' <"$log" | tail -200 || true
+          done
+          echo "--- C:\ProgramData\WinVPN\service.log"
+          cat 'C:\ProgramData\WinVPN\service.log' || true
+          for f in /c/ProgramData/WinVPN/logs/*.log; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            cat "$f" || true
+          done
   windows-node:
     runs-on: windows-latest
     defaults:

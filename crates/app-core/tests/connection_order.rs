@@ -41,7 +41,6 @@ fn fixed_clock() -> Arc<ManualClock> {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn root_connect_counts_once_and_refreshes_do_not_add_more() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -63,7 +62,6 @@ fn root_connect_counts_once_and_refreshes_do_not_add_more() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn connection_not_started_by_the_user_does_not_count() {
     let f = Fixture::new(HU);
     let c = Connection::new("Iroda", VPNKind::Openvpn);
@@ -83,7 +81,6 @@ fn connection_not_started_by_the_user_does_not_count() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn failed_connect_does_not_count_and_does_not_linger() {
     let f = Fixture::new(HU);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -122,7 +119,6 @@ fn native_connection(f: &Fixture) -> Connection {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_connect_counts_once_when_it_comes_up() {
     let f = Fixture::new(HU);
     let c = native_connection(&f);
@@ -140,7 +136,6 @@ fn native_connect_counts_once_when_it_comes_up() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn native_connect_failure_does_not_count() {
     let f = Fixture::new(HU);
     let c = native_connection(&f);
@@ -178,7 +173,6 @@ fn system_service_connect_counts_once_under_its_service_id() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn ordered_items_mix_managed_and_system_and_pins_come_first() {
     let f = Fixture::new(HU);
     let a = Connection::new("alpha", VPNKind::Openvpn);
@@ -207,7 +201,6 @@ fn ordered_items_mix_managed_and_system_and_pins_come_first() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn deleted_connections_are_pruned_after_a_full_listing_and_persisted() {
     let f = Fixture::new(HU);
     let a = Connection::new("A", VPNKind::Openvpn);

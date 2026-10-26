@@ -37,6 +37,7 @@ use std::fs;
 use std::io::{self, ErrorKind};
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 use zeroize::Zeroizing;
 
 pub const VAULT_FILE: &str = "vault.db";
@@ -193,7 +194,7 @@ impl Vault {
         let path = dir.join(VAULT_FILE);
         let file = fsx::create_new_rw(&path, fsx::Access::Private)?;
         // The new file belongs to this process's user: the directory must too.
-        let own_uid = fsx::owner(&file.metadata()?)?;
+        let own_uid = fsx::owner(&fsx::stat(&file)?)?;
         drop(file);
         let result = (|| {
             if dir_uid != own_uid {
@@ -228,7 +229,7 @@ impl Vault {
         // ours to the extent that we could create or open it 0700, and the file must be 0600.
         let dir_uid = prepare_dir(dir)?;
         let path = dir.join(VAULT_FILE);
-        let meta = fs::symlink_metadata(&path)?;
+        let meta = fsx::stat_path(&path, fsx::Follow::No)?;
         if !meta.file_type().is_file() || fsx::owner(&meta)? != dir_uid || !fsx::has_access(&meta, fsx::Access::Private)
         {
             return Err(VaultError::Io(io::Error::new(
@@ -293,10 +294,43 @@ impl Vault {
     }
 }
 
+/// Sends SQLCipher's own log to the system log device, once per process and before any vault connection (the setting
+/// is process-wide, and changing it while another connection logs would race). On macOS that is SQLCipher's default
+/// (`os_log`), so nothing changes there; on Windows there is no such device and nothing is written. SQLCipher's
+/// Windows default, stderr, recursed without end once memory security is on: when `VirtualLock` fails (the
+/// working-set quota is used up after a few dozen pages), the warning it logs allocates, the allocation tries
+/// `VirtualLock` again and logs again, until the stack overflows. Memory is still wiped on free; only the locking is
+/// best effort, as with `mlock` on macOS. (A GUI app has no stderr to read anyway.)
+fn route_sqlcipher_log() -> Result<(), VaultError> {
+    static ROUTED: OnceLock<Result<(), String>> = OnceLock::new();
+    ROUTED
+        .get_or_init(|| {
+            let conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
+            set_log_device(&conn)
+        })
+        .clone()
+        .map_err(VaultError::Sql)
+}
+
+/// `PRAGMA cipher_log = device`, which answers with SQLCipher's status as a row: `"0"` (`SQLITE_OK`) or the error.
+fn set_log_device(conn: &Connection) -> Result<(), String> {
+    let status = conn.query_row("PRAGMA cipher_log = device;", [], |r| r.get::<_, String>(0)).optional();
+    log_status_ok(status.map_err(|e| e.to_string())?)
+}
+
+/// Only the status row `"0"` means the log was routed; anything else (no row, another code) is an error.
+fn log_status_ok(status: Option<String>) -> Result<(), String> {
+    match status.as_deref() {
+        Some("0") => Ok(()),
+        other => Err(format!("routing SQLCipher's log failed (status {other:?})")),
+    }
+}
+
 /// Opens the file with SQLite and runs the key and pragma sequence. SQLite gets the canonical path because
 /// `SQLITE_OPEN_NOFOLLOW` refuses a symlink anywhere in the path (`/var` → `/private/var`, a symlinked home); the
 /// directory itself was already checked not to be a symlink, and the file is not followed if it is one.
 fn connect(path: &Path, dek: &Dek, access: Access) -> Result<Connection, VaultError> {
+    route_sqlcipher_log()?;
     let dir = path.parent().unwrap_or(Path::new("."));
     let name = path.file_name().ok_or_else(|| io::Error::from(ErrorKind::InvalidInput))?;
     let path = fs::canonicalize(dir)?.join(name);
@@ -474,4 +508,20 @@ fn not_ours(dir: &Path) -> VaultError {
 /// to 0700, and returns its owner.
 fn prepare_dir(dir: &Path) -> io::Result<FileOwner> {
     fsx::ensure_private_dir(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The pragma answers `"0"` (review I10): the log goes to the system log device, as SQLCipher's macOS default.
+    #[test]
+    fn the_log_is_routed_to_the_device() {
+        let conn = Connection::open_in_memory().unwrap();
+        assert_eq!(set_log_device(&conn), Ok(()));
+        assert_eq!(route_sqlcipher_log().map_err(|e| e.to_string()), Ok(()));
+        assert!(log_status_ok(Some("1".into())).is_err());
+        assert!(log_status_ok(None).is_err());
+        assert!(log_status_ok(Some(String::new())).is_err());
+    }
 }

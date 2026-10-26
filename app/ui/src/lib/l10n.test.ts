@@ -74,10 +74,69 @@ test('without a variant the product name is replaced', () => {
 });
 
 test('a macOS-only text is never substituted', () => {
-  const key = 'MacVPN uses the VPN tools from Homebrew (openvpn, wireguard-tools, strongswan, sstp-client, bash). You can install the missing ones here.';
+  const key =
+    'Stored in the MacVPN vault and passed to macOS when connecting. Needed when macOS cannot read the shared secret on its own ("incorrect user shared secret").';
   assert.deepEqual(table[key].only, ['macos']);
   assert.equal(translate(table, 'en', WINDOWS, key, []), key);
   assert.equal(translate(table, 'hu', WINDOWS, key, []), table[key].hu);
+});
+
+/// The macOS facility names, in English and Hungarian (the list of `l10n_coverage.rs`'s `MACOS_TERMS`): whole words,
+/// a Hungarian form with its suffixes (`Keychainben`, `menüsorban`, `Macen`); `MacVPN` and `Optional` are not terms.
+const MACOS_TERMS: readonly string[] = [
+  'Keychain\\p{L}*',
+  '[Kk]ulcskarik\\p{L}*',
+  'Finder\\p{L}*',
+  'Mac(?:-?\\p{Ll}+)?',
+  'macOS',
+  'Homebrew\\p{L}*',
+  'brew',
+  'System Settings',
+  'Rendszerbeállítás\\p{L}*',
+  'Login Items',
+  'Bejelentkezési elem\\p{L}*',
+  'LaunchAgent\\p{L}*',
+  'Applications',
+  'Device Management',
+  'scutil',
+  'sudo',
+  'sudoers',
+  'Dock\\p{L}*',
+  'menu bar',
+  'menüsor\\p{L}*',
+  'Option',
+  'Gatekeeper',
+  'Terminal\\p{L}*',
+  'Terminál\\p{L}*',
+  'Info\\.plist',
+  'Profiles pane',
+  'Profilok panel\\p{L}*',
+  'root (?:layer|helper|scripts?|file)',
+  'root (?:réteg|segéd|script|fájl)\\p{L}*',
+];
+const MACOS_TERM = new RegExp(`(?<![\\p{L}\\p{N}_])(?:${MACOS_TERMS.join('|')})(?![\\p{L}\\p{N}_])`, 'u');
+
+/// What WinVPN's UI shows: every `app` text resolved for Windows, in both languages, names no macOS facility,
+/// unless only other OSes show it.
+test('no macOS term reaches Windows', () => {
+  // The matcher itself: whole words, Hungarian suffixes, not the product name.
+  assert.ok(MACOS_TERM.test('a macOS Keychainjében'));
+  assert.ok(MACOS_TERM.test('ezen a Macen') && MACOS_TERM.test('a Mac-en') && MACOS_TERM.test('this Mac.'));
+  assert.ok(MACOS_TERM.test('a menüsorban'));
+  assert.ok(!MACOS_TERM.test('WinVPN and MacVPN, Optional'));
+  const offenders: string[] = [];
+  let checked = 0;
+  for (const [key, entry] of Object.entries(table)) {
+    if (entry.scope !== 'app') continue;
+    if (entry.only !== undefined && !entry.only.includes('windows')) continue;
+    checked += 1;
+    for (const language of ['en', 'hu'] as const) {
+      const text = translate(table, language, WINDOWS, key, []);
+      if (MACOS_TERM.test(text)) offenders.push(text);
+    }
+  }
+  assert.ok(checked > 500, `${checked}`);
+  assert.deepEqual(offenders, []);
 });
 
 test('the platform comes from the get_platform reply', () => {
@@ -85,6 +144,19 @@ test('the platform comes from the get_platform reply', () => {
   const windows = platformOf({ os: 'windows', productName: 'WinVPN' });
   assert.deepEqual(windows, WINDOWS);
   assert.equal(translate(table, 'en', windows, 'Quit MacVPN', []), 'Quit WinVPN');
+  // The restore plan's origin line (RestorePlanView) names the running product too; macOS unchanged.
+  assert.equal(
+    translate(table, 'en', windows, 'Made on %@ by MacVPN %@', ['2026-10-21', '1.5.0']),
+    'Made on 2026-10-21 by WinVPN 1.5.0',
+  );
+  assert.equal(
+    translate(table, 'hu', windows, 'Made on %@ by MacVPN %@', ['2026-10-21', '1.5.0']),
+    'Készült: 2026-10-21, WinVPN 1.5.0',
+  );
+  assert.equal(
+    translate(table, 'en', MACOS, 'Made on %@ by MacVPN %@', ['2026-10-21', '1.5.0']),
+    'Made on 2026-10-21 by MacVPN 1.5.0',
+  );
   assert.deepEqual(platformOf({ os: 'linux', productName: 'LinVPN' }), { os: 'linux', product: 'LinVPN' });
 });
 

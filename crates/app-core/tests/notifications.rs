@@ -139,7 +139,7 @@ fn notification_texts_are_generic() {
         assert_eq!((n.id.as_str(), n.user_info.0, n.user_info.1.as_str()), ("U1", CONNECTION_KEY, "ID"));
         assert!(!n.body.contains("alice"));
         let n = for_event(&dropped("ID", "Office"), "U2".into());
-        assert_eq!((n.title.as_str(), n.body.as_str()), ("Office: the connection dropped", "Click to see the log."));
+        assert_eq!((n.title.as_str(), n.body.as_str()), ("Office disconnected", "Click to see the log."));
     });
     with_language(AppLanguage::Hu, || {
         let n = for_event(&failed("ID", "Iroda", "x"), "U".into());

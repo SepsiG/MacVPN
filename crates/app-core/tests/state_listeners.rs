@@ -45,7 +45,6 @@ fn connected_status(c: &Connection) -> String {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn listeners_see_each_change_in_order() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -65,7 +64,6 @@ fn listeners_see_each_change_in_order() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn a_failure_reaches_the_listeners() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -82,7 +80,6 @@ fn a_failure_reaches_the_listeners() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn only_a_user_disconnect_reaches_the_user_listeners() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -111,7 +108,6 @@ fn only_a_user_disconnect_reaches_the_user_listeners() {
 /// The user listener runs before the state changes, so the control API can tell the user's disconnect from a
 /// drop.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn user_listener_runs_before_the_state_changes() {
     let f = Fixture::new(EN);
     let c = Connection::new("WG", VPNKind::Wireguard);
@@ -131,7 +127,6 @@ fn user_listener_runs_before_the_state_changes() {
 
 /// Declining the server's code prompt makes the failing `up` report the cancel, not the tool's message.
 #[test]
-#[cfg_attr(windows, ignore = "private files on Windows: phase 2")]
 fn cancelled_dynamic_challenge_fails_with_the_cancel_reason() {
     let f = Fixture::new(EN);
     let c = Connection::new("Office", VPNKind::Openvpn);

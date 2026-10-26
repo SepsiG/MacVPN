@@ -17,6 +17,11 @@ path = "src/main.rs"
 [lints]
 workspace = true
 
-# std + serde_json only, so the client is easy to copy. No Keychain crate here: see the README.
+# std + serde_json only on Unix, so the client is easy to copy. No Keychain crate here: see the README.
 [dependencies]
 serde_json = "1.0.154"
+
+# On Windows the named pipe needs Win32 calls (the server's user must be checked before a token is sent):
+# macvpn-winsys, see the README.
+[target.'cfg(windows)'.dependencies]
+macvpn-winsys = { path = "../../crates/winsys" }

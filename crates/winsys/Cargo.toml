@@ -1,0 +1,46 @@
+[package]
+name = "macvpn-winsys"
+description = "The Win32 calls MacVPN's core and Windows platform share: SIDs, security descriptors, file identity, randomness, named pipes, RAS"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "macvpn_winsys"
+
+[lints]
+workspace = true
+
+# Windows only (the whole crate is `#![cfg(windows)]`): an empty crate on every other target. windows-sys is the
+# version Tauri already brings (no new crate in Cargo.lock), pinned exactly.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "=0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_NetworkManagement_Ndis",
+    "Win32_NetworkManagement_Rras",
+    "Win32_NetworkManagement_WiFi",
+    "Win32_Networking_WinSock",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Security_Cryptography",
+    "Win32_Security_Cryptography_Catalog",
+    "Win32_Security_Cryptography_Sip",
+    "Win32_Security_WinTrust",
+    "Win32_Storage_FileSystem",
+    "Win32_System_ApplicationInstallationAndServicing",
+    "Win32_System_Com",
+    "Win32_System_IO",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Pipes",
+    "Win32_System_Registry",
+    "Win32_System_Services",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+    "Win32_UI_Shell",
+] }
+
+[target.'cfg(windows)'.dev-dependencies]
+uuid = { version = "1.26.1", features = ["v4"] }

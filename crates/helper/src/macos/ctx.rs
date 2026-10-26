@@ -261,23 +261,37 @@ impl Ctx {
         self.log.step(&tr("no running connection", &[]));
     }
 
-    /// Runs the DNS hook (`<libexec>/mvpn hook ovpn-dns <run> <log>`) with `script_type=down` to restore DNS.
+    /// This connection gives up DNS (the DNS manager restores the originals, or the DNS of the newest other
+    /// connection holding DNS). A `dns-backup` of an older root layer goes through the DNS hook
+    /// (`<libexec>/mvpn hook ovpn-dns <run> <log>` with `script_type=down`) as before.
     pub fn dns_restore(&self) {
         let run = self.run().to_path_buf();
-        if !crate::macos::paths::is_file(&run.join("dns-backup")) {
-            return;
+        if crate::macos::paths::is_file(&run.join("dns-backup")) {
+            let cmd = Cmd::new(self.s.hook_program())
+                .args(["hook", "ovpn-dns"])
+                .arg(&run)
+                .arg(self.log.path().unwrap_or(Path::new("/dev/null")))
+                .env("script_type", "down");
+            let mut c = cmd.command(self.env_mode());
+            c.stdin(Stdio::null());
+            if self.quiet {
+                c.stdout(Stdio::null()).stderr(Stdio::null());
+            }
+            let _ = c.status();
         }
-        let cmd = Cmd::new(self.s.hook_program())
-            .args(["hook", "ovpn-dns"])
-            .arg(&run)
-            .arg(self.log.path().unwrap_or(Path::new("/dev/null")))
-            .env("script_type", "down");
-        let mut c = cmd.command(self.env_mode());
-        c.stdin(Stdio::null());
-        if self.quiet {
-            c.stdout(Stdio::null()).stderr(Stdio::null());
+        if !self.dry()
+            && let Some(m) = crate::macos::dns::manager(&self.s)
+        {
+            m.release(&self.id, &self.log);
         }
-        let _ = c.status();
+    }
+
+    /// This connection takes DNS (WireGuard; OpenVPN and SSTP go through the DNS hook).
+    pub fn dns_set(&self, dns: &crate::macos::dns::Dns) {
+        match crate::macos::dns::manager(&self.s) {
+            Some(m) => m.acquire(&self.id, dns, &self.log),
+            None => self.log.step(&tr("not running as root: DNS not changed", &[])),
+        }
     }
 }
 

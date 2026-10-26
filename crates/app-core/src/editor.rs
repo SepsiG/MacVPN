@@ -252,7 +252,7 @@ impl EditorFields {
 }
 
 impl SstpFields {
-    fn config(&self) -> SSTPConfig {
+    pub(crate) fn config(&self) -> SSTPConfig {
         SSTPConfig {
             server: self.server.clone(),
             port: self.port,
@@ -501,6 +501,85 @@ pub fn forget_system_secrets(deps: &EditorDeps, s: &SystemVpn) {
     let Some(id) = s.secret_id() else { return };
     deps.secret_writer.delete_all(&id);
     deps.manager.set_system_otp(OTPSetting::default(), &s.id);
+}
+
+// MARK: - Make an L2TP/IPsec Copy (WinVPN 2c, Cisco IPsec on Windows: option A)
+
+/// The new connection of [`l2tp_copy_of`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct L2tpCopy {
+    pub id: Uuid,
+    /// The copy is saved, but its profile could not be installed (the editor shows it, as after a save).
+    pub install_error: Option<String>,
+}
+
+/// The longest connection name (the vault's and the catalogs' limit).
+const MAX_NAME_CHARACTERS: usize = 128;
+
+/// "<name> (L2TP)", the name cut so that the whole stays within the name limit.
+fn l2tp_copy_name(name: &str) -> String {
+    const SUFFIX: &str = " (L2TP)";
+    let base: String = name.chars().take(MAX_NAME_CHARACTERS - SUFFIX.chars().count()).collect();
+    format!("{}{SUFFIX}", base.trim_end())
+}
+
+/// **Make an L2TP/IPsec Copy** of a Cisco IPsec connection (Windows has no Cisco IPsec client): a new L2TP/IPsec
+/// connection "<name> (L2TP)" in the same folder, with the same server, account, "send all traffic" and OTP
+/// setting, the vault's PSK and password copied (a connection linked to a shared credential: the copy is linked
+/// to the same credential, `credentials` must then be given), the group name dropped. Its profile is built and
+/// installed as a save does (WinVPN: the RAS entry is written). The original is not changed.
+pub fn l2tp_copy_of(
+    deps: &EditorDeps,
+    original: &Connection,
+    credentials: Option<&crate::shared_credentials::SharedCredentials>,
+) -> Result<L2tpCopy, String> {
+    let original = deps.current(original);
+    let (VPNKind::Cisco, Some(settings)) = (original.kind, original.native.as_ref()) else {
+        return Err(l10n::tr("The editor is no longer available", &[]));
+    };
+    let source_key = uuid_string(&original.id);
+    let credential = match credentials {
+        Some(c) => c.credential_of(&source_key).map_err(|e| crate::shared_credentials::error_message(&e))?,
+        None if deps.secrets.credential_for(&original.id).is_some() => {
+            return Err(crate::shared_credentials::locked_message());
+        }
+        None => None,
+    };
+    let name = l2tp_copy_name(&original.name);
+    let mut copy = Connection::new(name.clone(), VPNKind::L2tp);
+    copy.native = Some(NativeSettings { group_name: String::new(), ..settings.clone() });
+    copy.native_service_name = Some(name);
+    copy.otp = original.otp;
+    deps.store.save(&copy, None).map_err(|e| e.to_string())?;
+    let key = uuid_string(&copy.id);
+    if let (Some(credential), Some(credentials)) = (credential, credentials)
+        && let Err(e) = credentials.link(&key, Some(credential))
+    {
+        let _ = deps.store.delete(&copy.id);
+        return Err(crate::shared_credentials::error_message(&e));
+    }
+    let psk = deps.secrets.get(&original.id, SecretField::Psk).unwrap_or_default();
+    let own = credential.is_none();
+    let secrets = Secrets {
+        username: own.then(|| deps.secrets.get(&original.id, SecretField::Username)).flatten(),
+        password: own.then(|| deps.secrets.get(&original.id, SecretField::Password)).flatten(),
+        psk: Some(psk.clone()),
+        ..Secrets::default()
+    };
+    deps.store_secrets(&secrets, &copy.id);
+    if let (Some(store), Some(folder)) =
+        (deps.manager.folder_store(), deps.manager.placement(&source_key).and_then(|p| p.folder))
+    {
+        // A folder the copy cannot go into (a team catalog's): it stays at the root.
+        let _ = store.apply(crate::deps::FolderOp::MoveItem { key, folder: Some(folder) });
+    }
+    deps.manager.reload();
+    deps.manager.reload_folders();
+    let install_error = match deps.profiles.build(&copy, &psk) {
+        Ok(profile) => deps.profiles.install(&copy.id, &profile.data, &profile.file_name, false).err(),
+        Err(e) => Some(e),
+    };
+    Ok(L2tpCopy { id: copy.id, install_error })
 }
 
 // MARK: - Drafts
@@ -953,6 +1032,7 @@ impl Draft {
             removed: self.removed,
             credential: self.credential.clone(),
             read_only: self.read_only.clone(),
+            platform: None,
         }
     }
 }
@@ -1005,6 +1085,36 @@ pub struct EditorView {
     /// A team catalog's connection: "Managed by the team catalog “…”". The editor is read-only except for the
     /// risky settings' checkbox.
     pub read_only: Option<String>,
+    /// What the platform says about these settings (WinVPN 2c: Windows' reasons, the IKEv2 summary, the CA trust,
+    /// the L2TP copy, the system VPN's PSK note); set by the Connections window
+    /// ([`crate::connections::ConnectionsModel::set_native_platform`]). Absent from the JSON when `None` (MacVPN).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub platform: Option<EditorPlatformView>,
+}
+
+/// [`EditorView::platform`]: the platform's notes on the editor's draft (`PlatformNotes`), plus whether the system
+/// trusts the SSTP custom CA and the system VPN's PSK note.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorPlatformView {
+    /// Why the platform cannot connect these settings (the yellow note; saving still works).
+    pub reasons: Vec<String>,
+    /// One line on what the platform makes of the settings (grey).
+    pub summary: Option<String>,
+    /// Settings the platform ignores (grey notes; the connection still runs).
+    pub warnings: Vec<String>,
+    /// SSTP: why "No verification" cannot be chosen (its title; the option is disabled).
+    pub insecure_cert: Option<String>,
+    /// The editor offers **Trust This CA in Windows…**.
+    pub trust_ca: bool,
+    /// SSTP with a custom CA: whether the system trusts it ("Trusted by Windows"); `None`: unknown or no CA.
+    pub ca_trusted: Option<bool>,
+    /// The editor offers **Make an L2TP/IPsec Copy** (Cisco IPsec).
+    pub l2tp_copy: bool,
+    /// L2TP / Cisco: saving needs no approval step ("Save", no "approve the profile" note).
+    pub no_install_step: bool,
+    /// System VPN: the note under the PSK (Windows keeps it for that VPN too).
+    pub psk_note: Option<String>,
 }
 
 /// The editor key of a connection.

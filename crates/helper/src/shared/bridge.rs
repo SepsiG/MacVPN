@@ -68,6 +68,31 @@ impl BridgeArgs {
             map.get("--max-wait").and_then(|v| v.parse::<i64>().ok()).map(|v| v.clamp(1, 3600)).unwrap_or(420) as f64;
         Some(BridgeArgs { id, run, ui, uid, gid, max_wait })
     }
+
+    /// A bridge inside the WinVPN Service: no run or state directory, no user ids (the service keeps the state in
+    /// memory and answers for the user over its pipe). `max_wait` clamped as `--max-wait` is (not a number: `None`).
+    pub fn in_process(id: &str, max_wait: f64) -> Option<BridgeArgs> {
+        if max_wait.is_nan() {
+            return None;
+        }
+        let id = uuid_string(&parse_uuid(id)?);
+        Some(BridgeArgs {
+            id,
+            run: String::new(),
+            ui: String::new(),
+            uid: 0,
+            gid: 0,
+            max_wait: max_wait.clamp(1.0, 3600.0),
+        })
+    }
+}
+
+/// The bridge's `mgmt-status` line: `^(wait [0-9]{1,12}|ok|failed|cancelled|timeout)$`
+pub fn valid_status(s: &str) -> bool {
+    match s.strip_prefix("wait ") {
+        Some(n) => (1..=12).contains(&n.len()) && n.bytes().all(|b| b.is_ascii_digit()),
+        None => matches!(s, "ok" | "failed" | "cancelled" | "timeout"),
+    }
 }
 
 pub fn now() -> f64 {
@@ -94,7 +119,13 @@ pub trait BridgeFiles {
     fn take_response(&mut self) -> Option<Zeroizing<Vec<u8>>>;
     /// A final failure or a cancel: openvpn is stopped so it does not retry (auth-retry interact).
     fn stop_openvpn(&mut self);
+    /// Called every [`HOUSEKEEPING_SECS`] while the bridge runs (it runs as long as openvpn): the macOS backend keeps
+    /// the logs under their caps there, also when the app does not poll the status.
+    fn housekeeping(&mut self) {}
 }
+
+/// How often the bridge calls [`BridgeFiles::housekeeping`].
+pub const HOUSEKEEPING_SECS: f64 = 30.0;
 
 /// The bridge's state machine over the management stream `S`.
 pub struct Bridge<S: Read + Write, F: BridgeFiles> {
@@ -113,6 +144,7 @@ pub struct Bridge<S: Read + Write, F: BridgeFiles> {
     pending_timeout: f64,
     finished: bool,
     round_start: Option<f64>,
+    last_housekeeping: f64,
 }
 
 impl<S: Read + Write, F: BridgeFiles> Drop for Bridge<S, F> {
@@ -143,6 +175,7 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             pending_timeout: WEB_AUTH_TIMEOUT,
             finished: false,
             round_start: None,
+            last_housekeeping: now(),
         }
     }
 
@@ -496,6 +529,11 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             if self.awaiting_user && self.deadline.is_some_and(|d| now() > d) {
                 self.finish("timed out waiting for authentication", false, true);
             }
+            let t = now();
+            if !(0.0..HOUSEKEEPING_SECS).contains(&(t - self.last_housekeeping)) {
+                self.last_housekeeping = t;
+                self.files.housekeeping();
+            }
         }
     }
 }
@@ -541,6 +579,28 @@ mod tests {
         assert!(with("/r", &["--bogus", "1"]).is_none());
         assert!(with("/r", &["--max-wait"]).is_none());
         assert!(BridgeArgs::parse(&v(&["--id", "x"])).is_none());
+    }
+
+    #[test]
+    fn in_process_arguments_carry_only_what_the_bridge_uses() {
+        let a = BridgeArgs::in_process("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 420.0).unwrap();
+        assert_eq!(a.id, "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0");
+        assert_eq!(a.max_wait, 420.0);
+        assert!(a.run.is_empty() && a.ui.is_empty());
+        assert!(BridgeArgs::in_process("../x", 420.0).is_none());
+        assert_eq!(BridgeArgs::in_process("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 99999.0).unwrap().max_wait, 3600.0);
+        assert_eq!(BridgeArgs::in_process("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", 0.0).unwrap().max_wait, 1.0);
+        assert!(BridgeArgs::in_process("0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", f64::NAN).is_none());
+    }
+
+    #[test]
+    fn bridge_status_format() {
+        for ok in ["wait 1760000000", "wait 1", "ok", "failed", "cancelled", "timeout"] {
+            assert!(valid_status(ok), "{ok}");
+        }
+        for bad in ["wait ", "wait 1234567890123", "wait x", "OK", "ok ", "done"] {
+            assert!(!valid_status(bad), "{bad}");
+        }
     }
 
     /// The management stream of a test: each read hands out the next chunk (an empty chunk is a read timeout);
