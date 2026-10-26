@@ -2,7 +2,7 @@
 
 [Magyar változat](how-to.hu.md)
 
-Short step-by-step instructions for MacVPN 1.3. The [user guide](user-guide.en.md) has the details; the links below point to its chapters.
+Short step-by-step instructions for MacVPN 2.0. The [user guide](user-guide.en.md) has the details; the links below point to its chapters. (WinVPN on Windows: [WinVPN How-to](winvpn-how-to.en.md).)
 
 ## Contents
 
@@ -18,7 +18,7 @@ Short step-by-step instructions for MacVPN 1.3. The [user guide](user-guide.en.m
 10. [Start MacVPN at login](#10-start-macvpn-at-login)
 11. [Uninstall MacVPN](#11-uninstall-macvpn)
 12. [Troubleshooting FAQ](#12-troubleshooting-faq)
-13. [Upgrade from 1.1 to 1.2](#13-upgrade-from-11-to-12)
+13. [Upgrade from 1.1](#13-upgrade-from-11)
 14. [Set up, lock and unlock the vault](#14-set-up-lock-and-unlock-the-vault)
 15. [Organize connections in folders](#15-organize-connections-in-folders)
 16. [Share one sign-in between connections](#16-share-one-sign-in-between-connections)
@@ -27,6 +27,8 @@ Short step-by-step instructions for MacVPN 1.3. The [user guide](user-guide.en.m
 19. [Share connections with your team (publish a catalog)](#19-share-connections-with-your-team-publish-a-catalog)
 20. [Remove a team member's access (rotate the team key)](#20-remove-a-team-members-access-rotate-the-team-key)
 21. [Move the admin key to a new Mac](#21-move-the-admin-key-to-a-new-mac)
+22. [Choose the appearance and the connection notifications](#22-choose-the-appearance-and-the-connection-notifications)
+23. [Reconnect automatically after sleep](#23-reconnect-automatically-after-sleep)
 
 ---
 
@@ -48,8 +50,8 @@ Details: [user guide, 1](user-guide.en.md#1-installation).
 The **System Status** window opens by itself when something is missing (later: menu → **System Status**). L2TP and Cisco IPsec work without these steps.
 
 1. **Homebrew:** if it is red, click **Install…**. Terminal opens with the official installer; follow it, then click **Check Again**.
-2. **VPN tools:** click **Install**. The `brew install` output appears in the window. You can close the window meanwhile; it keeps going.
-3. **Permissions (root scripts + sudoers):** click **Authorize** and enter your admin password once (MacVPN 1.2 installs root layer 8). This installs the `mvpn` root binary and the sudoers rule, so connecting needs no password later.
+2. **VPN tools:** click **Install**. The `brew install` output appears in the window. You can close the window meanwhile; it keeps going. Later, when Homebrew has a newer version of a VPN tool, the row says **Update available: …** and **Update** upgrades just those packages. MacVPN runs `brew update` about once a day by itself, so the offer stays current.
+3. **Permissions (root scripts + sudoers):** click **Authorize** and enter your admin password once (MacVPN 2.0 installs root layer 9). This installs the `mvpn` root binary and the sudoers rule, so connecting needs no password later.
 4. When all three rows are green, you are done.
 
 Details: [user guide, 2](user-guide.en.md#2-first-launch-and-the-system-status-window).
@@ -82,7 +84,7 @@ Details: [user guide, 3](user-guide.en.md#3-adding-connections-by-type) and [4](
 2. Click the switch on the connection's card. While it connects, the switch and the badge on the type bubble are amber and the card says **Connecting…**; when it is up, they turn green and the card shows the IP address and the elapsed time.
 3. Click the switch again to disconnect.
 
-You can also use **Connect** / **Disconnect** in the Connections window. Several connections can be active at once. A red badge means an error; the short reason is on the card, and a notification tells you too. **Held by …** on a card means a paired app keeps that VPN up ([user guide, 5.4](user-guide.en.md#54-paired-apps-control-api)).
+You can also use **Connect** / **Disconnect** in the Connections window. Several connections can be active at once. A red badge means an error; the short reason is on the card, and a notification tells you too ([section 22](#22-choose-the-appearance-and-the-connection-notifications)). **Held by …** on a card means a paired app keeps that VPN up ([user guide, 5.4](user-guide.en.md#54-paired-apps-control-api)).
 
 When you quit with active connections, MacVPN asks: **Disconnect and Quit**, **Quit, Keep Them Running** or **Cancel**.
 
@@ -131,18 +133,18 @@ Exports never contain passwords or PSKs. They carry the connection's folder and 
 
 ## 9. Update MacVPN
 
-1. When a new version is out, the menu shows **Update available: vX.Y.Z**. (Or choose **Check for Updates Now**.)
+1. When a new version is out, the menu shows **Update available: vX.Y.Z**. (Or open **Settings** in the menu and choose **Check for Updates Now**.)
 2. Click it, read the notes, then click **Download and Install**.
 3. Answer the questions about unsaved changes and active connections. MacVPN checks the signature, replaces itself and restarts.
 4. If macOS asks whether MacVPN may use its Keychain item (the vault key, at most once per update), click **Always Allow**, but only if the prompt names MacVPN at `/Applications/MacVPN.app`.
-5. If **System Status** opens with **Update required**, click **Authorize** and enter your admin password.
+5. If **System Status** opens with **Update required**, click **Authorize** and enter your admin password. Updating from 1.x to 2.0 always asks for this once (**Update required (8 → 9)**); until then OpenVPN, WireGuard, IKEv2 and SSTP connections are greyed.
 
-Coming from 1.1? Follow [section 13](#13-upgrade-from-11-to-12). Coming from 0.x? Read [Upgrading from 0.x](user-guide.en.md#81-upgrading-from-0x) first. Details: [user guide, 8](user-guide.en.md#8-updates).
+Coming from 1.1? Follow [section 13](#13-upgrade-from-11). Coming from 0.x? Read [Upgrading from 0.x](user-guide.en.md#81-upgrading-from-0x) first. Details: [user guide, 8](user-guide.en.md#8-updates) and [Upgrading from 1.5](user-guide.en.md#84-upgrading-from-15).
 
 ## 10. Start MacVPN at login
 
 1. Make sure MacVPN runs from the Applications folder.
-2. Open the menu and tick **Launch at Login** (also in the System Status window).
+2. Open the menu → **Settings** and turn on **Launch at Login** (also in the System Status window).
 3. If a note asks you to approve it, click **Open Login Items Settings…** and turn MacVPN on there.
 
 If the note says **Enabled via a login LaunchAgent (applies at next login).**, it starts from your next login. Untick the box to turn it off. Details: [user guide, 2.1](user-guide.en.md#21-launch-at-login).
@@ -159,8 +161,11 @@ Details: [user guide, 9](user-guide.en.md#9-uninstalling).
 
 ## 12. Troubleshooting FAQ
 
-**A connection is grey and says "Missing tool".**
-A Homebrew tool for that type is missing, or the root layer is not installed or outdated. Open **System Status**, install what is red, and click **Authorize** if the permissions row asks for it.
+**A connection is grey and says "Not installed: … – System Status".**
+The Homebrew tool for that type is missing. Click **System Status** in that line and **Install**. New and import offer only the types that can be used. [More](user-guide.en.md#24-missing-vpn-tools)
+
+**A connection is grey and says "Not ready: Permissions (root scripts + sudoers) – System Status".**
+The root layer is not installed or outdated (for example right after updating from 1.x). Open **System Status** and click **Authorize**.
 
 **The menu shows "Cannot query the status: …".**
 The root layer or the sudoers rule is missing or outdated. Open **System Status** and click **Authorize**.
@@ -195,6 +200,12 @@ With **Unlock automatically** on, this is expected once per update (for the vaul
 **"Installation cancelled: /usr/local/libexec is not owned by root…" when clicking Authorize.**
 Fix the folder's owner in Terminal as the message says, then click **Authorize** again. [More](user-guide.en.md#78-other)
 
+**A connection did not come back after sleep.**
+The notification says why: **You are on a different network.**, **The VPN’s network is directly reachable here.** (for example at the office), or **Unlock the vault to reconnect.** Connect it by hand. [More](user-guide.en.md#55-reconnect-automatically)
+
+**Websites do not open on my normal network with no VPN connected.**
+An older MacVPN could leave a VPN's DNS server set after a crash or a restart while connected. Remove the VPN's DNS servers once in **System Settings → Network →** the service **→ Details… → DNS**. From 2.0 the root layer restores the DNS itself. [More](user-guide.en.md#56-dns-while-connected)
+
 **The update says the app's location is not writable.**
 Move MacVPN to the Applications folder and try again, or install the new DMG by hand.
 
@@ -222,7 +233,10 @@ It uses a shared credential. Change it in **Credentials**. [More](user-guide.en.
 **The backup cannot be opened.**
 The backup password is wrong, or the file is damaged; MacVPN does not tell which. [More](user-guide.en.md#14-backup-and-restore)
 
-## 13. Upgrade from 1.1 to 1.2
+## 13. Upgrade from 1.1
+
+The in-app update of 1.1 goes straight to the current version (2.0), and its first launch moves your data into the vault.
+
 
 1. Quit MacVPN 1.1 and copy its data: `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.1`. Keep your passwords at hand (for example in a password manager). Start MacVPN again.
 2. Menu → **Check for Updates Now** → **Download and Install**.
@@ -230,7 +244,7 @@ The backup password is wrong, or the file is damaged; MacVPN does not tell which
 4. Save the recovery key (it is shown only once), click **I Saved It**, type the group it asks for and click **Confirm**.
 5. While **Moving your data into the vault…** runs, answer every Keychain prompt that names MacVPN at `/Applications/MacVPN.app` with **Always Allow**.
 6. Check the result (**Your data is in the vault**) and click **Continue**, then **Done**.
-7. In **System Status**, click **Authorize** for **Update required (7 → 8)** and enter your admin password.
+7. In **System Status**, click **Authorize** for **Update required (7 → 9)** and enter your admin password.
 8. Connect each connection once.
 
 If the migration fails, nothing is deleted: click the menu's banner and try again. Details: [user guide, 8.2](user-guide.en.md#82-upgrading-from-11).
@@ -283,7 +297,7 @@ When you import a file that names a shared credential, MacVPN asks before linkin
 
 **Back up:**
 1. Menu → **Settings** → **Back Up Everything…**.
-2. Type a backup password (at least 10 characters) twice. (Or **Use my master password…**, which ties the file to your master password.)
+2. Type a backup password (at least 10 characters) twice, and your master password. (Or **Use my master password…**, which ties the file to your master password.)
 3. Click **Back Up…** and choose where to save `MacVPN-backup-<date>.macvpnbackup`.
 4. Keep the file and its password in different places.
 
@@ -355,3 +369,24 @@ Your publications (each catalog's id, version and team key) are in the vault, ne
 **To retire the old key at the same time** (for example the old Mac goes to someone else): after step 2, **Import Admin Key…** with your `.macvpnadminkey` file, then **Switch to the Backup Key…**, publish each catalog, and generate and export a new backup key. Members who refreshed since the backup key was created follow automatically; the others must subscribe again.
 
 **Without a full backup** (the old Mac is lost): the backup key file alone does not hold the publications, so the next publish makes a new catalog. Publish the connections as a new catalog and send every member the new subscription string; they unsubscribe from the old one. If the lost Mac's vault may have been open, treat the admin key as leaked: see [user guide, 16.10](user-guide.en.md#1610-changing-the-admin-key-and-compromise).
+
+## 22. Choose the appearance and the connection notifications
+
+**Appearance:** menu → **Settings** → **Appearance**: **Match System** (the default), **Light** or **Dark**. It applies at once to the menu and every window.
+
+**Connection notifications:** MacVPN tells you when a connection connects, drops, is reconnected or fails, with a short reason in plain words. The notification names only the connection. Click it to open the connection's **Log** tab. To turn them off: menu → **Settings** → switch off **Connection Notifications**. Code and credential requests still notify you. To change how they look, use **System Settings → Notifications → MacVPN**.
+
+Details: [user guide, 2.2](user-guide.en.md#22-appearance) and [2.3](user-guide.en.md#23-connection-notifications).
+
+## 23. Reconnect automatically after sleep
+
+A connection that went down because the Mac slept or the network went away comes back by itself, but only when both hold:
+
+1. **None of the VPN's own networks or DNS servers is directly reachable** on the network you are on (for example you are in the office the VPN leads to). This is checked first.
+2. **You are on the same network** as when the connection came up (the same router; MacVPN does not reconnect on a network it cannot identify).
+
+MacVPN tries up to 3 times and tells you the result (**… reconnected**, **… not reconnected** with the reason, or **… could not reconnect**). A connection you disconnected yourself is never reconnected. A tunnel that stayed up through the sleep is disconnected when its network is directly reachable on the new network.
+
+**To turn it off for one connection:** **Connections** window → the connection → switch off **Reconnect Automatically** (system VPNs do not have it).
+
+Details: [user guide, 5.5](user-guide.en.md#55-reconnect-automatically).

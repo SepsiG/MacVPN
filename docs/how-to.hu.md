@@ -2,7 +2,7 @@
 
 [English version](how-to.en.md)
 
-Rövid, lépésenkénti leírások a MacVPN 1.3-hoz. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak.
+Rövid, lépésenkénti leírások a MacVPN 2.0-hoz. A részletek a [felhasználói útmutatóban](user-guide.hu.md) vannak; a lenti hivatkozások annak fejezeteire mutatnak. (WinVPN Windowson: [WinVPN – Hogyan csináld](winvpn-how-to.hu.md).)
 
 ## Tartalom
 
@@ -18,7 +18,7 @@ Rövid, lépésenkénti leírások a MacVPN 1.3-hoz. A részletek a [felhasznál
 10. [Indítás bejelentkezéskor](#10-indítás-bejelentkezéskor)
 11. [A MacVPN eltávolítása](#11-a-macvpn-eltávolítása)
 12. [Gyakori kérdések hibaelhárításhoz](#12-gyakori-kérdések-hibaelhárításhoz)
-13. [Frissítés 1.1-ről 1.2-re](#13-frissítés-11-ről-12-re)
+13. [Frissítés 1.1-ről](#13-frissítés-11-ről)
 14. [A széf beállítása, zárolása és feloldása](#14-a-széf-beállítása-zárolása-és-feloldása)
 15. [Kapcsolatok mappákba rendezése](#15-kapcsolatok-mappákba-rendezése)
 16. [Egy bejelentkezés több kapcsolatnak](#16-egy-bejelentkezés-több-kapcsolatnak)
@@ -27,6 +27,8 @@ Rövid, lépésenkénti leírások a MacVPN 1.3-hoz. A részletek a [felhasznál
 19. [Kapcsolatok megosztása a csapattal (katalógus közzététele)](#19-kapcsolatok-megosztása-a-csapattal-katalógus-közzététele)
 20. [Egy csapattag hozzáférésének visszavonása (csapatkulcs cseréje)](#20-egy-csapattag-hozzáférésének-visszavonása-csapatkulcs-cseréje)
 21. [Az aláírókulcs átvitele új Macre](#21-az-aláírókulcs-átvitele-új-macre)
+22. [A megjelenés és a kapcsolatértesítések beállítása](#22-a-megjelenés-és-a-kapcsolatértesítések-beállítása)
+23. [Automatikus újracsatlakozás alvás után](#23-automatikus-újracsatlakozás-alvás-után)
 
 ---
 
@@ -48,8 +50,8 @@ Részletek: [útmutató, 1.](user-guide.hu.md#1-telepítés)
 Ha valami hiányzik, a **Rendszerállapot** ablak magától megnyílik (később: menü → **Rendszerállapot**). Az L2TP és a Cisco IPsec ezek nélkül is működik.
 
 1. **Homebrew:** ha piros, kattints a **Telepítés…** gombra. Terminál nyílik a hivatalos telepítővel; kövesd, majd kattints az **Újraellenőrzés** gombra.
-2. **VPN eszközök:** kattints a **Telepítés** gombra. A `brew install` kimenete az ablakban látszik. Az ablakot közben bezárhatod, a telepítés folytatódik.
-3. **Jogosultság (root scriptek + sudoers):** kattints az **Engedélyezés** gombra, és add meg egyszer az admin jelszót (a MacVPN 1.2 a 8-as root réteget telepíti). Ez telepíti a `mvpn` root binárist és a sudoers szabályt, így később a csatlakozáshoz nem kell jelszó.
+2. **VPN eszközök:** kattints a **Telepítés** gombra. A `brew install` kimenete az ablakban látszik. Az ablakot közben bezárhatod, a telepítés folytatódik. Később, ha a Homebrew-ban egy VPN-eszköznek újabb verziója van, a sor **Frissítés elérhető: …** feliratot mutat, és a **Frissítés** gomb csak ezeket a csomagokat frissíti. A MacVPN naponta egyszer magától lefuttatja a `brew update`-et, így az ajánlat mindig friss.
+3. **Jogosultság (root scriptek + sudoers):** kattints az **Engedélyezés** gombra, és add meg egyszer az admin jelszót (a MacVPN 2.0 a 9-es root réteget telepíti). Ez telepíti a `mvpn` root binárist és a sudoers szabályt, így később a csatlakozáshoz nem kell jelszó.
 4. Ha mindhárom sor zöld, kész vagy.
 
 Részletek: [útmutató, 2.](user-guide.hu.md#2-első-indítás-és-a-rendszerállapot-ablak)
@@ -82,7 +84,7 @@ Részletek: [útmutató, 3.](user-guide.hu.md#3-kapcsolatok-felvétele-típusonk
 2. Kattints a kapcsolat kártyáján a kapcsolóra. Csatlakozás közben a kapcsoló és a típusbuborék jelvénye borostyánsárga, a kártyán **Csatlakozás…** áll; ha felépült, zöldre váltanak, és a kártyán az IP-cím és az eltelt idő látszik.
 3. Bontáshoz kattints újra a kapcsolóra.
 
-A Kapcsolatok ablakban a **Csatlakozás** / **Bontás** gomb is használható. Egyszerre több kapcsolat is aktív lehet. A piros jelvény hibát jelez; a rövid ok a kártyán látszik, és értesítés is jön. A kártyán a **Használja: …** felirat azt jelenti, hogy egy párosított app tartja fenn a VPN-t ([útmutató, 5.4](user-guide.hu.md#54-párosított-appok-vezérlő-api)).
+A Kapcsolatok ablakban a **Csatlakozás** / **Bontás** gomb is használható. Egyszerre több kapcsolat is aktív lehet. A piros jelvény hibát jelez; a rövid ok a kártyán látszik, és értesítés is jön ([22. rész](#22-a-megjelenés-és-a-kapcsolatértesítések-beállítása)). A kártyán a **Használja: …** felirat azt jelenti, hogy egy párosított app tartja fenn a VPN-t ([útmutató, 5.4](user-guide.hu.md#54-párosított-appok-vezérlő-api)).
 
 Ha aktív kapcsolattal lépsz ki, a MacVPN megkérdezi: **Leállítás és kilépés**, **Kilépés, fussanak tovább** vagy **Mégse**.
 
@@ -131,18 +133,18 @@ Az export soha nem tartalmaz jelszót és PSK-t. A kapcsolat mappáját és köz
 
 ## 9. A MacVPN frissítése
 
-1. Ha új verzió jelent meg, a menüben megjelenik a **Frissítés elérhető: vX.Y.Z** sor. (Vagy válaszd a **Frissítések keresése most** pontot.)
+1. Ha új verzió jelent meg, a menüben megjelenik a **Frissítés elérhető: vX.Y.Z** sor. (Vagy nyisd meg a menüben a **Beállítások** csoportot, és válaszd a **Frissítések keresése most** pontot.)
 2. Kattints rá, olvasd el a változásokat, majd kattints a **Letöltés és telepítés** gombra.
 3. Válaszolj a nem mentett változásokra és az aktív kapcsolatokra vonatkozó kérdésekre. A MacVPN ellenőrzi az aláírást, lecseréli magát, és újraindul.
 4. Ha a macOS megkérdezi, hogy a MacVPN használhatja-e a Keychain-elemét (a széfkulcsot, frissítésenként legfeljebb egyszer), kattints a **Mindig engedélyez** gombra, de csak akkor, ha a kérdés a `/Applications/MacVPN.app` MacVPN-t nevezi meg.
-5. Ha a **Rendszerállapot** ablak **Frissítés szükséges** felirattal nyílik meg, kattints az **Engedélyezés** gombra, és add meg az admin jelszót.
+5. Ha a **Rendszerállapot** ablak **Frissítés szükséges** felirattal nyílik meg, kattints az **Engedélyezés** gombra, és add meg az admin jelszót. Az 1.x-ről 2.0-ra frissítés ezt egyszer mindig kéri (**Frissítés szükséges (8 → 9)**); addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-kapcsolatok szürkék.
 
-1.1-ről frissítesz? Kövesd a [13. részt](#13-frissítés-11-ről-12-re). 0.x verzióról frissítesz? Előbb olvasd el: [Frissítés 0.x verzióról](user-guide.hu.md#81-frissítés-0x-verzióról). Részletek: [útmutató, 8.](user-guide.hu.md#8-frissítés)
+1.1-ről frissítesz? Kövesd a [13. részt](#13-frissítés-11-ről). 0.x verzióról frissítesz? Előbb olvasd el: [Frissítés 0.x verzióról](user-guide.hu.md#81-frissítés-0x-verzióról). Részletek: [útmutató, 8.](user-guide.hu.md#8-frissítés) és [Frissítés 1.5-ről](user-guide.hu.md#84-frissítés-15-ről).
 
 ## 10. Indítás bejelentkezéskor
 
 1. Ellenőrizd, hogy a MacVPN az Applications mappából fut.
-2. Nyisd meg a menüt, és jelöld be az **Indítás bejelentkezéskor** négyzetet (a Rendszerállapot ablakban is megvan).
+2. Nyisd meg a menüben a **Beállítások** csoportot, és kapcsold be az **Indítás bejelentkezéskor** kapcsolót (a Rendszerállapot ablakban is megvan).
 3. Ha egy megjegyzés jóváhagyást kér, kattints a **Bejelentkezési elemek beállításai…** gombra, és ott kapcsold be a MacVPN-t.
 
 Ha a megjegyzés **Bejelentkezési LaunchAgenttel bekapcsolva (a következő bejelentkezéstől érvényes).**, akkor a következő bejelentkezéstől indul. Kikapcsoláshoz töröld a jelölést. Részletek: [útmutató, 2.1](user-guide.hu.md#21-indítás-bejelentkezéskor)
@@ -159,8 +161,11 @@ Részletek: [útmutató, 9.](user-guide.hu.md#9-eltávolítás)
 
 ## 12. Gyakori kérdések hibaelhárításhoz
 
-**Egy kapcsolat szürke, és „Hiányzó eszköz” áll rajta.**
-Hiányzik egy Homebrew eszköz ehhez a típushoz, vagy a root réteg nincs telepítve, illetve elavult. Nyisd meg a **Rendszerállapot** ablakot, telepítsd, ami piros, és ha a jogosultság sor kéri, kattints az **Engedélyezés** gombra.
+**Egy kapcsolat szürke, és „Nincs telepítve: … – Rendszerállapot” áll rajta.**
+Hiányzik a típus Homebrew-eszköze. Kattints a sorban a **Rendszerállapot** linkre, majd a **Telepítés** gombra. Az Új menü és az import csak a használható típusokat kínálja. [Bővebben](user-guide.hu.md#24-hiányzó-vpn-eszközök)
+
+**Egy kapcsolat szürke, és „Nem használható: Jogosultság (root scriptek + sudoers) – Rendszerállapot” áll rajta.**
+A root réteg nincs telepítve, vagy elavult (például közvetlenül az 1.x-ről való frissítés után). Nyisd meg a **Rendszerállapot** ablakot, és kattints az **Engedélyezés** gombra.
 
 **A menüben „Az állapot nem kérdezhető le: …” áll.**
 A root réteg vagy a sudoers szabály hiányzik vagy elavult. Nyisd meg a **Rendszerállapot** ablakot, és kattints az **Engedélyezés** gombra.
@@ -195,6 +200,12 @@ Bekapcsolt **Automatikus feloldás** mellett ez frissítésenként egyszer várh
 **„A telepítés megszakítva: a(z) /usr/local/libexec nem a root tulajdona…” az Engedélyezés után.**
 Javítsd a mappa tulajdonosát a Terminálban az üzenet szerint, majd kattints újra az **Engedélyezés** gombra. [Bővebben](user-guide.hu.md#78-egyéb)
 
+**Egy kapcsolat alvás után nem épült fel újra.**
+Az értesítés megmondja, miért: **Másik hálózaton vagy.**, **A VPN hálózata itt közvetlenül elérhető.** (például az irodában), vagy **Az újracsatlakozáshoz oldd fel a széfet.** Csatlakoztasd kézzel. [Bővebben](user-guide.hu.md#55-automatikus-újracsatlakozás)
+
+**VPN nélkül a szokásos hálózatomon nem nyílnak meg a weboldalak.**
+Egy régebbi MacVPN kapcsolat közbeni összeomlás vagy újraindítás után beállítva hagyhatta egy VPN DNS-szerverét. Töröld egyszer a VPN DNS-szervereit a **Rendszerbeállítások → Hálózat →** a szolgáltatás **→ Részletek… → DNS** alatt. A 2.0-tól a root réteg magától visszaállítja a DNS-t. [Bővebben](user-guide.hu.md#56-dns-kapcsolat-közben)
+
 **A frissítés szerint az app helye nem írható.**
 Helyezd a MacVPN-t az Applications mappába, és próbáld újra, vagy telepítsd kézzel az új DMG-t.
 
@@ -222,7 +233,10 @@ Közös hitelesítő adatot használ. A **Hitelesítő adatok** részben módos�
 **A mentés nem nyitható meg.**
 Hibás a mentés jelszava, vagy sérült a fájl; a MacVPN nem árulja el, melyik. [Bővebben](user-guide.hu.md#14-biztonsági-mentés-és-visszaállítás)
 
-## 13. Frissítés 1.1-ről 1.2-re
+## 13. Frissítés 1.1-ről
+
+Az 1.1 appon belüli frissítése egyenesen a jelenlegi verzióra (2.0) visz, és az első indítás a széfbe költözteti az adataidat.
+
 
 1. Lépj ki a MacVPN 1.1-ből, és másold le az adatait: `cp -R ~/Library/Application\ Support/MacVPN ~/MacVPN-backup-1.1`. A jelszavaid legyenek kéznél (például jelszókezelőben). Indítsd újra a MacVPN-t.
 2. Menü → **Frissítések keresése most** → **Letöltés és telepítés**.
@@ -230,7 +244,7 @@ Hibás a mentés jelszava, vagy sérült a fájl; a MacVPN nem árulja el, melyi
 4. Mentsd el a helyreállítási kulcsot (csak egyszer látható), kattints az **Elmentettem** gombra, írd be a kért csoportot, és kattints a **Megerősítés** gombra.
 5. **Az adatok átköltöztetése a széfbe…** alatt minden olyan Keychain kérdésre, amely a `/Applications/MacVPN.app` MacVPN-t nevezi meg, a **Mindig engedélyez** gombbal válaszolj.
 6. Ellenőrizd az eredményt (**Az adataid a széfben vannak**), kattints a **Tovább**, majd a **Kész** gombra.
-7. A **Rendszerállapot** ablakban a **Frissítés szükséges (7 → 8)** sornál kattints az **Engedélyezés** gombra, és add meg az admin jelszót.
+7. A **Rendszerállapot** ablakban a **Frissítés szükséges (7 → 9)** sornál kattints az **Engedélyezés** gombra, és add meg az admin jelszót.
 8. Csatlakozz egyszer minden kapcsolattal.
 
 Ha az átköltöztetés nem sikerül, semmi sem törlődik: kattints a menü sávjára, és próbáld újra. Részletek: [útmutató, 8.2](user-guide.hu.md#82-frissítés-11-ről)
@@ -283,7 +297,7 @@ Ha olyan fájlt importálsz, amely közös hitelesítő adatot nevez meg, a MacV
 
 **Mentés:**
 1. Menü → **Beállítások** → **Teljes biztonsági mentés…**.
-2. Írj be kétszer egy mentési jelszót (legalább 10 karakter). (Vagy **A mesterjelszavam használata…**, ami a fájlt a mesterjelszavadhoz köti.)
+2. Írj be kétszer egy mentési jelszót (legalább 10 karakter), és a mesterjelszavadat. (Vagy **A mesterjelszavam használata…**, ami a fájlt a mesterjelszavadhoz köti.)
 3. Kattints a **Mentés…** gombra, és válaszd ki a `MacVPN-backup-<dátum>.macvpnbackup` helyét.
 4. A fájlt és a jelszavát tartsd külön helyen.
 
@@ -330,7 +344,7 @@ A MacVPN induláskor, 15 percenként és ébredéskor frissíti a katalógust; a
    - **Szinkronizált mappa:** mentsd egy megosztott iCloud Drive-, OneDrive- vagy Dropbox-mappába.
 9. **Feliratkozási kód másolása…**: add meg a mesterjelszavadat, és azt a címet vagy útvonalat, amelyet a csapat használni fog. A kódot biztonságos csatornán küldd el (ne sima e-mailben), az ujjlenyomatot pedig külön, szóban mondd meg.
 
-**Új verzió:** szerkeszd a kapcsolatokat a szokásos módon, majd a **Közzététel** részben **Új verzió közzététele**, és mentsd ugyanoda (webszervernél töltsd fel újra). A tagok 15 percen belül megkapják, a **Frissítés most** gombbal azonnal. Részletek: [útmutató, 16.8](user-guide.hu.md#168-rendszergazdáknak-katalógus-közzététele)
+**Új verzió:** szerkeszd a kapcsolatokat a szokásos módon, majd a **Közzététel** részben **Új verzió közzététele…**, és mentsd ugyanoda (webszervernél töltsd fel újra). A tagok 15 percen belül megkapják, a **Frissítés most** gombbal azonnal. Részletek: [útmutató, 16.8](user-guide.hu.md#168-rendszergazdáknak-katalógus-közzététele)
 
 ## 20. Egy csapattag hozzáférésének visszavonása (csapatkulcs cseréje)
 
@@ -355,3 +369,24 @@ A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa)
 **Ha közben a régi kulcsot is lecserélnéd** (például a régi Mac másé lesz): a 2. lépés után **Aláírókulcs importálása…** a `.macvpnadminkey` fájllal, majd **Váltás a tartalék kulcsra…**, tedd közzé a katalógusokat, és hozz létre, majd exportálj egy új tartalék kulcsot. Akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik; a többieknek újra fel kell iratkozniuk.
 
 **Teljes biztonsági mentés nélkül** (elveszett a régi Mac): a tartalék kulcs fájlja önmagában nem tartalmazza a közzétételeket, így a következő közzététel új katalógust hoz létre. Tedd közzé a kapcsolatokat új katalógusként, és küldd el minden tagnak az új feliratkozási kódot; ők leiratkoznak a régiről. Ha az elveszett Mac széfje nyitva lehetett, kezeld kiszivárgottként az aláírókulcsot: lásd [útmutató, 16.10](user-guide.hu.md#1610-az-aláírókulcs-cseréje-és-a-kompromittálódás).
+
+## 22. A megjelenés és a kapcsolatértesítések beállítása
+
+**Megjelenés:** menü → **Beállítások** → **Megjelenés**: **Rendszer szerint** (alapértelmezés), **Világos** vagy **Sötét**. Azonnal érvényes a menüre és minden ablakra.
+
+**Kapcsolatértesítések:** a MacVPN szól, ha egy kapcsolat csatlakozott, megszakadt, újracsatlakozott vagy sikertelen, rövid, közérthető okkal. Az értesítés csak a kapcsolatot nevezi meg. Kattintásra a kapcsolat **Napló** füle nyílik meg. Kikapcsolás: menü → **Beállítások** → kapcsold ki a **Kapcsolatértesítések** kapcsolót. A kód- és a hitelesítőadat-kérések továbbra is értesítenek. A megjelenésüket a **Rendszerbeállítások → Értesítések → MacVPN** alatt módosíthatod.
+
+Részletek: [útmutató, 2.2](user-guide.hu.md#22-megjelenés) és [2.3](user-guide.hu.md#23-kapcsolatértesítések).
+
+## 23. Automatikus újracsatlakozás alvás után
+
+Ha egy kapcsolat azért szakadt meg, mert a Mac aludt, vagy elveszett a hálózat, magától újra felépül, de csak ha mindkét feltétel teljesül:
+
+1. **A VPN saját hálózatai és DNS-szerverei közül egyik sem érhető el közvetlenül** azon a hálózaton, amelyen vagy (például abban az irodában vagy, ahová a VPN vezet). Ezt ellenőrzi először.
+2. **Ugyanazon a hálózaton vagy**, mint amikor a kapcsolat felépült (ugyanaz a router; azonosíthatatlan hálózaton a MacVPN nem csatlakozik újra).
+
+A MacVPN legfeljebb háromszor próbálkozik, és megírja az eredményt (**…: újracsatlakozva**, **…: nem csatlakozott újra** az okkal, vagy **…: nem sikerült újracsatlakozni**). Az általad bontott kapcsolat sosem csatlakozik újra. Az alvást túlélő alagutat bontja, ha az új hálózaton a VPN hálózata közvetlenül elérhető.
+
+**Kikapcsolás egy kapcsolatnál:** **Kapcsolatok** ablak → a kapcsolat → kapcsold ki az **Automatikus újracsatlakozás** kapcsolót (a rendszer VPN-eknek nincs ilyen).
+
+Részletek: [útmutató, 5.5](user-guide.hu.md#55-automatikus-újracsatlakozás).

@@ -12,7 +12,7 @@ The transport is a Unix domain socket on macOS and WinVPN's named pipe on Window
 
 ## Before you start
 
-In MacVPN, open the Connections window (**Manage Connections…** in the menu), select **Paired apps** in the sidebar, and turn on **Allow other apps to control VPNs**. While the setting is off, the socket does not exist.
+In MacVPN (or WinVPN), open the Connections window (**Manage Connections…** in the menu), select **Paired apps** in the sidebar, and turn on **Allow other apps to control VPNs**. While the setting is off, the socket (the pipe on Windows) does not exist.
 
 ## The command line tool
 
@@ -35,7 +35,7 @@ MACVPN_TOKEN=… $BIN hold 6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01
 - The token is never taken from the command line, where other users could see it with `ps`. It comes from `MACVPN_TOKEN` or, if that is not set, from the first line of standard input. With `hold`, the rest of standard input stays open: `hold` ends when it reaches its end.
 - `MACVPN_SOCKET` overrides the socket path, for example `target/sandbox-home/Library/Application Support/MacVPN/control/macvpn.sock` for a sandboxed development build of MacVPN.
 - The pairing is pinned to **the executable that paired**: a token printed by this tool works only for this binary at this path (`target/debug` and `target/release` are different paths). Your app has to pair itself, with `Client::pair` from its own binary.
-- `hold` exits with status 1 when the held VPN goes down (the user disconnected it in MacVPN, or it dropped) or when MacVPN closes the socket (it prints why: the setting was turned off, or MacVPN is quitting). MacVPN never reconnects on its own.
+- `hold` exits with status 1 when the held VPN goes down (the user disconnected it in MacVPN, or it dropped) or when MacVPN closes the socket (it prints why: the setting was turned off, or MacVPN is quitting). Either way the lease has ended: run `hold` again to hold the VPN again (MacVPN's own **Reconnect Automatically** may bring a dropped connection back, but the lease stays ended; see [the lease rules](../../docs/control-api.md#7-lease-rules)).
 
 To keep the token in the Keychain while you try things out:
 

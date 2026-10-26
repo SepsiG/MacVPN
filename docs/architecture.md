@@ -34,7 +34,9 @@ crates/
                  file panels, login item, installers, updater, the control socket. macOS-only as a whole.
   platform-win/  macvpn-platform-win: the Windows platform (`WinPlatform`, WinVPN): Credential Manager, known
                  folders, DWM, COM file dialogs, WinRT toasts, the clipboard, the Run key, the lifecycle
-                 window, the control pipe, one instance per user. Its pure logic compiles on every OS.
+                 window, the control pipe, one instance per user; the WinVPN Service's client, the native
+                 VPNs (RAS) and the system VPNs, the OpenVPN Community installer, the updater. Its pure
+                 logic compiles on every OS.
   winsys/        macvpn-winsys: the Win32 calls core's `fsx` and platform-win share (SIDs, security
                  descriptors, file identity, randomness, named pipes, Authenticode, the service manager, the
                  certificate store, IP Helper, the RAS API). Windows only; empty elsewhere.
@@ -91,9 +93,10 @@ parameters (`ConnectionStore::default_base_dir(data_dir)`, `store::remove_user_d
 - **`TargetOs`** (`crates/core/src/target_os.rs`): `MacOs`, `Windows`, `Linux`. `TargetOs::host()` reads
   `std::env::consts::OS`, a compile-time constant, so it needs no `cfg`.
 - **The OpenVPN platform tier** (`crates/core/src/validators/openvpn.rs`): `platform_reasons(os)` lists the
-  directives an OS refuses or that need an acknowledgement there. The validator uses the host OS (a security rule
-  never depends on a launch-time setting). Only the macOS table ships in phase 1; the Windows and Linux tables are
-  drafts for the phase 2 security review. See [OpenVPN directives](openvpn-directives.md).
+  directives an OS refuses or that need an acknowledgement there; on Windows `FORBIDDEN_WINDOWS` and the `setenv`
+  allowlist come on top. The validator uses the host OS (a security rule never depends on a launch-time setting).
+  The macOS and Windows tables ship in 2.0.0; the Linux table is a draft for phase 4. See
+  [OpenVPN directives](openvpn-directives.md).
 - **`fsx`** (`crates/core/src/fsx/`): the safe file operations, the only OS-specific module of core. `mod.rs`
   holds the portable API (`Access::{Private, Shared}`, `Follow::{No, Yes}`, `create_new`, `open_regular`,
   `atomic_write`, `owner`, `file_id`, `is_unavailable`, …); `unix.rs` and `windows.rs` hold the OS calls. On Unix
@@ -313,8 +316,8 @@ What it implements:
   refuses a pipe not owned by SYSTEM before a byte is sent; the `up` body is `macvpn_core::helper_args::up_stdin`
   (the root layer 8 frame, zeroized; shared with macOS' `MvpnClient`). The live log is a `LogSource` over `log <id>
   <offset>` (the generation is the identity), the MFA state comes from `auth-state <id>`. `SystemSetup::check` asks
-  `engine` and maps the facts with `pure::engine::report`: three rows (2c adds the Windows VPN client row, `ras`) (service, OpenVPN with its DCO and
-  TAP-Windows6 drivers, WireGuard), and `engine_missing` only when the service is absent ("The WinVPN Service is
+  `engine` and maps the facts with `pure::engine::report`: three rows (service, OpenVPN with its DCO and
+  TAP-Windows6 drivers, WireGuard; 2c adds a fourth, the Windows VPN client, `ras`), and `engine_missing` only when the service is absent ("The WinVPN Service is
   missing or from another WinVPN version. Repair WinVPN: …"), unreachable or not provably the service ("The WinVPN
   Service is not reachable."), of another version, or degraded (its reason). Then `SetupReport::is_available` is
   false for every kind, every row (`ViewModel::set_engine_missing`: `unavailableReason`, absent on macOS) shows that
@@ -552,7 +555,7 @@ without the WinVPN Service and without an administrator; the user's own Windows 
 - **Tested where:** core's plans, platform-win's pure modules and app-core's hooks on every OS; `winsys::ras`,
   the engine's entry/PSK/sweep tests and the system VPN list over SSH as a standard user (scratch phonebooks named
   `WinVPN-test-…`); dialling, hanging up and finding a dial (`desktop:` tests) at the VM's desktop; real connections
-  against the lab (`scripts/vpn-lab/`) in the "WinVPN 2c" checklist.
+  against the lab (`scripts/vpn-lab/`) in the native VPN section of the manual checklist.
 
 ## The 2.0 features
 
@@ -706,7 +709,7 @@ once by hand (the user guide, 5.6).
 | No test is ignored on one OS only: the ignored tests are exactly the entries of `scripts/ignored-everywhere.txt` that are built on this OS (the fixture writers, a timing measurement, a manual Windows test), and no `cfg_attr(windows, ignore …)` is left in the sources. | `scripts/check-ignored.sh` (both CI test jobs; on Windows `scripts/check-ignored.sh --target x86_64-pc-windows-msvc`) |
 | No Windows crate in a macOS binary. | `cargo tree --locked -e normal --target aarch64-apple-darwin -p macvpn-app -p macvpn-helper --prefix none \| grep -E '^(windows\|macvpn-winsys)'` prints nothing (and the same for `x86_64-apple-darwin`) |
 | MacVPN's data formats, view model and IPC payloads stay as in 1.4.0. | `crates/app-core/tests/compat_1_4.rs` (the fixtures normalize the version) |
-| Every macOS text stays byte-identical. | `node scripts/l10n-baseline.mjs --check` (against `scripts/bundle-baseline/1.4.0/l10n-macos.json`), and the same comparison in `crates/core/tests/l10n.rs` and `app/ui/src/lib/l10n.test.ts` |
+| Every macOS text that 1.4.0 had stays byte-identical (newer texts are counted, not compared). | `node scripts/l10n-baseline.mjs --check` (against `scripts/bundle-baseline/1.4.0/l10n-macos.json`), and the same comparison in `crates/core/tests/l10n.rs` and `app/ui/src/lib/l10n.test.ts` |
 | The built bundle looks the same from outside (Info.plist, files, linked libraries, entitlements, Tauri config). | `scripts/bundle-baseline.sh dist/MacVPN.app` (compare with `scripts/bundle-baseline/1.4.0/`) |
 | No OpenSSL in a macOS binary. | `cargo tree --locked --target aarch64-apple-darwin -i openssl-sys` prints nothing; the release gate in `scripts/build-dmg.sh` |
 
@@ -809,8 +812,8 @@ three levels:
 
 What only a person at a Windows desktop can check (the notification-area icon, the popover, toasts, file dialogs,
 logoff, Credential Manager in an interactive logon, a second user account, the installed MSI, the service's admin
-tests, real VPN servers) is the WinVPN sections of `docs/manual-test-checklist.md` ("WinVPN 2a", "WinVPN 2b", "WinVPN
-2c"), run against the VPN lab (`scripts/vpn-lab/`, its README). The UI smoke driver runs on both OSes
+tests, real VPN servers) is the WinVPN sections of `docs/manual-test-checklist.md`, run against the VPN lab
+(`scripts/vpn-lab/`, its README). The UI smoke driver runs on both OSes
 (`app/src-tauri/src/platform/smoke/`): `scripts/win-smoke.sh en|hu` runs it in the logged-on standard user's desktop
 session through a one-shot scheduled task (only with the maintainer's OK). CI's `windows-admin` job installs OpenVPN
 Community (`scripts/ci-install-openvpn.sh`) and the MSI on GitHub's administrator runner and runs the admin test set;
@@ -913,7 +916,7 @@ platform's own VPN client, step 13 below) in 2c.
 7. **Texts.** Write the OS's `variants` for every text the coverage test flags, and new texts for the OS's own
    flows (with `only`).
 8. **Tauri config.** `app/src-tauri/tauri.<os>.conf.json` with the identity and bundle settings.
-9. **OpenVPN tier.** Review `platform_reasons(os)` (the Windows and Linux tables are drafts until then).
+9. **OpenVPN tier.** Review `platform_reasons(os)` (the Linux table is a draft until then).
 10. **Checks.** Extend `scripts/check-windows.sh` or the CI job, and the release gates of the OS's build script.
 11. **Update signature (phase 2 blocker).** Before the first signed asset of a new product, give it its own
     signature domain. *Windows: done in 2a* (`winvpn-update-v1\n<asset>\n<version>\n<sha256>\n`, see

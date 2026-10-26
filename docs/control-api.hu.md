@@ -177,7 +177,7 @@ Csak azok a kapcsolatok, amelyeket ez a program használhat, a MacVPN sorrendjé
 {"id":3,"op":"up","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01"}
 ```
 
-Foglalást vesz fel erre a socketre, és ha a kapcsolat le van kapcsolva, elindítja, pontosan úgy, mint egy kézi csatlakozás: ugyanazokkal az MFA-ablakokkal, ugyanazzal a Keychainnel, ugyanazokkal az ellenőrzésekkel. Amíg felépül, a kliens eseményeket kap, majd egyetlen végső választ:
+Foglalást vesz fel erre a socketre, és ha a kapcsolat le van kapcsolva, elindítja, pontosan úgy, mint egy kézi csatlakozás: ugyanazokkal az MFA-ablakokkal, ugyanazokkal a széfben tárolt titkokkal, ugyanazokkal az ellenőrzésekkel. Amíg felépül, a kliens eseményeket kap, majd egyetlen végső választ:
 
 ```json
 {"event":"state","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01","state":"connecting"}
@@ -190,8 +190,8 @@ Foglalást vesz fel erre a socketre, és ha a kapcsolat le van kapcsolva, elind�
 vagy például:
 
 ```json
-{"event":"state","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01","state":"failed","reason":"Időtúllépés a csatlakozáskor"}
-{"id":3,"ok":false,"error":"failed","message":"Időtúllépés a csatlakozáskor"}
+{"event":"state","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01","state":"failed","reason":"Időtúllépés: 30 mp alatt nem épült fel a kapcsolat"}
+{"id":3,"ok":false,"error":"failed","message":"Időtúllépés: 30 mp alatt nem épült fel a kapcsolat"}
 ```
 
 - **Már fent van:** a `{"id":3,"ok":true,"state":"connected"}` válasz azonnal megjön, események nélkül.
@@ -200,7 +200,7 @@ vagy például:
 - A **`waiting_for_credentials`** azt jelenti, hogy a MacVPN egy el nem mentett felhasználónevet, jelszót, közös kulcsot vagy kulcsjelszót kér a felhasználótól. Ugyanaz érvényes: szólj a felhasználónak, hogy nézzen rá a MacVPN-re, és számolj percekkel. A programod soha nem látja, amit a felhasználó beír. Ha a felhasználó megszakítja (vagy a 2 perces ablak lejár), az `up` `credentials_cancelled` hibával ér véget.
 - Ha az `up` sikertelen, a foglalás vele együtt véget ér. Egy későbbi `up` új csatlakozást indít.
 - A MacVPN ebben a sorrendben ellenőriz: a párosítás még létezik (`unauthorized`, a kapcsolat bomlik), a kapcsolat engedélyezett (`not_allowed`), még létezik (`unknown_connection`), a szolgáltatás nem áll le éppen (`disabled` / `app_quitting`), a kapcsolat nem vált állapotot foglalás nélkül (`busy`), ez a socket nem vár már ugyanennek a kapcsolatnak az `up` válaszára (`busy`), és csak ha ennek az `up` kérésnek kell elindítania a kapcsolatot: a kapcsolathoz szükséges telepítés teljes (`setup_required`).
-- **A telepítés ellenőrzése a kapcsolattól függ.** Az a kapcsolat, amelyet a MacVPN a root segédjén keresztül futtat (OpenVPN, WireGuard, IKEv2, SSTP), Homebrew-t, naprakész root segédet és a típusához tartozó VPN-eszközt igényel. A rendszer VPN és a natív L2TP vagy Cisco IPsec kapcsolat a macOS-en keresztül indul, ezek egyikét sem igényli. A már fent lévő, vagy egy másik foglalás miatt éppen felépülő kapcsolathoz a socket telepítés-ellenőrzés nélkül csatlakozik: az `up` válasza `connected`, akkor is, ha a telepítés nem teljes.
+- **A telepítés ellenőrzése a kapcsolattól függ.** Az a kapcsolat, amelyet a MacVPN a root segédjén keresztül futtat (OpenVPN, WireGuard, IKEv2, SSTP), Homebrew-t, naprakész root segédet és a típusához tartozó VPN-eszközt igényel (ugyanez az ellenőrzés szürkíti ki a kapcsolatot a menüben a „Nincs telepítve: … – Rendszerállapot” felirattal). A rendszer VPN és a natív L2TP vagy Cisco IPsec kapcsolat a macOS-en keresztül indul, ezek egyikét sem igényli. A már fent lévő, vagy egy másik foglalás miatt éppen felépülő kapcsolathoz a socket telepítés-ellenőrzés nélkül csatlakozik: az `up` válasza `connected`, akkor is, ha a telepítés nem teljes.
 
 ### 5.6 `down`
 
@@ -284,7 +284,7 @@ A hibakódok általánosak, soha nem tartalmaznak nyers eszközkimenetet.
 | `mfa_timeout` | A kód- vagy bejelentkezési ablak lejárt. | Hagyd, hogy a felhasználó újrapróbálja. |
 | `credentials_cancelled` | A felhasználó megszakította a hitelesítő adatokat kérő ablakot, vagy az 2 perc után lejárt (1.1.0-tól). | Magától ne próbálkozz újra. |
 | `locked` | A MacVPN széfje zárolva van (1.2.0-tól): a `pair`, `hello`, `list`, `up` és `status` kérést elutasítja, amíg a felhasználó fel nem oldja a MacVPN-ben. A `down` továbbra is működik, a meglévő munkamenet és a bérletei megmaradnak. `pair` vagy `hello` után a kapcsolat bezárul. | Kérd meg a felhasználót, hogy oldja fel a MacVPN-t, aztán próbáld újra. |
-| `failed` | Minden egyéb hiba. A `message`, ha van, rövid, lokalizált ok a felhasználónak. Akkor is ez jön, ha a felhasználó felépülés közben lebontotta a kapcsolatot a MacVPN-ben, vagy ha a saját `down` kérésed szakította meg az `up`-ot. A VPN-motor nélküli WinVPN-ben (a 2a előzetes) minden `up`, amelynek el kellene indítania egy kapcsolatot, típustól függetlenül `failed`, „A VPN-motor a WinVPN egy későbbi verziójában érkezik.” üzenettel (soha nem `setup_required`: nincs mit telepíteni). | Mutasd meg az üzenetet. |
+| `failed` | Minden egyéb hiba. A `message`, ha van, rövid, lokalizált ok a felhasználónak. Akkor is ez jön, ha a felhasználó felépülés közben lebontotta a kapcsolatot a MacVPN-ben, vagy ha a saját `down` kérésed szakította meg az `up`-ot. A WinVPN-ben akkor is, ha a kapcsolatot a Windows nem tudja futtatni, vagy hiányzik a WinVPN szolgáltatás (lásd [11.1](#111-a-cső)). | Mutasd meg az üzenetet. |
 | `app_quitting` | A MacVPN kilép. A kapcsolat ezután bomlik (a [`closing` esemény](#510-a-closing-esemény) `reason` értéke is lehet). | Csatlakozz újra, ha a MacVPN ismét fut. |
 | `disabled` | A felhasználó kikapcsolta: **Más appok vezérelhetik a VPN-eket**. A kapcsolat ezután bomlik (a [`closing` esemény](#510-a-closing-esemény) `reason` értéke is lehet). | — |
 | `unsupported` | Ismeretlen `op`. | — |
@@ -299,7 +299,7 @@ Minden más kódot `failed` kódként kezelj (lásd [8. szakasz](#8-kompatibilit
 - **Az utolsó foglalás vége lebontja a VPN-t.** Ha az utolsó foglaló `down` kérést küld, bezárja a socketet, kilép vagy összeomlik, vagy visszavonják, a MacVPN lebontja azt a kapcsolatot, amelyet a foglalások miatt indított el.
 - **A korábban is futó kapcsolat fent marad.** Ha a kapcsolat foglalás nélkül már fent volt (a felhasználó vagy más indította), az `up` csak `connected` választ ad, és semmilyen foglalás vége nem bontja le.
 - **A felhasználó dönt.** Ha a felhasználó a MacVPN-ben bont egy foglalt kapcsolatot, azonnal véget ér rajta minden foglalás. A foglalók megkapják a `disconnecting` és a `disconnected` eseményt (a válaszra váró `up` pedig `failed` választ), és a MacVPN magától nem kapcsolódik újra. A socket ezutáni bezárása már nem változtat semmin.
-- **A megszakadás is véget vet a foglalásnak.** Ha a VPN hibára fut vagy megszakad, a foglalók megkapják a `failed` (vagy `disconnected`) eseményt, és a foglalások véget érnek. Az újracsatlakozás a program dolga: küldjön újra `up` kérést.
+- **A megszakadás is véget vet a foglalásnak.** Ha a VPN hibára fut vagy megszakad, a foglalók megkapják a `failed` (vagy `disconnected`) eseményt, és a foglalások véget érnek. Az újracsatlakozás a program dolga: küldjön újra `up` kérést. (A 2.0-tól a MacVPN alvás vagy a hálózat elvesztése után újracsatlakoztathatja a megszakadt kapcsolatot, ha be van kapcsolva rajta az **Automatikus újracsatlakozás**; a foglalásod ettől még véget ért, ezért küldj újra `up` kérést, ha a munkamenetnek továbbra is kell a VPN.)
 - **Alvás és ébredés.** A socketek nyitva maradnak. Ha közben a VPN megszakad, az előző szabály érvényes.
 - **A beállítás kikapcsolása.** A válaszra váró `up` kérések `disabled` választ kapnak, minden hitelesített socket megkapja a `closing` eseményt `"reason":"disabled"` értékkel, minden socket bezárul, és a foglalások a szokásos módon érnek véget: azok a kapcsolatok, amelyeket csak a foglalások tartottak fent, lebomlanak.
 - **Kilépés a MacVPN-ből.** A kilépési kérdés megnevezi a kapcsolatokat foglaló programokat: **Más appok is használják a MacVPN-en keresztül: …. A kilépés megszakítja a munkamenetüket.** A válaszra váró `up` kérések `app_quitting` választ kapnak, minden hitelesített socket megkapja a `closing` eseményt `"reason":"app_quitting"` értékkel, és minden socket bezárul. A foglalások bontás **nélkül** érnek véget: a kilépési kérdés dönt. A **Leállítás és kilépés** a szokásos módon minden kapcsolatot bont, a **Kilépés, fussanak tovább** pedig fent hagyja őket, foglalás nélkül (a MacVPN a következő indításkor korábban is futó kapcsolatként találja meg őket).
@@ -463,16 +463,20 @@ A WinVPN pontosan ezt a protokollt beszéli (3–8. fejezet: ugyanazok a kérés
 
 ### 11.1 A cső
 
-- **Név:** `\\.\pipe\WinVPN-control-<SID>`, ahol a `<SID>` a felhasználó biztonsági azonosítója (`S-1-5-21-…`; a `whoami /user` kiírja). A példakliens `default_endpoint()` függvénye előállítja; add át ott, ahol socket-útvonal szerepel (`Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`). Nem azonos a `\\.\pipe\WinVPN` csővel, amely a WinVPN szolgáltatás saját csöve.
+- **Név:** `\\.\pipe\WinVPN-control-<SID>`, ahol a `<SID>` a felhasználó biztonsági azonosítója (`S-1-5-21-…`; a `whoami.exe /user` kiírja). A példakliens `default_endpoint()` függvénye előállítja; add át ott, ahol socket-útvonal szerepel (`Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`). Nem azonos a `\\.\pipe\WinVPN` csővel, amely a WinVPN szolgáltatás saját csöve.
 - **Ki csatlakozhat:** csak az ugyanazon felhasználóként, **helyi bejelentkezésben** futó programok. A cső elutasítja a hálózati bejelentkezéseket és a távoli klienseket, így egy másik felhasználó, a hálózat, sőt ugyanaz a felhasználó SSH-n vagy más távoli parancssorból sem csatlakozhat (hozzáférés megtagadva). Amíg a **Más appok vezérelhetik a VPN-eket** ki van kapcsolva, a cső nem létezik (`NotFound`).
 - **Azonosítás:** a WinVPN a kliens felhasználóját (SID) azonosítási szintű megszemélyesítéssel a csőből, a futtatható fájl útvonalát a folyamatából olvassa ki; a párosítás ehhez az útvonalhoz kötődik, mint macOS-en. Azt a klienst, amely azonosítást nem engedve nyitja meg a csövet, lezárja.
 - **A kliens ellenőrzi a szervert:** mielőtt bármit (tokent, kérést) küldene, a példakliens ellenőrzi, hogy a csövet kiszolgáló folyamat ugyanazzal a felhasználóval fut, és a más felhasználó által előbb létrehozott csövet (névfoglalót) `PermissionDenied` hibával elutasítja. Használd a példakliens csatornáját (ez a `macvpn-winsys` `pipe` modulja, amelyet maga a WinVPN is használ), vagy végezd el ugyanezt az ellenőrzést.
 - **Élettartam:** mint macOS-en, a foglalás véget ér, amikor a cső leírója bezárul: ha a programod bezárja, kilép, vagy leállítják.
-- **A hibakódok** ugyanazok; Windowson egy OpenVPN- vagy WireGuard-kapcsolat `up` kérésére `failed` jön a szolgáltatás szövegével, ha a WinVPN szolgáltatás hiányzik vagy nem érhető el (soha nem `setup_required`), az L2TP/IPsec, IKEv2, SSTP kapcsolatoknak és a rendszer VPN-eknek pedig nem kell a szolgáltatás. Egy Cisco IPsec kapcsolat `failed` választ ad a „Windows nem támogatja” szövegével.
+- **`kind`:** ugyanazok az értékek; a `system` a felhasználó saját Windows VPN-jeinek egyike (Gépház → Hálózat és internet → VPN).
+- **A hibakódok** ugyanazok. Windowson:
+  - `setup_required`: OpenVPN-kapcsolat, amíg az OpenVPN Community nincs telepítve (a Rendszerállapot telepíti).
+  - `failed` a szolgáltatás szövegével: OpenVPN- vagy WireGuard-kapcsolat, amíg a WinVPN szolgáltatás hiányzik, nem érhető el vagy egy másik WinVPN-verzióhoz tartozik (soha nem `setup_required`: a megoldás a WinVPN javítása). Az L2TP/IPsec, IKEv2, SSTP kapcsolatoknak és a rendszer VPN-eknek nem kell a szolgáltatás.
+  - `failed` a kapcsolat okával: olyan kapcsolat, amelyet a Windows nem tud futtatni, például a Cisco IPsec („A Windows nem támogatja a Cisco IPsec-et. …”) vagy az előre megosztott kulcsos IKEv2, vagy olyan típus, amelynek a Windows VPN-szolgáltatása ki van kapcsolva.
 
 ### 11.2 A token tárolása a Hitelesítőadat-kezelőben
 
-A tokent a felhasználó Hitelesítőadat-kezelőjében tárold, saját általános hitelesítő adatként (a WinVPN sosem olvassa). **A token soha ne kerüljön parancssorba** (`cmdkey /pass:…`, programargumentum): a felhasználó minden folyamata és a folyamatlétrehozás naplózása látja a parancssorokat.
+A tokent a felhasználó Hitelesítőadat-kezelőjében tárold, saját általános hitelesítő adatként (a WinVPN sosem olvassa). **A token soha ne kerüljön parancssorba** (`cmdkey.exe /pass:…`, programargumentum): a felhasználó minden folyamata és a folyamatlétrehozás naplózása látja a parancssorokat.
 
 A `windows-sys` crate-tel (funkciók: `Win32_Foundation`, `Win32_Security_Credentials`):
 

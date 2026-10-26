@@ -130,7 +130,7 @@ Amíg a széf zárolva van, a popoverben csak egy **Széf feloldása…** sor, a
 3. **WireGuard:** a wireguard-nt verziója, és **Frissítés**, ha van újabb.
 4. **Windows VPN-kliens:** **A Windows része**, vagy a letiltott Windows-szolgáltatás (lásd [1.5](#15-a-wireguard-és-a-windows-vpn-kliens)).
 
-Amíg egy sornak kell valami, a **Rendszerállapot** csempéjén **!** jel van, és az ablak indításkor magától megnyílik. Az OpenVPN Community nem kötelező: amíg csak nincs telepítve, a sora piros marad a **Telepítés** gombbal, de nincs **!** jel, és az ablak indításkor sem nyílik meg (a hibás telepítés, amelyhez **Javítás** vagy **Frissítés** kell, továbbra is számít). Az **Újraellenőrzés** mindent újra megnéz. A sorok alatt van az **Indítás bejelentkezéskor** kapcsoló, az eltávolításról szóló megjegyzés a **Telepített alkalmazások megnyitása…** gombbal, és a **WinVPN eltávolítása erről a fiókról…** (lásd [9.](#9-eltávolítás)).
+Amíg egy sornak kell valami, a **Rendszerállapot** csempéjén **!** jel van, és az ablak indításkor magától megnyílik. Az OpenVPN Community nem kötelező: amíg csak nincs telepítve, a sora piros marad a **Telepítés** gombbal, de nincs **!** jel, és az ablak indításkor sem nyílik meg (a telepített OpenVPN, amelyhez **Javítás** kell, vagy **Frissítés**, mert a szolgáltatás nem fogadja el a verzióját, továbbra is számít). A hiányzó vagy nem elérhető WinVPN szolgáltatás mindig számít. Egy újabb motorverzió önmagában nem: a sor zöld marad, és **Frissítés** gombot kínál (lásd [2.5](#25-az-openvpn-és-a-wireguard-frissítése)). Az **Újraellenőrzés** mindent újra megnéz. A sorok alatt van az **Indítás bejelentkezéskor** kapcsoló, az eltávolításról szóló megjegyzés a **Telepített alkalmazások megnyitása…** gombbal, és a **WinVPN eltávolítása erről a fiókról…** (lásd [9.](#9-eltávolítás)).
 
 **Ablakok és billentyűzet.** Minden WinVPN-ablaknak (Kapcsolatok, Rendszerállapot, a széf ablakai) saját gombja van a tálcán, így Alt+Tabbal is elérhető; amíg csak a popover van nyitva, a WinVPN-nek nincs tálcagombja. A WinVPN-nek nincs menüsora: a szövegmezőkben a szokásos billentyűparancsok működnek (Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A, Ctrl+Z), a **Ctrl+S** ment a szerkesztőben, a **Ctrl+F** pedig a Kapcsolatok ablak keresőmezőjébe ugrik. Ha futás közben újra elindítod a WinVPN-t (például a Start menüből), nem indul második példány: a futó WinVPN előhozza a nyitott ablakait, vagy megnyitja a Kapcsolatok ablakot (zárolt széfnél a széf ablakát).
 
@@ -209,6 +209,8 @@ A legegyszerűbb, ha a szolgáltatótól kapott `.ovpn` fájlt importálod (**Ú
   - A **kockázatos beállítások** (például `user nobody`, szerveroldali opciók, és minden direktíva, amelyet a WinVPN nem ismer) egy sárga **Kockázatos beállítások** panelen jelennek meg, mindegyik rövid indoklással. Mentéshez jelöld be: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. A tudomásulvétel pontosan a mentéskor jelen lévő kockázatos direktívákra szól: ha később újat adsz hozzá, újra be kell jelölnöd.
   - A **tiltott** direktívák, például `up`, `down`, `script-security`, `plugin`, `log`, `chroot` és `echo`, sosem engedettek (külső scriptet futtatnának, kódot töltenének be, vagy a VPN jogaival olvasnának, illetve írnának fájlt). Windowson ezenfelül azok az opciók, amelyeket a WinVPN szolgáltatás maga állít be (`win-sys`, `service`, `msg-channel`, `allow-nonadmin`, `rdns-internal`, `dhcp-internal`), a `windows-driver` (az illesztőprogramot a WinVPN választja, lásd [1.4](#14-openvpn-community)) és a **`cryptoapicert`**: az `openvpn.exe` rendszerként fut, így a tanúsítványválasztó a számítógép tanúsítványtárát érné el, nem a tiédet. Helyette a tanúsítvány és a kulcs legyen a configban (vagy egy PKCS#12 fájlban). Lásd [3.9](#39-hibák-mentéskor).
 - Az engedélyezett direktívák argumentumait is ellenőrzi: például a port és az időzítők számok, a hosztnév és a titkosító neve nem tartalmazhat `/` jelet, és nem kezdődhet `-` jellel. A `<connection>` blokkok használhatók, a soraik ugyanezen az ellenőrzésen mennek át.
+- **Egy sor legfeljebb 255 bájt** (a beágyazott blokkokban, például a `<ca>`-ban is), mert az OpenVPN 256 bájtos darabokban olvassa a sorokat; a hosszabb sor hibája: **Túl hosszú sor**. A 16-nál több szóból álló sor hibája: **Hibás argumentumszám**.
+- **A `setenv` Windowson** csak azokat a neveket fogadja el, amelyeket maga az OpenVPN olvas (`FORWARD_COMPATIBLE`, `PUSH_PEER_INFO`, `SERVER_POLL_TIMEOUT`, `REMOTE_RANDOM_HOSTNAME`, `CLIENT_CERT`, `CONFIG_VERSION`), valamint az `UV_` vagy `IV_` kezdetű peer-info neveket; minden más név hibája: **Nem engedélyezett setenv**. Az OpenVPN ezeket a változókat átadja a rendszerként futtatott Windows-programoknak, így például egy `SystemRoot` név megváltoztathatná, mit töltenek be. A `setenv opt <direktíva>` sort a WinVPN úgy ellenőrzi, mint magát a direktívát, egyszer.
 
 ### 3.2 WireGuard
 
@@ -291,10 +293,11 @@ Néhány dolgot Windowson csak rendszergazda módosíthat. A WinVPN ezeket sosem
 A **Mentés** például ezeket a hibákat adhatja:
 
 - `3. sor: Tiltott direktíva: up – töröld vagy tedd megjegyzésbe (#) a sort`
-- kockázatos direktíva, amelyhez tudomásulvétel kell (a beállítás a sárga **Kockázatos beállítások** panelen látszik)
-- külső fájlra hivatkozás (például `ca`), amelyhez beágyazott blokk kell
-- WireGuard-nál tiltott kulcs (például `postup`), IKEv2-nél tiltott `include`
-- érvénytelen argumentum, rossz számú argumentum
+- `5. sor: Kockázatos direktíva, tudomásulvétel szükséges: user` (a beállítás a sárga **Kockázatos beállítások** panelen látszik)
+- `7. sor: Külső fájl hivatkozás, inline blokk kell: ca`
+- WireGuard: `4. sor: Tiltott kulcs: postup`; IKEv2: `2. sor: Tiltott: include`
+- Argumentumok: `4. sor: Érvénytelen argumentum: dev`, `8. sor: Hibás argumentumszám: keepalive`
+- OpenVPN: `12. sor: Túl hosszú sor`, `9. sor: Nem engedélyezett setenv: SystemRoot – töröld vagy tedd megjegyzésbe (#) a sort`
 
 Javítás: lásd [7.7](#77-nem-engedélyezett-direktíva--tiltott-direktíva). Egy IKEv2- vagy SSTP-kapcsolat windowsos korlátja nem mentési hiba: a kapcsolat mentődik, és szürkén, az okkal együtt látszik (lásd [3.](#3-kapcsolatok-felvétele-típusonként)).
 
@@ -415,10 +418,15 @@ A **Párosított appok** alatt minden program látszik a futtatható fájl útvo
 
 ### 5.5 Automatikus újracsatlakozás
 
-Ha egy kapcsolat azért bomlik, mert a gép alvó állapotba került vagy elment a hálózat, a WinVPN magától is újra felépítheti, pontosan a [MacVPN automatikus újracsatlakozásának](user-guide.hu.md#55-automatikus-újracsatlakozás) szabályaival, minden típusnál (a Windows VPN-kliens típusainál és a rendszer VPN-eknél is):
+Ha egy kapcsolat azért bomlik, mert a gép alvó állapotba került vagy elment a hálózat, a WinVPN magától is újra felépítheti, pontosan a [MacVPN automatikus újracsatlakozásának](user-guide.hu.md#55-automatikus-újracsatlakozás) szabályaival, minden típusnál, amelyet maga csatlakoztat (a Windows VPN-kliens típusainál is; a rendszer VPN-eket sosem csatlakoztatja újra):
 
-1. **Csak ugyanazon a hálózaton**, mint amikor a kapcsolat felépült: a router címe és hardvercíme, és ahol a Windows megmondja, a Wi-Fi neve. A Windows 11 24H2-től a Wi-Fi nevét csak helymeghatározási engedéllyel rendelkező app látja; a WinVPN ezt nem kéri, így általában a router hardvercíme dönt. Ha a hálózat nem azonosítható, nincs újracsatlakozás.
-2. **Csak ha a VPN saját hálózatai közül egyik sem érhető el ott közvetlenül** (az útvonalai: WireGuard `AllowedIPs`, OpenVPN `route` sorok és küldött útvonalak, a „mindent a VPN-be” útvonalak nélkül; és a DNS-szerverei; az L2TP-nek, az IKEv2-nek és az SSTP-nek nincs ilyen listája, náluk csak az 1. szabály számít). Példa: az „Office VPN” az irodai 10.20.30.0/24 hálózatot vezeti a VPN-be; otthon felépítve alvás után otthon visszajön; az irodában, ahol a gép a 10.20.30.0/24-en van, bontva marad (**Office VPN: nem csatlakozott újra** / **A VPN hálózata itt közvetlenül elérhető.**). Más hálózaton, ahol a VPN-ből semmi sem helyi (például egy kávézóban), az ok: **Másik hálózaton vagy.**
+A WinVPN ebben a sorrendben ellenőriz:
+
+1. **A VPN saját hálózatai közül egyik sem érhető el ott közvetlenül** (az útvonalai: WireGuard `AllowedIPs`, OpenVPN `route` sorok és küldött útvonalak, a „mindent a VPN-be” útvonalak nélkül; és a DNS-szerverei). Ez az első, így az irodai hálózat egy új router mögött is megakadályozza az újracsatlakozást. Az L2TP-nek, az IKEv2-nek és az SSTP-nek nincs ilyen listája, náluk csak a 2. szabály számít.
+2. **Ugyanaz a hálózat**, mint amikor a kapcsolat felépült: a router címe és hardvercíme, és ahol a Windows megmondja, a Wi-Fi neve. A Windows 11 24H2-től a Wi-Fi nevét csak helymeghatározási engedéllyel rendelkező app látja; a WinVPN ezt nem kéri, így általában a router hardvercíme dönt. Ha a hálózat nem azonosítható, nincs újracsatlakozás (**A hálózatot nem sikerült azonosítani.**).
+
+Példa: az „Office VPN” az irodai 10.20.30.0/24 hálózatot vezeti a VPN-be. Otthon felépítve alvás után otthon visszajön. Az irodában, ahol a gép a 10.20.30.0/24-en van, bontva marad (**Office VPN: nem csatlakozott újra** / **A VPN hálózata itt közvetlenül elérhető.**). Más hálózaton, ahol a VPN-ből semmi sem helyi (például egy kávézóban), az ok: **Másik hálózaton vagy.**
+
 
 - Akkor indul, ha egy kapcsolat alvás előtt élt, és ébredés után nem él (vagy 3 percen belül megszakad), illetve ha hálózat nélkül vagy egy hálózatváltás utáni egy percen belül szakad meg; legfeljebb 3 próbálkozás (azonnal, 10 és 30 másodperc múlva).
 - **Sosem csatlakozik újra:** az általad bontott kapcsolat (a WinVPN-ből való kilépés vagy kijelentkezés miatt sem), az általad indított sikertelen csatlakozás, az elutasított bejelentkezés vagy tanúsítvány, a megszakított kódbekérő vagy hitelesítőadat-ablak. Zárolt széfnél nincs újracsatlakozás (**Az újracsatlakozáshoz oldd fel a széfet.**).
@@ -486,7 +494,7 @@ Debug módban:
 
 ## 7. Hibaelhárítás a napló alapján
 
-Először nézd meg a hibaüzenetet a popoverben vagy az értesítésben. Ha ez nem elég, csatlakozz debug módban, és keress a **Napló** fülön (a **Hibák** szűrő csak a hibasorokat mutatja).
+Először nézd meg a hibaüzenetet a popoverben vagy az értesítésben. Ha ez nem elég, csatlakozz debug módban, és keress a **Napló** fülön (a **Hibák** szűrő csak a hibasorokat mutatja). Az alábbi üzenetek a magyarok; ha a WinVPN nyelve angol, angolul jelennek meg.
 
 ### 7.1 `AUTH_FAILED` (OpenVPN)
 
@@ -565,11 +573,13 @@ Ezeknek a típusoknak egyéb üzenetei:
 Ezeket a hibákat **Mentéskor** vagy csatlakozáskor kaphatod, például:
 
 - `3. sor: Tiltott direktíva: up – töröld vagy tedd megjegyzésbe (#) a sort`
-- kockázatos direktíva, amelyhez tudomásulvétel kell (a beállítás a sárga **Kockázatos beállítások** panelen látszik)
+- `5. sor: Kockázatos direktíva, tudomásulvétel szükséges: user` (a beállítás a sárga **Kockázatos beállítások** panelen látszik)
 - csatlakozáskor: `A kockázatos beállítások nincsenek tudomásul véve: user. Nyisd meg a kapcsolatot a WinVPN → Kapcsolatok alatt, és jelöld be a négyzetet a Kockázatos beállítások résznél.`
-- külső fájlra hivatkozás (például `ca`), amelyhez beágyazott blokk kell
-- WireGuard: tiltott kulcs (például `postup`); IKEv2: tiltott `include` vagy `updown`, útvonal fájlnév helyett
-- érvénytelen argumentum vagy érték, rossz számú argumentum
+- `7. sor: Külső fájl hivatkozás, inline blokk kell: ca`
+- WireGuard: `4. sor: Tiltott kulcs: postup`, `6. sor: Nem engedélyezett kulcs: …`
+- IKEv2: `2. sor: Tiltott: include`, `9. sor: Tiltott kulcs: updown`, `6. sor: Csak fájlnév adható meg, útvonal nem: cacerts`
+- Argumentumok: `4. sor: Érvénytelen argumentum: dev`, `8. sor: Hibás argumentumszám: keepalive`, WireGuard `3. sor: Érvénytelen érték: address`
+- OpenVPN: `12. sor: Túl hosszú sor`, `9. sor: Nem engedélyezett setenv: SystemRoot – töröld vagy tedd megjegyzésbe (#) a sort`
 
 A WinVPN szolgáltatás rendszerjogokkal futtatja az OpenVPN-t, ezért a WinVPN csak ismert, biztonságos beállításokat enged. Javítás:
 
@@ -578,6 +588,8 @@ A WinVPN szolgáltatás rendszerjogokkal futtatja az OpenVPN-t, ezért a WinVPN 
 - **Érvénytelen argumentum / érték, rossz számú argumentum:** a beállítás engedett, de az értéke nem a várt formájú. Az üzenet a beállítást nevezi meg, nem az értéket.
 - **Külső fájlra hivatkozás:** egy tanúsítvány fájlra hivatkozik (`ca ca.crt`). Importáld újra a `.ovpn` fájlt a hivatkozott fájlokkal együtt, vagy másold a tartalmukat egy `<ca>…</ca>` blokkba.
 - **Nem engedélyezett vezérlőkarakter**: a fájlban láthatatlan karakter van. Írd be újra a sort.
+- **Túl hosszú sor**: a sor hosszabb 255 bájtnál. Egy beágyazott blokkban lévő tanúsítvány vagy kulcs sorai általában 64 karakteresek; exportáld újra a forrásából, vagy tördeld a sort. Egy más programnak készült configban hosszú megjegyzéssorok lehetnek: rövidítsd vagy töröld őket.
+- **Nem engedélyezett setenv**: Windowson csak a [3.1](#31-openvpn) részben felsorolt `setenv` nevek engedettek. Töröld a sort, vagy kérdezd meg a szolgáltatót, kell-e a beállítás.
 
 ### 7.8 A WinVPN szolgáltatás és egyéb üzenetek
 
@@ -1007,7 +1019,7 @@ A tartalék kulcsra váltáshoz azon a számítógépen, amelyről ezután közz
 
 ### 16.8 Rendszergazdáknak: katalógus közzététele
 
-A **Közzététel** → **Katalógus közzététele…** megnyitja a varázslót: **Kapcsolatok** (jelöld be a mappákat és a kapcsolatokat), **Titkok** (csak azokat a csapattitkokat jelöld be, amelyeket mindenki ismerhet), **Közös belépési adatok helyei** (felhasználónév és jelszó nélkül), **Áttekintés**, **Név és fájl** (a `<név>.macvpncatalog` mentési helye; **A WinVPN semmit nem tölt fel: a fájlt te tedd a webszerveredre vagy a megosztásra.**), végül **Kész**. Új katalógusnál a **csapatkulcs csak egyszer jelenik meg**: **Másold** ki, tartsd biztonságban, kattints az **Elmentettem** gombra, és írd be a kért csoportot. Utána **Feliratkozási kód másolása…**.
+A **Közzététel** → **Katalógus közzététele…** megnyitja a varázslót: **Kapcsolatok** (jelöld be a mappákat és a kapcsolatokat), **Áttekintés** (a katalógus tartalma; a **Csapattitkok** alatt csak azokat a titkokat jelöld be, amelyeket a csapatban mindenki ismerhet, a **Közös belépési adatok helyei** alatt pedig a névvel ellátott bejelentkezéseket, felhasználónév és jelszó nélkül), **Név és fájl** (a `<név>.macvpncatalog` mentési helye; **A WinVPN semmit nem tölt fel: a fájlt te tedd a webszerveredre vagy a megosztásra.**), végül **Kész**. Új katalógusnál a **csapatkulcs csak egyszer jelenik meg**: **Másold** ki, tartsd biztonságban, kattints az **Elmentettem** gombra, és írd be a kért csoportot. Utána **Feliratkozási kód másolása…**.
 
 Mindig ugyanoda tedd közzé, hogy a tagok forrása érvényes maradjon. Fájlmegosztáson a fájlt egészében cseréld (a WinVPN így írja, ha közvetlenül oda mented). A fájlt a számítógép minden felhasználója olvashatja (megosztásra készül; alá van írva és titkosítva van).
 

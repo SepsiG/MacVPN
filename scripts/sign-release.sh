@@ -250,7 +250,7 @@ download_asset() { # $1 = asset name → $WORK/$1
 }
 
 # The commit the tag names: the build provenance must be for exactly this commit (a moved tag is refused).
-TAG_SHA="$(api "$REPO_API/commits/tags/$TAG" | jq -r '.sha')"
+TAG_SHA="$(api "$REPO_API/commits/refs/tags/$TAG" | jq -r '.sha')"
 [[ "$TAG_SHA" =~ ^[0-9a-f]{40}$ ]] || die "cannot resolve the commit of $TAG: $TAG_SHA"
 echo "Tag $TAG is commit $TAG_SHA"
 

@@ -130,7 +130,7 @@ While the vault is locked, the popover shows only an **Unlock…** row, the numb
 3. **WireGuard:** the wireguard-nt version, and **Update** when a newer one exists.
 4. **Windows VPN client:** **Built into Windows**, or the Windows service that is disabled (see [1.5](#15-wireguard-and-the-windows-vpn-client)).
 
-While a row needs something, the **System Status** tile has a **!** mark and the window opens by itself at launch. OpenVPN Community is optional: while it is only not installed, its row stays red with **Install**, but there is no **!** mark and the window does not open at launch (a broken install that needs **Repair** or **Update** still counts). **Check Again** checks everything again. Below the rows is the **Launch at Login** switch, the uninstall note with **Open Installed Apps…**, and **Remove WinVPN from This Account…** (see [9](#9-uninstalling)).
+While a row needs something, the **System Status** tile has a **!** mark and the window opens by itself at launch. OpenVPN Community is optional: while it is only not installed, its row stays red with **Install**, but there is no **!** mark and the window does not open at launch (an installed OpenVPN that needs **Repair**, or an **Update** because the service refuses its version, still counts). A missing or unreachable WinVPN Service always counts. A newer engine version alone does not: the row stays green and offers **Update** (see [2.5](#25-updating-openvpn-and-wireguard)). **Check Again** checks everything again. Below the rows is the **Launch at Login** switch, the uninstall note with **Open Installed Apps…**, and **Remove WinVPN from This Account…** (see [9](#9-uninstalling)).
 
 **Windows and the keyboard.** Every WinVPN window (Connections, System Status, the vault windows) has its own taskbar button, so Alt+Tab reaches it; while only the popover is open, WinVPN has no taskbar button. WinVPN has no menu bar: the text fields have the usual shortcuts (Ctrl+C, Ctrl+V, Ctrl+X, Ctrl+A, Ctrl+Z), **Ctrl+S** saves in an editor and **Ctrl+F** jumps to the search field of the Connections window. Starting WinVPN again while it runs (from the Start menu, for example) does not start a second copy: the running WinVPN brings its open windows forward, or opens the Connections window (the vault's window while the vault is locked).
 
@@ -209,6 +209,8 @@ The easiest way is to import the `.ovpn` file from your provider (**New → Impo
   - **Risky settings** (for example `user nobody`, server-side options, and every directive WinVPN does not know) are shown in a yellow **Risky settings** panel, each with a short reason. Tick **I acknowledge these settings and the security risks** to save. The acknowledgement covers exactly the risky directives present when you save: if you add another one later, you have to tick the box again.
   - **Forbidden** directives, for example `up`, `down`, `script-security`, `plugin`, `log`, `chroot` and `echo`, are never allowed (they would run external scripts, load code, or read or write files with the VPN's rights). On Windows also the options the WinVPN Service sets itself (`win-sys`, `service`, `msg-channel`, `allow-nonadmin`, `rdns-internal`, `dhcp-internal`), `windows-driver` (WinVPN picks the driver, see [1.4](#14-openvpn-community)) and **`cryptoapicert`**: `openvpn.exe` runs as the system, so a certificate selector would reach the computer's certificate store instead of yours. Use a certificate and key in the config (or a PKCS#12 file) instead. See [3.9](#39-errors-when-saving).
 - The arguments of the allowed directives are checked too: for example ports and timers must be numbers, and host names and cipher names cannot contain `/` or start with `-`. `<connection>` blocks are supported; their lines go through the same checks.
+- **Every line is at most 255 bytes** (also inside inline blocks such as `<ca>`), as OpenVPN reads a line in 256-byte pieces; a longer line gives **Line too long**. A line with more than 16 words gives **Wrong number of arguments**.
+- **`setenv` on Windows** takes only the names OpenVPN itself reads (`FORWARD_COMPATIBLE`, `PUSH_PEER_INFO`, `SERVER_POLL_TIMEOUT`, `REMOTE_RANDOM_HOSTNAME`, `CLIENT_CERT`, `CONFIG_VERSION`) and the peer-info names starting with `UV_` or `IV_`; any other name gives **setenv not allowed**. OpenVPN passes these variables to the Windows programs it runs as the system, so a name such as `SystemRoot` could change what they load. `setenv opt <directive>` is checked like the directive itself, once.
 
 ### 3.2 WireGuard
 
@@ -295,6 +297,7 @@ You get these errors on **Save**, for example:
 - `Line 7: External file reference, use an inline block: ca`
 - WireGuard: `Line 4: Forbidden key: postup`; IKEv2: `Line 2: Forbidden: include`
 - Arguments: `Line 4: Invalid argument: dev`, `Line 8: Wrong number of arguments: keepalive`
+- OpenVPN: `Line 12: Line too long`, `Line 9: setenv not allowed: SystemRoot – delete the line or comment it out (#)`
 
 To fix: see [7.7](#77-directive-not-allowed--forbidden-directive). A Windows limit of an IKEv2 or SSTP connection is not a save error: the connection is saved and shown greyed with its reason (see [3](#3-adding-connections-by-type)).
 
@@ -415,10 +418,15 @@ In **Paired apps** every program is listed with its executable path, **Last used
 
 ### 5.5 Reconnect automatically
 
-When a connection goes down because the PC slept or the network went away, WinVPN can connect it again by itself, with exactly the rules of [MacVPN's automatic reconnect](user-guide.en.md#55-reconnect-automatically), for every type (the Windows VPN client's types and system VPNs too):
+When a connection goes down because the PC slept or the network went away, WinVPN can connect it again by itself, with exactly the rules of [MacVPN's automatic reconnect](user-guide.en.md#55-reconnect-automatically), for every type WinVPN connects itself (the Windows VPN client's types too; system VPNs are never reconnected):
 
-1. **Only on the same network** as when the connection came up: the router's address and hardware address, and the Wi-Fi name where Windows tells it. Windows 11 24H2 and later show the Wi-Fi name only to apps with location permission; WinVPN does not ask for it, so usually the router's hardware address decides. A network that cannot be identified means no reconnect.
-2. **Only when none of the VPN's own networks is directly reachable there** (its routes, WireGuard `AllowedIPs` and OpenVPN `route` lines and pushed routes, without the "send everything" routes, and its DNS servers; L2TP, IKEv2 and SSTP have no such list, so only rule 1 applies to them). Example: "Office VPN" routes the office network 10.20.30.0/24; brought up at home, it comes back after sleep at home; in the office, where the PC is on 10.20.30.0/24, it stays down (**Office VPN not reconnected** / **The VPN’s network is directly reachable here.**). On another network where nothing of the VPN is local (a café), it stays down with **You are on a different network.**
+WinVPN checks, in this order:
+
+1. **None of the VPN's own networks is directly reachable there** (its routes, WireGuard `AllowedIPs` and OpenVPN `route` lines and pushed routes, without the "send everything" routes, and its DNS servers). This is checked first, so the office network stops a reconnect even behind a new router. L2TP, IKEv2 and SSTP have no such list, so only rule 2 applies to them.
+2. **The same network** as when the connection came up: the router's address and hardware address, and the Wi-Fi name where Windows tells it. Windows 11 24H2 and later show the Wi-Fi name only to apps with location permission; WinVPN does not ask for it, so usually the router's hardware address decides. A network that cannot be identified means no reconnect (**The network could not be identified.**).
+
+Example: "Office VPN" routes the office network 10.20.30.0/24. Brought up at home, it comes back after sleep at home. In the office, where the PC is on 10.20.30.0/24, it stays down (**Office VPN not reconnected** / **The VPN’s network is directly reachable here.**). On another network where nothing of the VPN is local (a café), it stays down with **You are on a different network.**
+
 
 - It runs for a connection that was up before sleep and is down after waking (or drops within 3 minutes), and for a drop while the network is gone or within a minute after a network change; up to 3 attempts (at once, after 10 s, after 30 s).
 - **Never reconnected:** a connection you disconnected (also by quitting WinVPN or signing out), a failed connect you started, a refused sign-in or certificate, a cancelled code or credential window. A locked vault means no reconnect (**Unlock the vault to reconnect.**).
@@ -571,6 +579,7 @@ You get these errors on **Save** or when connecting, for example:
 - WireGuard: `Line 4: Forbidden key: postup`, `Line 6: Key not allowed: …`
 - IKEv2: `Line 2: Forbidden: include`, `Line 9: Forbidden key: updown`, `Line 6: Only a file name is allowed, no path: cacerts`
 - Arguments: `Line 4: Invalid argument: dev`, `Line 8: Wrong number of arguments: keepalive`, WireGuard `Line 3: Invalid value: address`
+- OpenVPN: `Line 12: Line too long`, `Line 9: setenv not allowed: SystemRoot – delete the line or comment it out (#)`
 
 The WinVPN Service runs OpenVPN with system rights, so WinVPN only allows known, safe settings. To fix:
 
@@ -579,6 +588,8 @@ The WinVPN Service runs OpenVPN with system rights, so WinVPN only allows known,
 - **Invalid argument / value, wrong number of arguments:** the setting is allowed, but its value is not in the expected form. The message names the setting, not the value.
 - **External file reference:** a certificate refers to a file (`ca ca.crt`). Import the `.ovpn` again with the referenced files next to it, or paste their contents into a `<ca>…</ca>` block.
 - **Control character not allowed**: the file contains an invisible character. Retype the line.
+- **Line too long**: the line is longer than 255 bytes. A certificate or key in an inline block normally has 64-character lines; re-export it from its source, or split the line. A config made for another program may have long comment lines: shorten or delete them.
+- **setenv not allowed**: on Windows only the `setenv` names listed in [3.1](#31-openvpn) are allowed. Delete the line, or ask your provider whether the setting is needed.
 
 ### 7.8 The WinVPN Service and other messages
 
@@ -1008,7 +1019,7 @@ To switch to the backup key, **Import Admin Key…** on the PC that publishes fr
 
 ### 16.8 For administrators: publishing a catalog
 
-**Publishing** → **Publish Catalog…** opens the wizard: **Connections** (tick folders and connections), **Secrets** (tick only the team secrets everyone may know), **Credential slots** (without user names or passwords), **Review**, **Name and file** (where to save `<name>.macvpncatalog`; **WinVPN does not upload anything: put the file on your web server or share.**), and **Done**. For a new catalog, the **team key is shown once**: **Copy** it, keep it safe, click **I Saved It** and type the group the window asks for. Then **Copy Subscription String…**.
+**Publishing** → **Publish Catalog…** opens the wizard: **Connections** (tick folders and connections), **Review** (what the catalog contains; under **Team secrets** tick only the secrets everyone in the team may know, and under **Credential slots** the named sign-ins, without user names or passwords), **Name and File** (where to save `<name>.macvpncatalog`; **WinVPN does not upload anything: put the file on your web server or share.**), and **Done**. For a new catalog, the **team key is shown once**: **Copy** it, keep it safe, click **I Saved It** and type the group the window asks for. Then **Copy Subscription String…**.
 
 Publish to the same place every time, so the members' source stays valid. On a file share, replace the file as a whole (WinVPN writes it that way when you save it there directly). The file is written so that every user of the PC can read it (it is meant to be shared; it is signed and encrypted).
 

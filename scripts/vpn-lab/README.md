@@ -2,7 +2,8 @@
 
 A throwaway set of VPN servers in Docker for the manual tests of MacVPN (macOS) and WinVPN (Windows): every
 connection kind the apps have, with generated credentials, a lab PKI and ready-to-import client profiles. Built for
-plan 2c, Task 4 (`docs/superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md`); its checkpoints CP1/CP2 use it.
+plan 2c, Task 4 (`docs/superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md`; its checkpoints CP1/CP2 used it); the
+2.0.0 manual checks (`docs/manual-test-checklist.md`, "A VPN-labor előkészítése" and the sections after it) use it.
 
 Nothing here is meant for real use: the credentials are random and short-lived, the CA is limited to the lab's own
 names and expires after 90 days, and `down.sh` deletes everything.
@@ -100,7 +101,7 @@ Which profile tests what:
 | `openvpn-static-challenge.ovpn` | the static challenge (user `labotp`; the code is asked before connecting) |
 | `wireguard-*.conf` | WireGuard (separate keys for the Mac and the VM, so both can be connected at once) |
 | `ikev2-eap.swanctl.conf` | IKEv2 EAP-MSCHAPv2 with the server certificate (the lab CA must be trusted) |
-| `ikev2-psk.swanctl.conf` | IKEv2 PSK on both sides |
+| `ikev2-psk.swanctl.conf` | IKEv2 PSK on both sides (macOS; on Windows it imports greyed with the reason: Windows' IKEv2 client has no PSK sign-in) |
 | `ikev2-cert.swanctl.conf` | IKEv2 with a client certificate |
 | `sstp-ca.sstp` / `sstp-ca-alt-port.sstp` | SSTP with the lab CA in the profile; port 443 / 8443 |
 | `sstp-system-ca.sstp` | SSTP with the system's CAs: fails on macOS (Homebrew OpenSSL does not know the lab CA); on Windows works once the lab CA is in the computer's Trusted Root store |
@@ -150,14 +151,14 @@ The Mac's own IKE clients need UDP 500/4500 themselves, and Docker holds them on
 
 ### Findings for the apps (from building the lab)
 
-- **F1 — MacVPN IKEv2 certificates on macOS.** MacVPN's helper loads a connection with
+- **F1 — MacVPN IKEv2 certificates on macOS.** Before 2.0.0, MacVPN's helper loaded a connection with
   `swanctl --load-all --file <run>/config`. With `--file`, swanctl reads `x509ca/`, `x509/` and `private/` **next to
   that file** (the private run folder), not from `/opt/homebrew/etc/swanctl/`, and it unloads private keys it does
   not find there (seen with strongSwan 6.0.1: "opening directory '<run>/x509ca' failed"). So the user guide's
   advice (put the CA into `/opt/homebrew/etc/swanctl/x509ca/`) only works if something loaded that CA into the
   running charon before (`sudo swanctl --load-creds`; certificates stay loaded), and **client-certificate
   authentication (`local { auth = pubkey; certs = … }`) cannot work** (the key is unloaded at every connect).
-  **Fixed** (branch `mac-f1`): before `--load-all` the helper copies the regular files of
+  **Fixed in MacVPN 2.0.0** (root layer 9): before `--load-all` the helper copies the regular files of
   `$(brew --prefix)/etc/swanctl/{x509,x509ca,x509ocsp,x509aa,x509ac,x509crl,pubkey,private,rsa,ecdsa,pkcs8,pkcs12}/`
   into the root-only run folder (folders 0700, files 0600; no symlinks, no hidden files) and calls
   `swanctl --load-all --noprompt --file <run>/config`; the run folder (with the key copy) is removed at disconnect.
@@ -192,15 +193,16 @@ The Mac's own IKE clients need UDP 500/4500 themselves, and Docker holds them on
 
 ## Maintainer steps
 
-The full Hungarian lists are the plan's CP1 (WinVPN) and "MacVPN a laborral" sections; in short:
+The full Hungarian lists are in `docs/manual-test-checklist.md` ("A VPN-labor előkészítése", "MacVPN a laborral
+(macOS)" and the WinVPN sections); in short:
 
 1. On the Mac: `scripts/vpn-lab/up.sh --bind <LAN-IPv4>` → `scripts/vpn-lab/check.sh --selftest` → all `ok`
    (on macOS the UDP 500 line may be `info`).
 2. Copy `scripts/vpn-lab/.state/client/windows/` to the VM (for example
    `scp -r scripts/vpn-lab/.state/client/windows "$WINVPN_SSH":lab-client`), and keep `CREDENTIALS.txt` at hand.
 3. WinVPN on the VM (desktop, standard user): OpenVPN (`openvpn-tun-dco`, `-tun-cbc`, `-tap-l2`, static and dynamic
-   challenge), WireGuard — these work with WinVPN 2b already; after 2c: L2TP (first the 809 text, then **Allow L2TP
-   Behind NAT…**), IKEv2 ×3, SSTP ×4 files, Cisco (greyed, **Make an L2TP/IPsec Copy** → the copy connects).
+   challenge), WireGuard, L2TP (first the 809 text, then **Allow L2TP Behind NAT…**), IKEv2 ×3 (the PSK profile
+   greyed with the Windows reason), SSTP ×4 files, Cisco (greyed, **Make an L2TP/IPsec Copy** → the copy connects).
    Each connected: `http://10.99.0.10/` shows "MacVPN lab: OK" and the server; `nslookup whoami.lab.test` →
    `10.99.0.10`.
 4. MacVPN on the Mac: OpenVPN, WireGuard, SSTP (same Mac is fine); IKEv2 with `--no-ike-standard-ports` and the

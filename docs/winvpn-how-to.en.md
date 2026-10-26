@@ -30,6 +30,8 @@ Short step-by-step instructions for WinVPN 2.0 on Windows 10 and 11. The [WinVPN
 22. [Use a VPN you set up in Windows](#22-use-a-vpn-you-set-up-in-windows)
 23. [Use a Cisco IPsec connection from a Mac](#23-use-a-cisco-ipsec-connection-from-a-mac)
 24. [Test with the VPN lab (testers)](#24-test-with-the-vpn-lab-testers)
+25. [Choose the appearance and the connection notifications](#25-choose-the-appearance-and-the-connection-notifications)
+26. [Reconnect automatically after sleep](#26-reconnect-automatically-after-sleep)
 
 ---
 
@@ -64,7 +66,7 @@ Open the popover → **New Connection / Import…** (or **Manage Connections…*
 - **IKEv2:** use EAP-MSCHAPv2 (user name and password) or a computer certificate; Windows does not support IKEv2 with a pre-shared key. The grey line under the editor shows what Windows will use.
 - **SSTP with a company CA:** choose **Custom CA file**, then **Trust This CA in Windows…** (an administrator confirms once).
 
-A greyed connection shows why Windows cannot run it. Details: [user guide, 3](winvpn-user-guide.en.md#3-adding-connections-by-type).
+A greyed connection shows why Windows cannot run it. **New** offers only the types that can be used here (never Cisco IPsec). Details: [user guide, 3](winvpn-user-guide.en.md#3-adding-connections-by-type).
 
 ## 4. Connect and disconnect
 
@@ -105,13 +107,13 @@ Details: [user guide, 4](winvpn-user-guide.en.md#4-import-and-export).
 
 1. When the popover shows **Update available: vX.Y.Z**, click it, read the notes, click **Download and Install**.
 2. Answer the quit questions, then let an administrator confirm. WinVPN updates and starts again by itself.
-3. OpenVPN Community and WireGuard are updated separately: **System Status** → **Update** on their row when offered.
+3. OpenVPN Community and WireGuard are updated separately, without a new WinVPN: WinVPN checks once a day, and **System Status** offers **Update** on their row (**Update available: …**). OpenVPN's update needs an administrator; WireGuard's needs no WireGuard connection up on the PC. The Windows VPN client is updated by Windows Update.
 
 Details: [user guide, 8](winvpn-user-guide.en.md#8-updates) and [2.5](winvpn-user-guide.en.md#25-updating-openvpn-and-wireguard).
 
 ## 10. Start WinVPN at login
 
-Popover → **Settings** → **Launch at Login** (or in **System Status**). If Windows turned it off in Settings → Apps → Startup, WinVPN shows a button to that page. Details: [user guide, 2.1](winvpn-user-guide.en.md#21-launch-at-login).
+Popover → **Settings** → **Launch at Login** (or in **System Status**). If Windows turned it off in Settings → Apps → Startup, WinVPN shows **Open Startup Apps Settings…** for that page. Details: [user guide, 2.1](winvpn-user-guide.en.md#21-launch-at-login).
 
 ## 11. Uninstall WinVPN
 
@@ -124,7 +126,7 @@ Details: [user guide, 9](winvpn-user-guide.en.md#9-uninstalling).
 ## 12. Troubleshooting FAQ
 
 **A connection is grey and says "Not installed: OpenVPN Community – System Status".**
-Click **System Status** in that line and **Install**. [More](winvpn-user-guide.en.md#24-missing-vpn-engines)
+Click **System Status** in that line and **Install**. OpenVPN Community is optional, so a missing one does not open System Status by itself. [More](winvpn-user-guide.en.md#24-missing-vpn-engines)
 
 **OpenVPN and WireGuard say "The WinVPN Service is not reachable".**
 An administrator starts it with `sc.exe start WinVPN`, or repairs WinVPN in Installed apps. L2TP, IKEv2 and SSTP keep working meanwhile. [More](winvpn-user-guide.en.md#78-the-winvpn-service-and-other-messages)
@@ -254,3 +256,24 @@ The repository has a throwaway VPN lab for testing both apps: `scripts/vpn-lab/`
 2. Copy the client profiles of `scripts/vpn-lab/.state/client/windows` (or `macos`) to the test PC; the passwords, the PSK and the codes are in `scripts/vpn-lab/.state/client/CREDENTIALS.txt` (do not copy that file around).
 3. Import the profiles into WinVPN, connect, and open `http://10.99.0.10/` (the lab's test page says which server you came through). The lab is behind Docker's NAT, so Windows L2TP/IPsec needs **Allow L2TP Behind NAT…** once, and SSTP/IKEv2 need the lab CA trusted (**Trust This CA in Windows…**).
 4. Afterwards remove the lab CA and certificate (`certlm.msc`) and stop the lab: `scripts/vpn-lab/down.sh`.
+
+## 25. Choose the appearance and the connection notifications
+
+**Appearance:** popover → **Settings** → **Appearance**: **Match System** (the default, follows Windows' app mode), **Light** or **Dark**. It applies at once to the popover and every window.
+
+**Connection notifications:** WinVPN tells you when a connection connects, drops, is reconnected or fails, with a short reason in plain words. The notification names only the connection; click it to open the connection's **Log** tab. To turn them off: popover → **Settings** → switch off **Connection Notifications**. Code and credential requests still notify you. Windows' own switch is in Settings → System → Notifications → **WinVPN**.
+
+Details: [user guide, 2.2](winvpn-user-guide.en.md#22-appearance) and [2.3](winvpn-user-guide.en.md#23-notifications).
+
+## 26. Reconnect automatically after sleep
+
+A connection that went down because the PC slept or the network went away comes back by itself, but only when both hold:
+
+1. **None of the VPN's own networks or DNS servers is directly reachable** on the network you are on (for example you are in the office the VPN leads to). This is checked first.
+2. **You are on the same network** as when the connection came up (the same router; WinVPN does not reconnect on a network it cannot identify).
+
+WinVPN tries up to 3 times and tells you the result (**… reconnected**, **… not reconnected** with the reason, or **… could not reconnect**). A connection you disconnected yourself (also by quitting WinVPN or signing out) is never reconnected. A tunnel that stayed up through the sleep is disconnected when its network is directly reachable on the new network.
+
+**To turn it off for one connection:** **Connections** window → the connection → switch off **Reconnect Automatically** (system VPNs do not have it).
+
+Details: [user guide, 5.5](winvpn-user-guide.en.md#55-reconnect-automatically).

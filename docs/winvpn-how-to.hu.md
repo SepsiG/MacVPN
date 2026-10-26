@@ -30,6 +30,8 @@ Rövid, lépésenkénti útmutatók a WinVPN 2.0-hoz, Windows 10-en és 11-en. A
 22. [A Windowsban beállított VPN használata](#22-a-windowsban-beállított-vpn-használata)
 23. [Macről jött Cisco IPsec kapcsolat használata](#23-macről-jött-cisco-ipsec-kapcsolat-használata)
 24. [Tesztelés a VPN-laborral (tesztelőknek)](#24-tesztelés-a-vpn-laborral-tesztelőknek)
+25. [A megjelenés és a kapcsolatértesítések beállítása](#25-a-megjelenés-és-a-kapcsolatértesítések-beállítása)
+26. [Automatikus újracsatlakozás alvás után](#26-automatikus-újracsatlakozás-alvás-után)
 
 ---
 
@@ -64,7 +66,7 @@ Popover → **Új kapcsolat / Import…** (vagy **Kapcsolatok kezelése…**). E
 - **IKEv2:** EAP-MSCHAPv2-t (felhasználónév és jelszó) vagy számítógép-tanúsítványt használj; előre megosztott kulcsos IKEv2-t a Windows nem támogat. A szerkesztő alatti szürke sor mutatja, mit használ a Windows.
 - **SSTP céges CA-val:** válaszd a **Saját CA fájl** módot, majd **A CA megbízhatóvá tétele a Windowsban…** (egy rendszergazda egyszer megerősíti).
 
-A szürke kapcsolat megmondja, miért nem tudja a Windows futtatni. Részletek: [útmutató, 3.](winvpn-user-guide.hu.md#3-kapcsolatok-felvétele-típusonként)
+A szürke kapcsolat megmondja, miért nem tudja a Windows futtatni. Az **Új** csak az itt használható típusokat kínálja (Cisco IPsec-et soha). Részletek: [útmutató, 3.](winvpn-user-guide.hu.md#3-kapcsolatok-felvétele-típusonként)
 
 ## 4. Csatlakozás és bontás
 
@@ -105,13 +107,13 @@ Részletek: [útmutató, 4.](winvpn-user-guide.hu.md#4-import-és-export)
 
 1. Ha a popoverben **Frissítés elérhető: vX.Y.Z** jelenik meg, kattints rá, olvasd el a változásokat, és kattints a **Letöltés és telepítés** gombra.
 2. Válaszolj a kilépési kérdésekre, majd egy rendszergazda erősítse meg. A WinVPN frissül, és magától újraindul.
-3. Az OpenVPN Community és a WireGuard külön frissül: **Rendszerállapot** → **Frissítés** a sorukon, ha felkínálja.
+3. Az OpenVPN Community és a WireGuard külön frissül, új WinVPN nélkül: a WinVPN naponta ellenőrzi, és a **Rendszerállapot** a sorukon felkínálja a **Frissítés** gombot (**Frissítés elérhető: …**). Az OpenVPN frissítéséhez rendszergazda kell; a WireGuard-éhoz az, hogy ne legyen élő WireGuard-kapcsolat a számítógépen. A Windows VPN-kliensét a Windows Update frissíti.
 
 Részletek: [útmutató, 8.](winvpn-user-guide.hu.md#8-frissítés) és [2.5](winvpn-user-guide.hu.md#25-az-openvpn-és-a-wireguard-frissítése).
 
 ## 10. A WinVPN indítása bejelentkezéskor
 
-Popover → **Beállítások** → **Indítás bejelentkezéskor** (vagy a **Rendszerállapot** ablakban). Ha a Windows kikapcsolta a Gépház → Alkalmazások → Indítás alatt, a WinVPN egy gombot mutat ehhez az oldalhoz. Részletek: [útmutató, 2.1](winvpn-user-guide.hu.md#21-indítás-bejelentkezéskor).
+Popover → **Beállítások** → **Indítás bejelentkezéskor** (vagy a **Rendszerállapot** ablakban). Ha a Windows kikapcsolta a Gépház → Alkalmazások → Indítás alatt, a WinVPN az **Indítási alkalmazások beállításai…** gombot mutatja ehhez az oldalhoz. Részletek: [útmutató, 2.1](winvpn-user-guide.hu.md#21-indítás-bejelentkezéskor).
 
 ## 11. A WinVPN eltávolítása
 
@@ -124,7 +126,7 @@ Részletek: [útmutató, 9.](winvpn-user-guide.hu.md#9-eltávolítás)
 ## 12. Gyakori hibák
 
 **Egy kapcsolat szürke, rajta: „Nincs telepítve: OpenVPN Community – Rendszerállapot”.**
-Kattints a sorban a **Rendszerállapot** linkre, majd a **Telepítés** gombra. [Bővebben](winvpn-user-guide.hu.md#24-hiányzó-vpn-motorok)
+Kattints a sorban a **Rendszerállapot** linkre, majd a **Telepítés** gombra. Az OpenVPN Community nem kötelező, ezért a hiánya miatt a Rendszerállapot nem nyílik meg magától. [Bővebben](winvpn-user-guide.hu.md#24-hiányzó-vpn-motorok)
 
 **Az OpenVPN és a WireGuard ezt írja: „A WinVPN szolgáltatás nem érhető el”.**
 Egy rendszergazda elindítja a `sc.exe start WinVPN` paranccsal, vagy javítja a WinVPN-t a Telepített alkalmazások alatt. Az L2TP, az IKEv2 és az SSTP közben is működik. [Bővebben](winvpn-user-guide.hu.md#78-a-winvpn-szolgáltatás-és-egyéb-üzenetek)
@@ -254,3 +256,24 @@ A repóban van egy eldobható VPN-labor mindkét app teszteléséhez: `scripts/v
 2. Másold a teszt-számítógépre a `scripts/vpn-lab/.state/client/windows` (vagy `macos`) kliensprofiljait; a jelszavak, a PSK és a kódok a `scripts/vpn-lab/.state/client/CREDENTIALS.txt` fájlban vannak (ezt ne másolgasd).
 3. Importáld a profilokat a WinVPN-be, csatlakozz, és nyisd meg a `http://10.99.0.10/` oldalt (a labor tesztoldala megmondja, melyik szerveren át jöttél). A labor a Docker NAT-ja mögött van, ezért a windowsos L2TP/IPsec-hez egyszer kell az **L2TP engedélyezése NAT mögött…**, az SSTP-hez és az IKEv2-höz pedig a labor-CA megbízhatóvá tétele (**A CA megbízhatóvá tétele a Windowsban…**).
 4. Utána töröld a labor-CA-t és -tanúsítványt (`certlm.msc`), és állítsd le a labort: `scripts/vpn-lab/down.sh`.
+
+## 25. A megjelenés és a kapcsolatértesítések beállítása
+
+**Megjelenés:** popover → **Beállítások** → **Megjelenés**: **Rendszer szerint** (alapértelmezés, a Windows alkalmazásmódját követi), **Világos** vagy **Sötét**. Azonnal érvényes a popoverre és minden ablakra.
+
+**Kapcsolatértesítések:** a WinVPN szól, ha egy kapcsolat csatlakozott, megszakadt, újracsatlakozott vagy sikertelen, rövid, közérthető okkal. Az értesítés csak a kapcsolatot nevezi meg; kattintásra a kapcsolat **Napló** füle nyílik meg. Kikapcsolás: popover → **Beállítások** → kapcsold ki a **Kapcsolatértesítések** kapcsolót. A kód- és a hitelesítőadat-kérések továbbra is értesítenek. A Windows saját kapcsolója: Gépház → Rendszer → Értesítések → **WinVPN**.
+
+Részletek: [útmutató, 2.2](winvpn-user-guide.hu.md#22-megjelenés) és [2.3](winvpn-user-guide.hu.md#23-értesítések).
+
+## 26. Automatikus újracsatlakozás alvás után
+
+Ha egy kapcsolat azért szakadt meg, mert a számítógép aludt, vagy elveszett a hálózat, magától újra felépül, de csak ha mindkét feltétel teljesül:
+
+1. **A VPN saját hálózatai és DNS-szerverei közül egyik sem érhető el közvetlenül** azon a hálózaton, amelyen vagy (például abban az irodában vagy, ahová a VPN vezet). Ezt ellenőrzi először.
+2. **Ugyanazon a hálózaton vagy**, mint amikor a kapcsolat felépült (ugyanaz a router; azonosíthatatlan hálózaton a WinVPN nem csatlakozik újra).
+
+A WinVPN legfeljebb háromszor próbálkozik, és megírja az eredményt (**…: újracsatlakozva**, **…: nem csatlakozott újra** az okkal, vagy **…: nem sikerült újracsatlakozni**). Az általad bontott kapcsolat (a WinVPN-ből való kilépéssel vagy kijelentkezéssel is) sosem csatlakozik újra. Az alvást túlélő alagutat bontja, ha az új hálózaton a VPN hálózata közvetlenül elérhető.
+
+**Kikapcsolás egy kapcsolatnál:** **Kapcsolatok** ablak → a kapcsolat → kapcsold ki az **Automatikus újracsatlakozás** kapcsolót (a rendszer VPN-eknek nincs ilyen).
+
+Részletek: [útmutató, 5.5](winvpn-user-guide.hu.md#55-automatikus-újracsatlakozás).

@@ -177,7 +177,7 @@ Only the connections this program may use, in MacVPN's order. `kind` is `openvpn
 {"id":3,"op":"up","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01"}
 ```
 
-Takes a lease for this socket and starts the connection if it is down, the same way as a manual connect: same MFA prompts, same Keychain, same checks. While it comes up, the client gets events, then one final reply:
+Takes a lease for this socket and starts the connection if it is down, the same way as a manual connect: same MFA prompts, same secrets from the vault, same checks. While it comes up, the client gets events, then one final reply:
 
 ```json
 {"event":"state","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01","state":"connecting"}
@@ -190,8 +190,8 @@ Takes a lease for this socket and starts the connection if it is down, the same 
 or, for example:
 
 ```json
-{"event":"state","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01","state":"failed","reason":"The connection timed out"}
-{"id":3,"ok":false,"error":"failed","message":"The connection timed out"}
+{"event":"state","connection":"6F1C2A4E-0B6D-4E43-9C55-1D2A7B8E9F01","state":"failed","reason":"Timed out: the connection was not established within 30 s"}
+{"id":3,"ok":false,"error":"failed","message":"Timed out: the connection was not established within 30 s"}
 ```
 
 - **Already connected:** the reply `{"id":3,"ok":true,"state":"connected"}` comes at once, without events.
@@ -200,7 +200,7 @@ or, for example:
 - **`waiting_for_credentials`** means MacVPN asks the user for a user name, password, shared secret or key password that is not saved. The same applies: tell your user to look at MacVPN, and allow minutes. Your program never sees what the user types. If the user cancels (or lets the 2-minute prompt expire), the `up` ends with `credentials_cancelled`.
 - If the `up` fails, the lease ends with it. A later `up` starts a new connect.
 - MacVPN checks, in this order: the pairing still exists (`unauthorized`, connection closed), the connection is allowed (`not_allowed`), it still exists (`unknown_connection`), the server is not stopping (`disabled` / `app_quitting`), the connection is not changing state without a lease (`busy`), this socket does not already wait for an `up` of it (`busy`), and, only when this `up` has to start the connection, the setup that this connection needs is complete (`setup_required`).
-- **The setup check depends on the connection.** A connection that MacVPN runs through its root helper (OpenVPN, WireGuard, IKEv2, SSTP) needs Homebrew, a current root helper and its type's VPN tool. A system VPN and a native L2TP or Cisco IPsec connection start through macOS and need none of them. A connection that is already up, or already coming up for another lease, is joined without any setup check: `up` replies `connected` even while the setup is incomplete.
+- **The setup check depends on the connection.** A connection that MacVPN runs through its root helper (OpenVPN, WireGuard, IKEv2, SSTP) needs Homebrew, a current root helper and its type's VPN tool (the same check that greys the connection in the menu with "Not installed: … – System Status"). A system VPN and a native L2TP or Cisco IPsec connection start through macOS and need none of them. A connection that is already up, or already coming up for another lease, is joined without any setup check: `up` replies `connected` even while the setup is incomplete.
 
 ### 5.6 `down`
 
@@ -284,7 +284,7 @@ Error codes are generic. They never contain raw tool output.
 | `mfa_timeout` | The code or sign-in prompt timed out. | Let the user retry. |
 | `credentials_cancelled` | The user cancelled the credential prompt, or it expired after 2 minutes (from 1.1.0). | Do not retry on your own. |
 | `locked` | MacVPN's vault is locked (from 1.2.0): `pair`, `hello`, `list`, `up` and `status` are refused until the user unlocks it in MacVPN. `down` still works, and an existing session and its leases are kept. After `pair` or `hello` the connection is closed. | Tell the user to unlock MacVPN, then try again. |
-| `failed` | Any other failure. `message`, if present, is a short localized reason for the user. Also: the user disconnected the connection in MacVPN while it was coming up, or your own `down` cancelled the `up`. On WinVPN without its VPN engine (the 2a preview) every `up` that has to start a connection, of any type, is `failed` with the message "The VPN engine comes in a later version of WinVPN." (never `setup_required`: there is nothing the user could set up). | Show the message. |
+| `failed` | Any other failure. `message`, if present, is a short localized reason for the user. Also: the user disconnected the connection in MacVPN while it was coming up, or your own `down` cancelled the `up`. On WinVPN also a connection Windows cannot run, or a missing WinVPN Service (see [11.1](#111-the-pipe)). | Show the message. |
 | `app_quitting` | MacVPN is quitting. The connection closes next (also the `reason` of the [`closing` event](#510-the-closing-event)). | Reconnect after MacVPN runs again. |
 | `disabled` | The user turned **Allow other apps to control VPNs** off. The connection closes next (also the `reason` of the [`closing` event](#510-the-closing-event)). | — |
 | `unsupported` | Unknown `op`. | — |
@@ -299,7 +299,7 @@ Treat any other code as `failed` (see [section 8](#8-forward-compatibility)).
 - **The last lease ends, the VPN goes down.** When the last holder sends `down`, closes the socket, quits or crashes, or is revoked, MacVPN disconnects a connection that it started for the leases.
 - **A pre-existing connection stays up.** If the connection was already up without a lease (the user or another path started it), `up` only reports `connected`, and no lease end ever brings it down.
 - **The user wins.** If the user disconnects a leased connection in MacVPN, every lease on it ends at once. The holders get the `disconnecting` and `disconnected` events (a pending `up` gets `failed`), and MacVPN does not reconnect on its own. Closing the socket afterwards changes nothing.
-- **A drop ends the leases too.** If the VPN fails or drops, the holders get the `failed` (or `disconnected`) event, and the leases end. Reconnecting is up to the program: send `up` again.
+- **A drop ends the leases too.** If the VPN fails or drops, the holders get the `failed` (or `disconnected`) event, and the leases end. Reconnecting is up to the program: send `up` again. (From 2.0 MacVPN may reconnect a connection that dropped after sleep or a network loss, if **Reconnect Automatically** is on for it; your lease has ended all the same, so send `up` again if the session still needs the VPN.)
 - **Sleep and wake.** Sockets stay open. If the VPN drops meanwhile, the rule above applies.
 - **Turning the setting off.** Pending `up`s get `disabled`, every authenticated socket gets the `closing` event with `"reason":"disabled"`, every socket is closed, and the leases end as usual: connections that only the leases kept up are disconnected.
 - **Quitting MacVPN.** The quit question names the programs holding connections: **Used by other apps through MacVPN: …. Quitting ends their sessions.** Pending `up`s get `app_quitting`, every authenticated socket gets the `closing` event with `"reason":"app_quitting"`, and every socket is closed. The leases end **without** a disconnect: the quit question decides. **Disconnect and Quit** disconnects every connection as usual, and **Quit, Keep Them Running** leaves them up, without leases (MacVPN finds them again on its next launch, as connections that were already up).
@@ -463,16 +463,20 @@ WinVPN speaks exactly this protocol (sections 3 to 8: the same requests, events,
 
 ### 11.1 The pipe
 
-- **Name:** `\\.\pipe\WinVPN-control-<SID>`, where `<SID>` is the user's security identifier (`S-1-5-21-…`; `whoami /user` prints it). The example client's `default_endpoint()` builds it; pass it wherever a socket path goes (`Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`). It is not `\\.\pipe\WinVPN`, which is the WinVPN Service's own pipe.
+- **Name:** `\\.\pipe\WinVPN-control-<SID>`, where `<SID>` is the user's security identifier (`S-1-5-21-…`; `whoami.exe /user` prints it). The example client's `default_endpoint()` builds it; pass it wherever a socket path goes (`Client::pair`, `Client::open`, `Lease::acquire`, `MACVPN_SOCKET`). It is not `\\.\pipe\WinVPN`, which is the WinVPN Service's own pipe.
 - **Who can connect:** only programs running as the same user **in a local logon** of this PC. The pipe denies network logons and refuses remote clients, so another user, the network, and even the same user over SSH or another remote shell are refused (access denied). While **Allow other apps to control VPNs** is off, the pipe does not exist (`NotFound`).
 - **Identity:** WinVPN reads the client's user (SID) from the pipe with identification-level impersonation, and its executable path from its process; the pairing is pinned to that path, as on macOS. A client that opens the pipe without allowing identification is closed.
 - **The client checks the server:** before it sends anything (a token, a request), the example client checks that the process serving the pipe runs as the same user, and refuses a pipe another user created first (a squatter) with `PermissionDenied`. Use the example client's transport (it is `macvpn-winsys`' `pipe`, the implementation WinVPN itself uses), or do the same check.
 - **Lifetime:** as on macOS, a lease ends when the pipe handle closes: when your program closes it, exits or is killed.
-- **Error codes** are the same; on Windows `up` of an OpenVPN or WireGuard connection answers `failed` with the service's text when the WinVPN Service is missing or not reachable (never `setup_required`), and L2TP/IPsec, IKEv2, SSTP and system VPNs do not need the service. A Cisco IPsec connection answers `failed` with its "not supported by Windows" text.
+- **`kind`:** the same values; `system` is one of the user's own Windows VPNs (Settings → Network & internet → VPN).
+- **Error codes** are the same. On Windows:
+  - `setup_required`: an OpenVPN connection while OpenVPN Community is not installed (System Status installs it).
+  - `failed` with the service's text: an OpenVPN or WireGuard connection while the WinVPN Service is missing, not reachable or from another WinVPN version (never `setup_required`: the fix is repairing WinVPN). L2TP/IPsec, IKEv2, SSTP and system VPNs do not need the service.
+  - `failed` with the connection's reason: a connection Windows cannot run, such as Cisco IPsec ("Cisco IPsec is not supported by Windows. …") or IKEv2 with a pre-shared key, or a kind whose Windows VPN service is turned off.
 
 ### 11.2 Storing the token in Credential Manager
 
-Keep the token in the user's Credential Manager, as a generic credential of your own (WinVPN never reads it). **Never put the token on a command line** (`cmdkey /pass:…`, a program argument): every process of the user, and process-creation auditing, can see command lines.
+Keep the token in the user's Credential Manager, as a generic credential of your own (WinVPN never reads it). **Never put the token on a command line** (`cmdkey.exe /pass:…`, a program argument): every process of the user, and process-creation auditing, can see command lines.
 
 With `windows-sys` (features `Win32_Foundation`, `Win32_Security_Credentials`):
 

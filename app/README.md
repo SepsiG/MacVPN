@@ -4,9 +4,9 @@
   the operating system only through `macvpn-platform-api`: `src-tauri/src/platform/` (the app's only
   `cfg(target_os)`) creates the platform (`MacPlatform` from `macvpn-platform-mac` on macOS, `WinPlatform` from
   `macvpn-platform-win` on Windows) and holds the Tauri glue (native window handle, activation policy, the macOS
-  run events, the Windows single instance and its forwarded files) and the smoke driver (macOS). On Windows the app
-  is WinVPN (a preview without the VPN engine, phase 2a): no app menu, the popover above the taskbar icon, a tinted
-  tray icon, the engine note in System Status.
+  run events, the Windows single instance and its forwarded files) and the smoke driver. On Windows the app is
+  WinVPN: no app menu, the popover above the taskbar icon, a tinted tray icon, and System Status' rows for the
+  WinVPN Service, OpenVPN Community, WireGuard and the Windows VPN client.
 - `ui/`: the web UI (Svelte 5 + TypeScript + Vite). Texts come from `crates/core/l10n/strings.json` (scope `app`
   only is bundled); the language is the core's rule, sent by the backend in the view model. The OS and the product
   name (for the per-OS text variants and the Cmd / Ctrl shortcuts) come from the `get_platform` command at start.
@@ -15,7 +15,8 @@
 
 The rest of the repository: `crates/core` (platform-independent logic and the EN/HU text table), `crates/platform-api`
 (the platform traits and the product identity), `crates/platform-mac` (the macOS platform), `crates/platform-win` (the
-Windows platform), `crates/winsys` (its Win32 bindings, shared with core), `crates/helper` (the root binary `mvpn`), `scripts/` (build, test and signing scripts). How they fit
+Windows platform), `crates/winsys` (its Win32 bindings, shared with core), `crates/helper` (the root binary `mvpn` on
+macOS, the WinVPN Service `WinVPNService.exe` on Windows), `scripts/` (build, test and signing scripts). How they fit
 together: [`docs/architecture.md`](../docs/architecture.md). The 0.x Swift app is only in the git history (up to tag
 `v0.4.0`).
 
@@ -62,6 +63,9 @@ list comes from `CFBundleLocalizations` (no `.lproj` needed: the app reads the p
 `MVPN_IMPL=rust MVPN_BIN=$PWD/dist/MacVPN.app/Contents/Resources/root/mvpn scripts/test-root.sh` runs the root
 layer tests against the signed binary.
 
+The WinVPN MSIs (`WinVPN-<version>-x64.msi`, `-arm64.msi`) are built on Windows by `scripts/build-msi.sh`, with
+gates of their own: see [The WinVPN MSIs](../docs/architecture.md#the-winvpn-msis).
+
 ### The vault database: SQLCipher with CommonCrypto
 
 The vault (`crates/core`, behind the `vault` cargo feature, enabled by `macvpn-app-core` and
@@ -106,8 +110,8 @@ libsqlite3-sys` if one was set); `scripts/build-dmg.sh` unsets all of them itsel
 
 ## Running a development build without touching real data
 
-Debug builds honour `MACVPN_SANDBOX_HOME=<absolute dir>`: the connection store, `connection-order.json` and
-`system-otp.json` live under that directory, and the Keychain is replaced by an in-memory store (no migration, no
+Debug builds honour `MACVPN_SANDBOX_HOME=<absolute dir>`: the vault and the app's other files live under that
+directory, and the Keychain is replaced by an in-memory store (the vault's auto-unlock key stays in memory; no
 prompt). `mvpn status` and `scutil --nc list` still run (read-only). Release builds ignore the variable.
 
 ```sh
@@ -123,7 +127,8 @@ is registered, no notification is posted (notifications need an app bundle). The
 ask before quitting, "Download and Install" only quits the app.
 
 On Windows (at the desktop, in a Command Prompt; the sandbox keeps the vault key and the preferences in memory,
-never in Credential Manager or `%LOCALAPPDATA%\WinVPN`, and registers no login item):
+never in Credential Manager or `%LOCALAPPDATA%\WinVPN`, registers no login item, and its RAS engine writes only to a
+private phonebook under the sandbox, never dialling):
 
 ```bat
 cd app\ui && npm run dev
@@ -141,29 +146,24 @@ Toasts need the AppUserModelID of the installed MSI's Start-menu shortcut, so te
 `scripts/smoke-manage.sh` (after `npm run build` and `cargo build -p macvpn-app --features custom-protocol`)
 seeds a throwaway sandbox and starts the app with `MACVPN_SMOKE_DIR=scripts/smoke` (debug builds and the sandbox
 only). The scripts there run one after the other in the real windows, each saving its result into a seeded
-connection's name, and the shell checks the store and the log (`SMOKE_LOG=<file>` keeps the log).
+connection's name, and the shell checks the vault's dump and the log (`SMOKE_LOG=<file>` keeps the log).
 `SMOKE_LANG=en` / `SMOKE_LANG=hu` forces the language the way macOS selects it (`-AppleLanguages '(hu)'`, the
 argument domain of the `AppleLanguages` preference) and checks that the core picked it and the windows show it; run
-it in both before a release:
+it in both before a release. The header of `scripts/smoke-manage.sh` describes every step; in short:
 
-- `manage.js` (Connections): the risky panel and its acknowledgement, the unsaved-changes question, the Log tab,
-  the SSTP and native forms (the staged profile is 0600 and has no password; the editor view never holds the
-  stored password, an untouched field keeps it), New and Delete;
-- `setup.js` (System Status, over a mock report: a missing tool, root layer 6 installed, 7 bundled): the rows,
-  the reinstall notice, the simulated brew output, the root install error, the uninstall confirmation with the
-  user-data checkbox and its failure;
-- `update.js` (Update, over a mock release): the notes rendered as text (markup and HTML stay text), then
-  "Download and Install" with an unsaved change: the stages run up to the quit questions, "Unsaved Changes" is
-  cancelled, the update stops and its files are cleaned up;
-- `prompt.js` (MFA): a code prompt (the server's text labelled, a secure field, answered once it takes input) and
-  a web sign-in ("Open in Browser" with the ASCII host shown; the sandbox logs instead of opening).
-- `quit.js` (Connections): the quit flows' edge cases: a selection (as a notification click) while the menu
-  quit's "Unsaved Changes" is shown waits for its answer and the guard is freed by Cancel; "Download and Install"
-  with the Update window closed during the download still asks (in Connections), and closing the reopened Update
-  window while that question is shown cancels the update and dismisses the question;
-- `system.js` (Connections, last): an unsaved change; the shell then sends the app a quit Apple Event
-  (`NSRunningApplication.terminate`, as logout does) and checks that `applicationShouldTerminate` asked about the
-  change first (the script answers Discard) and that the app then quit.
+- the vault (`vault-create.js`, `vault-menu.js`, `vault-unlock.js`, `vault-password.js`), the Connections window
+  (`manage.js`, `folders.js`, `shared.js`, `shared-prompt.js`), System Status (`setup.js`, a mock report), Update
+  (`update.js`, a mock release), the MFA and credential prompts (`prompt.js`, `credentials.js`), backup and restore
+  (`backup.js`, `restore.js`), the control API (`control.js`, `pairing.js`, with the Node client
+  `control-client.mjs`), the live system VPN list (`live.js`, `live-menu.js`), team catalogs (`catalog.js`,
+  `publish.js`), files opened from Finder (`open.js`), the quit flows (`quit.js`, `system.js`);
+- the 2.0 features: `appearance.js`, `engines.js` (a missing engine greyed with "Not installed: … – System
+  Status"), `notices.js` (connection notifications, recorded: the sandbox posts none) and `reconnect.js`
+  (auto-reconnect over a scripted network and the sleep / wake hooks);
+- Windows only: `ras.js` (the native VPNs through the stand-in helper and native layer, never a dial).
+
+On Windows `scripts/win-smoke.sh en|hu` runs the same script in the test machine's desktop session; the AppKit-only
+steps (the Dock icon, the screenshots) print "skipped on Windows".
 
 ## Localization check
 
@@ -186,22 +186,31 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
 - Capabilities: only the app's own commands (generated as `allow-<command>` by `build.rs`) and listening to
   events. Each main window has its own file granting only the commands its UI uses: `menu.json` (the menu
   popover), `manage.json` (Connections), `setup.json` (System Status) and `update.json` (Update);
-  `prompt.json` (the `prompt-*` windows) grants only `get_view_model`, `prompt_ready` and `answer_prompt`. The
+  `prompt.json` (the `prompt-*` windows) grants only `get_view_model`, `get_platform`, `prompt_ready`,
+`answer_prompt`, `fit_window` and listening to events; `credentials.json` (`cred-*`), `pairing.json` (`pair-*`),
+`vault.json` (the vault windows), `restore-fresh.json` (a restore from the vault's create window) and
+`backup.json` (backup and restore) grant only their own windows' commands in the same way. The
   commands that change the machine or delete data also check the calling window's label in Rust (`guard.rs`):
   `ras_trust_ca`, `ras_allow_l2tp_nat`, `make_l2tp_copy`, `delete_connection`, `folder_delete`,
   `export_connection`, `control_set_enabled`, `control_set_allowed` and `control_revoke` (Connections only);
   the `setup_install_*` commands, `setup_uninstall`, `setup_open_system_uninstall` and `quit_after_uninstall`
   (System Status only); `update_install` (Update only). No core window / webview / path API, no plugin (a test keeps the files to exactly the generated commands). Every
   window's capability also grants `get_platform` (read-only, no input; it returns the OS and the product name).
-- Commands: `get_view_model`, `connect` (with the Option-click debug flag), `disconnect`, `pin`, `unpin`,
+- Commands (the full list is the `generate_handler!` in `src-tauri/src/main.rs`): the menu's `get_view_model`,
+  `get_platform`, `connect` (with the Option-click / Alt-click debug flag), `disconnect`, `pin`, `unpin`,
   `move_pinned`, `open_window`, `set_menu_height`, `quit`, `check_for_updates`, `set_update_option`,
-  `set_launch_at_login`, `open_login_items_settings`, `open_user_guide`; the Connections window's
-  `select_connection`, `resolve_unsaved`, `take_tab_request`, `editor_open` / `_update` / `_save` / `_forget` /
-  `_choose_ca`, `create_connection`, `import_files`, `answer_question`, `export_check`, `export_connection`,
-  `delete_connection`, `log_subscribe`, `log_copy`, `log_save`; System Status's `setup_check`,
-  `setup_install_homebrew`, `setup_install_tools`, `setup_install_root`, `setup_uninstall` (the user-data flag),
-  `quit_after_uninstall`; the Update window's `update_install`, `update_open_page`, `update_dismiss_notice`,
-  `close_window` (System Status / Update only); the prompt windows' `prompt_ready` and `answer_prompt`. Each validates its input (UUID-shaped keys that
+  `set_launch_at_login`, `set_appearance`, `set_connection_notifications`, `open_login_items_settings`,
+  `open_user_guide`; the Connections window's `select_connection`, `resolve_unsaved`, `take_tab_request`,
+  `editor_open` / `_update` / `_save` / `_forget` / `_choose_ca`, `create_connection`, `import_files`,
+  `answer_question`, `export_check`, `export_connection`, `delete_connection`, `set_auto_reconnect`,
+  `log_subscribe`, `log_copy`, `log_save`, the native VPNs' `ras_ca_summary`, `ras_trust_ca`, `ras_allow_l2tp_nat`,
+  `make_l2tp_copy`, and the `folder_*`, `item_*`, `credential_*`, `control_*`, `catalog_*`, `admin_key_*`,
+  `publish_*` and `publication_*` families; System Status's `setup_check`, `setup_install_homebrew`,
+  `setup_install_tools`, `setup_install_root`, `setup_uninstall` (the user-data flag),
+  `setup_open_system_uninstall`, `quit_after_uninstall`; the Update window's `update_install`, `update_open_page`,
+  `update_dismiss_notice`, `close_window` (System Status / Update only); the prompt windows' `prompt_ready` /
+  `answer_prompt`, `credentials_ready` / `answer_credentials`, `pairing_ready` / `pairing_answer`; the vault's
+  `vault_*` and the backup's `backup_*` / `restore_*`. Each validates its input (UUID-shaped keys that
   must name a listed connection, bounded indexes and sizes, allow-listed window names, kinds, options, filters
   and answers; typed editor fields with the config text and CA PEM at most 1 MB, other fields 64 KB, unknown
   fields refused). Help and the release page only ever open a plain `https://github.com/…` URL.
@@ -221,22 +230,32 @@ Every text has an English key and a Hungarian text in `crates/core/l10n/strings.
   `null` for each secret field and a `hasStoredSecret` flag; the field shows "Saved — type to replace". A value
   is only sent to the backend when the user types a new one (or `""` after "Remove saved password"); saving with
   an untouched field keeps the stored value (in the vault). Only the non-secret user name is shown.
-- Files: no command takes or returns a path. Import, the SSTP CA file, export and the log's Save… use an
-  `NSOpenPanel` / `NSSavePanel` sheet shown by the Rust side (`platform-mac::dialogs`), and a drop on the
+- Files: no command takes or returns a path. Import, the SSTP CA file, export and the log's Save… use a panel
+  shown by the Rust side (macOS: an `NSOpenPanel` / `NSSavePanel` sheet, `platform-mac::dialogs`; Windows:
+  `IFileOpenDialog` / `IFileSaveDialog`), and a drop on the
   Connections window arrives as the window's drag-drop event (system paths, not from the web view); the import
   reads only regular UTF-8 files of at most 1 MB. Exports and saved logs are written 0600 without following a
   symlink. No dialog / fs plugin and no extra permission.
-- Preferences: the same `UserDefaults` keys as 0.x in the `local.macvpn` domain (CFPreferences), so the settings
-  carry over from 0.x; the sandbox keeps them in memory. The update check only runs from a bundle whose Info.plist names the update source.
+- Preferences: on macOS the same `UserDefaults` keys as 0.x in the `local.macvpn` domain (CFPreferences), so the
+  settings carry over from 0.x; on Windows `%LOCALAPPDATA%\WinVPN\preferences.json` (private). The sandbox keeps
+  them in memory. On macOS the update check only runs from a bundle whose Info.plist names the update source; WinVPN
+  has the source built in.
 
 ## Notifications
 
-Only from a real app bundle (`UNUserNotificationCenter` needs a bundle identifier), through
-`objc2-user-notifications`: permission for alerts with sound at launch, banners with sound in the foreground too,
-"…: connection failed" / "…: the connection dropped" / "…: authentication needed" with generic bodies (a
-failure's reason, server or user name never appears on the lock screen; the details stay in the app). A click
-on an authentication notification brings its prompt forward; any other click opens the Connections window on
-the connection, on its Log tab for a managed one.
+Only from a real app bundle on macOS (`UNUserNotificationCenter` needs a bundle identifier, through
+`objc2-user-notifications`; permission for alerts with sound at launch, banners with sound in the foreground too)
+and from the installed MSI on Windows (WinRT toasts need the AppUserModelID `local.winvpn` of its Start-menu
+shortcut). The sandbox posts none.
+
+- **Connection notifications** (2.0, `app-core::connection_notices`): connected, reconnected, dropped, failed, not
+  reconnected, could not reconnect, each with a fixed reason sentence that names only the connection (no server,
+  user name, address or log line on the lock screen). Settings → **Connection Notifications** turns them off.
+- **Always** (not behind the switch): the MFA and credential prompts' "authentication needed" notifications and the
+  team catalog notices.
+
+A click on an authentication notification brings its prompt forward; any other click opens the Connections window
+on the connection, on its Log tab for a managed one.
 
 ## Quitting
 
@@ -263,12 +282,16 @@ then "There are active VPN connections" (in the menu; for an update in the Updat
 - While a quit's "Unsaved Changes" is shown, a selection (a notification click, an Option-click debug connect)
   never replaces it: it follows once the question is answered, if the app keeps running.
 - The uninstaller's final "Quit MacVPN" asks only about unsaved changes (the root layer is gone).
+- On Windows, platform-win's lifecycle window answers a logoff or shutdown (`WM_QUERYENDSESSION`) with the same
+  questions (Windows is held with "Closing WinVPN…" meanwhile); the popover's Quit asks as on macOS.
 
 ## Threads
 
 The main thread only runs the event loop. The platform calls are synchronous, so connect / disconnect run on the
 blocking pool, the status poller (3 s with an active connection, 30 s otherwise, re-checked every second; an
-open popover or a woken Mac – `NSWorkspace` `didWake` – refreshes at once) and the launch steps on their own threads. One publisher thread
+open popover or a wake – `NSWorkspace` `didWake` on macOS, `PBT_APMRESUMEAUTOMATIC` on Windows – refreshes at once)
+and the launch steps on their own threads. Auto-reconnect has its own thread (`macvpn-reconnect`), fed by the sleep,
+wake and network-change events. One publisher thread
 coalesces the manager's change notifications and emits the latest view model (`view-model`) and tray icon. The
 Connections window's Log tab is polled every 0.5 s on its own thread (`log-lines` events, numbered by
 subscription); a native debug connect's `log stream` has a reader thread and stops after 60 s or once the
