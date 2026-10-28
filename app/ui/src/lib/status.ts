@@ -28,6 +28,8 @@ export function statusLine(row: Row, now: number): StatusLine {
       return { type: row.typeLabel, status: row.reason, tone: 'fail' };
     case 'awaitingAuth':
       return { type: row.typeLabel, status: tr('Waiting for authentication'), tone: 'busy' };
+    case 'waitingForNetwork':
+      return { type: row.typeLabel, status: tr('Waiting for network…'), tone: 'busy' };
     default:
       return { ...idleLine(row), tone: 'off' };
   }

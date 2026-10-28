@@ -80,7 +80,7 @@ force-tls-key-material-export	safe	-
 fragment	safe	-
 genkey	forbidden	-
 gremlin	risky	Debugging option that deliberately disrupts the connection
-group	risky	Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects
+group	risky	Drops root privileges after start: reconnecting may fail; MacVPN still restores DNS when the connection ends
 hand-window	safe	-
 hash-size	risky	Server-side option, not meant for a client connection
 help	risky	Standalone mode: OpenVPN prints information or exits instead of connecting
@@ -303,7 +303,7 @@ up	forbidden	-
 up-delay	safe	-
 up-restart	risky	Changes when MacVPN's DNS hooks run
 use-prediction-resistance	safe	-
-user	risky	Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects
+user	risky	Drops root privileges after start: reconnecting may fail; MacVPN still restores DNS when the connection ends
 username-as-common-name	risky	Server-side option, not meant for a client connection
 verb	safe	-
 verify-client-cert	risky	Server-side option, not meant for a client connection

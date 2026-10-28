@@ -335,6 +335,28 @@ fn a_missing_psk_is_refused_before_dialling_and_logged() {
     assert!(!engine.log_path(&c.id).exists(), "the log goes with the connection");
 }
 
+/// "Clear Log…" of a RAS log (no dial holds it): the same file emptied with the note first, `.1` emptied too, through
+/// the native controller (L2TP) and the helper (IKEv2 / SSTP read the RAS log when there is one).
+#[test]
+fn the_ras_log_is_cleared_in_place() {
+    let t = TempData::new();
+    let engine = t.engine();
+    let c = l2tp(UNREACHABLE, true);
+    install(&engine, &c).unwrap();
+    let no_psk = Secrets { psk: None, ..secrets() };
+    assert!(engine.controller().start(&names::entry_name(&c.id), None, &no_psk).is_err());
+    let path = engine.log_path(&c.id);
+    let rotated = path.with_extension("log.1");
+    std::fs::write(&rotated, "older\n").unwrap();
+    assert!(log_text(&engine, &c.id).starts_with("═══ "));
+    assert_eq!(engine.controller().clear_log(&c.id, "═══ NOTE ═══"), Ok(true));
+    assert_eq!(log_text(&engine, &c.id), "═══ NOTE ═══\n");
+    assert_eq!(std::fs::read(&rotated).unwrap(), b"");
+    assert_eq!(engine.helper().clear_log(&c.id, "═══ NOTE 2 ═══"), Ok(()));
+    assert_eq!(log_text(&engine, &c.id), "═══ NOTE 2 ═══\n");
+    engine.profiles().remove(&c.id);
+}
+
 #[test]
 fn a_start_without_a_saved_profile_says_to_save_again() {
     let t = TempData::new();

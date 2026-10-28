@@ -18,7 +18,7 @@ use macvpn_core::l10n;
 use macvpn_core::models::{AuthWaitKind, ConnectionState, VPNKind, uuid_string};
 use macvpn_core::vault::{ColorSource, FolderColor, FolderTree, TreeEntry};
 use serde::Serialize;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use uuid::Uuid;
 
 /// The menu bar icon (the Swift `menuBarSymbol`): template glyphs, the system tints them.
@@ -27,24 +27,46 @@ use uuid::Uuid;
 pub enum TrayIcon {
     /// `shield`: nothing active (grey).
     Idle,
-    /// `checkmark.shield.fill`: a connection is active (green).
+    /// `shield.lefthalf.filled`: a connection is still connecting or reconnecting (a native VPN's approval included),
+    /// none waits for the user.
+    Connecting,
+    /// The same half-filled shield: a connection that is up or connecting has no physical network under it
+    /// ([`ViewModel::set_waiting_for_network`]); the tooltip says so.
+    WaitingForNetwork,
+    /// `checkmark.shield.fill`: a connection is up (or still going down), none is connecting.
     Active,
     /// `exclamationmark.shield.fill`: a failure or a status error (red).
     Failure,
-    /// `key.fill`: waiting for authentication (code or web sign-in).
+    /// `key.fill`: waiting for authentication (code, web sign-in or credentials).
     Auth,
 }
 
 impl TrayIcon {
+    /// Several connections: the one needing the user first (authentication, then a failure), then one still in
+    /// progress (connecting wins over connected: the icon must never claim a tunnel is up while one is still being
+    /// set up, and the settled state follows within a poll), then one up.
     pub fn from_snapshot(s: &ManagerSnapshot) -> TrayIcon {
         if s.awaiting_auth {
             TrayIcon::Auth
         } else if s.has_failure || s.status_error.is_some() {
             TrayIcon::Failure
+        } else if s.connecting {
+            TrayIcon::Connecting
         } else if s.has_active {
             TrayIcon::Active
         } else {
             TrayIcon::Idle
+        }
+    }
+
+    /// The icon's tooltip in the current language; `None`: the product name alone.
+    pub fn tooltip(self) -> Option<String> {
+        match self {
+            TrayIcon::Connecting => Some(l10n::tr("MacVPN – Connecting…", &[])),
+            TrayIcon::WaitingForNetwork => Some(l10n::tr("MacVPN – Waiting for network…", &[])),
+            TrayIcon::Active => Some(l10n::tr("MacVPN – Connected", &[])),
+            TrayIcon::Auth => Some(l10n::tr("MacVPN – Waiting for authentication", &[])),
+            TrayIcon::Idle | TrayIcon::Failure => None,
         }
     }
 }
@@ -68,6 +90,9 @@ pub enum RowState {
         wait: &'static str,
         deadline: Option<f64>,
     },
+    /// Up or connecting, but the physical network is gone ([`ViewModel::set_waiting_for_network`]): never from a
+    /// `ConnectionState` alone.
+    WaitingForNetwork,
 }
 
 impl From<&ConnectionState> for RowState {
@@ -659,6 +684,54 @@ impl ViewModel {
     pub fn set_auto_reconnect(&mut self, enabled: &dyn Fn(&str) -> bool) {
         for row in self.rows.iter_mut().filter(|r| r.managed) {
             row.auto_reconnect = Some(enabled(&row.id));
+        }
+    }
+
+    /// The connections waiting for network (the reconnect planner's `waiting_for_network`): their rows say so
+    /// instead of "connected" / "connecting", a folder dot is green only for a connection really up, and the tray
+    /// shows the half-filled shield with "Waiting for network…" unless an authentication wait or a failure wins.
+    pub fn set_waiting_for_network(&mut self, keys: &[String]) {
+        let mut any = false;
+        for row in self.rows.iter_mut().filter(|r| keys.contains(&r.id)) {
+            if matches!(row.state, RowState::Connected { .. } | RowState::Connecting) {
+                row.state = RowState::WaitingForNetwork;
+                any = true;
+            }
+        }
+        if !any {
+            return;
+        }
+        if matches!(self.tray, TrayIcon::Active | TrayIcon::Connecting) {
+            self.tray = TrayIcon::WaitingForNetwork;
+        }
+        // The folders above a connection still really up (its folder and every ancestor).
+        let parents: HashMap<&str, Option<&str>> = self
+            .tree
+            .iter()
+            .filter_map(|t| match t {
+                TreeRowView::Folder { id, parent, .. } => Some((id.as_str(), parent.as_deref())),
+                TreeRowView::Item { .. } => None,
+            })
+            .collect();
+        let mut lit: HashSet<&str> = HashSet::new();
+        for t in &self.tree {
+            let TreeRowView::Item { id, parent, .. } = t else { continue };
+            if !self.rows.iter().any(|r| &r.id == id && matches!(r.state, RowState::Connected { .. })) {
+                continue;
+            }
+            let mut folder = parent.as_deref();
+            while let Some(f) = folder {
+                if !lit.insert(f) {
+                    break;
+                }
+                folder = parents.get(f).copied().flatten();
+            }
+        }
+        let lit: HashSet<String> = lit.into_iter().map(str::to_string).collect();
+        for t in &mut self.tree {
+            if let TreeRowView::Folder { id, has_connected, .. } = t {
+                *has_connected = lit.contains(id.as_str());
+            }
         }
     }
 

@@ -100,7 +100,7 @@ Step by step: How-to guides for [MacVPN](docs/how-to.en.md) and [WinVPN](docs/wi
 - WinVPN user guide (Windows): [English](docs/winvpn-user-guide.en.md), [Hungarian](docs/winvpn-user-guide.hu.md); WinVPN How-to: [English](docs/winvpn-how-to.en.md), [Hungarian](docs/winvpn-how-to.hu.md)
 - [OpenVPN directive policy](docs/openvpn-directives.md)
 - Control API for other apps on the same Mac or PC: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
-- Release notes: [2.0.0](docs/release-notes/2.0.0.md); all releases on the [Releases](https://github.com/SepsiG/MacVPN/releases) page
+- Release notes: [2.0.2](docs/release-notes/2.0.2.md), [2.0.1](docs/release-notes/2.0.1.md), [2.0.0](docs/release-notes/2.0.0.md); all releases on the [Releases](https://github.com/SepsiG/MacVPN/releases) page
 
 ### Security note
 Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. A team catalog is signed and encrypted, but everyone with the team key can read it, and whoever holds the admin key decides what your team connects to: see the [team catalog security model](docs/user-guide.en.md#1611-security-model). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
@@ -248,7 +248,7 @@ Lépésről lépésre: Hogyan használd – [MacVPN](docs/how-to.hu.md) és [Win
 - A WinVPN felhasználói útmutatója (Windows): [magyar](docs/winvpn-user-guide.hu.md), [angol](docs/winvpn-user-guide.en.md); WinVPN – Hogyan csináld: [magyar](docs/winvpn-how-to.hu.md), [angol](docs/winvpn-how-to.en.md)
 - [OpenVPN direktíva-szabályok](docs/openvpn-directives.md) (angolul, magyar összefoglalóval)
 - Vezérlő API más appoknak ugyanazon a Macen vagy számítógépen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
-- Kiadási jegyzetek: [2.0.0](docs/release-notes/2.0.0.md#magyar); az összes kiadás a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon
+- Kiadási jegyzetek: [2.0.2](docs/release-notes/2.0.2.md#magyar), [2.0.1](docs/release-notes/2.0.1.md#magyar), [2.0.0](docs/release-notes/2.0.0.md#magyar); az összes kiadás a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon
 
 ### Biztonsági megjegyzés
 A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. A csapatkatalógus alá van írva és titkosítva van, de akinél megvan a csapatkulcs, elolvashatja, és aki az aláírókulcsot birtokolja, az dönti el, mihez csatlakozik a csapatod: lásd [a csapatkatalógusok biztonsági modelljét](docs/user-guide.hu.md#1611-biztonsági-modell). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).

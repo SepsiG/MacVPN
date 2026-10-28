@@ -34,6 +34,12 @@ pub trait HelperClient: Send + Sync {
     fn log_source(&self, id: &Uuid) -> Option<Box<dyn LogSource>> {
         self.log_path(id).map(|path| Box::new(FileLogSource { path }) as Box<dyn LogSource>)
     }
+    /// "Clear Log…": empties the connection's log as the Log tab reads it (its rotated part too), in place, so a
+    /// running connection keeps logging; `note` (`═══ Log cleared at <time> ═══`) becomes its first line. `Ok`
+    /// also when there is no log. Default: this helper keeps none.
+    fn clear_log(&self, _id: &Uuid, _note: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// The management bridge's UI state file (`/var/run/macvpn-ui/<id>.json`), read safely.

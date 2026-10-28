@@ -57,6 +57,13 @@ pub enum Notice {
         key: String,
         why: Skip,
     },
+    /// Disconnected by the app after [`crate::reconnect::OFFLINE_GRACE`] without a network. `reconnects`: it is
+    /// reconnected when the network is back ("Reconnect Automatically" on, not a lease's).
+    DisconnectedNoNetwork {
+        key: String,
+        name: String,
+        reconnects: bool,
+    },
 }
 
 /// The last state seen per connection, and the connects started by auto-reconnect. "Connected" is reported only for
@@ -139,7 +146,8 @@ fn own_name(notice: &Notice) -> &str {
         | Notice::Dropped { name, .. }
         | Notice::Failed { name, .. }
         | Notice::NotReconnected { name, .. }
-        | Notice::ReconnectFailed { name, .. } => name.as_str(),
+        | Notice::ReconnectFailed { name, .. }
+        | Notice::DisconnectedNoNetwork { name, .. } => name.as_str(),
         Notice::DisconnectedHere { .. } => "",
     }
 }
@@ -163,6 +171,8 @@ fn title(notice: &Notice, name: &str) -> String {
         (Notice::ReconnectFailed { .. }, true) => l10n::tr("A VPN connection could not reconnect", &[]),
         (Notice::DisconnectedHere { .. }, false) => l10n::tr("%@ disconnected", &n),
         (Notice::DisconnectedHere { .. }, true) => l10n::tr("A VPN connection dropped", &[]),
+        (Notice::DisconnectedNoNetwork { .. }, false) => l10n::tr("%@ disconnected", &n),
+        (Notice::DisconnectedNoNetwork { .. }, true) => l10n::tr("A VPN connection dropped", &[]),
     }
 }
 
@@ -186,6 +196,12 @@ pub fn content_named(notice: &Notice, name: &str, unique: String) -> Notificatio
         }
         Notice::NotReconnected { key, why, .. } => (key, skip_text(why)),
         Notice::DisconnectedHere { key, why } => (key, disconnected_here_text(why)),
+        Notice::DisconnectedNoNetwork { key, reconnects: true, .. } => {
+            (key, l10n::tr("There was no network for 2 minutes. It reconnects when the network is back.", &[]))
+        }
+        Notice::DisconnectedNoNetwork { key, reconnects: false, .. } => {
+            (key, l10n::tr("There was no network for 2 minutes.", &[]))
+        }
     };
     NotificationContent { id: unique, title: title(notice, name), body, user_info: (CONNECTION_KEY, key.clone()) }
 }

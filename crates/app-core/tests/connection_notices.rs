@@ -243,6 +243,31 @@ fn a_tunnel_disconnected_here_names_the_connection_and_not_the_network() {
     });
 }
 
+/// A connection the app disconnected after two minutes without a network (the planner's notice).
+#[test]
+fn a_disconnect_without_a_network_says_whether_it_reconnects() {
+    let back = Notice::DisconnectedNoNetwork { key: "k".into(), name: "Office VPN".into(), reconnects: true };
+    let gone = Notice::DisconnectedNoNetwork { key: "k".into(), name: "Office VPN".into(), reconnects: false };
+    with_language(AppLanguage::En, || {
+        let n = content(&back, "u".into());
+        assert_eq!(
+            (n.title.as_str(), n.body.as_str()),
+            ("Office VPN disconnected", "There was no network for 2 minutes. It reconnects when the network is back.")
+        );
+        assert_eq!(n.user_info, (CONNECTION_KEY, "k".to_string()));
+        assert_eq!(content(&gone, "u".into()).body, "There was no network for 2 minutes.");
+        let unnamed = Notice::DisconnectedNoNetwork { key: "k".into(), name: "".into(), reconnects: false };
+        assert_eq!(content(&unnamed, "u".into()).title, "A VPN connection dropped");
+    });
+    with_language(AppLanguage::Hu, || {
+        assert_eq!(
+            content(&back, "u".into()).body,
+            "2 percig nem volt hálózat. Újracsatlakozik, amikor visszajön a hálózat."
+        );
+        assert_eq!(content(&gone, "u".into()).body, "2 percig nem volt hálózat.");
+    });
+}
+
 #[test]
 fn the_switch_field_is_absent_until_the_app_sets_it() {
     let mut vm = macvpn_app_core::ViewModel::build(

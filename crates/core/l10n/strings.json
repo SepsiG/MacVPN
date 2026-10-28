@@ -272,6 +272,10 @@
         "macos"
       ]
     },
+    "Any Time": {
+      "hu": "Bármikor",
+      "scope": "app"
+    },
     "Applying settings…": {
       "hu": "Beállítások alkalmazása…",
       "scope": "platform",
@@ -328,6 +332,18 @@
         "windows"
       ]
     },
+    "Clear Log": {
+      "hu": "Napló törlése",
+      "scope": "app"
+    },
+    "Clear Log…": {
+      "hu": "Napló törlése…",
+      "scope": "app"
+    },
+    "Clear the log of %@?": {
+      "hu": "Törlöd a naplót: %@?",
+      "scope": "app"
+    },
     "Connected": {
       "hu": "Csatlakozva",
       "scope": "platform",
@@ -349,12 +365,24 @@
         "windows"
       ]
     },
+    "Could not clear the log": {
+      "hu": "A napló nem törölhető",
+      "scope": "app"
+    },
+    "Custom Range": {
+      "hu": "Egyéni időszak",
+      "scope": "app"
+    },
     "Disconnected": {
       "hu": "Bontva",
       "scope": "platform",
       "only": [
         "windows"
       ]
+    },
+    "From": {
+      "hu": "Ettől",
+      "scope": "app"
     },
     "IP configuration done": {
       "hu": "IP-beállítások kész",
@@ -363,12 +391,28 @@
         "windows"
       ]
     },
+    "Last 15 Minutes": {
+      "hu": "Utolsó 15 perc",
+      "scope": "app"
+    },
+    "Last 5 Minutes": {
+      "hu": "Utolsó 5 perc",
+      "scope": "app"
+    },
+    "Last Hour": {
+      "hu": "Utolsó óra",
+      "scope": "app"
+    },
     "Link established": {
       "hu": "Az összeköttetés létrejött",
       "scope": "platform",
       "only": [
         "windows"
       ]
+    },
+    "Log cleared at %@": {
+      "hu": "Napló törölve: %@",
+      "scope": "core-rust"
     },
     "Measuring link speed…": {
       "hu": "Kapcsolati sebesség mérése…",
@@ -433,8 +477,26 @@
         "windows"
       ]
     },
+    "The connection's log cannot be cleared: it belongs to another user or cannot be written.": {
+      "hu": "A kapcsolat naplóját nem lehet törölni: egy másik felhasználóé, vagy nem írható.",
+      "scope": "platform",
+      "only": [
+        "macos"
+      ]
+    },
+    "The log could not be cleared: %@": {
+      "hu": "A naplót nem sikerült törölni: %@",
+      "scope": "platform"
+    },
     "The Windows service %@ is disabled. An administrator must set it to Manual (services.msc).": {
       "hu": "A(z) %@ Windows-szolgáltatás le van tiltva. Egy rendszergazdának Kézi indításra kell állítania (services.msc).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The WinVPN Service is older than this app and cannot clear the log. Update WinVPN, then try again.": {
+      "hu": "A WinVPN Service régebbi, mint az alkalmazás, és nem tudja törölni a naplót. Frissítsd a WinVPN-t, majd próbáld újra.",
       "scope": "platform",
       "only": [
         "windows"
@@ -446,6 +508,10 @@
       "only": [
         "windows"
       ]
+    },
+    "This cannot be undone.": {
+      "hu": "Ez nem vonható vissza.",
+      "scope": "app"
     },
     "This Windows VPN no longer exists. It may have been removed in Settings → Network & internet → VPN.": {
       "hu": "Ez a Windows VPN már nem létezik. Lehet, hogy törölték a Gépházban: Hálózat és internet → VPN.",
@@ -628,6 +694,18 @@
       "only": [
         "windows"
       ]
+    },
+    "Time": {
+      "hu": "Idő",
+      "scope": "app"
+    },
+    "To": {
+      "hu": "Eddig",
+      "scope": "app"
+    },
+    "Today": {
+      "hu": "Ma",
+      "scope": "app"
     },
     "Waiting for terminal input (not used by VPNs)": {
       "hu": "Kézi bevitelre vár (VPN-nél nem használt)",
@@ -1793,6 +1871,10 @@
       "hu": "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat, és a DNS-t csak a MacVPN bontása állítja vissza",
       "scope": "core"
     },
+    "Drops root privileges after start: reconnecting may fail; MacVPN still restores DNS when the connection ends": {
+      "hu": "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat; a MacVPN a kapcsolat végén így is visszaállítja a DNS-t",
+      "scope": "core"
+    },
     "Duplicate": {
       "hu": "Másolat készítése",
       "scope": "app"
@@ -2618,6 +2700,22 @@
     "MacVPN backup admin key": {
       "hu": "MacVPN tartalék adminkulcs",
       "scope": "core-rust"
+    },
+    "MacVPN – Connected": {
+      "hu": "MacVPN – Csatlakozva",
+      "scope": "platform"
+    },
+    "MacVPN – Connecting…": {
+      "hu": "MacVPN – Csatlakozás…",
+      "scope": "platform"
+    },
+    "MacVPN – Waiting for authentication": {
+      "hu": "MacVPN – Hitelesítésre vár",
+      "scope": "platform"
+    },
+    "MacVPN – Waiting for network…": {
+      "hu": "MacVPN – Hálózatra vár…",
+      "scope": "platform"
     },
     "MacVPN checks your master password before every backup.": {
       "hu": "A MacVPN minden mentés előtt ellenőrzi a mesterjelszót.",
@@ -4759,6 +4857,14 @@
       "hu": "Nincs „%@” nevű közös hitelesítő adat. A kapcsolat a saját felhasználónevét és jelszavát használja.",
       "scope": "app"
     },
+    "There was no network for 2 minutes.": {
+      "hu": "2 percig nem volt hálózat.",
+      "scope": "app"
+    },
+    "There was no network for 2 minutes. It reconnects when the network is back.": {
+      "hu": "2 percig nem volt hálózat. Újracsatlakozik, amikor visszajön a hálózat.",
+      "scope": "app"
+    },
     "These connections are up and are disconnected first:": {
       "hu": "Ezek a kapcsolatok fennállnak, és előbb bontásra kerülnek:",
       "scope": "app"
@@ -5185,8 +5291,8 @@
       "hu": "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
       "scope": "core"
     },
-    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset>": {
-      "hu": "Használat: up|down <openvpn|wireguard> <azonosító> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <azonosító> | status | version | engine | auth-state <azonosító> | log <azonosító> <eltolás>",
+    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id>": {
+      "hu": "Használat: up|down <openvpn|wireguard> <azonosító> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <azonosító> | status | version | engine | auth-state <azonosító> | log <azonosító> <eltolás> | clear-log <azonosító>",
       "scope": "mvpn",
       "only": [
         "windows"
@@ -5359,6 +5465,10 @@
     },
     "Waiting for authentication": {
       "hu": "Hitelesítésre vár",
+      "scope": "app"
+    },
+    "Waiting for network…": {
+      "hu": "Hálózatra vár…",
       "scope": "app"
     },
     "Weak": {

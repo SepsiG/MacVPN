@@ -86,6 +86,30 @@ fn the_client_connects_reads_status_and_the_log_through_the_service() {
     assert!(client.helper().log_source(&other).unwrap().read(0, 1024).is_none());
 }
 
+/// "Clear Log…" through the service while the connection is up: the log starts over (a new generation) with the
+/// service's note and its local time; an unknown ID is the service's refusal, never a cleared log.
+#[test]
+fn the_client_clears_the_log_through_the_service() {
+    let c = Console::start();
+    let client = macvpn_platform_win::service_client_for_tests(&c.pipe);
+    let id = uuid::Uuid::new_v4();
+    client.helper().up(VPNKind::Wireguard, &id, WG, &Secrets::default(), false, &[]).unwrap();
+    let mut src = client.helper().log_source(&id).unwrap();
+    let before = src.read(0, 1 << 20).unwrap();
+    assert!(String::from_utf8_lossy(&before.data).contains("fake engine: starting"));
+    macvpn_core::l10n::with_language(macvpn_core::l10n::AppLanguage::En, || {
+        client.helper().clear_log(&id, "ignored: the service writes its own note").unwrap();
+    });
+    let after = src.read(0, 1 << 20).unwrap();
+    assert_ne!(after.identity, before.identity, "a new generation: the Log tab's tail starts over");
+    let text = String::from_utf8_lossy(&after.data).to_string();
+    let time = text.strip_prefix("═══ Log cleared at ").and_then(|t| t.strip_suffix(" ═══\n")).unwrap_or_default();
+    assert!(macvpn_app_core::logs::line_time(text.trim_end()).is_some(), "{text}");
+    assert!(time.len() == 19 && time.as_bytes()[4] == b'-' && time.as_bytes()[13] == b':', "{text}");
+    client.helper().down(VPNKind::Wireguard, &id).unwrap();
+    assert!(client.helper().clear_log(&uuid::Uuid::new_v4(), "").is_err());
+}
+
 #[test]
 fn the_service_messages_come_back_in_the_apps_language() {
     let c = Console::start();

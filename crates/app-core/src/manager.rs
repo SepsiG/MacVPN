@@ -257,6 +257,9 @@ pub enum DisconnectCause {
     User,
     /// The control API's last lease on the connection ended.
     Lease,
+    /// No physical network for `reconnect::OFFLINE_GRACE` (the network loss rule): not the user's, so
+    /// auto-reconnect may bring it back when the network is; leases on it end as on a drop.
+    NoNetwork,
 }
 
 #[derive(Default, Clone)]
@@ -590,6 +593,8 @@ pub struct ManagerSnapshot {
     pub has_active: bool,
     pub has_failure: bool,
     pub awaiting_auth: bool,
+    /// A connection is connecting or reconnecting (not waiting for authentication: [`Self::awaiting_auth`]).
+    pub connecting: bool,
     /// The folder tree and the placements (spec 3).
     pub folders: FolderSnapshot,
 }
@@ -928,6 +933,7 @@ impl ConnectionManager {
                 has_active: i.has_active(),
                 has_failure: i.states.values().any(|s| matches!(s, ConnectionState::Failed(_))),
                 awaiting_auth: i.states.values().any(|s| matches!(s, ConnectionState::AwaitingAuth(_))),
+                connecting: i.states.values().any(|s| matches!(s, ConnectionState::Connecting)),
                 folders: FolderSnapshot {
                     enabled: self.deps.folders.is_some(),
                     folders: i.folders.clone(),

@@ -1,8 +1,10 @@
 //! The connection logs of the service: `<dir>\<ID>.log`, one per connection, replaced at each `up` (a new
 //! generation), masked line by line, at most [`LOG_MAX`] each. A log that reaches its cap during a session (OpenVPN
 //! runs for days and its stdout comes here) is rolled: it becomes `<ID>.log.1` (one generation kept, replaced), a new
-//! `<ID>.log` starts with a line naming it, and the generation changes, so the app's tail starts over. The directory
-//! is the service's private `logs` folder (Task 12 creates it SYSTEM-only); names come only from canonical UUIDs.
+//! `<ID>.log` starts with a line naming it, and the generation changes, so the app's tail starts over. "Clear Log…"
+//! ([`FileLogStore::clear`]) empties `<ID>.log` in place under the writing sink's lock, deletes `<ID>.log.1`, starts
+//! the log with the note and takes a new generation the same way. The directory is the service's private `logs`
+//! folder (Task 12 creates it SYSTEM-only); names come only from canonical UUIDs.
 
 use crate::shared::mask::Masker;
 use crate::windows::service::{LogSink, LogStore};
@@ -12,7 +14,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError, Weak};
 
 pub const LOG_MAX: u64 = 8 * 1024 * 1024;
 
@@ -25,6 +27,9 @@ struct Shared {
     dir: PathBuf,
     next_generation: AtomicU64,
     generations: Mutex<HashMap<String, u64>>,
+    /// The newest sink of each log (a clear writes through its handle). Lock order: a sink's state, then
+    /// `generations`; this map is never held with either.
+    sinks: Mutex<HashMap<String, Weak<Mutex<SinkState>>>>,
 }
 
 impl FileLogStore {
@@ -36,13 +41,40 @@ impl FileLogStore {
     pub fn with_max(dir: PathBuf, max: u64) -> FileLogStore {
         // Generations only need to differ within one service run and from 0 (no log).
         let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(1, |d| d.as_secs() << 16);
-        let shared = Shared { dir, next_generation: AtomicU64::new(seed.max(1)), generations: Mutex::default() };
+        let shared = Shared {
+            dir,
+            next_generation: AtomicU64::new(seed.max(1)),
+            generations: Mutex::default(),
+            sinks: Mutex::default(),
+        };
         FileLogStore { shared: Arc::new(shared), max: max.max(1) }
     }
 
     fn path(&self, id: &str) -> Option<PathBuf> {
         self.shared.path(id)
     }
+}
+
+/// Empties the log file of `st` (or the file at `path` when no sink writes it any more), in place, and writes
+/// `note` first. A sink's handle is not an append handle: it goes back to the start, or its next line would land
+/// after a gap.
+fn empty_with_note(st: Option<&mut SinkState>, path: &std::path::Path, note: &str) -> Option<()> {
+    let line = format!("{note}\n");
+    match st.and_then(|st| st.file.as_mut().map(|f| (f, &mut st.written))) {
+        Some((f, written)) => {
+            f.set_len(0).ok()?;
+            f.seek(SeekFrom::Start(0)).ok()?;
+            f.write_all(line.as_bytes()).ok()?;
+            *written = line.len() as u64;
+        }
+        None => {
+            // Never through a link (the folder is SYSTEM-only; still checked): only the regular file is opened.
+            std::fs::symlink_metadata(path).ok().filter(|m| m.file_type().is_file())?;
+            let mut f = OpenOptions::new().write(true).truncate(true).open(path).ok()?;
+            f.write_all(line.as_bytes()).ok()?;
+        }
+    }
+    Some(())
 }
 
 impl Shared {
@@ -67,7 +99,7 @@ struct FileSink {
     shared: Arc<Shared>,
     id: String,
     max: u64,
-    state: Mutex<SinkState>,
+    state: Arc<Mutex<SinkState>>,
     masker: Masker,
 }
 
@@ -137,14 +169,13 @@ impl LogStore for FileLogStore {
             let _ = std::fs::remove_file(rotated(p));
         }
         let generation = self.shared.new_generation(id);
-        let state = SinkState { file, written: 0, generation };
-        Box::new(FileSink {
-            shared: self.shared.clone(),
-            id: id.to_ascii_uppercase(),
-            max: self.max,
-            state: Mutex::new(state),
-            masker,
-        })
+        let state = Arc::new(Mutex::new(SinkState { file, written: 0, generation }));
+        let id = id.to_ascii_uppercase();
+        let mut sinks = self.shared.sinks.lock().unwrap_or_else(PoisonError::into_inner);
+        sinks.retain(|_, s| s.strong_count() > 0);
+        sinks.insert(id.clone(), Arc::downgrade(&state));
+        drop(sinks);
+        Box::new(FileSink { shared: self.shared.clone(), id, max: self.max, state, masker })
     }
 
     fn read(&self, id: &str, offset: u64, max: usize) -> Option<LogSlice> {
@@ -159,6 +190,32 @@ impl LogStore for FileLogStore {
         // A line written between the seek and the read must not make the slice claim more than `size`.
         data.truncate(usize::try_from(size - start).unwrap_or(usize::MAX));
         Some(LogSlice { generation, size, start, data })
+    }
+
+    fn clear(&self, id: &str, note: &str) -> bool {
+        let Some(path) = self.path(id) else { return false };
+        let id = id.to_ascii_uppercase();
+        if !self.shared.generations.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&id) {
+            return false;
+        }
+        let sink = self.shared.sinks.lock().unwrap_or_else(PoisonError::into_inner).get(&id).and_then(Weak::upgrade);
+        let mut guard = sink.as_ref().map(|s| s.lock().unwrap_or_else(PoisonError::into_inner));
+        // The sink of an older `up` (a newer one replaced it) does not write this log.
+        let live = guard.as_deref_mut().filter(|st| {
+            st.file.is_some()
+                && self.shared.generations.lock().unwrap_or_else(PoisonError::into_inner).get(&id)
+                    == Some(&st.generation)
+        });
+        let is_live = live.is_some();
+        if empty_with_note(live, &path, note).is_none() {
+            return false;
+        }
+        let _ = std::fs::remove_file(rotated(&path));
+        let generation = self.shared.new_generation(&id);
+        if let Some(st) = guard.as_deref_mut().filter(|_| is_live) {
+            st.generation = generation;
+        }
+        true
     }
 
     fn remove(&self, id: &str) {
@@ -210,6 +267,46 @@ mod tests {
         assert!(std::fs::read_to_string(&path).unwrap().ends_with("new connection\n"));
         store.remove(ID);
         assert!(!path.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// "Clear Log…" while the connection runs: the same file is emptied in place (the sink's handle writes at the
+    /// new start, never after a gap of zeros), the rotated part goes, the note starts the log, and a new generation
+    /// makes the app's tail start over. A log nobody wrote in this service run is not touched.
+    #[test]
+    fn clearing_a_live_log_keeps_its_writer_writing() {
+        let dir = std::env::temp_dir().join(format!("winvpn-logs-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let store = FileLogStore::with_max(dir.clone(), 400);
+        let path = dir.join(format!("{ID}.log"));
+        let sink = store.open(ID, Masker::default());
+        for i in 0..20 {
+            sink.line(&format!("a line long enough to roll the log soon #{i}"));
+        }
+        assert!(rotated(&path).exists());
+        let before = store.read(ID, 0, 1 << 20).unwrap().generation;
+        assert!(store.clear(ID, "═══ NOTE ═══"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "═══ NOTE ═══\n");
+        assert!(!rotated(&path).exists());
+        let slice = store.read(ID, 0, 1 << 20).unwrap();
+        assert_ne!(slice.generation, before);
+        sink.line("after the clear");
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "═══ NOTE ═══\nafter the clear\n");
+        // The cap still counts from the note: the log rolls again at its size, not earlier or later.
+        for i in 0..20 {
+            sink.line(&format!("a line long enough to roll the log soon #{i}"));
+            assert!(len(&path) <= 400, "after {i}");
+        }
+        // A connection that is down: its file is cleared the same way.
+        drop(sink);
+        assert!(store.clear(ID, "═══ NOTE 2 ═══"));
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "═══ NOTE 2 ═══\n");
+        // No log of this service run (another ID, or a malformed one): nothing.
+        let other = "1F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
+        std::fs::write(dir.join(format!("{other}.log")), "kept\n").unwrap();
+        assert!(!store.clear(other, "═══ NOTE ═══"));
+        assert_eq!(std::fs::read_to_string(dir.join(format!("{other}.log"))).unwrap(), "kept\n");
+        assert!(!store.clear("..\\x", "═══ NOTE ═══"));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

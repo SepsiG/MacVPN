@@ -202,9 +202,11 @@ test('unsubscribing names the catalog, the count and the active connections', as
     { id: 'a', name: 'Office', state: 'connected', catalog: { catalogId: 'C1' } },
     { id: 'b', name: 'Lab', state: 'disconnected', catalog: { catalogId: 'C1' } },
     { id: 'c', name: 'Mine', state: 'connected', catalog: null },
+    { id: 'd', name: 'Lab 2', state: 'waitingForNetwork', catalog: { catalogId: 'C1' } },
   ] as never[];
-  const active = activeRows(rows, 'C1').map((r: { name: string }) => r.name);
-  assert.deepEqual(active, ['Office']);
+  // A connection waiting for network (the network loss rule) is still up: it is disconnected first too.
+  assert.deepEqual(activeRows(rows, 'C1').map((r: { name: string }) => r.name), ['Office', 'Lab 2']);
+  const active = activeRows(rows.slice(0, 3), 'C1').map((r: { name: string }) => r.name);
   const out = await html('./UnsubscribeDialog.svelte', { name: 'Acme VPN', connections: 2, active, onconfirm: noop, oncancel: noop });
   assert.match(out, /Unsubscribe from Acme VPN\?/);
   assert.match(out, /Its 2 connections and folders are removed/);

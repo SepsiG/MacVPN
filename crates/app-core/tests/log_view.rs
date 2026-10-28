@@ -30,10 +30,13 @@ fn filter_and_search() {
     b.append(
         ["═══ start ═══", "▶ [mvpn] step", "$ openvpn --config x", "AUTH_FAILED", "plain Output"].map(LogLine::new),
     );
-    assert_eq!(b.visible_text(LogFilter::Errors, ""), "AUTH_FAILED");
-    assert_eq!(b.visible_text(LogFilter::Commands, ""), "═══ start ═══\n▶ [mvpn] step\n$ openvpn --config x");
-    assert_eq!(b.visible_text(LogFilter::All, "output"), "plain Output");
-    assert_eq!(b.visible_text(LogFilter::Commands, "OPENVPN"), "$ openvpn --config x");
+    assert_eq!(b.visible_text(LogFilter::Errors, "", logs::TimeRange::default()), "AUTH_FAILED");
+    assert_eq!(
+        b.visible_text(LogFilter::Commands, "", logs::TimeRange::default()),
+        "═══ start ═══\n▶ [mvpn] step\n$ openvpn --config x"
+    );
+    assert_eq!(b.visible_text(LogFilter::All, "output", logs::TimeRange::default()), "plain Output");
+    assert_eq!(b.visible_text(LogFilter::Commands, "OPENVPN", logs::TimeRange::default()), "$ openvpn --config x");
     assert_eq!(b.all_text().lines().count(), 5);
     assert_eq!(logs::parse_filter("errors"), Some(LogFilter::Errors));
     assert_eq!(logs::parse_filter("Errors"), None);
@@ -317,4 +320,193 @@ fn a_debug_connect_starts_no_collector_when_the_platform_has_none() {
     assert!(collector.is_running());
     assert_eq!(collector.generation(), generation);
     assert!(Arc::ptr_eq(&natives.get(&id).unwrap(), &collector));
+}
+
+// MARK: - Search by time
+
+/// The local wall-clock seconds of a log time (`logs::civil_seconds`).
+fn at(h: i64, mi: i64, s: i64) -> i64 {
+    logs::civil_seconds(2026, 10, 28, h, mi, s).unwrap()
+}
+
+#[test]
+fn line_times_are_read_from_the_formats_the_logs_contain() {
+    let t = at(14, 3, 5);
+    for line in [
+        // OpenVPN (macOS run-dir log copied into the user's log; Windows openvpn.exe stdout).
+        "2026-10-28 14:03:05 OpenVPN 2.6.12 x86_64-apple-darwin",
+        "2026-10-28 14:03:05 us=123456 TCP/UDP: Preserving recently used remote address",
+        // The helper's and the RAS engine's headers, and the clear note.
+        "═══ 2026-10-28 14:03:05 up openvpn 0F0E0D0C-0B0A-4908-8706-050403020100 (debug) ═══",
+        "═══ Log cleared at 2026-10-28 14:03:05 ═══",
+        "═══ Napló törölve: 2026-10-28 14:03:05 ═══",
+        // wireguard-go (Go's log date and time after its level and interface).
+        "DEBUG: (utun5) 2026/10/28 14:03:05 Routine: event worker - started",
+        "INFO: (utun5) 2026/10/28 14:03:05 Starting wireguard-go version 0.0.20230223",
+        // pppd (SSTP), with the helper's prefix and without.
+        "[pppd] Wed Oct 28 14:03:05 2026 : Using interface ppp0",
+        "Wed Oct  28 14:03:05 2026 : local  IP address 10.0.0.2",
+        // `log stream --style compact` (macOS native debug), an ISO time (the service's own log).
+        "2026-10-28 14:03:05.123 Df racoon[123:456] IPSec connecting",
+        "2026-10-28T14:03:05Z service started",
+    ] {
+        assert_eq!(logs::line_time(line), Some(t), "{line}");
+    }
+    assert_eq!(logs::line_time("Wed Oct  8 14:03:05 2026 : x"), logs::civil_seconds(2026, 10, 8, 14, 3, 5));
+    for line in [
+        "▶ [mvpn] waiting for the connection",
+        "$ openvpn --config x",
+        "[#] ip link add mv1 type wireguard",
+        "✗ error 691",
+        "notAfter 2027-01-01 00:00:00 (a date in the text, not the line's time)",
+        "2026-13-28 14:03:05 not a month",
+        "2026-10-28 24:03:05 not an hour",
+        "2026-10-28 14:03",
+        "",
+    ] {
+        assert_eq!(logs::line_time(line), None, "{line}");
+    }
+}
+
+#[test]
+fn lines_without_a_time_inherit_the_previous_one() {
+    let mut b = LogBuffer::default();
+    b.append(
+        ["no time yet", "2026-10-28 10:00:00 a", "continued a", "2026-10-28 10:10:00 b", "continued b"]
+            .map(LogLine::new),
+    );
+    let times: Vec<Option<i64>> = b.entries().map(|e| e.time).collect();
+    assert_eq!(times, [None, Some(at(10, 0, 0)), Some(at(10, 0, 0)), Some(at(10, 10, 0)), Some(at(10, 10, 0))]);
+    // Across appends too, until cleared.
+    b.append([LogLine::new("later")]);
+    assert_eq!(b.entries().last().unwrap().time, Some(at(10, 10, 0)));
+    b.clear();
+    b.append([LogLine::new("after a clear")]);
+    assert_eq!(b.entries().last().unwrap().time, None);
+}
+
+#[test]
+fn the_time_range_combines_with_the_filter_and_the_search() {
+    let mut b = LogBuffer::default();
+    b.append(
+        [
+            "before any time",
+            "═══ 2026-10-28 10:00:00 up openvpn X ═══",
+            "2026-10-28 10:00:01 AUTH_FAILED early",
+            "2026-10-28 10:30:00 middle line",
+            "continued middle",
+            "2026-10-28 11:00:00 AUTH_FAILED late",
+        ]
+        .map(LogLine::new),
+    );
+    let all = logs::TimeRange::default();
+    assert_eq!(b.visible_text(LogFilter::All, "", all).lines().count(), 6, "no range: every line");
+    let from = logs::TimeRange { from: Some(at(10, 15, 0)), to: None };
+    assert_eq!(
+        b.visible_text(LogFilter::All, "", from),
+        "2026-10-28 10:30:00 middle line\ncontinued middle\n2026-10-28 11:00:00 AUTH_FAILED late"
+    );
+    let to = logs::TimeRange { from: None, to: Some(at(10, 30, 0)) };
+    assert_eq!(
+        b.visible_text(LogFilter::All, "", to),
+        "═══ 2026-10-28 10:00:00 up openvpn X ═══\n2026-10-28 10:00:01 AUTH_FAILED early\n2026-10-28 10:30:00 middle line\ncontinued middle",
+        "the bounds are inclusive; a line without any time is outside every range"
+    );
+    let both = logs::TimeRange { from: Some(at(10, 0, 0)), to: Some(at(10, 59, 59)) };
+    assert_eq!(b.visible_text(LogFilter::Errors, "", both), "2026-10-28 10:00:01 AUTH_FAILED early");
+    assert_eq!(b.visible_text(LogFilter::All, "CONTINUED", both), "continued middle");
+    assert_eq!(b.visible_text(LogFilter::Commands, "", from), "");
+}
+
+#[test]
+fn time_bounds_from_the_ui_are_checked() {
+    assert_eq!(logs::TimeRange::from_bounds(None, None), Some(logs::TimeRange::default()));
+    assert_eq!(
+        logs::TimeRange::from_bounds(Some(at(10, 0, 0) as f64), None),
+        Some(logs::TimeRange { from: Some(at(10, 0, 0)), to: None })
+    );
+    assert_eq!(logs::TimeRange::from_bounds(Some(f64::NAN), None), None);
+    assert_eq!(logs::TimeRange::from_bounds(None, Some(f64::INFINITY)), None);
+    assert_eq!(logs::TimeRange::from_bounds(Some(1.5), None), None);
+    assert_eq!(logs::TimeRange::from_bounds(Some(1e18), None), None);
+}
+
+#[test]
+fn the_feed_sends_each_line_with_its_time() {
+    let dir = TempDir::new();
+    std::fs::create_dir_all(dir.path()).unwrap();
+    let path = dir.path().join("x.log");
+    std::fs::write(&path, "head\n2026-10-28 10:00:00 a\nmore\n").unwrap();
+    let c = Connection::new("A", VPNKind::Openvpn);
+    let mut feed = LogFeed::new(&c, Some(Box::new(FileLogSource { path: path.clone() })), native_logs(spawner_never()));
+    let first = feed.poll().unwrap();
+    assert_eq!(first.lines.iter().map(|l| l.time).collect::<Vec<_>>(), [None, Some(at(10, 0, 0)), Some(at(10, 0, 0))]);
+    std::fs::OpenOptions::new().append(true).open(&path).unwrap().write_all(b"still a\n").unwrap();
+    assert_eq!(feed.poll().unwrap().lines[0].time, Some(at(10, 0, 0)), "inherited across polls");
+    let json = serde_json::to_value(&first.lines[0]).unwrap();
+    assert_eq!(json, serde_json::json!({ "text": "head", "kind": "output", "time": null }));
+}
+
+// MARK: - Clear Log…
+
+#[test]
+fn the_clear_note_is_a_localized_header_with_its_time() {
+    let _fx = Fixture::new(AppLanguage::En);
+    let note = logs::cleared_note("2026-10-28 14:03:05");
+    assert_eq!(note, "═══ Log cleared at 2026-10-28 14:03:05 ═══");
+    assert_eq!(LogLine::new(note.clone()).kind, macvpn_core::log::LogLineKind::Header);
+    assert_eq!(logs::line_time(&note), Some(at(14, 3, 5)), "the time filter reads the note's time");
+    drop(_fx);
+    let _fx = Fixture::new(AppLanguage::Hu);
+    let note = logs::cleared_note("2026-10-28 14:03:05");
+    assert_eq!(note, "═══ Napló törölve: 2026-10-28 14:03:05 ═══");
+    assert_eq!(logs::line_time(&note), Some(at(14, 3, 5)));
+}
+
+#[test]
+fn clearing_a_helper_kind_asks_the_helper_with_the_note() {
+    let helper = MockHelper::default();
+    let native = MockNative::default();
+    let natives = native_logs(spawner_never());
+    let c = Connection::new("A", VPNKind::Openvpn);
+    logs::clear_log(&c, &helper, &native, &natives, "NOTE").unwrap();
+    let calls = helper.calls();
+    assert_eq!(calls.len(), 1);
+    assert_eq!(calls[0].line, format!("clear-log {}", macvpn_core::models::uuid_string(&c.id)));
+    assert_eq!(calls[0].stdin.as_deref(), Some("NOTE"));
+    // The helper's refusal is the error.
+    helper.respond(&calls[0].line, Err("no"));
+    assert_eq!(logs::clear_log(&c, &helper, &native, &natives, "NOTE"), Err("no".to_string()));
+}
+
+#[test]
+fn clearing_a_native_kind_clears_the_platform_log_or_the_collection() {
+    let _fx = Fixture::new(AppLanguage::En);
+    let helper = MockHelper::default();
+    let native = MockNative::default();
+    let spawner = Arc::new(FakeSpawner::default());
+    let natives = native_logs(spawner.clone());
+    let c = Connection::new("L2TP", VPNKind::L2tp);
+
+    // WinVPN: the platform's own log (the RAS log).
+    native.set_own_log(&c.id);
+    logs::clear_log(&c, &helper, &native, &natives, "NOTE").unwrap();
+    assert_eq!(native.own_log_clears(&c.id), ["NOTE"]);
+    assert!(helper.calls().is_empty(), "never the helper for a native kind");
+
+    // macOS: the debug collection, which goes on collecting after the note.
+    let c = Connection::new("Cisco", VPNKind::L2tp);
+    logs::clear_log(&c, &helper, &native, &natives, "NOTE").unwrap();
+    natives.start(&c.id);
+    let mut feed = LogFeed::new(&c, None, natives.clone());
+    assert_eq!(feed.poll().unwrap().lines.len(), 2);
+    spawner.emit(0, &["before"]);
+    logs::clear_log(&c, &helper, &native, &natives, "═══ NOTE ═══").unwrap();
+    assert_eq!(natives.get(&c.id).unwrap().lines(), ["═══ NOTE ═══"]);
+    let chunk = feed.poll().unwrap();
+    assert!(chunk.reset, "the view starts over");
+    assert_eq!(chunk.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>(), ["═══ NOTE ═══"]);
+    spawner.emit(0, &["after"]);
+    assert_eq!(feed.poll().unwrap().lines[0].text, "after");
+    assert!(natives.get(&c.id).unwrap().is_running());
 }

@@ -632,6 +632,7 @@ fn main() {
             manage::log_subscribe,
             manage::log_copy,
             manage::log_save,
+            manage::log_clear,
             system::setup_check,
             system::setup_install_homebrew,
             system::setup_install_tools,

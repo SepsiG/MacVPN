@@ -258,6 +258,15 @@ impl HelperClient for FakeHelper {
     fn respond(&self, _: &Uuid, _: AuthResponseKind, _: &str) -> Result<(), String> {
         Ok(())
     }
+
+    /// "Clear Log…" (manage.js): logged with whether the note is the localized header the time filter reads.
+    fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
+        let expected = macvpn_core::log::cleared_note("");
+        let prefix = expected.trim_end_matches(" ═══").trim_end();
+        let ok = note.starts_with(prefix) && macvpn_app_core::logs::line_time(note).is_some();
+        eprintln!("MacVPN smoke: fake root: clear-log {} note={}", uuid_string(id), if ok { "ok" } else { "bad" });
+        Ok(())
+    }
 }
 
 /// Reads `mvpn up`'s framed stdin back: `config <length>\n`, exactly that many config bytes (equal to `config`),

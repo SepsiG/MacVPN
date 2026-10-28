@@ -726,11 +726,38 @@ fn hint_and_hungarian_reason() {
     assert_eq!(r.risky[0].reason(), l10n::hungarian(openvpn::REASON_PRIVILEGE_DROP).unwrap());
 }
 
+/// Since the root layer's DNS manager (root layer 9) DNS is restored from its ledger even when the unprivileged
+/// down hook cannot: the reason no longer says "only when MacVPN disconnects". The 1.4.0 text stays in the table
+/// (the l10n baseline keeps every 1.4.0 key) but no directive uses it.
+#[test]
+fn privilege_drop_reason_is_current() {
+    for d in ["user nobody", "group nogroup"] {
+        en();
+        let r = check(d, &[]);
+        assert_eq!(
+            r.risky[0].reason(),
+            "Drops root privileges after start: reconnecting may fail; MacVPN still restores DNS when the connection ends",
+            "{d}"
+        );
+        lang(AppLanguage::Hu);
+        assert_eq!(
+            check(d, &[]).risky[0].reason(),
+            "Indulás után eldobja a root jogot: az újracsatlakozás meghiúsulhat; a MacVPN a kapcsolat végén így is visszaállítja a DNS-t",
+            "{d}"
+        );
+    }
+    en();
+    assert!(l10n::hungarian(openvpn::REASON_PRIVILEGE_DROP_1_4).is_some());
+    assert_ne!(openvpn::REASON_PRIVILEGE_DROP, openvpn::REASON_PRIVILEGE_DROP_1_4);
+}
+
 // MARK: The 1.4 golden
 
 /// The tier and the risky reason of every directive with an explicit tier, as 1.4 classified them
 /// (`fixtures/openvpn-tiers-1.4.0.txt`, generated once on 1.4.1, whose tiers equal 1.4.0's). One line per
 /// directive: `name<TAB>tier<TAB>reason key` (`-` when not risky), sorted by name.
+/// The reasons of `user` / `group` are the current text (`REASON_PRIVILEGE_DROP`, changed deliberately in 2.0.2);
+/// the tiers are unchanged.
 fn tier_lines() -> Vec<String> {
     let macos = TargetOs::MacOs;
     let mut names: Vec<&str> = OpenVPNValidator::allowed_for(macos).into_iter().collect();

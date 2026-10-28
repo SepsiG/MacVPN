@@ -242,6 +242,11 @@ pub struct WireGuardFacts {
     pub problem: Option<String>,
 }
 
+/// "Clear Log…" of the caller's own connection log (`clear-log <id>`, exit 0 with no output). Added after 2.0.1 without
+/// a new [`SERVICE_VERSION`]: an older service answers it with its usage error (exit 2), which the app shows as "update
+/// WinVPN".
+pub const CLEAR_LOG: &str = "clear-log";
+
 // MARK: - engine updates (2b plan, "As built (fix4)")
 
 /// `wireguard-check`: the service asks the official wireguard-nt listing (answers are reused for a minute) whether a

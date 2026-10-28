@@ -47,7 +47,7 @@ General rules that apply to every tier: the directive name must be `[A-Za-z0-9-]
 
 | Reason (shown in the panel) | Directives |
 |---|---|
-| Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects | `user`, `group` |
+| Drops root privileges after start: reconnecting may fail; MacVPN still restores DNS when the connection ends | `user`, `group` |
 | OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic | `route-noexec`, `ifconfig-noexec` |
 | Changes when MacVPN's DNS hooks run | `up-restart`, `down-pre` |
 | Makes this Mac accept incoming VPN connections (listens on the network as root) | `mode`, `server`, `server-bridge`, `server-ipv6`, `tls-server`, `client-to-client` |

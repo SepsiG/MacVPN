@@ -189,6 +189,7 @@ pub fn resize_shown_menu(window: &impl MenuWindow, height: f64) -> Result<(), St
 }
 
 const IDLE: &[u8] = include_bytes!("../icons/tray/idle.png");
+const CONNECTING: &[u8] = include_bytes!("../icons/tray/connecting.png");
 const ACTIVE: &[u8] = include_bytes!("../icons/tray/active.png");
 const FAILURE: &[u8] = include_bytes!("../icons/tray/failure.png");
 const AUTH: &[u8] = include_bytes!("../icons/tray/auth.png");
@@ -198,6 +199,8 @@ const AUTH: &[u8] = include_bytes!("../icons/tray/auth.png");
 fn image(icon: TrayIcon) -> Option<Image<'static>> {
     let bytes = match icon {
         TrayIcon::Idle => IDLE,
+        // Waiting for network: the same half-filled shield (its tooltip says why).
+        TrayIcon::Connecting | TrayIcon::WaitingForNetwork => CONNECTING,
         TrayIcon::Active => ACTIVE,
         TrayIcon::Failure => FAILURE,
         TrayIcon::Auth => AUTH,
@@ -257,10 +260,15 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
 /// puts back an older icon.
 static SHOWN_ICON: Mutex<TrayIcon> = Mutex::new(TrayIcon::Idle);
 
-pub fn set_icon(app: &AppHandle, icon: TrayIcon) {
+/// The icon and its tooltip (the state in the current language: [`TrayIcon::tooltip`]; the product name alone when
+/// idle or failed). The publisher calls it again when either changes (a language switch changes the tooltip only).
+pub fn set_icon(app: &AppHandle, icon: TrayIcon, tooltip: Option<&str>) {
     let mut shown = SHOWN_ICON.lock().unwrap_or_else(PoisonError::into_inner);
     *shown = icon;
     apply_icon(app, icon);
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_tooltip(Some(tooltip.unwrap_or(platform::get().product().name)));
+    }
 }
 
 /// The current icon again, in the platform's current colour (Windows: after a taskbar theme switch,

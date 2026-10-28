@@ -162,6 +162,9 @@ impl AppState {
             macvpn_core::models::parse_uuid(id)
                 .is_some_and(|u| macvpn_app_core::reconnect::is_enabled(self.prefs.as_ref(), &u))
         });
+        // The connections with no physical network under them (the network loss rule): "Waiting for network…" in
+        // their rows and the tray, never "connected".
+        vm.set_waiting_for_network(&self.reconnect.waiting_for_network());
         vm.manage = self.connections.view();
         let facts = self.setup_checked.load(std::sync::atomic::Ordering::SeqCst).then(|| setup_facts(&setup));
         vm.setup = SetupView::build(
@@ -253,9 +256,10 @@ impl Publisher {
                 loop {
                     publisher.wait();
                     let vm = state.view_model();
-                    if tray != Some(vm.tray) {
-                        tray = Some(vm.tray);
-                        crate::tray::set_icon(&app, vm.tray);
+                    let shown = (vm.tray, vm.tray.tooltip());
+                    if tray.as_ref() != Some(&shown) {
+                        crate::tray::set_icon(&app, shown.0, shown.1.as_deref());
+                        tray = Some(shown);
                     }
                     // New prompts get a window (and a notification), closed ones lose theirs.
                     crate::prompts::sync(&app, &state, &vm.prompts);

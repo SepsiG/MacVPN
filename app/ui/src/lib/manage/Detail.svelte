@@ -153,7 +153,7 @@
       <EditorHost {id} {kind} active={tab === 'settings'} epoch={manage.editorsEpoch} />
     </div>
     <div class="pane" class:hidden={tab !== 'log'} aria-hidden={tab !== 'log'}>
-      <LogPanel {id} {filters} {onnotice} />
+      <LogPanel {id} name={row.name} {filters} {onnotice} />
     </div>
   </div>
 </div>

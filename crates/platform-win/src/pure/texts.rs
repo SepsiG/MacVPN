@@ -23,6 +23,11 @@ pub fn uninstall_in_settings() -> String {
 
 // MARK: - The WinVPN Service (2b)
 
+/// "Clear Log…": the WinVPN Service is older than the app (2.0.x) and does not know the request.
+pub fn service_cannot_clear_log() -> String {
+    l10n::tr("The WinVPN Service is older than this app and cannot clear the log. Update WinVPN, then try again.", &[])
+}
+
 /// The engine-missing state: no service, or one of another WinVPN version (a broken install).
 pub fn service_missing() -> String {
     l10n::tr(

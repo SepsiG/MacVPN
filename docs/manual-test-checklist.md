@@ -21,6 +21,16 @@ Előfeltétel: a Macen a 2.0.0-s DMG-ből telepített MacVPN, a Windows-gépen a
 - [ ] A mód váltása után először megnyitott ablak (például a Rendszerállapot, ha addig nem volt nyitva) már az új módban nyílik
 - [ ] Windows: **Sötét** módban világos Windowson a fájlválasztó ablak (Import fájlból…) és a rendszergazdai megerősítés világos marad (ismert korlát), az értesítési terület ikonja a tálca színét követi
 
+### Tálca / menüsor ikon: csatlakozás folyamatban (2026-10-28)
+
+- [ ] Egy lassan felépülő kapcsolat (például OpenVPN egy nem válaszoló szerverrel, vagy a labor egy kapcsolata) bekapcsolása → amíg a sor „Csatlakozás…”, az ikon **félig kitöltött pajzs** (nem pipás); fölé víve „MacVPN – Csatlakozás…” / „WinVPN – Csatlakozás…”; felépülés után pipás pajzs, „… – Csatlakozva”
+- [ ] Egy kapcsolat fent, egy második bekapcsolása → a második felépüléséig félig kitöltött pajzs, utána pipás
+- [ ] MFA kód / hitelesítő adat bekérése alatt kulcs ikon, „… – Hitelesítésre vár”; sikertelen csatlakozás → felkiáltójeles pajzs, a felirat a terméknév
+- [ ] macOS: natív (L2TP / Cisco IPsec) kapcsolat a rendszer jóváhagyására várva → félig kitöltött pajzs
+- [ ] Automatikus újracsatlakozás (alvás után / hálózatváltáskor) alatt félig kitöltött pajzs, utána pipás
+- [ ] Nyelvváltás (Beállítások → Nyelv) csatlakozás közben → a felirat azonnal az új nyelvű
+- [ ] macOS: világos és sötét menüsoron mind az öt ikon jól látszik; Windows: világos és sötét tálcán a félig kitöltött pajzs is a tálca színét követi, és mód váltásakor csatlakozás közben is átszíneződik (G-7)
+
 ### Kapcsolatértesítések
 
 - [ ] Az „Office VPN” csatlakoztatása → értesítés „Office VPN: csatlakozva” (angolul „Office VPN connected”), a szövegben „Kattints a naplóért.”
@@ -66,6 +76,26 @@ Előfeltétel: a Macen a 2.0.0-s DMG-ből telepített MacVPN, a Windows-gépen a
 - [ ] Wi-Fin a hálózati próba élő futtatása (csak olvas) → az átjáró címe és MAC-je látszik; az SSID csak helymeghatározási engedéllyel, különben üres (akkor a MAC dönt). macOS: `cargo test --locked -p macvpn-platform-mac --test net_probe live_snapshot_of_this_mac -- --ignored --nocapture`; Windows (a laptopon, Git Bashben): `cargo test --locked -p macvpn-platform-win --test windows probe_the_network_snapshot -- --ignored --nocapture`
 - [ ] Windows: Modern Standby gépen (csak ha van ilyen gép) az alvás és az ébredés után az (a) eset működik; ha nem, jegyezd fel, hogy a Wi-Fi visszatérése (hálózatváltás) indította-e az újracsatlakozást
 
+### Hálózatvesztés a VPN alatt (2026-10-28, macOS és Windows)
+
+Mindkét terméken (MacVPN és WinVPN), típusonként: OpenVPN, WireGuard, strongSwan IKEv2 (macOS), L2TP / Cisco IPsec (macOS natív), L2TP/IPsec, IKEv2, SSTP (Windows VPN-kliens). A „vár” = a sor „Hálózatra vár…”, az ikon félig kitöltött pajzs, fölé víve „MacVPN – Hálózatra vár…” / „WinVPN – Hálózatra vár…”; sosem pipás pajzs.
+
+- [ ] (n1) Wi-Fi ki (egyetlen hálózat), **Automatikus újracsatlakozás** be → kb. 3 mp múlva vár, a menüben és a Kapcsolatok ablakban is; az ikon nem pipás. Wi-Fi vissza 1 percen belül → a túlélő alagút (OpenVPN, WireGuard, strongSwan) újra „Csatlakozva”, nincs értesítés; ami közben megszakadt, az „…: újracsatlakozva”. Jegyezd fel típusonként, melyik élte túl
+- [ ] (n2) Ugyanez kikapcsolt **Automatikus újracsatlakozás** mellett → a túlélő alagút újra „Csatlakozva”; a megszakadt kapcsolat bontva marad, „…: megszakadt a kapcsolat” értesítéssel, a DNS az eredeti (macOS: `scutil --dns`, Windows: `Get-DnsClientServerAddress`)
+- [ ] (n3) Ethernet-kábel kihúzva (Wi-Fi kikapcsolva) → ugyanaz, mint (n1); visszadugva ugyanaz, mint (n1)
+- [ ] (n4) Kábel kihúzva, de a Wi-Fi közben él → nincs várakozás (van másik fizikai hálózat), az ikon pipás marad
+- [ ] (n5) Rövid kiesés: Wi-Fi ki, 1–2 mp múlva vissza → semmi nem látszik (se „Hálózatra vár…”, se ikonváltás), nincs értesítés
+- [ ] (n6) Hosszú kiesés, kapcsolóval: Wi-Fi ki 2,5 percre → 2 perc után a kapcsolat bontva, értesítés „…: megszakadt a kapcsolat” / „2 percig nem volt hálózat. Újracsatlakozik, amikor visszajön a hálózat.”; a DNS és az útvonalak az eredetiek (`scutil --dns`, `netstat -rn` / `route print`); Wi-Fi vissza (ugyanaz a hálózat) → néhány mp-en belül „…: újracsatlakozva”
+- [ ] (n7) Hosszú kiesés, kapcsoló nélkül → 2 perc után bontva, „2 percig nem volt hálózat.”; Wi-Fi vissza → bontva marad
+- [ ] (n8) Másik Wi-Fi-re váltás: a kapcsolat otthon felépítve, Wi-Fi ki, egy másik Wi-Fi-hez (vagy hotspothoz) csatlakozás 2 percen belül → a túlélő alagút „Csatlakozva” marad (forgalom átmegy-e: jegyezd fel típusonként); 2 perc után → bontva, majd „…: nem csatlakozott újra” / „Másik hálózaton vagy.”
+- [ ] (n9) Váltás az „irodai” hálózatra (a 10.20.30.0/24-et adó második router) kiesés után, túlélő alagúttal → bontva, „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”
+- [ ] (n10) Párosított app (vezérlő API) által indított kapcsolat, hosszú kiesés → 2 perc után bontva („2 percig nem volt hálózat.” a második mondat nélkül), a hálózat visszatérése után sem csatlakozik újra
+- [ ] (n11) Csatlakozás indítása hálózat nélkül → néhány mp múlva „Hálózatra vár…”
+- [ ] (n12) Kiesés közben a sor kapcsolójával **Bontás** → azonnal bontva, a „Hálózatra vár…” eltűnik, a hálózat visszatérése után sem csatlakozik újra
+- [ ] (n13) Alvás hálózat nélkül (Wi-Fi ki, fedél le 5 percre, fel) → ébredés után nem bont azonnal; a 2 perces határ az ébredéstől számít
+- [ ] (n14) Nyelvváltás várakozás közben → a sor és az ikon felirata azonnal az új nyelvű
+- [ ] (n15) Windows: a VPN saját adaptere (TAP, Wintun, WireGuard, a Windows VPN-kliens PPP-adaptere) nem számít hálózatnak: Wi-Fi ki egy felépült kapcsolattal → vár (nem marad pipás)
+
 ### DNS-visszaállítás (macOS)
 
 - [ ] OpenVPN DNS-sel: csatlakozás → `scutil --dns` és `networksetup -getdnsservers Wi-Fi` a VPN DNS-ét mutatja, a naplóban „DNS set and verified on … network service(s)”; `sudo ls -l /var/db/macvpn/dns/` → a `ledger` fájl root tulajdonú, `-rw-------`, a mappa `drwx------`
@@ -84,6 +114,21 @@ Előfeltétel: a Macen a 2.0.0-s DMG-ből telepített MacVPN, a Windows-gépen a
 - [ ] macOS: egy régebbi verzióból maradt, 5 MiB-nál nagyobb `<azonosító>.log.1` a kapcsolat következő csatlakozásakor vagy bontásakor 5 MiB-ra rövidül
 - [ ] Windows: élő OpenVPN-kapcsolatnál rendszergazdai PowerShellben `Get-CimInstance Win32_Process -Filter "Name='openvpn.exe'" | Select-Object -ExpandProperty CommandLine` → benne `--mute 20`
 - [ ] Windows: hosszú, hibakereső módú OpenVPN-kapcsolat, amíg a napló eléri a 8 MiB-ot (`Get-Item C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log`) → megjelenik az `<AZONOSÍTÓ>.log.1`, az új napló első sora erről szól, a Napló fül elölről indul; a kapcsolat újbóli csatlakoztatása után a `.log.1` eltűnik
+
+### Napló: törlés és időszűrő
+
+A Kapcsolatok ablak Napló fülének két új funkciója (a smoke teszt `scripts/smoke/manage.js` a felületét és a megerősítést már ellenőrizte; itt a valódi naplók a kérdés).
+
+- [ ] **Napló törlése…** → a kérdés „Törlöd a naplót: <név>? Ez nem vonható vissza.” (angolul „Clear the log of <name>? This cannot be undone.”); **Mégse** → a napló változatlan
+- [ ] macOS: élő OpenVPN-kapcsolatnál **Napló törlése…** → megerősítve nincs jelszókérés; a Napló fül első sora „═══ Napló törölve: <idő> ═══”, alatta tovább jönnek az új sorok (például bontáskor a lépések); `ls -l /var/log/macvpn/<azonosító>.log*`: a `.log` kicsi, a `.log.1` (ha volt) 0 bájt, a tulajdonos és a `-rw-------` változatlan
+- [ ] macOS: ugyanez WireGuarddal, IKEv2-vel és SSTP-vel; L2TP/Cisco IPsec debug csatlakozás közben a gyűjtött sorok helyén a „Napló törölve” sor, a gyűjtés folytatódik
+- [ ] macOS: a törlés után a kapcsolat bontása és újracsatlakozása rendben (a root réteg naplózása nem akad meg; az állapot helyes)
+- [ ] Windows: élő OpenVPN- és WireGuard-kapcsolatnál **Napló törlése…** → a Napló fül elölről indul a „Napló törölve” sorral, az új sorok jönnek; rendszergazdaként `Get-ChildItem C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log*` → a `.log` kicsi, a `.log.1` eltűnt
+- [ ] Windows: egy L2TP-, IKEv2- és SSTP-kapcsolat naplója (`%LOCALAPPDATA%\WinVPN\logs\ras\<AZONOSÍTÓ>.log`) ugyanígy kiürül, csatlakozás közben is
+- [ ] Windows: két felhasználó a gépen (gyors felhasználóváltás): a másik felhasználó kapcsolatának naplóját a saját WinVPN-ünk nem látja és nem tudja törölni (a szolgáltatás „Érvénytelen azonosító”-val utasítja el)
+- [ ] Időszűrő: **Utolsó 5 perc** egy órája futó kapcsolatnál → csak az utolsó 5 perc sorai, a folytatósorok (idő nélküliek) az előttük lévő sorral együtt; **Ma**, **Utolsó óra** ugyanígy; **Bármikor** → minden sor
+- [ ] Időszűrő: **Egyéni időszak** → **Ettől**/**Eddig** helyi idővel; csak **Ettől** vagy csak **Eddig** is működik; a **Parancsok**/**Hibák** szűrővel és a kereséssel együtt; a **Másolás** pontosan a látható sorokat másolja
+- [ ] Időszűrő a különböző naplóformákkal: OpenVPN (`2026-10-28 14:03:05`), macOS WireGuard (`DEBUG: (utun5) 2026/10/28 14:03:05`, debug módban), macOS SSTP (`[pppd] Wed Oct 28 14:03:05 2026 : …`, debug módban), a `═══ … ═══` fejléc, a „Napló törölve” sor
 
 ### Motorfrissítések
 

@@ -196,6 +196,13 @@ impl RasEngine {
         self.inner().is_ok_and(|i| i.paths.log(id).is_file())
     }
 
+    /// "Clear Log…" of the RAS log (and its `.1`), through the dial's own log when one holds it.
+    pub(crate) fn clear_log_of(&self, id: &Uuid, note: &str) -> Result<(), String> {
+        let inner = self.inner()?;
+        let live = inner.lock().get(id).map(|s| s.log.clone());
+        inner.paths.clear_log(id, note, live.as_deref())
+    }
+
     fn log_source_of(&self, id: &Uuid) -> Option<Box<dyn LogSource>> {
         let inner = self.inner().ok()?;
         Some(Box::new(FileLogSource { path: inner.paths.log(id) }))
@@ -773,6 +780,14 @@ impl NativeController for RasEngine {
     fn log_source(&self, connection: &Uuid) -> Option<Box<dyn LogSource>> {
         self.log_source_of(connection)
     }
+
+    /// The RAS log, as [`Self::log_source`] reads it (an engine without its folders keeps none).
+    fn clear_log(&self, connection: &Uuid, note: &str) -> Result<bool, String> {
+        if self.inner().is_err() {
+            return Ok(false);
+        }
+        self.clear_log_of(connection, note).map(|_| true)
+    }
 }
 
 impl NativeProfiles for RasEngine {
@@ -884,5 +899,10 @@ impl HelperClient for RasHelper {
     /// service's.
     fn log_source(&self, id: &Uuid) -> Option<Box<dyn LogSource>> {
         if self.ras.has_log(id) { self.ras.log_source_of(id) } else { self.service.log_source(id) }
+    }
+
+    /// The log [`Self::log_source`] reads: the RAS log when there is one, else the service's.
+    fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
+        if self.ras.has_log(id) { self.ras.clear_log_of(id, note) } else { self.service.clear_log(id, note) }
     }
 }

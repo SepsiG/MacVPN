@@ -1,6 +1,8 @@
 // A menüsor-ikonok (template PNG-k) előállítása a Tauri apphoz: ugyanazok az SF Symbolok, mint a Swift app
 // `menuBarSymbol`-ja (shield / checkmark.shield.fill / exclamationmark.shield.fill / key.fill), fekete-átlátszó
-// template képként, 36×36 px-en (18 pt @2x). A rendszer színezi őket a menüsor megjelenése szerint.
+// template képként, 36×36 px-en (18 pt @2x). A rendszer színezi őket a menüsor megjelenése szerint. A csatlakozás
+// folyamatban állapot (shield.lefthalf.filled: félig kitöltött pajzs, az üres és a pipás között) a Tauri app saját
+// ikonja (2026-10-28); Windowson ugyanezt a PNG-t színezi át az app (G-7).
 // Használat: swift scripts/make-tray-icons.swift app/src-tauri/icons/tray
 import AppKit
 
@@ -8,6 +10,7 @@ let outDir = CommandLine.arguments.dropFirst().first ?? "app/src-tauri/icons/tra
 let pixels = 36
 let icons: [(file: String, symbol: String)] = [
     ("idle", "shield"),
+    ("connecting", "shield.lefthalf.filled"),
     ("active", "checkmark.shield.fill"),
     ("failure", "exclamationmark.shield.fill"),
     ("auth", "key.fill"),

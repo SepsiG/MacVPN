@@ -11,7 +11,9 @@ export type RowState =
   | { state: 'connected'; ip: string | null; since: number | null }
   | { state: 'disconnecting' }
   | { state: 'failed'; reason: string }
-  | { state: 'awaitingAuth'; wait: 'code' | 'web' | 'credentials'; deadline: number | null };
+  | { state: 'awaitingAuth'; wait: 'code' | 'web' | 'credentials'; deadline: number | null }
+  /// Up or connecting, but the physical network is gone (the network loss rule): never shown as connected.
+  | { state: 'waitingForNetwork' };
 
 export type Kind = 'openvpn' | 'wireguard' | 'strongswan' | 'sstp' | 'l2tp' | 'cisco';
 
@@ -148,7 +150,7 @@ export interface CredentialPromptView {
   server: string | null;
 }
 
-export type TrayIcon = 'idle' | 'active' | 'failure' | 'auth';
+export type TrayIcon = 'idle' | 'connecting' | 'waitingForNetwork' | 'active' | 'failure' | 'auth';
 
 export interface ReleaseView {
   tag: string;
@@ -413,6 +415,8 @@ export interface OpenedFiles {
 export interface LogLineView {
   text: string;
   kind: 'header' | 'step' | 'command' | 'error' | 'output';
+  /// The line's local time (wall-clock seconds, its own or the previous line's); `null`: none known.
+  time: number | null;
 }
 
 export interface LogEvent {
@@ -646,8 +650,10 @@ export const api = {
   /// The copy is made and selected; a string: its Windows VPN entry could not be written.
   makeL2tpCopy: (id: string) => invoke<string | null>('make_l2tp_copy', { id }),
   logSubscribe: (id: string | null) => invoke<LogEvent | null>('log_subscribe', { id }),
-  logCopy: (filter: LogFilter, search: string) => invoke<void>('log_copy', { filter, search }),
+  logCopy: (filter: LogFilter, search: string, from: number | null, to: number | null) =>
+    invoke<void>('log_copy', { filter, search, from, to }),
   logSave: () => invoke<Notice | null>('log_save'),
+  logClear: (id: string) => invoke<Notice | null>('log_clear', { id }),
   // System Status.
   setupCheck: () => invoke<void>('setup_check'),
   setupInstallHomebrew: () => invoke<Notice | null>('setup_install_homebrew'),

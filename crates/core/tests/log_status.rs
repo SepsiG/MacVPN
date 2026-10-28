@@ -195,3 +195,48 @@ fn a_tailer_over_another_source_follows_the_same_rules() {
     *shared.lock().unwrap() = (3, big);
     assert_eq!(t.read_new().last().map(String::as_str), Some("last"));
 }
+
+#[test]
+fn clear_file_empties_the_log_in_place_with_the_note() {
+    let dir = TempDir::new();
+    let owner = macvpn_core::fsx::ensure_private_dir(dir.path()).unwrap();
+    let path = dir.path().join("x.log");
+    fs::write(&path, "old line 1\nold line 2\n").unwrap();
+    // A writer holding the log open for appending (OpenVPN's `--log-append`, the helper's child processes).
+    let mut writer = fs::OpenOptions::new().append(true).open(&path).unwrap();
+    let id_before = macvpn_core::fsx::file_id(&macvpn_core::fsx::stat(&writer).unwrap());
+    assert!(clear_file(&path, &owner, Some("═══ Log cleared at 2026-10-28 14:03:05 ═══")).unwrap());
+    assert_eq!(fs::read_to_string(&path).unwrap(), "═══ Log cleared at 2026-10-28 14:03:05 ═══\n");
+    writer.write_all(b"new line\n").unwrap();
+    assert_eq!(fs::read_to_string(&path).unwrap(), "═══ Log cleared at 2026-10-28 14:03:05 ═══\nnew line\n");
+    let id_after = macvpn_core::fsx::file_id(&macvpn_core::fsx::stat(&fs::File::open(&path).unwrap()).unwrap());
+    assert_eq!(id_before, id_after, "the same file: truncated in place, never replaced");
+
+    // Without a note: empty. A missing file: nothing to clear.
+    assert!(clear_file(&path, &owner, None).unwrap());
+    assert_eq!(fs::read(&path).unwrap(), b"");
+    assert!(!clear_file(&dir.path().join("none.log"), &owner, None).unwrap());
+    // A directory is refused.
+    fs::create_dir(dir.path().join("d.log")).unwrap();
+    assert!(clear_file(&dir.path().join("d.log"), &owner, None).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn clear_file_never_follows_a_symlink_nor_touches_another_owners_file() {
+    use macvpn_core::fsx::FileOwner;
+    use std::os::unix::fs::MetadataExt;
+    let dir = TempDir::new();
+    let owner = macvpn_core::fsx::ensure_private_dir(dir.path()).unwrap();
+    let target = dir.path().join("target");
+    fs::write(&target, "keep\n").unwrap();
+    let link = dir.path().join("x.log");
+    std::os::unix::fs::symlink(&target, &link).unwrap();
+    assert!(clear_file(&link, &owner, Some("note")).is_err());
+    assert_eq!(fs::read_to_string(&target).unwrap(), "keep\n");
+    // Another owner (as the app sees a log of another user): refused, untouched.
+    let other = FileOwner::from_uid(fs::metadata(&target).unwrap().uid() + 1);
+    let e = clear_file(&target, &other, Some("note")).unwrap_err();
+    assert_eq!(e.kind(), std::io::ErrorKind::PermissionDenied);
+    assert_eq!(fs::read_to_string(&target).unwrap(), "keep\n");
+}

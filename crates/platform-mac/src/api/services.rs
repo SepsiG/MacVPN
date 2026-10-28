@@ -58,6 +58,10 @@ impl SystemInfo for MacSystem {
         system::local_date(unix)
     }
 
+    fn local_timestamp(&self, unix: f64) -> String {
+        system::local_timestamp(unix)
+    }
+
     fn local_date_time(&self, unix: f64, language: AppLanguage) -> String {
         system::local_date_time(unix, language)
     }

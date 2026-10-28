@@ -165,3 +165,14 @@ pub fn report(reach: Reach, recommended_openvpn: &str, upgrade: &Upgrade, wiregu
         ..SetupReport::unknown()
     }
 }
+
+/// The WinVPN Service's answer to `clear-log` (code, stderr): exit 0 = cleared; the usage error (exit 2) = a service
+/// older than the request ([`texts::service_cannot_clear_log`]); any other failure = its message (or the exit code).
+pub fn clear_log_answer(code: i32, message: &str) -> Result<(), String> {
+    match code {
+        0 => Ok(()),
+        2 => Err(texts::service_cannot_clear_log()),
+        _ if !message.trim().is_empty() => Err(message.trim().to_string()),
+        _ => Err(macvpn_core::l10n::tr("mvpn error (exit code: %d)", &[macvpn_core::l10n::Arg::Int(i64::from(code))])),
+    }
+}

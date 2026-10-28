@@ -21,21 +21,128 @@ fn snapshot(states: &[ConnectionState], status_error: Option<&str>) -> ManagerSn
         has_active: states.iter().any(ConnectionState::is_active),
         has_failure: states.iter().any(|s| matches!(s, ConnectionState::Failed(_))),
         awaiting_auth: states.iter().any(|s| matches!(s, ConnectionState::AwaitingAuth(_))),
+        connecting: states.iter().any(|s| matches!(s, ConnectionState::Connecting)),
         ..ManagerSnapshot::default()
     }
 }
 
+fn icon(states: &[ConnectionState], status_error: Option<&str>) -> TrayIcon {
+    TrayIcon::from_snapshot(&snapshot(states, status_error))
+}
+
 #[test]
-fn tray_icon_priority_auth_then_failure_then_active() {
+fn tray_icon_priority_auth_then_failure_then_connecting_then_connected() {
     let wait = ConnectionState::AwaitingAuth(AuthWait { kind: AuthWaitKind::Code, deadline: None });
     let failed = ConnectionState::Failed("x".into());
     let up = ConnectionState::Connected { ip: None, since: None };
-    assert_eq!(TrayIcon::from_snapshot(&snapshot(&[], None)), TrayIcon::Idle);
-    assert_eq!(TrayIcon::from_snapshot(&snapshot(std::slice::from_ref(&up), None)), TrayIcon::Active);
-    assert_eq!(TrayIcon::from_snapshot(&snapshot(&[ConnectionState::Connecting], None)), TrayIcon::Active);
-    assert_eq!(TrayIcon::from_snapshot(&snapshot(std::slice::from_ref(&up), Some("e"))), TrayIcon::Failure);
-    assert_eq!(TrayIcon::from_snapshot(&snapshot(&[up.clone(), failed.clone()], None)), TrayIcon::Failure);
-    assert_eq!(TrayIcon::from_snapshot(&snapshot(&[failed, wait], Some("e"))), TrayIcon::Auth);
+    let connecting = ConnectionState::Connecting;
+    assert_eq!(icon(&[], None), TrayIcon::Idle);
+    assert_eq!(icon(&[ConnectionState::Disconnected], None), TrayIcon::Idle);
+    assert_eq!(icon(std::slice::from_ref(&up), None), TrayIcon::Active);
+    assert_eq!(icon(std::slice::from_ref(&up), Some("e")), TrayIcon::Failure);
+    assert_eq!(icon(&[up.clone(), failed.clone()], None), TrayIcon::Failure);
+    assert_eq!(icon(&[failed.clone(), wait.clone()], Some("e")), TrayIcon::Auth);
+    // The maintainer's report (2026-10-28): a connection still connecting is not shown as connected.
+    assert_eq!(icon(std::slice::from_ref(&connecting), None), TrayIcon::Connecting);
+    // One up, another still connecting (or reconnecting): the icon says something is in progress.
+    assert_eq!(icon(&[up.clone(), connecting.clone()], None), TrayIcon::Connecting);
+    assert_eq!(icon(&[connecting.clone(), ConnectionState::Disconnected], None), TrayIcon::Connecting);
+    // A failure and a status error still win (as before), and a code / credential wait shows the key.
+    assert_eq!(icon(&[connecting.clone(), failed], None), TrayIcon::Failure);
+    assert_eq!(icon(std::slice::from_ref(&connecting), Some("e")), TrayIcon::Failure);
+    assert_eq!(icon(&[connecting, wait, up], None), TrayIcon::Auth);
+    // Disconnecting: the tunnel is still up until it is gone.
+    assert_eq!(icon(&[ConnectionState::Disconnecting], None), TrayIcon::Active);
+}
+
+#[test]
+fn the_tray_tooltip_says_what_the_icon_shows() {
+    // WinVPN on Windows (the product name in the resolved text).
+    let tip = |language, icon: TrayIcon| {
+        l10n::with_language(language, || icon.tooltip()).map(|t| t.replace("WinVPN", "MacVPN"))
+    };
+    assert_eq!(tip(AppLanguage::En, TrayIcon::Connecting).as_deref(), Some("MacVPN – Connecting…"));
+    assert_eq!(tip(AppLanguage::En, TrayIcon::Active).as_deref(), Some("MacVPN – Connected"));
+    assert_eq!(tip(AppLanguage::En, TrayIcon::Auth).as_deref(), Some("MacVPN – Waiting for authentication"));
+    assert_eq!(tip(AppLanguage::En, TrayIcon::Idle), None, "the product name");
+    assert_eq!(tip(AppLanguage::En, TrayIcon::Failure), None, "the product name");
+    assert_eq!(tip(AppLanguage::Hu, TrayIcon::Connecting).as_deref(), Some("MacVPN – Csatlakozás…"));
+    assert_eq!(tip(AppLanguage::Hu, TrayIcon::Active).as_deref(), Some("MacVPN – Csatlakozva"));
+    assert_eq!(tip(AppLanguage::Hu, TrayIcon::Auth).as_deref(), Some("MacVPN – Hitelesítésre vár"));
+}
+
+/// Network loss (maintainer report, 2026-10-28): the rows of the connections waiting for network say so, and the
+/// tray shows the half-filled shield with its own tooltip, never the connected one.
+#[test]
+fn connections_waiting_for_network_never_show_connected() {
+    let f = Fixture::new(AppLanguage::En);
+    let svc = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    let other = "48B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    f.native.set_list(Ok(vec![
+        SystemVpn::new(svc, "Corp", "IKEv2", "Connected"),
+        SystemVpn::new(other, "Lab", "IKEv2", "Disconnected"),
+    ]));
+    let m = f.manager();
+    m.refresh();
+    let build = || ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), false);
+    let mut vm = build();
+    assert_eq!(vm.tray, TrayIcon::Active);
+    // Nothing waits: nothing changes.
+    vm.set_waiting_for_network(&[]);
+    assert_eq!(vm.tray, TrayIcon::Active);
+    // A key that is not up (or unknown) changes nothing either.
+    vm.set_waiting_for_network(&[other.to_string(), "nope".to_string()]);
+    assert_eq!(vm.tray, TrayIcon::Active);
+    vm.set_waiting_for_network(&[svc.to_string()]);
+    assert_eq!(vm.tray, TrayIcon::WaitingForNetwork);
+    let row = |vm: &ViewModel, id: &str| vm.rows.iter().find(|r| r.id == id).unwrap().clone();
+    assert_eq!(row(&vm, svc).state, RowState::WaitingForNetwork);
+    assert!(row(&vm, svc).switch_on, "it can still be switched off");
+    assert_eq!(row(&vm, other).state, RowState::Disconnected);
+    let json = serde_json::to_value(&vm).unwrap();
+    assert_eq!(json["tray"], "waitingForNetwork");
+    assert_eq!(json["rows"].as_array().unwrap().iter().find(|r| r["id"] == svc).unwrap()["state"], "waitingForNetwork");
+    // Connecting is overlaid too.
+    f.native.set_list(Ok(vec![SystemVpn::new(svc, "Corp", "IKEv2", "Connecting")]));
+    m.refresh();
+    let mut vm = build();
+    vm.set_waiting_for_network(&[svc.to_string()]);
+    assert_eq!((vm.tray, row(&vm, svc).state), (TrayIcon::WaitingForNetwork, RowState::WaitingForNetwork));
+    // A failure (here a status error) still wins.
+    f.native.set_list(Ok(vec![SystemVpn::new(svc, "Corp", "IKEv2", "Connected")]));
+    m.refresh();
+    let mut snap = m.snapshot();
+    snap.status_error = Some("e".into());
+    let mut vm = ViewModel::build(&snap, "en", |_| true, Vec::new(), false);
+    vm.set_waiting_for_network(&[svc.to_string()]);
+    assert_eq!((vm.tray, row(&vm, svc).state), (TrayIcon::Failure, RowState::WaitingForNetwork));
+}
+
+#[test]
+fn the_waiting_for_network_tooltip() {
+    let tip = |language| {
+        l10n::with_language(language, || TrayIcon::WaitingForNetwork.tooltip()).map(|t| t.replace("WinVPN", "MacVPN"))
+    };
+    assert_eq!(tip(AppLanguage::En).as_deref(), Some("MacVPN – Waiting for network…"));
+    assert_eq!(tip(AppLanguage::Hu).as_deref(), Some("MacVPN – Hálózatra vár…"));
+}
+
+#[test]
+fn a_connecting_system_vpn_shows_the_connecting_icon() {
+    let f = Fixture::new(AppLanguage::En);
+    let svc = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    f.native.set_list(Ok(vec![SystemVpn::new(svc, "Corp", "IKEv2", "Connecting")]));
+    let m = f.manager();
+    m.refresh();
+    let snapshot = m.snapshot();
+    assert!(snapshot.connecting);
+    let vm = ViewModel::build(&snapshot, "en", |_| true, Vec::new(), false);
+    assert_eq!(vm.tray, TrayIcon::Connecting);
+    assert_eq!(serde_json::to_value(&vm).unwrap()["tray"], "connecting");
+    f.native.set_list(Ok(vec![SystemVpn::new(svc, "Corp", "IKEv2", "Connected")]));
+    m.refresh();
+    assert!(!m.snapshot().connecting);
+    assert_eq!(ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), false).tray, TrayIcon::Active);
 }
 
 #[test]

@@ -74,7 +74,7 @@ export function when(seconds: number | null, language: 'en' | 'hu'): string {
   return new Date(seconds * 1000).toLocaleString(language === 'hu' ? 'hu-HU' : 'en-US', { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-const ACTIVE = new Set(['connected', 'connecting', 'awaitingAuth', 'disconnecting']);
+const ACTIVE = new Set(['connected', 'connecting', 'awaitingAuth', 'disconnecting', 'waitingForNetwork']);
 
 /// The catalog's connections (rows with its badge).
 export function catalogRows(rows: readonly Row[], catalogId: string): Row[] {

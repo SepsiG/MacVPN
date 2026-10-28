@@ -1,7 +1,7 @@
 <script lang="ts">
   // A connection's coloured icon bubble (one colour and glyph per VPN type; `null`: a system VPN), with the
-  // connection state as a badge: green connected, amber connecting / awaiting authentication (pulsing unless
-  // reduced motion is asked for), red failed, grey disconnected.
+  // connection state as a badge: green connected, amber connecting / awaiting authentication / waiting for network
+  // (pulsing unless reduced motion is asked for), red failed, grey disconnected.
   import type { Kind, RowState } from './api';
   import { tr } from './l10n.svelte';
 
@@ -15,7 +15,7 @@
   const tone = $derived(
     state === 'connected'
       ? 'on'
-      : state === 'connecting' || state === 'disconnecting' || state === 'awaitingAuth'
+      : state === 'connecting' || state === 'disconnecting' || state === 'awaitingAuth' || state === 'waitingForNetwork'
         ? 'busy'
         : state === 'failed'
           ? 'fail'

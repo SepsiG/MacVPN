@@ -1,12 +1,13 @@
 //! The app side of the root helper (port of `MvpnClient.swift`): `sudo -n /usr/local/libexec/macvpn/mvpn …`.
 
 use crate::command::{CommandError, CommandResult, CommandRunner};
+use macvpn_core::fsx::FileOwner;
 use macvpn_core::l10n::{self, AppLanguage, Arg};
 use macvpn_core::mfa::{AuthResponseKind, MFAError};
 use macvpn_core::models::{Secrets, VPNKind, uuid_string};
 use macvpn_core::status::{RootStatus, StatusParseError, parse_status};
 use macvpn_core::swift_str;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -50,6 +51,31 @@ impl From<CommandError> for ClientError {
     fn from(e: CommandError) -> Self {
         ClientError::Command(e)
     }
+}
+
+/// "Clear Log…" of a helper kind: the user's own log in `dir` (`/var/log/macvpn`), `<id>.log` and its rotated
+/// `<id>.log.1`, emptied in place by the app itself. The root layer creates both as the user's 0600 files and
+/// rolls them in place (its writers append with `O_APPEND`), so no root call is needed: the app truncates only a
+/// regular file of `owner`, never through a symlink, and names it from the UUID only. `note` starts the live log.
+/// The engines' root-only logs in the run directory are not the Log tab's and stay as they are (the root layer's
+/// copy offset into the user's log goes on from where it was).
+pub fn clear_log_in(dir: &Path, id: &Uuid, owner: &FileOwner, note: &str) -> Result<(), String> {
+    let live = dir.join(format!("{}.log", uuid_string(id)));
+    let rotated = dir.join(format!("{}.log.1", uuid_string(id)));
+    // The older part first: a failure on the live log never leaves the older lines behind a cleared live log.
+    for (path, note) in [(rotated, None), (live, Some(note))] {
+        macvpn_core::log::clear_file(&path, owner, note).map_err(|e| {
+            if e.kind() == std::io::ErrorKind::PermissionDenied {
+                l10n::tr(
+                    "The connection's log cannot be cleared: it belongs to another user or cannot be written.",
+                    &[],
+                )
+            } else {
+                l10n::tr("The log could not be cleared: %@", &[Arg::Str(&e.to_string())])
+            }
+        })?;
+    }
+    Ok(())
 }
 
 pub const INSTALL_DIR: &str = "/usr/local/libexec/macvpn";

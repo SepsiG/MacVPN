@@ -161,6 +161,11 @@ impl HelperClient for MockHelper {
         let payload = kind.stdin_payload(response).ok_or_else(|| "invalid code".to_string())?;
         self.run(respond_line(id), Some(payload)).map(|_| ())
     }
+
+    /// Recorded as `clear-log <id>` with the note as its stdin.
+    fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
+        self.run(format!("clear-log {}", uuid_string(id)), Some(note.to_string())).map(|_| ())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -180,6 +185,8 @@ pub struct MockNative {
     start_error: Mutex<Option<String>>,
     /// `managed_service_id` (WinVPN's own RAS entries); empty: `None` for every connection (macOS).
     managed: Mutex<HashMap<Uuid, String>>,
+    /// The connections whose log the platform keeps itself (WinVPN's RAS log); empty: none (macOS).
+    own_logs: Mutex<HashMap<Uuid, Vec<String>>>,
 }
 
 impl Default for MockNative {
@@ -192,6 +199,7 @@ impl Default for MockNative {
             stops: Mutex::new(Vec::new()),
             start_error: Mutex::new(None),
             managed: Mutex::new(HashMap::new()),
+            own_logs: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -211,6 +219,16 @@ impl MockNative {
 
     pub fn set_managed(&self, connection: &Uuid, service_id: &str) {
         self.managed.lock().unwrap().insert(*connection, service_id.to_string());
+    }
+
+    /// The platform keeps `connection`'s log itself (its clears are recorded).
+    pub fn set_own_log(&self, connection: &Uuid) {
+        self.own_logs.lock().unwrap().insert(*connection, Vec::new());
+    }
+
+    /// The notes of the clears of `connection`'s own log.
+    pub fn own_log_clears(&self, connection: &Uuid) -> Vec<String> {
+        self.own_logs.lock().unwrap().get(connection).cloned().unwrap_or_default()
     }
 
     pub fn shows(&self) -> usize {
@@ -254,6 +272,16 @@ impl NativeController for MockNative {
 
     fn managed_service_id(&self, connection: &Uuid) -> Option<String> {
         self.managed.lock().unwrap().get(connection).cloned()
+    }
+
+    fn clear_log(&self, connection: &Uuid, note: &str) -> Result<bool, String> {
+        match self.own_logs.lock().unwrap().get_mut(connection) {
+            Some(clears) => {
+                clears.push(note.to_string());
+                Ok(true)
+            }
+            None => Ok(false),
+        }
     }
 }
 

@@ -392,7 +392,7 @@ The Windows counterpart of the root layer (spec 4.1; [the 2b plan](superpowers/p
   error 1939).
 - **The protocol** (`macvpn_core::service_proto`, `SERVICE_VERSION` 1): one request per pipe connection, the
   argument list of `mvpn` (`up|down <kind> <id> [--debug] [--accept-risky …] [--lang en|hu]`, `respond`, `status`,
-  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `wireguard-check`, `wireguard-update`) plus the framed
+  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `wireguard-check`, `wireguard-update`) plus the framed
   stdin body of root layer 8 (`core::helper_args::up_stdin`, shared with macOS' `MvpnClient`), zeroized after use;
   the answer is an exit code with stdout/stderr. A whole request has a 5 s deadline; one in-flight request per SID.
 - **The pipe:** `\\.\pipe\WinVPN`, owner SYSTEM, a protected DACL (NETWORK denied, INTERACTIVE gets
@@ -431,7 +431,10 @@ The Windows counterpart of the root layer (spec 4.1; [the 2b plan](superpowers/p
   the driver's structs (keys zeroized); IP Helper sets addresses, routes and DNS on the adapter's own LUID only
   (`sys::iphlp`); the adapter's name and GUID are derived from the connection ID with SHA-256.
 - **Logs:** `FileLogStore` (`logs.rs`): one masked log per connection (8 MiB, then `<ID>.log.1`), read by the app
-  through `log <id> <offset>`; `service.log` 1 MiB + `.1`. **Debug mode** (G-6) adds `diagnostics::snapshot` before and
+  through `log <id> <offset>`; `clear-log <id>` (the Log tab's "Clear Log…"; the log's owner only, now or after
+  `down`) empties it in place under the writing sink's lock, deletes `.1`, writes `core::log::cleared_note` with the
+  service's local time and takes a new generation (the app's tail starts over; an older service answers the usage
+  error, which the app shows as "update WinVPN"; `SERVICE_VERSION` stays 1); `service.log` 1 MiB + `.1`. **Debug mode** (G-6) adds `diagnostics::snapshot` before and
   after an `up` (resolution, IPv4 routes, DNS, interfaces; read-only IP Helper) and WireGuard's peer status
   (`WireGuardGetConfiguration`, without keys).
 - **Tested where:** the pure parts on every OS (`service_core.rs`, `wg_update.rs`, `diagnostics.rs`, `ras_logoff.rs`,
@@ -525,8 +528,9 @@ without the WinVPN Service and without an administrator; the user's own Windows 
   shows them connected). `remove` hangs up, clears the PSK, deletes the entry, the profile and the logs; `reconcile`
   (after every unlock and restore, never on a locked vault: `ConnectionsModel::sync_native_profiles`) deletes
   `WinVPN-<UUID>` entries whose connection is gone. The log is `<data>\logs\ras\<UUID>.log` (1 MiB + `.1`), read
-  through `NativeController::log_source` / `HelperClient::log_source` (G-2: the Log tab tails it; no `log stream`).
-  At logoff (`WM_ENDSESSION`) it hangs up its connections; the service is the second net.
+  through `NativeController::log_source` / `HelperClient::log_source` (G-2: the Log tab tails it; no `log stream`)
+  and cleared by `NativeController::clear_log` / `HelperClient::clear_log` (in place, through the dial's `RasLog`
+  when one holds it, `.1` emptied too). At logoff (`WM_ENDSESSION`) it hangs up its connections; the service is the second net.
 - **System VPNs** (`win/system_vpns.rs`, `win/ras_watch.rs`): `RasEnumEntriesW(NULL, NULL)` minus the private
   phonebook; id = the entry's GUID as an upper-case UUID (so the vault's stored secrets work), label L2TP / IKEv2 /
   SSTP / VPN, status from `RasEnumConnectionsW` (GUID first). `start`: a PSK stored in WinVPN is written to that entry
@@ -585,6 +589,21 @@ entry to the backup.
 - The web side has one mechanism: `app/ui/src/app.css`'s single `@media (prefers-color-scheme: dark)` block, which
   the native theme drives (`app/ui/src/lib/appearance.test.ts` pins it). Windows' own dialogs (COM file dialogs,
   message boxes, UAC) follow Windows' theme; the tray tint stays the taskbar's.
+
+### The Log tab's time filter and "Clear Log…"
+
+- **Time filter:** app-core `logs::line_time` reads a line's local time from the formats the logs contain (a
+  `YYYY-MM-DD HH:MM:SS` / `…T…` line start: OpenVPN, `log stream`; wireguard-go's `LEVEL: (iface) YYYY/MM/DD
+  HH:MM:SS`; pppd's `Www Mmm d HH:MM:SS YYYY` after an optional `[pppd] `; any `YYYY-MM-DD HH:MM:SS` in a `═══ … ═══`
+  header). `LogBuffer` gives a line without one the previous line's time; each `LogLineView` carries it (`time`,
+  wall-clock seconds without a time zone, `logs::civil_seconds`). The UI (`logview.ts`) turns the presets and the
+  `datetime-local` fields into a `TimeRange` the same way and filters with it; "Copy" sends it (`log_copy`).
+- **Clear Log…** (`log_clear` → `logs::clear_log`): `HelperClient::clear_log` for a helper kind, else
+  `NativeController::clear_log` (`Ok(false)`: no platform log, so the debug collection is cleared). The first line is
+  `core::log::cleared_note`. macOS: the app truncates `/var/log/macvpn/<id>.log` and `.1` itself
+  (`core::log::clear_file`: `O_NOFOLLOW`, a regular file of the user only, in place, so the root layer's
+  `O_APPEND` writers and the in-place rolling go on); no root-layer change (root layer stays 9). WinVPN: the
+  service's `clear-log` and the RAS logs (see above). The view then subscribes again.
 
 ### Failure reasons and connection notices
 

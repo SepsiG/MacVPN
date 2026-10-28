@@ -1,11 +1,11 @@
 //! Log lines and the log tailer (port of `LogLine.swift` and `LogTailer.swift`).
 
-use crate::fsx::{self, FileId};
+use crate::fsx::{self, FileId, FileOwner, Follow, OpenFor};
 use crate::l10n;
 use crate::swift_str;
 use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
-use std::path::PathBuf;
+use std::io::{self, Read, Seek, SeekFrom, Write};
+use std::path::{Path, PathBuf};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LogFilter {
@@ -127,6 +127,35 @@ impl LogSource for FileLogSource {
         }
         Some(LogRead { identity, size, start: offset, data })
     }
+}
+
+/// The first line of a cleared log (the Log tab's "Clear Log…"): `═══ Log cleared at <time> ═══`, `time` as the logs
+/// write it (`YYYY-MM-DD HH:MM:SS`, local). A header line: the Commands filter shows it and the time filter reads its
+/// time. Written by the app (macOS, WinVPN's RAS log) and by the WinVPN Service (its connection logs).
+pub fn cleared_note(time: &str) -> String {
+    format!("═══ {} ═══", l10n::tr("Log cleared at %@", &[l10n::Arg::Str(time)]))
+}
+
+/// Empties the log file at `path` in place (the Log tab's "Clear Log…"), then appends `note` as its first line.
+/// The file stays the same file: a writer holding it open for appending (OpenVPN's `--log-append`, the root
+/// layer's child processes) continues at its new end, and a tail sees it shrink and starts over. Only a regular
+/// file of `owner` is touched, never through a symlink (`Ok(false)`: there is no such file, nothing to clear).
+pub fn clear_file(path: &Path, owner: &FileOwner, note: Option<&str>) -> io::Result<bool> {
+    let (mut file, stat) = match fsx::open_regular(path, OpenFor::Write, Follow::No, true) {
+        Ok(opened) => opened,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(e),
+    };
+    if fsx::owner(&stat)? != *owner {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "the log belongs to another user"));
+    }
+    file.set_len(0)?;
+    if let Some(note) = note {
+        // At the end: a line an appending writer wrote since the truncation stays whole.
+        file.seek(SeekFrom::End(0))?;
+        file.write_all(format!("{note}\n").as_bytes())?;
+    }
+    Ok(true)
 }
 
 /// Reads a log's new, complete lines from an offset, through a [`LogSource`]. After truncation or a new log (a new

@@ -27,6 +27,7 @@
 use macvpn_app_core::connection_notices::{self, Notice};
 use macvpn_app_core::notify::NotificationContent;
 use macvpn_app_core::reconnect::{self as planner, Skip};
+use macvpn_app_core::{RowState, TrayIcon};
 use macvpn_core::date::Date;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::{Connection, ConnectionState, VPNKind, parse_uuid, uuid_string};
@@ -624,6 +625,33 @@ fn reconnect(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     let stays = calls("down", &office_key) == downs && state.manager.state(&office_key).is_connected();
     say(format!("cafe up={up} stays_connected={stays}"));
     checks.push(("cafeStays", up && stays));
+
+    // 6. The network goes away under the tunnel (Wi-Fi off): "Waiting for network…" in its row and the tray, never
+    // connected; back on the same network: connected again, the tunnel left alone.
+    // The home connection's failure (step 3) would win the tray: it is cleared first.
+    if let Some(c) = connection(state, &home_key) {
+        state.manager.disconnect(&c);
+    }
+    let cafe = snapshot("172.16.5.1", 4, Some("Cafe"), &["172.16.5.0/24"]);
+    let downs = calls("down", &office_key);
+    let shows = |row: RowState, tray: TrayIcon| {
+        let vm = state.view_model();
+        let state_of = vm.rows.iter().find(|r| r.id == office_key).map(|r| r.state.clone());
+        (vm.tray == tray && state_of.is_some_and(|s| std::mem::discriminant(&s) == std::mem::discriminant(&row)))
+            .then_some(())
+    };
+    set_network(Some(NetworkSnapshot::default()));
+    state.reconnect.send(Event::NetworkChanged);
+    let lost = Instant::now();
+    let waiting = wait_for(15, || shows(RowState::WaitingForNetwork, TrayIcon::WaitingForNetwork)).is_some();
+    let debounced = lost.elapsed() >= Duration::from_secs_f64(planner::NETWORK_DEBOUNCE - 0.5);
+    set_network(cafe);
+    state.reconnect.send(Event::NetworkChanged);
+    let connected = RowState::Connected { ip: None, since: None };
+    let back = wait_for(15, || shows(connected.clone(), TrayIcon::Active)).is_some();
+    let untouched = calls("down", &office_key) == downs;
+    say(format!("network loss waiting={waiting} debounced={debounced} back={back} untouched={untouched}"));
+    checks.push(("networkLoss", waiting && debounced && back && untouched));
     for key in [&home_key, &office_key] {
         if let Some(c) = connection(state, key) {
             state.manager.disconnect(&c);

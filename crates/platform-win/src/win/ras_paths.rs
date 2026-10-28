@@ -90,6 +90,18 @@ impl RasPaths {
         out
     }
 
+    /// "Clear Log…": `<UUID>.log` emptied in place with `note` first (through `live`, the log a dial holds, when
+    /// there is one) and `<UUID>.log.1` emptied; only this user's regular files, never through a link.
+    pub(crate) fn clear_log(&self, id: &Uuid, note: &str, live: Option<&RasLog>) -> Result<(), String> {
+        let me = FileOwner::current_user().map_err(|e| cleared_error(&e))?;
+        let log = self.log(id);
+        macvpn_core::log::clear_file(&rotated(&log), &me, None).map_err(|e| cleared_error(&e))?;
+        match live {
+            Some(live) => live.clear(&me, note),
+            None => macvpn_core::log::clear_file(&log, &me, Some(note)).map(|_| ()).map_err(|e| cleared_error(&e)),
+        }
+    }
+
     /// Deletes the connection's profile and logs (the connection was deleted).
     pub(crate) fn forget(&self, id: &Uuid) {
         let log = self.log(id);
@@ -102,6 +114,10 @@ impl RasPaths {
 /// `<UUID>.log.1`
 fn rotated(path: &Path) -> PathBuf {
     path.with_extension("log.1")
+}
+
+fn cleared_error(e: &std::io::Error) -> String {
+    l10n::tr("The log could not be cleared: %@", &[Arg::Str(&e.to_string())])
 }
 
 /// One connection's log file, written line by line (each line already masked by the caller).
@@ -129,6 +145,17 @@ impl RasLog {
         let file = fsx::open_append(&path, Access::Private).ok();
         let written = file.as_ref().and_then(|f| f.metadata().ok()).map_or(0, |m| m.len());
         RasLog { path, state: Mutex::new(LogState { file, written }) }
+    }
+
+    /// "Clear Log…" while a dial holds the log: under its lock the handle is closed, the same file emptied in place
+    /// with `note` first, and opened again for appending (the next lines follow the note).
+    pub(crate) fn clear(&self, owner: &FileOwner, note: &str) -> Result<(), String> {
+        let mut s = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        s.file = None;
+        let cleared = macvpn_core::log::clear_file(&self.path, owner, Some(note));
+        s.file = fsx::open_append(&self.path, Access::Private).ok();
+        s.written = s.file.as_ref().and_then(|f| f.metadata().ok()).map_or(0, |m| m.len());
+        cleared.map(|_| ()).map_err(|e| cleared_error(&e))
     }
 
     pub(crate) fn lines(&self, lines: &[String]) {

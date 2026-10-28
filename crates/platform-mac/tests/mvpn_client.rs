@@ -183,3 +183,50 @@ fn paths() {
     );
     assert_eq!(macvpn_platform_mac::mvpn_client::EXECUTABLE, "/usr/local/libexec/macvpn/mvpn");
 }
+
+/// "Clear Log…": the user's own `<id>.log` and `<id>.log.1` are emptied in place by the app (no root call), the
+/// note starts the live one; another user's log, a symlink or no log at all are handled without touching anything.
+#[test]
+fn clear_log_empties_the_users_log_and_its_rotated_part_in_place() {
+    use macvpn_core::fsx::FileOwner;
+    use std::os::unix::fs::MetadataExt;
+    hu();
+    let dir = std::env::temp_dir().join(format!("macvpn-clear-log-{}", Uuid::new_v4()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let live = dir.join("11111111-2222-3333-4444-555555555555.log");
+    let rotated = dir.join("11111111-2222-3333-4444-555555555555.log.1");
+    std::fs::write(&live, "old\n").unwrap();
+    std::fs::write(&rotated, "older\n").unwrap();
+    let me = FileOwner::from_uid(std::fs::metadata(&live).unwrap().uid());
+    let mock = MockCommandRunner::new();
+    let ino = std::fs::metadata(&live).unwrap().ino();
+    macvpn_platform_mac::mvpn_client::clear_log_in(&dir, &id(), &me, "═══ NOTE ═══").unwrap();
+    assert!(mock.calls().is_empty(), "no sudo call");
+    assert_eq!(std::fs::read_to_string(&live).unwrap(), "═══ NOTE ═══\n");
+    assert_eq!(std::fs::read_to_string(&rotated).unwrap(), "");
+    assert_eq!(std::fs::metadata(&live).unwrap().ino(), ino, "the same file, so the writers keep appending to it");
+
+    // Only the live log (never rotated yet): fine.
+    std::fs::remove_file(&rotated).unwrap();
+    macvpn_platform_mac::mvpn_client::clear_log_in(&dir, &id(), &me, "═══ NOTE ═══").unwrap();
+    // No log at all: nothing to clear.
+    std::fs::remove_file(&live).unwrap();
+    macvpn_platform_mac::mvpn_client::clear_log_in(&dir, &id(), &me, "═══ NOTE ═══").unwrap();
+    assert!(!live.exists(), "never created");
+
+    // Another user's log is left alone, with a clear message.
+    std::fs::write(&live, "theirs\n").unwrap();
+    let other = FileOwner::from_uid(std::fs::metadata(&live).unwrap().uid() + 1);
+    let e = macvpn_platform_mac::mvpn_client::clear_log_in(&dir, &id(), &other, "═══ NOTE ═══").unwrap_err();
+    assert_eq!(e, "A kapcsolat naplóját nem lehet törölni: egy másik felhasználóé, vagy nem írható.");
+    assert_eq!(std::fs::read_to_string(&live).unwrap(), "theirs\n");
+
+    // A symlink in place of the log is never followed.
+    std::fs::remove_file(&live).unwrap();
+    let target = dir.join("target");
+    std::fs::write(&target, "keep\n").unwrap();
+    std::os::unix::fs::symlink(&target, &live).unwrap();
+    assert!(macvpn_platform_mac::mvpn_client::clear_log_in(&dir, &id(), &me, "═══ NOTE ═══").is_err());
+    assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep\n");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

@@ -113,6 +113,13 @@ impl Host for RealHost {
     fn snapshot(&self, server: Option<&str>) -> Option<crate::windows::diagnostics::Snapshot> {
         Some(diag::snapshot(server))
     }
+    /// `GetLocalTime`: the machine's local time, as the app's own log lines write it.
+    fn local_timestamp(&self) -> String {
+        let mut t = windows_sys::Win32::Foundation::SYSTEMTIME::default();
+        // SAFETY: a valid out-pointer to a plain struct; the call cannot fail.
+        unsafe { windows_sys::Win32::System::SystemInformation::GetLocalTime(&mut t) };
+        format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond)
+    }
 }
 
 /// The host over the data directory's outcome: with a safe directory its engines and logs; without one (`problem`)

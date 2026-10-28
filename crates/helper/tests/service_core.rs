@@ -489,3 +489,43 @@ fn a_degraded_service_updates_nothing() {
     assert_eq!((r.code, err(&r).as_str()), (1, "unsafe folder"));
     assert_eq!(*s.host().wg.updates.lock().unwrap(), 0);
 }
+
+/// "Clear Log…" (`clear-log <id>`): only the log's owner (now or after `down`) may clear it; the log starts over (a new
+/// generation, so the app's tail restarts) with the localized note and its time; anyone else gets the unknown-ID
+/// answer and nothing changes.
+#[test]
+fn clear_log_empties_only_the_owners_log() {
+    with_language(AppLanguage::En, || {
+        let (s, d) = service();
+        let r = s.handle(&alice(), &req(&["up", "wireguard", ID], &framed(WG, "password=hunter22\n")));
+        assert_eq!(r.code, 0);
+        let read = |c: &Caller| LogSlice::parse(&s.handle(c, &req(&["log", ID, "0"], b"")).stdout).unwrap();
+        let before = read(&alice());
+        assert!(String::from_utf8_lossy(&before.data).contains("starting"));
+        std::fs::write(d.path().join(format!("{ID}.log.1")), "older part\n").unwrap();
+
+        for r in [
+            s.handle(&bob(), &req(&["clear-log", ID], b"")),
+            s.handle(&alice(), &req(&["clear-log", "../x"], b"")),
+            s.handle(&alice(), &req(&["clear-log", "1F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"], b"")),
+        ] {
+            assert_eq!((r.code, err(&r).as_str()), (1, "Invalid ID"));
+        }
+        assert_eq!(read(&alice()), before, "a refused clear changes nothing");
+        assert!(d.path().join(format!("{ID}.log.1")).exists());
+
+        let r = s.handle(&alice(), &req(&["clear-log", ID, "--lang", "hu"], b""));
+        assert_eq!((r.code, err(&r).as_str()), (0, ""));
+        let after = read(&alice());
+        assert_ne!(after.generation, before.generation, "a new log for the app's tail");
+        let text = String::from_utf8(after.data).unwrap();
+        let note = regex::Regex::new(r"^═══ Napló törölve: \d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} ═══\n$").unwrap();
+        assert!(note.is_match(&text), "{text}");
+        assert!(!d.path().join(format!("{ID}.log.1")).exists(), "the rotated part goes too");
+
+        // After `down` the owner can still clear it (the Log tab still shows it).
+        s.handle(&alice(), &req(&["down", "wireguard", ID], b""));
+        assert_eq!(s.handle(&alice(), &req(&["clear-log", ID], b"")).code, 0);
+        assert_eq!(s.handle(&bob(), &req(&["clear-log", ID], b"")).code, 1);
+    });
+}

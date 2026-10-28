@@ -756,7 +756,7 @@ fn revoke_closes_the_socket_and_disconnects(t: Kind) {
 // MARK: - Limits
 
 fn the_ninth_client_is_refused(t: Kind) {
-    let h = Harness::over_with_limits(t, ControlLimits { auth_timeout: Duration::from_secs(30), ..fast_limits() });
+    let h = Harness::over(t);
     let clients: Vec<TestClient> = (0..8).map(|_| h.connect()).collect();
     // The accept thread registers them in order; wait for all eight before the ninth.
     let mut probe = clients;
@@ -771,17 +771,17 @@ fn the_ninth_client_is_refused(t: Kind) {
 }
 
 fn a_silent_client_is_closed_after_the_auth_timeout(t: Kind) {
-    let h = Harness::over(t);
+    let h = Harness::over_with_limits(t, short_auth_limits());
     let started = Instant::now();
     let mut c = h.connect();
     c.expect_closed();
-    assert!(started.elapsed() >= Duration::from_millis(300));
+    assert!(started.elapsed() >= SHORT_AUTH_TIMEOUT);
     wait_until("the log line", || h.host.logs().iter().any(|l| l.contains("no pair or hello in time")));
 }
 
 fn a_connection_that_says_nothing_and_closes_is_not_logged(t: Kind) {
-    // A long deadline: only the close can end the silent connection.
-    let h = Harness::over_with_limits(t, ControlLimits { auth_timeout: Duration::from_secs(30), ..fast_limits() });
+    // The harness's long deadline: only the close can end the silent connection.
+    let h = Harness::over(t);
     let before = h.host.logs().len();
     let c = h.connect();
     c.close();
@@ -897,8 +897,47 @@ fn close_in_the_connect_gap_leaves_nothing_up(t: Kind) {
     });
 }
 
-fn a_dripping_client_is_closed_at_the_auth_deadline(t: Kind) {
+/// The harness's limits give a client that is slow to speak (a loaded CI runner or VM descheduling the test thread
+/// between its connect and its `hello`) plenty of time: only the auth deadline tests use a short one
+/// (`short_auth_limits`). With a 300 ms deadline for every test, `hello` raced the deadline under load and the
+/// server closed the connection with the line unread (Windows: os error 10053 at the client's read).
+fn a_client_slow_to_say_hello_is_not_closed_by_the_test_limits(t: Kind) {
     let h = Harness::over(t);
+    let token = h.pair(&[]);
+    let mut c = h.connect();
+    std::thread::sleep(Duration::from_millis(600));
+    c.send(json!({"op":"hello","token":token}));
+    assert_eq!(c.read(), json!({"ok":true,"api":1}));
+}
+
+/// The auth deadline ends at `hello`: an authenticated client that stays quiet for longer is still served (the
+/// reader's clone of the stream must see the timeout cleared).
+fn an_authenticated_client_outlives_the_auth_deadline(t: Kind) {
+    let h = Harness::over_with_limits(t, short_auth_limits());
+    let mut c = h.authed(&[]);
+    std::thread::sleep(SHORT_AUTH_TIMEOUT * 2);
+    c.send(json!({"id":1,"op":"list"}));
+    assert_eq!(c.reply_to(1).1["ok"], true);
+    assert!(!h.host.logs().iter().any(|l| l.contains("no pair or hello in time")), "{:?}", h.host.logs());
+}
+
+/// `stop` closes a client that has not said `hello` yet at once: it does not wait for the client's auth deadline
+/// (the shutdown must wake the session's blocked read).
+fn stop_does_not_wait_for_the_auth_deadline_of_a_silent_client(t: Kind) {
+    let mut h = Harness::over(t);
+    let mut silent = h.connect();
+    // Answered, so its session is up and back in its read (with the harness's 30 s auth deadline).
+    silent.send(json!({"id":1,"op":"reboot"}));
+    assert_eq!(silent.read()["error"], "unsupported");
+    let started = Instant::now();
+    h.server.as_mut().unwrap().stop(StopMode::EndLeases);
+    let took = started.elapsed();
+    assert!(took < fast_limits().stop_timeout / 2, "stop took {took:?}");
+    silent.expect_closed();
+}
+
+fn a_dripping_client_is_closed_at_the_auth_deadline(t: Kind) {
+    let h = Harness::over_with_limits(t, short_auth_limits());
     let mut c = h.connect();
     let started = Instant::now();
     let mut closed = false;
@@ -1364,6 +1403,9 @@ over_both!(
     down_of_the_key_in_the_connect_gap_leaves_nothing_up,
     close_in_the_connect_gap_leaves_nothing_up,
     a_dripping_client_is_closed_at_the_auth_deadline,
+    a_client_slow_to_say_hello_is_not_closed_by_the_test_limits,
+    an_authenticated_client_outlives_the_auth_deadline,
+    stop_does_not_wait_for_the_auth_deadline_of_a_silent_client,
     the_server_times_the_pairing_window_out,
     a_client_gone_before_the_approval_is_not_paired,
     a_duplicate_pending_up_is_busy_and_pending_ups_are_capped,

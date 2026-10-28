@@ -1185,3 +1185,21 @@ mod net {
         );
     }
 }
+
+/// "Clear Log…" through the WinVPN Service: exit 0 is done; an older service (2.0.x) does not know `clear-log` and
+/// answers its usage error (exit 2): "update WinVPN", never the raw usage text; any other failure is its message.
+#[test]
+fn a_clear_log_answer_of_an_older_service_says_to_update() {
+    use macvpn_platform_win::pure::engine::clear_log_answer;
+    l10n::with_language(AppLanguage::En, || {
+        assert_eq!(clear_log_answer(0, ""), Ok(()));
+        let old = clear_log_answer(2, "Usage: up|down <openvpn|wireguard> <id> …").unwrap_err();
+        assert_eq!(old, texts::service_cannot_clear_log());
+        assert!(old.contains("WinVPN") && !old.contains("Usage"), "{old}");
+        assert_eq!(clear_log_answer(1, "Invalid ID"), Err("Invalid ID".to_string()));
+        assert_eq!(clear_log_answer(1, ""), Err("mvpn error (exit code: 1)".to_string()));
+    });
+    l10n::with_language(AppLanguage::Hu, || {
+        assert!(clear_log_answer(2, "Használat: …").unwrap_err().starts_with("A WinVPN Service"));
+    });
+}

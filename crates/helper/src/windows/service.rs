@@ -17,7 +17,7 @@ use crate::windows::diagnostics::{self, PeerStatus, Snapshot};
 use macvpn_core::l10n::with_language;
 use macvpn_core::models::VPNKind;
 use macvpn_core::service_proto::{
-    EngineFacts, EngineUpdate, LogSlice, Request, Response, SERVICE_VERSION, UPDATE_BUSY, WIREGUARD_CHECK,
+    CLEAR_LOG, EngineFacts, EngineUpdate, LogSlice, Request, Response, SERVICE_VERSION, UPDATE_BUSY, WIREGUARD_CHECK,
     WIREGUARD_UPDATE,
 };
 use std::collections::{HashMap, HashSet};
@@ -57,6 +57,11 @@ pub trait LogStore: Send + Sync {
     fn open(&self, id: &str, masker: Masker) -> Box<dyn LogSink>;
     /// The bytes from `offset` (at most `max`) of the current log; `None`: no log.
     fn read(&self, id: &str, offset: u64, max: usize) -> Option<LogSlice>;
+    /// "Clear Log…": empties the log of `id` (its rotated part too) in place, `note` as its first line, as a new
+    /// generation; its sink keeps writing after the note. `false`: no log of `id` (nothing changed).
+    fn clear(&self, _id: &str, _note: &str) -> bool {
+        false
+    }
     /// Deletes the log of `id` (the service no longer keeps it).
     fn remove(&self, id: &str);
 }
@@ -136,6 +141,12 @@ pub trait Host: Send + Sync {
     fn snapshot(&self, _server: Option<&str>) -> Option<Snapshot> {
         None
     }
+    /// The local date and time as the logs write it (`YYYY-MM-DD HH:MM:SS`; the "Log cleared at" note). Default:
+    /// the UTC time of [`Self::now`] (the real host reads the local time).
+    fn local_timestamp(&self) -> String {
+        let iso = macvpn_core::date::Date::from_time_interval_since_1970(self.now() as f64).iso8601();
+        iso.trim_end_matches('Z').replacen('T', " ", 1)
+    }
     /// Unix seconds (the peer status' "latest handshake … ago").
     fn now(&self) -> u64 {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
@@ -178,7 +189,7 @@ fn usage() -> Response {
     Response::fail(
         2,
         &tr(
-            "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset>",
+            "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id>",
             &[],
         ),
     )
@@ -251,6 +262,7 @@ impl<H: Host> Service<H> {
             // `auth-state <id>` and `log <id> <offset>`: the id is the CLI's second positional ("kind").
             "auth-state" => self.auth_state(caller, &a.kind),
             "log" => self.log(caller, &a.kind, &a.id),
+            CLEAR_LOG => self.clear_log(caller, &a.kind),
             // Engine updates: nothing of the request but the command is used (the service decides what to fetch).
             WIREGUARD_CHECK if a.kind.is_empty() => self.wireguard_check(),
             WIREGUARD_UPDATE if a.kind.is_empty() => self.wireguard_update(),
@@ -499,16 +511,29 @@ impl<H: Host> Service<H> {
         Response::ok(state.unwrap_or_default())
     }
 
-    fn log(&self, caller: &Caller, raw: &str, offset: &str) -> Response {
+    /// The canonical ID if `raw` is a UUID whose log `caller` may read: the connection is theirs now, or its log is
+    /// (after `down`). Anyone else's log answers as an unknown ID.
+    fn own_log(&self, caller: &Caller, raw: &str) -> Option<String> {
         if !cli::is_uuid(raw) {
-            return invalid_id();
+            return None;
         }
         let id = raw.to_ascii_uppercase();
         let now = lock(&self.owned).get(&id).is_some_and(|o| o.sid == caller.sid);
         let past = lock(&self.log_owner).get(&id).is_some_and(|l| l.sid == caller.sid);
-        if !now && !past {
-            return invalid_id();
-        }
+        (now || past).then_some(id)
+    }
+
+    /// `clear-log <id>`: the owner's "Clear Log…" (the note in the request's language, the service's local time).
+    /// Never the usage error (exit 2): the app reads that as a service too old to know the request.
+    fn clear_log(&self, caller: &Caller, raw: &str) -> Response {
+        let Some(id) = self.own_log(caller, raw) else { return invalid_id() };
+        let note = macvpn_core::log::cleared_note(&self.host.local_timestamp());
+        self.host.logs().clear(&id, &note);
+        Response::ok(Vec::new())
+    }
+
+    fn log(&self, caller: &Caller, raw: &str, offset: &str) -> Response {
+        let Some(id) = self.own_log(caller, raw) else { return invalid_id() };
         let Some(offset) = offset.parse::<u64>().ok().filter(|_| offset.bytes().all(|b| b.is_ascii_digit())) else {
             return usage();
         };

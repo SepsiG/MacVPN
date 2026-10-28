@@ -4,7 +4,8 @@
 # and starts the app with MACVPN_SMOKE_DIR=scripts/smoke, which runs, through the real UI:
 #   vault-create.js – the create window in migration mode: the master password twice, the recovery key read and
 #               one group retyped; the seeded data moves into the vault and the old files are deleted;
-#   manage.js – the Connections window (risky panel, acknowledgement, unsaved-changes question, Log tab, SSTP and
+#   manage.js – the Connections window (risky panel, acknowledgement, unsaved-changes question, Log tab with its
+#               time filter and Clear Log…, SSTP and
 #               native forms, stored secrets never shown, the New menu, a context menu at the window's corners and
 #               its colour picker inside the window, the search – typed without the accents' care, by an OpenVPN
 #               and a native server and by type, Up / Down and Return, the empty result and its Clear, Escape bringing every row back, Cmd+F –,
@@ -42,7 +43,8 @@
 #               within 2 s; a connect and a drop are notified (recorded: the sandbox posts no notification), nothing
 #               with "Connection Notifications" off; auto-reconnect over a scripted network and the sleep / wake hooks
 #               (reconnected at home, not on another network, not with the detail's switch off; a tunnel still up
-#               after waking on the network it routes is disconnected, at a café it stays);
+#               after waking on the network it routes is disconnected, at a café it stays; the network gone under
+#               it shows "Waiting for network…" in its row and the tray, and connected again once it is back);
 #   ras.js   – Windows only (WinVPN 2c; its connections are created in the vault for the step and deleted after it):
 #               the New menu without Cisco IPsec, an IKEv2 PSK connection greyed with the Windows reason, a Cisco
 #               IPsec connection with option A's text and "Make an L2TP/IPsec Copy", IKEv2 (EAP) and SSTP connected and
@@ -318,6 +320,8 @@ grep -q '^MacVPN smoke: vault: unlocked changed_password=true names_back=true$' 
 
 # The Connections window.
 grep -q '"user"' "$DUMP/$A/meta.json" || fail "the acknowledgement was not stored"
+[ "$(grep -c '^MacVPN smoke: fake root: clear-log 66666666-7777-4888-9999-AAAAAAAAAAAA note=ok$' "$LOG")" = 1 ] \
+  || fail "Clear Log…: not cleared exactly once (after the cancelled question) with the localized note"
 grep -q '^user nobody$' "$DUMP/$A/config" || fail "the config was not saved"
 PLACEMENT_SKIPPED=
 if [ "$(name "$A")" != "SMOKE OK" ]; then

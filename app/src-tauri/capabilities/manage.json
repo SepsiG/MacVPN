@@ -38,6 +38,7 @@
     "allow-log-subscribe",
     "allow-log-copy",
     "allow-log-save",
+    "allow-log-clear",
     "allow-control-set-enabled",
     "allow-control-set-allowed",
     "allow-control-revoke",

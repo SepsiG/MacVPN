@@ -130,3 +130,14 @@ test('a connection card shows its folder colour as the left bar, none without on
   const plain = await html('../MenuRow.svelte', { row: row('a'), now: 0, onToggle: noop });
   assert.doesNotMatch(plain, /tinted/);
 });
+
+// The network loss rule (2026-10-28): a connection without a physical network under it says so, never "connected".
+test('a connection card waiting for network says so in the busy tone', async () => {
+  const { statusLine } = await import('../status.ts');
+  const waiting = { ...row('a'), state: 'waitingForNetwork' } as never;
+  assert.equal(statusLine(waiting, 0).status, 'Waiting for network…');
+  assert.equal(statusLine(waiting, 0).tone, 'busy');
+  const card = await html('../MenuRow.svelte', { row: waiting, now: 0, onToggle: noop });
+  assert.match(card, /Waiting for network…/);
+  assert.match(card, /class="bubble [^"]*"[\s\S]*busy/);
+});

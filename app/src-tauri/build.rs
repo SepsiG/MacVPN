@@ -43,6 +43,7 @@ const COMMANDS: &[&str] = &[
     "log_subscribe",
     "log_copy",
     "log_save",
+    "log_clear",
     "setup_check",
     "setup_install_homebrew",
     "setup_install_tools",

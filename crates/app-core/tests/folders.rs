@@ -206,6 +206,34 @@ fn without_a_folder_store_everything_is_at_the_root_in_ranking_order() {
 
 // MARK: - View model
 
+/// Network loss (2026-10-28): a connection waiting for network is no green dot on its folders.
+#[test]
+fn a_connection_waiting_for_network_is_no_green_dot() {
+    let w = world();
+    let a = w.add("A");
+    let b = w.add("B");
+    let work = w.folder(None, "Work");
+    let clients = w.folder(Some(&work), "Clients");
+    let other = w.folder(None, "Other");
+    w.put(&a, Some(&clients));
+    w.put(&b, Some(&other));
+    w.fx.helper.respond("status", Ok(&connected_json(&[&a, &b])));
+    w.manager.refresh();
+    let mut vm = w.vm();
+    vm.set_waiting_for_network(&[uuid_string(&a.id)]);
+    let dot = |id: &str| {
+        vm.tree.iter().find_map(|r| match r {
+            TreeRowView::Folder { id: fid, has_connected, active_count, .. } if fid == id => {
+                Some((*has_connected, *active_count))
+            }
+            _ => None,
+        })
+    };
+    assert_eq!(dot(&work), Some((false, 1)), "still active, but not up");
+    assert_eq!(dot(&clients), Some((false, 1)));
+    assert_eq!(dot(&other), Some((true, 1)));
+}
+
 #[test]
 fn folder_rows_count_active_connections_in_the_whole_subtree_and_show_the_green_dot() {
     let w = world();

@@ -332,17 +332,25 @@ fn start_log_poller(app: &AppHandle, state: &Arc<AppState>) {
     });
 }
 
-/// "Copy": the visible lines (filter `all` / `commands` / `errors`, the search) to the pasteboard.
+/// "Copy": the visible lines (filter `all` / `commands` / `errors`, the search, the time range: `from` / `to` as
+/// `logs::civil_seconds`, `null`: open) to the pasteboard.
 #[tauri::command]
-pub async fn log_copy(state: Shared<'_>, filter: String, search: String) -> Result<(), String> {
+pub async fn log_copy(
+    state: Shared<'_>,
+    filter: String,
+    search: String,
+    from: Option<f64>,
+    to: Option<f64>,
+) -> Result<(), String> {
     let filter = logs::parse_filter(&filter).ok_or("invalid filter")?;
     if search.len() > MAX_SEARCH_BYTES {
         return Err("invalid search".into());
     }
+    let range = logs::TimeRange::from_bounds(from, to).ok_or("invalid time range")?;
     let text = {
         let slot = state.log_feed.lock().unwrap_or_else(PoisonError::into_inner);
         let (_, feed) = slot.as_ref().ok_or("no log")?;
-        feed.buffer().visible_text(filter, &search)
+        feed.buffer().visible_text(filter, &search, range)
     };
     blocking(move || crate::platform::get().shell().copy_text(&text).map_err(String::from)).await?
 }
@@ -363,6 +371,24 @@ pub async fn log_save(app: AppHandle, state: Shared<'_>) -> Result<Option<Notice
     };
     let written = blocking(move || macvpn_core::exporter::write(text.as_bytes(), &path)).await?;
     Ok(written.err().map(|e| Notice { title: l10n::tr("Could not save the log", &[]), message: e.message }))
+}
+
+/// "Clear Log…" (after the window's confirmation): empties the log of `id` as its Log tab shows it
+/// (`logs::clear_log`), with the localized "Log cleared at <time>" note as its first line. The view then subscribes
+/// again (a new generation: the tail starts over). A failure comes back as the alert.
+#[tauri::command]
+pub async fn log_clear(state: Shared<'_>, id: String) -> Result<Option<Notice>, String> {
+    let c = managed(&state, &id)?;
+    let shared = state.inner().clone();
+    let cleared = blocking(move || {
+        let platform = crate::platform::get();
+        let time = platform.system().local_timestamp(macvpn_core::date::Date::now().time_interval_since_1970());
+        let note = logs::cleared_note(&time);
+        let native = platform.native_controller();
+        logs::clear_log(&c, shared.helper.as_ref(), native.as_ref(), &shared.native_logs, &note)
+    })
+    .await?;
+    Ok(cleared.err().map(|message| Notice { title: l10n::tr("Could not clear the log", &[]), message }))
 }
 
 // MARK: - Window events

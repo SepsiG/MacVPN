@@ -366,6 +366,10 @@ impl SystemInfo for WinPlatform {
         system::local_time(unix).map(|(y, mo, d, ..)| dates::date((y, mo, d))).unwrap_or_default()
     }
 
+    fn local_timestamp(&self, unix: f64) -> String {
+        system::local_time(unix).map(crate::pure::ras_connect::timestamp).unwrap_or_default()
+    }
+
     fn local_date_time(&self, unix: f64, language: AppLanguage) -> String {
         system::local_time(unix).map(|t| dates::date_time(t, language)).unwrap_or_default()
     }

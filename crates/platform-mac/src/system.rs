@@ -58,6 +58,14 @@ pub fn local_date(unix: f64) -> String {
     }
 }
 
+/// The local date and time as the logs write it, `YYYY-MM-DD HH:MM:SS`; empty if the time cannot be converted.
+pub fn local_timestamp(unix: f64) -> String {
+    match crate::sys::local_time(unix.floor() as i64) {
+        Some((y, mo, d, h, mi, s)) => format!("{y:04}-{mo:02}-{d:02} {h:02}:{mi:02}:{s:02}"),
+        None => String::new(),
+    }
+}
+
 /// The local date and time as Swift's `Date().formatted(date: .numeric, time: .standard)` shows it in the two UI
 /// languages: `10/18/2026, 2:03:05 PM` (English) and `2026. 10. 18. 14:03:05` (Hungarian).
 pub fn local_date_time(unix: f64, language: macvpn_core::l10n::AppLanguage) -> String {

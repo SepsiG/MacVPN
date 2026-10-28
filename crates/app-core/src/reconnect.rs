@@ -2,6 +2,15 @@
 //! per-connection opt-out and (below) the planner. A connection reconnects only on the physical network it started
 //! on (gateway IP + MAC, the SSID when both sides know it) and only when none of its routed networks or DNS servers
 //! is directly connected there. Everything fails closed: an unidentified network is not reconnected.
+//!
+//! Network loss under a running tunnel (maintainer report, 2026-10-28): most engines never notice it themselves
+//! (WireGuard has no connection state, OpenVPN keeps its process and interface through `ping-restart`, a strongSwan
+//! SA stays `ESTABLISHED` without DPD), so the app would keep saying "connected". The planner checks the physical
+//! network (debounced) after every change: without one, the connections that are up or connecting "wait for
+//! network" (a view state only: the tunnel is left alone, it may survive a short outage). When the network is back,
+//! a surviving tunnel is treated as after a wake ([`surviving_check`]); after [`OFFLINE_GRACE`] without a network
+//! it is disconnected (so DNS and routes no longer point at a dead tunnel) and, with "Reconnect Automatically" on,
+//! becomes a candidate that [`decide`] reconnects once the network is back.
 
 use crate::connection_notices::Notice;
 use crate::failure_reason::{FailureKind, plain};
@@ -115,6 +124,15 @@ pub const NETWORK_WINDOW: f64 = 60.0;
 pub const SETTLE: f64 = 3.0;
 /// The delays before the second and the third attempt (after the previous attempt failed).
 pub const RETRY_DELAYS: [f64; 2] = [10.0, 30.0];
+/// The network is checked this long after the last change (a short Wi-Fi blip never shows) …
+pub const NETWORK_DEBOUNCE: f64 = SETTLE;
+/// … but at most this long after the first of a stream of changes.
+pub const NETWORK_DEBOUNCE_MAX: f64 = 10.0;
+/// While connections wait for network it is checked again this often (a missed change is not fatal).
+pub const OFFLINE_RECHECK: f64 = 10.0;
+/// A connection waiting for network this long is disconnected (the notice says "2 minutes"). Longer than OpenVPN's
+/// usual `ping-restart` (60 s) and the network window, short enough that DNS does not point at a dead tunnel for long.
+pub const OFFLINE_GRACE: f64 = 120.0;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Action {
@@ -122,6 +140,9 @@ pub enum Action {
     Connect(String),
     /// A surviving tunnel on its own network: the app disconnects it (`DisconnectCause::User`).
     Disconnect(String),
+    /// No network for [`OFFLINE_GRACE`]: the app disconnects it (`DisconnectCause::NoNetwork`, not the user's: it
+    /// may be reconnected when the network is back).
+    DisconnectNoNetwork(String),
     Notify(Notice),
 }
 
@@ -155,6 +176,20 @@ pub struct Planner {
     survivors_at: Option<Date>,
     /// The check still has to run.
     survivors_pending: bool,
+    /// The connections waiting for network: their names and since when.
+    offline: HashMap<String, Offline>,
+    /// When the network is checked next (debounced after a change; `None`: no check pending).
+    check_at: Option<Date>,
+    /// The first change of the pending check (its debounce is capped at [`NETWORK_DEBOUNCE_MAX`]).
+    check_first: Option<Date>,
+    /// Between a sleep announcement and the wake: the network going away is the sleep, not a loss.
+    asleep: bool,
+}
+
+#[derive(Debug, Clone)]
+struct Offline {
+    name: String,
+    since: Date,
 }
 
 /// `b` when it is later than `a`, else `a`.
@@ -214,6 +249,7 @@ impl Planner {
     pub fn user_disconnected(&mut self, key: &str) {
         self.user_off.insert(key.to_string());
         self.candidates.remove(key);
+        self.offline.remove(key);
     }
 
     /// A deleted connection.
@@ -225,12 +261,17 @@ impl Planner {
         self.leased.remove(key);
         self.up_at_sleep.remove(key);
         self.candidates.remove(key);
+        self.offline.remove(key);
     }
 
     /// The system is about to sleep: `connected` are the connected keys; `fp` the physical network now (it
     /// replaces theirs when known).
     pub fn sleep(&mut self, connected: &[String], fp: Option<Fingerprint>) {
         self.slept = true;
+        self.asleep = true;
+        self.offline.clear();
+        self.check_at = None;
+        self.check_first = None;
         self.up_at_sleep = connected.iter().cloned().collect();
         if let Some(fp) = fp {
             for key in connected {
@@ -245,7 +286,14 @@ impl Planner {
             self.up_at_sleep = connected.iter().cloned().collect();
         }
         self.slept = false;
+        self.asleep = false;
         self.woke_at = Some(now);
+        // A wake without a sleep announcement: the outage timers restart (the clock jumped over the sleep).
+        for o in self.offline.values_mut() {
+            o.since = now;
+        }
+        self.check_first = None;
+        self.check_at = Some(now.adding(SETTLE));
         self.survivors_pending = true;
         self.survivors_at = Some(now.adding(SETTLE));
         for c in self.candidates.values_mut() {
@@ -263,11 +311,25 @@ impl Planner {
         for c in self.candidates.values_mut().filter(|c| !c.attempting) {
             c.next = Some(now.adding(SETTLE));
         }
+        self.check_network_soon(now);
+    }
+
+    /// Schedules the debounced network check ([`NETWORK_DEBOUNCE`] after this call, at most [`NETWORK_DEBOUNCE_MAX`]
+    /// after the first call since the last check): after a change, or a connect that started without a network.
+    pub fn check_network_soon(&mut self, now: Date) {
+        if self.asleep {
+            return;
+        }
+        let first = *self.check_first.get_or_insert(now);
+        let capped = first.adding(NETWORK_DEBOUNCE_MAX);
+        let debounced = now.adding(NETWORK_DEBOUNCE);
+        self.check_at = Some(if debounced.time_interval_since(capped) > 0.0 { capped } else { debounced });
     }
 
     /// A connected connection was found down (`ConnectionEvent::Dropped`), with its log's category. One a lease
     /// started is not a candidate: the drop ended its leases (the control API's rule), so nothing brings it back.
     pub fn dropped(&mut self, key: &str, name: &str, now: Date, kind: FailureKind) {
+        self.offline.remove(key);
         if self.user_off.contains(key)
             || self.leased.contains(key)
             || !kind.worth_retrying()
@@ -382,6 +444,112 @@ impl Planner {
                     actions.push(Action::Notify(Notice::NotReconnected { key, name, why }));
                 }
             }
+        }
+        actions
+    }
+
+    // Network loss under a running tunnel.
+
+    /// The network is to be checked (the driver then probes, unless nothing is active, and calls
+    /// [`Self::network_checked`]).
+    pub fn network_check_due(&self, now: Date) -> bool {
+        !self.asleep && reached(now, self.check_at)
+    }
+
+    /// The result of a check. `snapshot`: the physical network now (`None`: it could not be read, or nothing is
+    /// active so it was not probed); `active`: the managed connections up, connecting or waiting for
+    /// authentication now (key, display name). Without a network they wait for it (a view state; nothing is torn
+    /// down yet); with one, those that waited are back, except a tunnel whose VPN network is directly reachable here
+    /// (disconnected with a notice, as after a wake).
+    pub fn network_checked(
+        &mut self,
+        now: Date,
+        snapshot: Option<&NetworkSnapshot>,
+        active: &[(String, String)],
+    ) -> Vec<Action> {
+        self.check_at = None;
+        self.check_first = None;
+        self.offline.retain(|k, _| active.iter().any(|(a, _)| a == k));
+        let Some(snapshot) = snapshot else {
+            if !self.offline.is_empty() {
+                self.check_at = Some(now.adding(OFFLINE_RECHECK));
+            }
+            return Vec::new();
+        };
+        if !snapshot.has_network() {
+            self.network_down = true;
+            for (key, name) in active {
+                self.offline.entry(key.clone()).or_insert_with(|| Offline { name: name.clone(), since: now });
+            }
+            if !self.offline.is_empty() {
+                self.check_at = Some(now.adding(OFFLINE_RECHECK));
+            }
+            return Vec::new();
+        }
+        self.network_down = false;
+        // Candidates that waited for the network (one disconnected after the grace just before this check).
+        for c in self.candidates.values_mut().filter(|c| !c.attempting && c.next.is_none()) {
+            c.next = Some(now);
+        }
+        let mut back: Vec<String> = self.offline.drain().map(|(k, _)| k).collect();
+        back.sort();
+        let mut actions = Vec::new();
+        let empty = VpnNetworks::default();
+        for key in back {
+            if let Some(why) = surviving_check(snapshot, self.networks.get(&key).unwrap_or(&empty)) {
+                self.user_off.insert(key.clone());
+                self.candidates.remove(&key);
+                actions.push(Action::Disconnect(key.clone()));
+                actions.push(Action::Notify(Notice::DisconnectedHere { key, why }));
+            }
+        }
+        actions
+    }
+
+    /// The connections waiting for network, sorted (the rows and the tray show "Waiting for network…").
+    pub fn waiting_for_network(&self) -> Vec<String> {
+        let mut keys: Vec<String> = self.offline.keys().cloned().collect();
+        keys.sort();
+        keys
+    }
+
+    /// A connection has waited for network for [`OFFLINE_GRACE`].
+    pub fn offline_due(&self, now: Date) -> bool {
+        !self.asleep && self.offline.values().any(|o| now.time_interval_since(o.since) >= OFFLINE_GRACE)
+    }
+
+    /// Disconnects the connections that waited for network for [`OFFLINE_GRACE`], each with a notice. With
+    /// "Reconnect Automatically" on (`enabled`), and not started by a lease, each becomes a candidate that waits for
+    /// the network; [`decide`] then reconnects it on the network it started on.
+    pub fn offline_expired(&mut self, now: Date, enabled: &dyn Fn(&str) -> bool) -> Vec<Action> {
+        if self.asleep {
+            return Vec::new();
+        }
+        let mut expired: Vec<String> = self
+            .offline
+            .iter()
+            .filter(|(_, o)| now.time_interval_since(o.since) >= OFFLINE_GRACE)
+            .map(|(k, _)| k.clone())
+            .collect();
+        expired.sort();
+        let mut actions = Vec::new();
+        for key in expired {
+            let Some(o) = self.offline.remove(&key) else { continue };
+            let reconnects = enabled(&key) && !self.leased.contains(&key) && !self.user_off.contains(&key);
+            if reconnects {
+                let c = self.candidates.entry(key.clone()).or_insert_with(|| Candidate {
+                    name: o.name.clone(),
+                    attempts: 0,
+                    next: None,
+                    attempting: false,
+                });
+                c.attempting = false;
+                c.next = None;
+            } else {
+                self.candidates.remove(&key);
+            }
+            actions.push(Action::DisconnectNoNetwork(key.clone()));
+            actions.push(Action::Notify(Notice::DisconnectedNoNetwork { key, name: o.name, reconnects }));
         }
         actions
     }

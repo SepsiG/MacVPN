@@ -94,6 +94,13 @@ impl HelperClient for Helper {
     fn log_path(&self, id: &Uuid) -> Option<PathBuf> {
         Some(MvpnClient::log_path(id))
     }
+
+    /// The user's own log and its `.1`, emptied in place by the app (no root call; see
+    /// [`crate::mvpn_client::clear_log_in`]).
+    fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
+        let owner = macvpn_core::fsx::FileOwner::from_uid(crate::system::user_id());
+        crate::mvpn_client::clear_log_in(Path::new(crate::mvpn_client::LOG_DIR), id, &owner, note)
+    }
 }
 
 /// `scutil --nc list / show` (quick time limit) and the in-process `SCNetworkConnection` driver.

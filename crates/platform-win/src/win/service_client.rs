@@ -187,6 +187,14 @@ impl HelperClient for ServiceClient {
     fn log_source(&self, id: &Uuid) -> Option<Box<dyn LogSource>> {
         Some(Box::new(PipeLogSource { client: self.clone(), id: uuid_string(id) }))
     }
+
+    /// `clear-log <id>`: the service clears the caller's own log and writes the note itself (in the request's
+    /// language, its local time), so `_note` is not sent. An older service: "update WinVPN".
+    fn clear_log(&self, id: &Uuid, _note: &str) -> Result<(), String> {
+        let id = uuid_string(id);
+        let r = self.exchange(&[proto::CLEAR_LOG, &id], b"", QUICK_TIMEOUT).map_err(NoAnswer::message)?;
+        crate::pure::engine::clear_log_answer(r.code, &String::from_utf8_lossy(&r.stderr))
+    }
 }
 
 /// The MFA state the service's bridge keeps for this user's connection, with the same parser and limit as the file

@@ -1,9 +1,11 @@
 //! Auto-reconnect's driver (maintainer decision 4): one thread owns the work around the
 //! [`Planner`](macvpn_app_core::reconnect::Planner). It receives the events (connect started, connected, dropped,
 //! failed, user disconnect, sleep, wake, network change), probes the physical network when something is due, and
-//! runs the planner's actions (a connect, a disconnect of a tunnel on its own network, a notice). Probes, log reads
-//! and connects never run on the manager's, the main or a hook's thread. No OS `cfg`: the OS is behind
-//! `Platform::network()` and the lifecycle.
+//! runs the planner's actions (a connect, a disconnect of a tunnel on its own network or after a long network
+//! loss, a notice). After a network change it checks (debounced) whether the connections up or connecting still
+//! have a physical network under them; the ones that do not "wait for network" in the rows and the tray
+//! ([`Reconnect::waiting_for_network`]). Probes, log reads and connects never run on the manager's, the main or a
+//! hook's thread. No OS `cfg`: the OS is behind `Platform::network()` and the lifecycle.
 
 use macvpn_app_core::deps::ConnectionRepository;
 use macvpn_app_core::reconnect::{self, Action, Planner, fingerprint};
@@ -88,6 +90,11 @@ impl Reconnect {
         result
     }
 
+    /// The connections waiting for network (their rows and the tray say so).
+    pub fn waiting_for_network(&self) -> Vec<String> {
+        self.planner().waiting_for_network()
+    }
+
     /// Quitting: the network watcher stops.
     pub fn stop(&self) {
         drop(self.watch.lock().unwrap_or_else(PoisonError::into_inner).take());
@@ -116,6 +123,20 @@ pub fn connected_keys(state: &AppState) -> Vec<String> {
         .collect();
     keys.sort();
     keys
+}
+
+/// The managed connections up or connecting (not waiting for authentication: the user is busy with it), with
+/// their display names, sorted: the ones that wait for network when there is none.
+fn active_items(state: &AppState) -> Vec<(String, String)> {
+    let mut items: Vec<(String, String)> = state
+        .manager
+        .states()
+        .into_iter()
+        .filter(|(_, s)| matches!(s, ConnectionState::Connecting | ConnectionState::Connected { .. }))
+        .filter_map(|(k, _)| managed(state, &k).map(|c| (k, c.name)))
+        .collect();
+    items.sort();
+    items
 }
 
 /// The physical network now; `None` when it cannot be read (the sandbox has no probe; a smoke run scripts it).
@@ -156,6 +177,7 @@ pub fn start(state: &Arc<AppState>) {
 
 fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
     let r = &state.reconnect;
+    let mut shown_waiting: Vec<String> = Vec::new();
     loop {
         match rx.recv_timeout(TICK) {
             Ok(e) => handle(state, e),
@@ -170,6 +192,13 @@ fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
             let actions = r.planner().survivors(now, &snap, &connected);
             actions.into_iter().for_each(|a| act(state, a));
         }
+        network_loss(state, now);
+        // The rows and the tray follow the connections waiting for network.
+        let waiting = r.waiting_for_network();
+        if waiting != shown_waiting {
+            shown_waiting = waiting;
+            state.publisher.mark();
+        }
         if !r.planner().due(now) {
             continue;
         }
@@ -178,6 +207,25 @@ fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
         let enabled = move |key: &str| parse_uuid(key).is_some_and(|u| reconnect::is_enabled(prefs.as_ref(), &u));
         let locked = state.manager.is_locked();
         let actions = r.planner().evaluate(now, &snap, &enabled, locked);
+        actions.into_iter().for_each(|a| act(state, a));
+    }
+}
+
+/// The network loss rule: the debounced check of the physical network under the active connections, and the
+/// disconnect of those that waited for it too long.
+fn network_loss(state: &Arc<AppState>, now: Date) {
+    let r = &state.reconnect;
+    if r.planner().network_check_due(now) {
+        let active = active_items(state);
+        // Nothing active: nothing to probe (the check only forgets what waited).
+        let snap = if active.is_empty() { None } else { snapshot(state) };
+        let actions = r.planner().network_checked(now, snap.as_ref(), &active);
+        actions.into_iter().for_each(|a| act(state, a));
+    }
+    if r.planner().offline_due(now) {
+        let prefs = state.prefs.clone();
+        let enabled = move |key: &str| parse_uuid(key).is_some_and(|u| reconnect::is_enabled(prefs.as_ref(), &u));
+        let actions = r.planner().offline_expired(now, &enabled);
         actions.into_iter().for_each(|a| act(state, a));
     }
 }
@@ -191,8 +239,12 @@ fn handle(state: &Arc<AppState>, e: Event) {
                 return;
             }
             let ours = r.is_attempting(&key);
-            let fp = if ours { None } else { snapshot(state).as_ref().and_then(fingerprint) };
-            r.planner().connect_started(&key, fp, ours);
+            let snap = if ours { None } else { snapshot(state) };
+            r.planner().connect_started(&key, snap.as_ref().and_then(fingerprint), ours);
+            // Connecting without a network: it waits for one (checked like after a change).
+            if snap.is_some_and(|s| !s.has_network()) {
+                r.planner().check_network_soon(now);
+            }
         }
         Event::Connected(key) => {
             let Some(c) = managed(state, &key) else { return };
@@ -241,6 +293,12 @@ fn act(state: &Arc<AppState>, action: Action) {
             let manager = state.manager.clone();
             // As the user's: leases on it end, and the user-disconnect rule keeps it down.
             std::thread::spawn(move || manager.disconnect_for(&c, DisconnectCause::User));
+        }
+        Action::DisconnectNoNetwork(key) => {
+            let Some(c) = managed(state, &key) else { return };
+            let manager = state.manager.clone();
+            // Not the user's: the planner may reconnect it when the network is back. `down` restores DNS and routes.
+            std::thread::spawn(move || manager.disconnect_for(&c, DisconnectCause::NoNetwork));
         }
         Action::Connect(key) => {
             let Some(c) = managed(state, &key) else { return };

@@ -1,14 +1,16 @@
 //! The Log tab without a UI (port of `LogViewModel`, `LogView`'s filtering and `NativeLogCollector`): the live
 //! tail of the helper's log (core `LogTailer` over the helper's `LogSource`; on macOS `/var/log/macvpn/<id>.log`)
 //! or, for a native connection, the system log collected during a debug connect (`log stream`, at most 60 s,
-//! stopped once the connection settles), kept to the last 5000 lines, with the All / Commands / Errors filter and
-//! the search.
+//! stopped once the connection settles), kept to the last 5000 lines, with the All / Commands / Errors filter,
+//! the search and the time range (each line's time read from the log formats; a line without one has the time of
+//! the line before it).
 
 use crate::deps::Clock;
 use macvpn_core::date::Date;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::{FileLogSource, LogFilter, LogLine, LogLineKind, LogSource, LogTailer};
 use macvpn_core::models::{Connection, ConnectionState};
+use macvpn_platform_api::{HelperClient, NativeController};
 use serde::Serialize;
 use std::collections::{HashMap, VecDeque};
 use std::path::PathBuf;
@@ -29,6 +31,8 @@ pub struct LogLineView {
     pub text: String,
     /// `header`, `step`, `command`, `error` or `output` (the colour).
     pub kind: &'static str,
+    /// The line's local time as [`civil_seconds`] (its own or the previous line's); `null`: none known.
+    pub time: Option<i64>,
 }
 
 pub fn kind_name(kind: LogLineKind) -> &'static str {
@@ -41,9 +45,9 @@ pub fn kind_name(kind: LogLineKind) -> &'static str {
     }
 }
 
-impl From<&LogLine> for LogLineView {
-    fn from(line: &LogLine) -> Self {
-        LogLineView { text: line.text.clone(), kind: kind_name(line.kind) }
+impl From<&LogEntry> for LogLineView {
+    fn from(entry: &LogEntry) -> Self {
+        LogLineView { text: entry.line.text.clone(), kind: kind_name(entry.line.kind), time: entry.time }
     }
 }
 
@@ -56,20 +60,159 @@ pub fn matches_search(text: &str, search: &str) -> bool {
     search.is_empty() || text.to_lowercase().contains(&search.to_lowercase())
 }
 
+// MARK: - Line times
+
+/// A local wall-clock time as seconds since 1970-01-01 00:00 of the same wall clock (no time zone: the logs write
+/// local time, and the UI computes its bounds the same way). `None`: not a valid date and time.
+pub fn civil_seconds(y: i64, mo: i64, d: i64, h: i64, mi: i64, s: i64) -> Option<i64> {
+    let valid = (1970..=9999).contains(&y)
+        && (1..=12).contains(&mo)
+        && (1..=31).contains(&d)
+        && (0..24).contains(&h)
+        && (0..60).contains(&mi)
+        && (0..=60).contains(&s);
+    valid.then(|| macvpn_core::date::days_from_civil(y, mo, d) * 86_400 + h * 3600 + mi * 60 + s)
+}
+
+/// `n` ASCII digits at `at` as a number.
+fn digits(b: &[u8], at: usize, n: usize) -> Option<i64> {
+    let part = b.get(at..at + n)?;
+    part.iter().all(u8::is_ascii_digit).then(|| part.iter().fold(0, |v, d| v * 10 + i64::from(d - b'0')))
+}
+
+/// `YYYY<sep>MM<sep>DD<T or space>HH:MM:SS` at `at` (`sep`: `-` or `/`).
+fn date_time_at(b: &[u8], at: usize, sep: u8) -> Option<i64> {
+    let y = digits(b, at, 4)?;
+    (b.get(at + 4) == Some(&sep) && b.get(at + 7) == Some(&sep)).then_some(())?;
+    let (mo, d) = (digits(b, at + 5, 2)?, digits(b, at + 8, 2)?);
+    let t = *b.get(at + 10)?;
+    (t == b' ' || (t == b'T' && sep == b'-')).then_some(())?;
+    clock_at(b, at + 11).and_then(|(h, mi, s)| civil_seconds(y, mo, d, h, mi, s))
+}
+
+/// `HH:MM:SS` at `at`.
+fn clock_at(b: &[u8], at: usize) -> Option<(i64, i64, i64)> {
+    (b.get(at + 2) == Some(&b':') && b.get(at + 5) == Some(&b':')).then_some(())?;
+    Some((digits(b, at, 2)?, digits(b, at + 3, 2)?, digits(b, at + 6, 2)?))
+}
+
+const MONTHS: [&[u8]; 12] =
+    [b"Jan", b"Feb", b"Mar", b"Apr", b"May", b"Jun", b"Jul", b"Aug", b"Sep", b"Oct", b"Nov", b"Dec"];
+
+/// pppd's `Www Mmm d HH:MM:SS YYYY` (`%a %b %e %T %Y`) at the start of `b`.
+fn pppd_time(b: &[u8]) -> Option<i64> {
+    let (week, rest) = (b.get(..3)?, b.get(3..)?);
+    (week.iter().all(u8::is_ascii_alphabetic) && rest.first() == Some(&b' ')).then_some(())?;
+    let mo = MONTHS.iter().position(|m| rest.get(1..4) == Some(m))? as i64 + 1;
+    let mut i = 4;
+    (rest.get(i) == Some(&b' ')).then_some(())?;
+    while rest.get(i) == Some(&b' ') {
+        i += 1;
+    }
+    let width = if rest.get(i + 1).is_some_and(u8::is_ascii_digit) { 2 } else { 1 };
+    let d = digits(rest, i, width)?;
+    i += width;
+    (rest.get(i) == Some(&b' ')).then_some(())?;
+    let (h, mi, s) = clock_at(rest, i + 1)?;
+    (rest.get(i + 9) == Some(&b' ')).then_some(())?;
+    civil_seconds(digits(rest, i + 10, 4)?, mo, d, h, mi, s)
+}
+
+/// The helper's prefix of a copied tool line (`[pppd] `): a short lower-case tag in brackets.
+fn tool_prefix(b: &[u8]) -> usize {
+    let tag = |t: &[u8]| !t.is_empty() && t.iter().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || *c == b'-');
+    match b.iter().take(18).position(|&c| c == b']') {
+        Some(end) if b[0] == b'[' && tag(&b[1..end]) && b.get(end + 1) == Some(&b' ') => end + 2,
+        _ => 0,
+    }
+}
+
+/// How far into a line Go's log time is looked for (`DEBUG: (utun12) ` and the like).
+const GO_PREFIX_MAX: usize = 40;
+
+/// The time a log line starts with, in the formats the logs contain: OpenVPN's and `log stream`'s
+/// `YYYY-MM-DD HH:MM:SS` (also with `T`), wireguard-go's `LEVEL: (iface) YYYY/MM/DD HH:MM:SS`, pppd's
+/// `Www Mmm d HH:MM:SS YYYY` (after the helper's `[pppd] ` too), and a header line (`═══ … ═══`: the helper's and
+/// the RAS engine's connect header, the clear note) with a `YYYY-MM-DD HH:MM:SS` anywhere. A date elsewhere in a
+/// line is its text, not its time.
+pub fn line_time(text: &str) -> Option<i64> {
+    let b = text.as_bytes();
+    if text.starts_with("═══") {
+        return (0..b.len()).find_map(|i| date_time_at(b, i, b'-').filter(|_| i == 0 || b[i - 1] == b' '));
+    }
+    let start = tool_prefix(b);
+    let b = &b[start..];
+    if let Some(t) = date_time_at(b, 0, b'-').or_else(|| pppd_time(b)) {
+        return Some(t);
+    }
+    (0..b.len().min(GO_PREFIX_MAX)).find_map(|i| date_time_at(b, i, b'/').filter(|_| i == 0 || b[i - 1] == b' '))
+}
+
+/// The time range of the view (inclusive, as [`civil_seconds`]); both `None`: every line. With a bound, a line
+/// without a known time is outside.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct TimeRange {
+    pub from: Option<i64>,
+    pub to: Option<i64>,
+}
+
+/// The largest bound the UI may send (year 9999).
+const BOUND_MAX: f64 = 253_402_300_800.0;
+
+impl TimeRange {
+    /// The bounds as the UI sends them (whole seconds); `None`: not a valid bound.
+    pub fn from_bounds(from: Option<f64>, to: Option<f64>) -> Option<TimeRange> {
+        let check = |v: Option<f64>| match v {
+            None => Some(None),
+            Some(v) if v.is_finite() && v.fract() == 0.0 && v.abs() <= BOUND_MAX => Some(Some(v as i64)),
+            Some(_) => None,
+        };
+        Some(TimeRange { from: check(from)?, to: check(to)? })
+    }
+
+    pub fn contains(&self, time: Option<i64>) -> bool {
+        if self.from.is_none() && self.to.is_none() {
+            return true;
+        }
+        time.is_some_and(|t| self.from.is_none_or(|f| t >= f) && self.to.is_none_or(|to| t <= to))
+    }
+}
+
+/// A kept line and its time ([`line_time`], or the previous line's).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LogEntry {
+    pub line: LogLine,
+    pub time: Option<i64>,
+}
+
 /// The lines the view shows.
-pub fn visible<'a>(lines: impl IntoIterator<Item = &'a LogLine>, filter: LogFilter, search: &str) -> Vec<&'a LogLine> {
-    lines.into_iter().filter(|l| l.matches(filter) && matches_search(&l.text, search)).collect()
+pub fn visible<'a>(
+    entries: impl IntoIterator<Item = &'a LogEntry>,
+    filter: LogFilter,
+    search: &str,
+    range: TimeRange,
+) -> Vec<&'a LogEntry> {
+    entries
+        .into_iter()
+        .filter(|e| e.line.matches(filter) && range.contains(e.time) && matches_search(&e.line.text, search))
+        .collect()
 }
 
 /// The last [`MAX_LINES`] lines.
 #[derive(Debug, Default, Clone)]
 pub struct LogBuffer {
-    lines: VecDeque<LogLine>,
+    lines: VecDeque<LogEntry>,
+    /// The time of the newest line (what the next line without its own time gets).
+    last_time: Option<i64>,
 }
 
 impl LogBuffer {
     pub fn append(&mut self, new: impl IntoIterator<Item = LogLine>) {
-        self.lines.extend(new);
+        for line in new {
+            let time = line_time(&line.text).or(self.last_time);
+            self.last_time = time;
+            self.lines.push_back(LogEntry { line, time });
+        }
         while self.lines.len() > MAX_LINES {
             self.lines.pop_front();
         }
@@ -77,9 +220,14 @@ impl LogBuffer {
 
     pub fn clear(&mut self) {
         self.lines.clear();
+        self.last_time = None;
     }
 
     pub fn lines(&self) -> impl Iterator<Item = &LogLine> {
+        self.lines.iter().map(|e| &e.line)
+    }
+
+    pub fn entries(&self) -> impl DoubleEndedIterator<Item = &LogEntry> + ExactSizeIterator {
         self.lines.iter()
     }
 
@@ -92,13 +240,13 @@ impl LogBuffer {
     }
 
     /// The text "Copy" puts on the pasteboard: the visible lines.
-    pub fn visible_text(&self, filter: LogFilter, search: &str) -> String {
-        visible(&self.lines, filter, search).iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n")
+    pub fn visible_text(&self, filter: LogFilter, search: &str, range: TimeRange) -> String {
+        visible(&self.lines, filter, search, range).iter().map(|e| e.line.text.as_str()).collect::<Vec<_>>().join("\n")
     }
 
     /// The text "Save…" writes: every kept line.
     pub fn all_text(&self) -> String {
-        self.lines.iter().map(|l| l.text.as_str()).collect::<Vec<_>>().join("\n")
+        self.lines.iter().map(|e| e.line.text.as_str()).collect::<Vec<_>>().join("\n")
     }
 }
 
@@ -267,6 +415,16 @@ impl NativeLogCollector {
     pub fn lines(&self) -> Vec<String> {
         self.lock().lines.iter().cloned().collect()
     }
+
+    /// "Clear Log…": the collected lines are replaced by `note`; a running collection goes on after it. A view
+    /// starts over (a new epoch).
+    pub fn clear(&self, note: &str) {
+        let mut s = self.lock();
+        s.lines.clear();
+        s.total = 0;
+        s.epoch += 1;
+        s.push(note.to_string());
+    }
 }
 
 /// The native connections' collectors (the Swift `nativeLogs`).
@@ -355,6 +513,33 @@ pub fn stop_when_settled(
         }
     }
     collector.stop_generation(generation);
+}
+
+// MARK: - Clear Log…
+
+/// The first line of a cleared log: `═══ Log cleared at <time> ═══` (a header: the Commands filter shows it, and
+/// [`line_time`] reads its time).
+pub use macvpn_core::log::cleared_note;
+
+/// "Clear Log…" of `c`: the log its Log tab shows. A helper kind's log through the helper (macOS: the user's
+/// `/var/log/macvpn/<id>.log` and `.1`; WinVPN: the service's or the RAS log); a native kind's own platform log
+/// (WinVPN's RAS log), else its debug collection (macOS). `note` ([`cleared_note`]) becomes the first line.
+pub fn clear_log(
+    c: &Connection,
+    helper: &dyn HelperClient,
+    native: &dyn NativeController,
+    native_logs: &NativeLogs,
+    note: &str,
+) -> Result<(), String> {
+    if !c.kind.is_native() {
+        return helper.clear_log(&c.id, note);
+    }
+    if !native.clear_log(&c.id, note)?
+        && let Some(collector) = native_logs.get(&c.id)
+    {
+        collector.clear(note);
+    }
+    Ok(())
 }
 
 // MARK: - The view's feed
@@ -446,14 +631,14 @@ impl LogFeed {
         if !reset && new.is_empty() {
             return None;
         }
-        let lines: Vec<LogLine> = new.into_iter().map(LogLine::new).collect();
+        let count = new.len().min(MAX_LINES);
         if reset {
             self.buffer.clear();
         }
-        // Only what the view keeps is sent.
-        let skip = lines.len().saturating_sub(MAX_LINES);
-        let views = lines[skip..].iter().map(LogLineView::from).collect();
-        self.buffer.append(lines.into_iter().skip(skip));
+        // Every line goes through the buffer (a line's time may come from one before it); only what the view
+        // keeps is sent.
+        self.buffer.append(new.into_iter().map(LogLine::new));
+        let views = self.buffer.entries().skip(self.buffer.len() - count).map(LogLineView::from).collect();
         Some(LogChunk { reset, lines: views })
     }
 }

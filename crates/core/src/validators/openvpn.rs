@@ -263,6 +263,11 @@ pub const FORBIDDEN_PATTERN: &str =
 // MARK: RISKY
 
 pub const REASON_PRIVILEGE_DROP: &str =
+    "Drops root privileges after start: reconnecting may fail; MacVPN still restores DNS when the connection ends";
+/// The 1.4 text of [`REASON_PRIVILEGE_DROP`], outdated since root layer 9's DNS manager restores DNS from its
+/// ledger even when the unprivileged down hook cannot. No table uses it; kept because its text is in the l10n
+/// baseline.
+pub const REASON_PRIVILEGE_DROP_1_4: &str =
     "Drops root privileges after start: reconnecting may fail, and DNS is restored only when MacVPN disconnects";
 pub const REASON_NO_EXEC: &str =
     "OpenVPN will not configure the interface or the routes: the tunnel may carry no traffic";

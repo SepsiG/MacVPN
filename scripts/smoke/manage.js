@@ -3,7 +3,8 @@
 // store proves the round trip). Language independent: only classes and structure are used, except one check that
 // the window shows the view model's language (the Save button's English or Hungarian text). The New menu, a
 // connection's context menu at the window's corners and its colour picker must lie inside the window (8 pt margin).
-// The search field filters the tree as typed (accents and case ignored), Up / Down / Return open a result, the
+// The Log tab's time filter and "Clear Log…" (confirmed after a cancelled question). The search field filters the
+// tree as typed (accents and case ignored), Up / Down / Return open a result, the
 // empty result names the query (in the window's language), Escape clears it and every row is back.
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -86,6 +87,30 @@
     checks.switched = !!(await shown('Seeded B'));
     document.querySelectorAll('.tabs button')[1].click();
     checks.logTab = !!(await waitFor(() => document.querySelector('.log .toolbar')));
+    // The Log tab's time filter (the presets; "Custom Range" shows From / To) and "Clear Log…" (asked first, with
+    // the connection's name; Cancel keeps it; confirmed, the backend clears and the view starts over).
+    const time = await waitFor(() => document.querySelector('.log select.time'));
+    checks.logTimePresets = !!time && time.options.length === 6;
+    if (time) {
+      const choose = (value) => {
+        time.value = value;
+        time.dispatchEvent(new Event('change', { bubbles: true }));
+      };
+      choose('custom');
+      checks.logCustomRange = !!(await waitFor(() => document.querySelector('.log .range input.from[type=datetime-local]') && document.querySelector('.log .range input.to')));
+      choose('any');
+      checks.logCustomHidden = !!(await waitFor(() => !document.querySelector('.log .range')));
+    }
+    const clearButton = await waitFor(() => document.querySelector('.log .clear-log'));
+    clearButton?.click();
+    checks.logClearAsked = !!(await waitFor(() => document.querySelector('[role=alertdialog]')?.textContent.includes('Seeded B')));
+    document.querySelector('.alert button.cancel')?.click();
+    checks.logClearCancelled = !!(await waitFor(() => !document.querySelector('[role=alertdialog]')));
+    clearButton?.click();
+    await waitFor(() => document.querySelector('[role=alertdialog]'));
+    document.querySelector('.alert button.destructive')?.click();
+    await sleep(300);
+    checks.logCleared = !!(await waitFor(() => !document.querySelector('[role=alertdialog]') && clearButton && !clearButton.disabled));
     document.querySelectorAll('.tabs button')[0].click();
 
     // Back to A: the saved name and the stored acknowledgement are there.

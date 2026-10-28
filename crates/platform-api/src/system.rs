@@ -20,6 +20,9 @@ pub trait SystemInfo: Send + Sync {
     fn temporary_directory(&self) -> Result<PathBuf, PlatformError>;
     fn local_date(&self, unix: f64) -> String;
     fn local_date_time(&self, unix: f64, language: AppLanguage) -> String;
+    /// The local date and time as the logs write it, `YYYY-MM-DD HH:MM:SS` (the "Log cleared at" note); empty if
+    /// the time cannot be converted.
+    fn local_timestamp(&self, unix: f64) -> String;
     /// The running app (macOS: the `.app` bundle); `None`: not run from an app bundle (a development build).
     fn app_location(&self) -> Option<PathBuf>;
     /// The privileged helper shipped inside `app`.

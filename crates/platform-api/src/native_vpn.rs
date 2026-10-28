@@ -65,6 +65,12 @@ pub trait NativeController: Send + Sync {
     fn log_source(&self, _connection: &Uuid) -> Option<Box<dyn LogSource>> {
         None
     }
+    /// "Clear Log…" of the platform's own log of `connection` ([`Self::log_source`]), in place, `note` as its first
+    /// line. `Ok(true)`: the platform keeps that log (cleared, or there was nothing to clear); `Ok(false)` (macOS):
+    /// it keeps none, the debug collection is the log.
+    fn clear_log(&self, _connection: &Uuid, _note: &str) -> Result<bool, String> {
+        Ok(false)
+    }
 }
 
 /// A native connection's profile in the platform's format, ready for [`NativeProfiles::install`].

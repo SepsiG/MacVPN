@@ -242,7 +242,7 @@ impl ControlTransport for FakeTransport {
 
 /// The non-blocking accept of both listeners, as the macOS transport does it.
 macro_rules! accept_with {
-    ($self:ident, $poll:ident, $wrap:ident) => {{
+    ($self:ident, $poll:ident, $wrap:expr) => {{
         let stream = match $self.listener.accept() {
             Ok((stream, _)) => stream,
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
@@ -275,6 +275,7 @@ macro_rules! peek_connected {
     }};
 }
 
+#[cfg(unix)]
 macro_rules! control_stream {
     ($wrap:ident, $inner:ty) => {
         pub struct $wrap(pub $inner);
@@ -321,7 +322,98 @@ macro_rules! control_stream {
 
 #[cfg(unix)]
 control_stream!(UnixTestStream, UnixStream);
-control_stream!(LoopbackStream, TcpStream);
+
+/// The loopback stream. Its clones share one socket, the read timeout and the shutdown, as `ControlStream` asks
+/// ("clones share the underlying connection") and as the real transports do (the Unix socket's descriptors, the
+/// pipe's `PipeStream`). `TcpStream::try_clone` does not on Windows: the duplicated handle has its own receive
+/// timeout (the session's reader kept the auth deadline's last timeout after `hello`), and a `shutdown` from another
+/// thread does not wake a blocked `recv` (stop and revoke waited for that timeout). So the socket is shared, the
+/// timeout is kept here, and a read waits in short slices, checking the shutdown in between.
+pub struct LoopbackStream(Arc<LoopbackShared>);
+
+struct LoopbackShared {
+    socket: TcpStream,
+    read_timeout: Mutex<Option<Duration>>,
+    read_shut: AtomicBool,
+}
+
+/// How long one read waits before it checks the shutdown again.
+const LOOPBACK_READ_SLICE: Duration = Duration::from_millis(10);
+
+impl LoopbackStream {
+    pub fn new(socket: TcpStream) -> LoopbackStream {
+        LoopbackStream(Arc::new(LoopbackShared {
+            socket,
+            read_timeout: Mutex::new(None),
+            read_shut: AtomicBool::new(false),
+        }))
+    }
+}
+
+impl Read for LoopbackStream {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let deadline = self.0.read_timeout.lock().unwrap().map(|t| Instant::now() + t);
+        loop {
+            if self.0.read_shut.load(Ordering::SeqCst) {
+                return Ok(0);
+            }
+            let slice = match deadline {
+                Some(deadline) => {
+                    let left = deadline.saturating_duration_since(Instant::now());
+                    if left.is_zero() {
+                        return Err(io::Error::from(ErrorKind::TimedOut));
+                    }
+                    left.min(LOOPBACK_READ_SLICE)
+                }
+                None => LOOPBACK_READ_SLICE,
+            };
+            self.0.socket.set_read_timeout(Some(slice))?;
+            match (&self.0.socket).read(buf) {
+                Err(e) if matches!(e.kind(), ErrorKind::WouldBlock | ErrorKind::TimedOut) => continue,
+                other => return other,
+            }
+        }
+    }
+}
+
+impl Write for LoopbackStream {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        (&self.0.socket).write(buf)
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        (&self.0.socket).flush()
+    }
+}
+
+impl ControlStream for LoopbackStream {
+    fn try_clone(&self) -> io::Result<Box<dyn ControlStream>> {
+        Ok(Box::new(LoopbackStream(self.0.clone())))
+    }
+
+    fn shutdown(&self, how: Shutdown) -> io::Result<()> {
+        if how != Shutdown::Write {
+            self.0.read_shut.store(true, Ordering::SeqCst);
+        }
+        self.0.socket.shutdown(how)
+    }
+
+    fn set_read_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        if timeout == Some(Duration::ZERO) {
+            return Err(io::Error::from(ErrorKind::InvalidInput));
+        }
+        *self.0.read_timeout.lock().unwrap() = timeout;
+        Ok(())
+    }
+
+    fn set_write_timeout(&self, timeout: Option<Duration>) -> io::Result<()> {
+        self.0.socket.set_write_timeout(timeout)
+    }
+
+    fn peer_connected(&self) -> bool {
+        peek_connected!(&self.0.socket)
+    }
+}
 
 #[cfg(unix)]
 pub struct UnixTestListener {
@@ -345,7 +437,7 @@ pub struct LoopbackListener {
 
 impl ControlListener for LoopbackListener {
     fn accept(&self, poll: Duration) -> io::Result<Accepted> {
-        accept_with!(self, poll, LoopbackStream)
+        accept_with!(self, poll, LoopbackStream::new)
     }
 }
 
@@ -650,14 +742,25 @@ pub struct Harness {
     pub server: Option<ControlServer>,
 }
 
+/// The test limits: short delays, but a long auth deadline. A loaded runner can deschedule the test thread between
+/// its connect and its `pair` / `hello` for longer than a short deadline, and the server then closes the connection
+/// with the line unread (a flaky `ConnectionAborted`, os error 10053, on Windows). The deadline's own tests use
+/// [`short_auth_limits`].
 pub fn fast_limits() -> ControlLimits {
     ControlLimits {
-        auth_timeout: Duration::from_millis(300),
+        auth_timeout: Duration::from_secs(30),
         hello_failure_delay: Duration::from_millis(50),
         stop_timeout: Duration::from_secs(5),
         ..ControlLimits::default()
     }
 }
+
+/// [`fast_limits`] with the short auth deadline the tests of the deadline itself wait for.
+pub fn short_auth_limits() -> ControlLimits {
+    ControlLimits { auth_timeout: SHORT_AUTH_TIMEOUT, ..fast_limits() }
+}
+
+pub const SHORT_AUTH_TIMEOUT: Duration = Duration::from_millis(300);
 
 impl Harness {
     /// Over the Unix socket.
