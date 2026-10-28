@@ -162,6 +162,8 @@ pub struct FakeHelper {
     fail_once: Mutex<Vec<Uuid>>,
     /// Every `up` and `down`, in order.
     log: Mutex<Vec<(&'static str, Uuid)>>,
+    /// What `liveness` reports for a connected connection (dead-tunnel detection; none: nothing).
+    liveness: Mutex<std::collections::HashMap<Uuid, macvpn_core::liveness::Liveness>>,
 }
 
 static FAKE_HELPER: OnceLock<Arc<FakeHelper>> = OnceLock::new();
@@ -183,6 +185,15 @@ impl FakeHelper {
         for entry in self.up.lock().unwrap_or_else(PoisonError::into_inner).iter_mut().filter(|e| e.0 == *id) {
             entry.3 = "failed";
         }
+    }
+
+    /// What `liveness` reports for `id` from now on (`None`: nothing).
+    fn set_liveness(&self, id: &Uuid, facts: Option<macvpn_core::liveness::Liveness>) {
+        let mut map = self.liveness.lock().unwrap_or_else(PoisonError::into_inner);
+        match facts {
+            Some(f) => map.insert(*id, f),
+            None => map.remove(id),
+        };
     }
 
     /// How many `op` (`up` / `down`) calls `id` got.
@@ -257,6 +268,16 @@ impl HelperClient for FakeHelper {
 
     fn respond(&self, _: &Uuid, _: AuthResponseKind, _: &str) -> Result<(), String> {
         Ok(())
+    }
+
+    /// The scripted facts of a connected connection.
+    fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
+        let up =
+            self.up.lock().unwrap_or_else(PoisonError::into_inner).iter().any(|e| e.0 == *id && e.3 == "connected");
+        if !up {
+            return None;
+        }
+        self.liveness.lock().unwrap_or_else(PoisonError::into_inner).get(id).cloned()
     }
 
     /// "Clear Log…" (manage.js): logged with whether the note is the localized header the time filter reads.

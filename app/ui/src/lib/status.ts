@@ -30,6 +30,12 @@ export function statusLine(row: Row, now: number): StatusLine {
       return { type: row.typeLabel, status: tr('Waiting for authentication'), tone: 'busy' };
     case 'waitingForNetwork':
       return { type: row.typeLabel, status: tr('Waiting for network…'), tone: 'busy' };
+    case 'reconnecting':
+      return { type: row.typeLabel, status: tr('Reconnecting…'), tone: 'busy' };
+    case 'notResponding':
+      return { type: row.typeLabel, status: tr('Not responding'), tone: 'fail' };
+    case 'retrying':
+      return { type: row.typeLabel, status: tr('Retrying in %@ min', Math.max(1, Math.ceil((row.at * 1000 - now) / 60000))), tone: 'busy' };
     default:
       return { ...idleLine(row), tone: 'off' };
   }

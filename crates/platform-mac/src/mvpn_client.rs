@@ -185,6 +185,17 @@ impl<'a> MvpnClient<'a> {
         check(self.sudo(&args, None, None)?)
     }
 
+    /// `mvpn liveness <id>` (root layer 10): the tunnel's liveness facts. `None` on any failure, also from an older
+    /// root layer (its usage error) or an answer of another form: nothing is decided then.
+    pub fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
+        let args = vec![macvpn_core::liveness::LIVENESS.to_string(), uuid_string(id)];
+        let result = self.sudo(&args, None, Some(self.status_runner)).ok()?;
+        if result.exit_code != 0 {
+            return None;
+        }
+        macvpn_core::liveness::Liveness::parse(result.stdout.as_bytes())
+    }
+
     pub fn status(&self) -> Result<Vec<RootStatus>, ClientError> {
         let result = self.sudo(&["status".to_string()], None, Some(self.status_runner))?;
         let stdout = result.stdout.clone();

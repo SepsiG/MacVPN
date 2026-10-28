@@ -122,6 +122,18 @@ pub trait BridgeFiles {
     /// Called every [`HOUSEKEEPING_SECS`] while the bridge runs (it runs as long as openvpn): the macOS backend keeps
     /// the logs under their caps there, also when the app does not poll the status.
     fn housekeeping(&mut self) {}
+    /// Dead-tunnel detection: OpenVPN's tunnel after it was first connected, `Some(t)` restarting itself since the
+    /// Unix time `t` (`>STATE:…,RECONNECTING`), `None` up again. Default: the run file `tunnel` (`up` |
+    /// `reconnecting <t>`), which `mvpn liveness` reads.
+    fn tunnel(&mut self, reconnecting_since: Option<u64>) {
+        let line = match reconnecting_since {
+            Some(t) => format!("reconnecting {t}\n"),
+            None => "up\n".to_string(),
+        };
+        if self.run_trusted() {
+            let _ = self.write_run("tunnel", line.as_bytes());
+        }
+    }
 }
 
 /// How often the bridge calls [`BridgeFiles::housekeeping`].
@@ -145,6 +157,10 @@ pub struct Bridge<S: Read + Write, F: BridgeFiles> {
     finished: bool,
     round_start: Option<f64>,
     last_housekeeping: f64,
+    /// The tunnel was connected once (a later `RECONNECTING` is OpenVPN's own restart).
+    was_connected: bool,
+    /// OpenVPN restarts the tunnel itself (reported once per restart).
+    reconnecting: bool,
 }
 
 impl<S: Read + Write, F: BridgeFiles> Drop for Bridge<S, F> {
@@ -176,6 +192,8 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             finished: false,
             round_start: None,
             last_housekeeping: now(),
+            was_connected: false,
+            reconnecting: false,
         }
     }
 
@@ -417,7 +435,21 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
                 self.round_start = None;
                 self.status("ok");
                 self.clear_ui();
-                self.log("authenticated");
+                if self.reconnecting {
+                    self.log("reconnected");
+                } else {
+                    self.log("authenticated");
+                }
+                self.was_connected = true;
+                self.reconnecting = false;
+                self.files.tunnel(None);
+            }
+            ManagementEvent::Reconnecting => {
+                if self.was_connected && !self.reconnecting {
+                    self.reconnecting = true;
+                    self.log("reconnecting (OpenVPN restarts the tunnel)");
+                    self.files.tunnel(Some(now() as u64));
+                }
             }
             ManagementEvent::Fatal => self.finish("OpenVPN reported a fatal error", false, false),
             ManagementEvent::Ignored => {}
@@ -695,11 +727,43 @@ mod tests {
     fn statuses(f: &Files) -> Vec<String> {
         f.run
             .iter()
+            .filter(|(name, _)| name != "tunnel")
             .map(|(name, v)| {
                 assert_eq!(name, "mgmt-status");
                 v.split(' ').next().unwrap().trim().to_string()
             })
             .collect()
+    }
+
+    fn tunnel(f: &Files) -> Vec<String> {
+        f.run.iter().filter(|(name, _)| name == "tunnel").map(|(_, v)| v.clone()).collect()
+    }
+
+    /// Dead-tunnel detection: after the first CONNECTED, OpenVPN's own restart (`RECONNECTING`, then the states of
+    /// its new attempt) is written to the run file `tunnel` once, with its start; CONNECTED again writes `up`. A
+    /// RECONNECTING before the first connect is not a restart.
+    #[test]
+    fn openvpns_own_restart_is_written_for_liveness() {
+        let (_, f) = exchange(
+            &[
+                ">STATE:1700000000,RECONNECTING,init_instance,,,,,\n",
+                CONNECTED,
+                ">STATE:1700000100,RECONNECTING,ping-restart,,,,,\n",
+                ">STATE:1700000101,WAIT,,,,,,\n",
+                ">STATE:1700000102,RECONNECTING,ping-restart,,,,,\n",
+                CONNECTED,
+            ],
+            &[],
+            ("alice", "pw", false),
+        );
+        let t = tunnel(&f);
+        assert_eq!(t.len(), 3, "{t:?}");
+        assert_eq!(t[0], "up\n");
+        let since: u64 = t[1].strip_prefix("reconnecting ").unwrap().trim().parse().unwrap();
+        assert!(since > 1_700_000_000, "the bridge's own clock");
+        assert_eq!(t[2], "up\n");
+        assert!(f.log.contains(&"reconnecting (OpenVPN restarts the tunnel)".to_string()), "{:?}", f.log);
+        assert!(f.log.contains(&"reconnected".to_string()), "{:?}", f.log);
     }
 
     #[test]

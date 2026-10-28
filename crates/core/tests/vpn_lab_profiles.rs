@@ -135,3 +135,23 @@ fn the_ikev2_profiles_name_their_connection_and_child() {
         }
     }
 }
+
+/// Dead-tunnel detection (2026-10-28) needs a signal from a lab tunnel whose server is stopped (the manual checklist's
+/// "Halott alagút észlelése"): the WireGuard profiles keep `PersistentKeepalive` (a stale handshake then means dead).
+#[test]
+fn the_lab_wireguard_profiles_keep_alive_for_dead_tunnel_detection() {
+    let Some(dir) = std::env::var_os("MVPN_LAB_CLIENT_DIR") else {
+        eprintln!("MVPN_LAB_CLIENT_DIR is not set: nothing to check (scripts/test-vpn-lab.sh sets it)");
+        return;
+    };
+    for (folder, name) in [("macos", "wireguard-macos.conf"), ("windows", "wireguard-windows.conf")] {
+        let path = Path::new(&dir).join(folder).join(name);
+        let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+        let keepalive = text
+            .lines()
+            .filter_map(|l| l.split_once('='))
+            .find(|(k, _)| k.trim().eq_ignore_ascii_case("persistentkeepalive"))
+            .and_then(|(_, v)| v.trim().parse::<u16>().ok());
+        assert!(keepalive.is_some_and(|k| (1..=60).contains(&k)), "{folder}/{name}: PersistentKeepalive {keepalive:?}");
+    }
+}

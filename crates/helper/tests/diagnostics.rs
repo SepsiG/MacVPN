@@ -123,6 +123,7 @@ fn peer_status_has_no_keys() {
     // What wireguard-nt fills in: the interface's public key, TxBytes, RxBytes, LastHandshake (FILETIME).
     let peer = wg_nt::INTERFACE_SIZE;
     block[38..70].copy_from_slice(&[0xAB; 32]);
+    block[peer + 72..peer + 74].copy_from_slice(&25u16.to_le_bytes());
     block[peer + 104..peer + 112].copy_from_slice(&2048u64.to_le_bytes());
     block[peer + 112..peer + 120].copy_from_slice(&1_572_864u64.to_le_bytes());
     let handshake_unix = 1_760_000_000u64;
@@ -138,7 +139,19 @@ fn peer_status_has_no_keys() {
             rx: 1_572_864,
             tx: 2048,
             allowed_ips: 2,
+            keepalive: 25,
         }]
+    );
+    // Dead-tunnel detection reads the same block: times and counters only.
+    assert_eq!(
+        wg_nt::liveness(&block),
+        macvpn_core::liveness::Liveness::WireGuard(vec![macvpn_core::liveness::WgPeer {
+            last_handshake: Some(handshake_unix),
+            rx: 1_572_864,
+            tx: 2048,
+            keepalive: 25,
+            endpoint: true,
+        }])
     );
     let text = peer_lines("WinVPN0f1e2d3c", &peers, handshake_unix + 7).join("\n");
     assert_eq!(

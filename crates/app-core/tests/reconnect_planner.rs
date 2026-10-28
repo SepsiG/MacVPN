@@ -4,7 +4,9 @@
 
 use macvpn_app_core::connection_notices::Notice;
 use macvpn_app_core::failure_reason::FailureKind;
-use macvpn_app_core::reconnect::{Action, Fingerprint, Planner, SETTLE, Skip, WAKE_WINDOW, fingerprint};
+use macvpn_app_core::reconnect::{
+    Action, DEAD_STABLE, Fingerprint, MAX_DEAD_RECONNECTS, Planner, SETTLE, SLOW_RETRY, Skip, WAKE_WINDOW, fingerprint,
+};
 use macvpn_core::date::Date;
 use macvpn_core::l10n::{AppLanguage, with_language};
 use macvpn_core::netaddr::IpPrefix;
@@ -130,11 +132,28 @@ fn a_drop_while_the_network_is_down_is_a_candidate() {
     assert!(p.due(t0().adding(500.0 + SETTLE)));
 }
 
+/// A drop long after a wake on a stable network is a tunnel that died under a connection that should be up (the
+/// engine exited, `--ping-exit`, DPD; maintainer goal 2026-10-28): reconnected, at most `MAX_DEAD_RECONNECTS` times
+/// until it has worked for `DEAD_STABLE`. A refused sign-in never.
 #[test]
-fn a_drop_long_after_wake_on_a_stable_network_is_not_a_candidate() {
+fn a_drop_long_after_wake_on_a_stable_network_is_reconnected_up_to_the_limit() {
     let mut p = slept_planner();
-    p.dropped("k", "Office VPN", t0().adding(WAKE_WINDOW + 1.0), FailureKind::ServerNotResponding);
-    assert!(!p.due(t0().adding(WAKE_WINDOW + 100.0)));
+    let mut t = WAKE_WINDOW + 1.0;
+    for attempt in 1..=MAX_DEAD_RECONNECTS {
+        p.dropped("k", "Office VPN", t0().adding(t), FailureKind::ServerNotResponding);
+        assert!(p.due(t0().adding(t + SETTLE)), "drop {attempt}");
+        assert_eq!(p.evaluate(t0().adding(t + SETTLE), &home(), &on, false), [Action::Connect("k".into())]);
+        p.connected("k", VpnNetworks::default());
+        t += 60.0;
+    }
+    p.dropped("k", "Office VPN", t0().adding(t), FailureKind::Unknown);
+    assert!(!p.due(t0().adding(t + 100.0)), "the limit");
+    // Working for DEAD_STABLE since the last one: the count starts over.
+    p.dropped("k", "Office VPN", t0().adding(t + DEAD_STABLE), FailureKind::Unknown);
+    assert!(p.due(t0().adding(t + DEAD_STABLE + SETTLE)));
+    let mut q = slept_planner();
+    q.dropped("k", "Office VPN", t0().adding(WAKE_WINDOW + 1.0), FailureKind::AuthFailed);
+    assert!(!q.due(t0().adding(WAKE_WINDOW + 100.0)));
 }
 
 #[test]
@@ -193,7 +212,7 @@ fn switched_off_and_refused_credentials_are_not_retried() {
 }
 
 #[test]
-fn three_attempts_then_one_failure_notice() {
+fn three_attempts_then_the_slow_tier_with_one_notice() {
     with_language(AppLanguage::En, || {
         let mut p = slept_planner();
         p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::NetworkLost);
@@ -207,9 +226,10 @@ fn three_attempts_then_one_failure_notice() {
                 now = now.adding(if attempt == 1 { 12.0 } else { 32.0 });
                 assert!(p.due(now));
             } else {
+                // The fast attempts are over: the slow tier (every 5 minutes for an hour), one notice.
                 assert_eq!(
                     actions,
-                    vec![Action::Notify(Notice::ReconnectFailed {
+                    vec![Action::Notify(Notice::KeepsTrying {
                         key: "k".into(),
                         name: "Office VPN".into(),
                         reason: Some("The server could not be reached.".into())
@@ -217,7 +237,8 @@ fn three_attempts_then_one_failure_notice() {
                 );
             }
         }
-        assert!(!p.due(now.adding(1000.0)));
+        assert!(!p.due(now.adding(2.0 + SLOW_RETRY - 1.0)));
+        assert!(p.due(now.adding(2.0 + SLOW_RETRY)));
     });
 }
 

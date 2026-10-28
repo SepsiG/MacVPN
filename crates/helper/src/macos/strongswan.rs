@@ -157,6 +157,23 @@ pub fn combined(configs: &[&[u8]]) -> Zeroizing<Vec<u8>> {
     out
 }
 
+/// Dead peer detection when the config has none (2026-10-28): swanctl's `dpd_delay` defaults to 0 (off), so a dead
+/// server leaves the IKE SA `ESTABLISHED` until its next rekeying. With [`DEFAULT_DPD_DELAY`] charon sends an
+/// INFORMATIONAL exchange after that long without traffic from the peer; IKEv2 has no `dpd_timeout` (it is IKEv1's):
+/// an unanswered exchange ends after charon's retransmissions (about 165 s by default), the IKE SA is deleted and the
+/// child follows its `dpd_action` (default `clear`), so the connection drops and the app reconnects it. A config's
+/// own `dpd_delay` (also `0s`) is kept.
+pub const DEFAULT_DPD_DELAY: &str = "30s";
+
+/// The section appended to the run copy of the config when connection `conn` sets no `dpd_delay` (`None`: it sets
+/// one). strongSwan's settings parser merges sections of the same name, so this only adds the key.
+pub fn default_dpd_block(config: &str, conn: &str) -> Option<String> {
+    if StrongSwanValidator::conn_sets(config, conn, "dpd_delay") {
+        return None;
+    }
+    Some(format!("\nconnections {{\n  {conn} {{\n    dpd_delay = {DEFAULT_DPD_DELAY}\n  }}\n}}\n"))
+}
+
 /// The run directories of the other active strongSwan connections, sorted: `kind` strongswan, a `conn` file
 /// (written under the lock just before the load) and no `unloaded` mark (written under the lock by down).
 pub fn active_others(run_base: &Path, me: &Path) -> Vec<PathBuf> {
@@ -375,6 +392,13 @@ pub fn up(ctx: &mut Ctx) -> R {
         return Err(ctx.die(tr("No child name found", &[])));
     }
     let own_names = run_section_names(&run);
+    // Dead peer detection unless the config sets its own (the user's config, validated; read back from the run copy).
+    if let Some(text) = fsx::read_private(&run.join("config"), LOAD_PART_MAX).map(Zeroizing::new)
+        && let Some(block) = default_dpd_block(&String::from_utf8_lossy(&text), &conn)
+    {
+        let _ = fsx::append(&run.join("config"), block.as_bytes());
+        ctx.log.step(&tr("dead peer detection added (dpd_delay = %@)", &[DEFAULT_DPD_DELAY]));
+    }
     let mut owners = Vec::new();
     if !ctx.secrets.psk.is_empty() || !ctx.secrets.pass.is_empty() {
         let text = fsx::read_private(&run.join("config"), LOAD_PART_MAX).map(Zeroizing::new).unwrap_or_default();
@@ -596,6 +620,25 @@ mod tests {
         assert!(!eap("u", &["a"]).ambiguous(&eap("u", &["b"])));
         assert!(!eap("u", &[]).ambiguous(&eap("v", &[])));
         assert!(!ike(&[]).ambiguous(&eap("u", &[])));
+    }
+
+    #[test]
+    fn dead_peer_detection_is_added_only_when_the_config_has_none() {
+        let without = "connections {\n  lab {\n    remote_addrs = vpn.example\n    children {\n      net {\n        dpd_action = clear\n      }\n    }\n  }\n}\n";
+        let block = default_dpd_block(without, "lab").unwrap();
+        assert_eq!(block, "\nconnections {\n  lab {\n    dpd_delay = 30s\n  }\n}\n");
+        let merged = format!("{without}{block}");
+        use macvpn_core::validators::ConfigValidator;
+        assert!(StrongSwanValidator.validate(&merged).is_empty(), "the appended section is a valid config");
+        assert!(StrongSwanValidator::conn_sets(&merged, "lab", "dpd_delay"));
+        assert_eq!(StrongSwanValidator::names(&merged), Some(("lab".into(), "net".into())), "the names stay");
+        let own = without.replace("remote_addrs = vpn.example", "remote_addrs = vpn.example\n    dpd_delay = 0s");
+        assert_eq!(default_dpd_block(&own, "lab"), None, "the config's own value stays");
+        // Another connection's or a child's key does not count.
+        let other = format!(
+            "{without}connections {{\n  other {{\n    dpd_delay = 10s\n    children {{\n      x {{\n      }}\n    }}\n  }}\n}}\n"
+        );
+        assert!(default_dpd_block(&other, "lab").is_some());
     }
 
     #[test]

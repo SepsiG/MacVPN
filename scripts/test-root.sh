@@ -43,7 +43,7 @@ SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=9
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=10
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
@@ -516,6 +516,38 @@ assert (d[sys.argv[1]]["state"], d[sys.argv[1]]["iface"], d[sys.argv[1]]["ip"]) 
 assert d[sys.argv[2]]["state"] == "connecting", d[sys.argv[2]]
 assert d[sys.argv[3]]["state"] == "failed", d[sys.argv[3]]
 ' "$L1" "$L2" "$L3" && ok "status: v3-ból maradt openvpn (nincs openvpn.log) → connected" || { nok "status: v3-ból maradt openvpn (nincs openvpn.log) → connected"; echo "$SJ"; }
+
+# Root réteg 10: `mvpn liveness <id>` (a halott alagút észlelése). Csak az azonosító jön az apptól; a réteg a saját futási
+# könyvtárából veszi a típust és az interfészt. WireGuard: `wg show <utun> dump` → csak időpontok és számlálók (kulcs,
+# cím, interfésznév soha); OpenVPN: a közvetítő `tunnel` fájlja. Ismeretlen / hiányos: kilépési kód 1, kimenet nélkül.
+LV="$T/livrun"; LVW="$T/livwg"; LVB="$T/livbrew"; mkdir -p "$LV" "$LVW" "$LVB/bin"
+LW=$(uuidgen); mkdir -p "$LV/$LW"; echo wireguard >"$LV/$LW/kind"; echo mv12345678 >"$LV/$LW/iface"; echo utun42 >"$LVW/mv12345678.name"
+cat >"$LVB/bin/wg" <<'WG'
+#!/bin/bash
+echo "$*" >>"$(dirname "$0")/../calls"
+[ "$*" = "show utun42 dump" ] || exit 3
+printf 'UFJJVkFURUtFWQ==\tUFVCTElDS0VZ\t51820\toff\n'
+printf 'UEVFUktFWQ==\tUFNLU0VDUkVU\t203.0.113.7:51820\t0.0.0.0/0\t1700000000\t10\t20\t25\n'
+WG
+chmod 755 "$LVB/bin/wg"
+LO=$(uuidgen); mkdir -p "$LV/$LO"; echo openvpn >"$LV/$LO/kind"; echo "reconnecting 1700000100" >"$LV/$LO/tunnel"
+LN=$(uuidgen); mkdir -p "$LV/$LN"; echo openvpn >"$LV/$LN/kind"
+LS=$(uuidgen); mkdir -p "$LV/$LS"; echo strongswan >"$LV/$LS/kind"
+live() { env MVPN_RUN_BASE="$LV" MVPN_WG_RUN="$LVW" MVPN_BREW="$LVB" "$SH" "$MVPN" liveness "$@" 2>&1; echo "exit $?"; }
+OUT=$(live "$LW")
+[ "$OUT" = "$(printf 'wireguard 1\npeer 1700000000 10 20 25 1\nexit 0')" ] && ok "liveness: WireGuard számlálók" || { nok "liveness: WireGuard számlálók"; echo "$OUT"; }
+case "$OUT" in *UFJJ*|*UEVF*|*UFNL*|*203.0.113*|*utun42*|*mv1234*) nok "liveness: kulcs / cím / interfész a kimenetben";; *) ok "liveness: se kulcs, se cím, se interfésznév";; esac
+OUT=$(live "$(echo "$LW" | tr 'A-F' 'a-f')")
+[ "${OUT##*$'\n'}" = "exit 0" ] && ok "liveness: kisbetűs azonosító" || { nok "liveness: kisbetűs azonosító"; echo "$OUT"; }
+OUT=$(live "$LO")
+[ "$OUT" = "$(printf 'openvpn reconnecting 1700000100\nexit 0')" ] && ok "liveness: OpenVPN saját újraindulása" || { nok "liveness: OpenVPN saját újraindulása"; echo "$OUT"; }
+for X in "$LN" "$LS" "$(uuidgen)"; do
+  OUT=$(live "$X"); [ "$OUT" = "exit 1" ] || { nok "liveness: nincs mit jelenteni → 1, kimenet nélkül ($X)"; echo "$OUT"; }
+done; ok "liveness: nincs mit jelenteni → 1, kimenet nélkül"
+OUT=$(live "../$LW"); case "$OUT" in *"Invalid ID"*"exit 1") ok "liveness: érvénytelen azonosító";; *) nok "liveness: érvénytelen azonosító"; echo "$OUT";; esac
+ln -s "$LV/$LO" "$LV/$(uuidgen)"; LL=$(ls -l "$LV" | awk '/->/{print $9}')
+OUT=$(live "$LL"); [ "$OUT" = "exit 1" ] && ok "liveness: symlinkelt futási könyvtár → 1" || { nok "liveness: symlinkelt futási könyvtár → 1"; echo "$OUT"; }
+echo "reconnecting 01x" >"$LV/$LO/tunnel"; OUT=$(live "$LO"); [ "$OUT" = "exit 1" ] && ok "liveness: hibás tunnel fájl → 1" || { nok "liveness: hibás tunnel fájl → 1"; echo "$OUT"; }
 
 # status-kori napló-átmásolás: csak ha a zár szabad (nem blokkolva megszerzi, majd elengedi), és titok nélkül maszkol:
 # a jelszó / auth sorok kimaradnak.

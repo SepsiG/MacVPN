@@ -195,6 +195,14 @@ impl HelperClient for ServiceClient {
         let r = self.exchange(&[proto::CLEAR_LOG, &id], b"", QUICK_TIMEOUT).map_err(NoAnswer::message)?;
         crate::pure::engine::clear_log_answer(r.code, &String::from_utf8_lossy(&r.stderr))
     }
+
+    /// `liveness <id>`: the tunnel's liveness facts (dead-tunnel detection). An older service answers its usage
+    /// error: `None`, nothing is detected.
+    fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
+        let id = uuid_string(id);
+        let out = self.call(&[macvpn_core::liveness::LIVENESS, &id], b"", QUICK_TIMEOUT).ok()?;
+        macvpn_core::liveness::Liveness::parse(&out)
+    }
 }
 
 /// The MFA state the service's bridge keeps for this user's connection, with the same parser and limit as the file

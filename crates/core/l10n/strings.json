@@ -41,6 +41,10 @@
       "hu": "A(z) %@ ezekre a fájlokra hivatkozik. A Használat választásakor a bennük lévő felhasználónév, jelszó vagy privát kulcs jelszó a széfbe kerül ehhez a kapcsolathoz. A fájlok sosem kerülnek a configba.",
       "scope": "app"
     },
+    "%@ stopped responding": {
+      "hu": "%@: nem válaszol",
+      "scope": "app"
+    },
     "%@ was not read (missing, outside the config's folder, larger than 1 KB, or not in the expected form). Enter the credentials in the editor.": {
       "hu": "A(z) %@ nincs beolvasva (hiányzik, a config mappáján kívül van, nagyobb 1 KB-nál, vagy nem a várt formájú). Add meg a hitelesítő adatokat a szerkesztőben.",
       "scope": "app"
@@ -247,6 +251,10 @@
       "hu": "Egy VPN-kapcsolat újracsatlakozott",
       "scope": "app"
     },
+    "A VPN connection stopped responding": {
+      "hu": "Egy VPN-kapcsolat nem válaszol",
+      "scope": "app"
+    },
     "A VPN connection was not reconnected": {
       "hu": "Egy VPN-kapcsolat nem csatlakozott újra",
       "scope": "app"
@@ -373,6 +381,13 @@
       "hu": "Egyéni időszak",
       "scope": "app"
     },
+    "dead peer detection added (dpd_delay = %@)": {
+      "hu": "halott-társ észlelés hozzáadva (dpd_delay = %@)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
     "Disconnected": {
       "hu": "Bontva",
       "scope": "platform",
@@ -390,6 +405,18 @@
       "only": [
         "windows"
       ]
+    },
+    "It is tried again every 5 minutes for up to an hour.": {
+      "hu": "5 percenként újrapróbálja, legfeljebb egy órán át.",
+      "scope": "app"
+    },
+    "It stopped responding again after 3 reconnects. It is tried again every 5 minutes for up to an hour.": {
+      "hu": "3 újracsatlakozás után is újra elnémult. 5 percenként újrapróbálja, legfeljebb egy órán át.",
+      "scope": "app"
+    },
+    "It was tried for an hour. Connect it again when the server is back.": {
+      "hu": "Egy órán át próbálkozott. Csatlakoztasd újra, ha a szerver ismét elérhető.",
+      "scope": "app"
     },
     "Last 15 Minutes": {
       "hu": "Utolsó 15 perc",
@@ -428,6 +455,10 @@
         "windows"
       ]
     },
+    "Not responding": {
+      "hu": "Nem válaszol",
+      "scope": "app"
+    },
     "Opening port…": {
       "hu": "Port megnyitása…",
       "scope": "platform",
@@ -456,6 +487,10 @@
         "windows"
       ]
     },
+    "Reconnecting…": {
+      "hu": "Újracsatlakozás…",
+      "scope": "app"
+    },
     "Remove": {
       "hu": "Eltávolítás",
       "scope": "app",
@@ -477,6 +512,10 @@
         "windows"
       ]
     },
+    "Retrying in %@ min": {
+      "hu": "Újrapróbálás %@ perc múlva",
+      "scope": "app"
+    },
     "The connection's log cannot be cleared: it belongs to another user or cannot be written.": {
       "hu": "A kapcsolat naplóját nem lehet törölni: egy másik felhasználóé, vagy nem írható.",
       "scope": "platform",
@@ -487,6 +526,14 @@
     "The log could not be cleared: %@": {
       "hu": "A naplót nem sikerült törölni: %@",
       "scope": "platform"
+    },
+    "The VPN server stopped answering, so it was disconnected.": {
+      "hu": "A VPN-szerver nem válaszol, ezért a kapcsolat bontva lett.",
+      "scope": "app"
+    },
+    "The VPN server stopped answering. It is being reconnected.": {
+      "hu": "A VPN-szerver nem válaszol. A kapcsolat újracsatlakozik.",
+      "scope": "app"
     },
     "The Windows service %@ is disabled. An administrator must set it to Manual (services.msc).": {
       "hu": "A(z) %@ Windows-szolgáltatás le van tiltva. Egy rendszergazdának Kézi indításra kell állítania (services.msc).",
@@ -5291,8 +5338,8 @@
       "hu": "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
       "scope": "core"
     },
-    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id>": {
-      "hu": "Használat: up|down <openvpn|wireguard> <azonosító> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <azonosító> | status | version | engine | auth-state <azonosító> | log <azonosító> <eltolás> | clear-log <azonosító>",
+    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id> | liveness <id>": {
+      "hu": "Használat: up|down <openvpn|wireguard> <azonosító> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <azonosító> | status | version | engine | auth-state <azonosító> | log <azonosító> <eltolás> | clear-log <azonosító> | liveness <azonosító>",
       "scope": "mvpn",
       "only": [
         "windows"

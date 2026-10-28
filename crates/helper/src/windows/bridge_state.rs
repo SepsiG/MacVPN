@@ -32,6 +32,8 @@ pub struct BridgeState {
     ui: Mutex<Option<Vec<u8>>>,
     status: Mutex<Option<String>>,
     response: Mutex<Option<Zeroizing<Vec<u8>>>>,
+    /// Dead-tunnel detection: `Some(t)` OpenVPN restarts the tunnel itself since `t` (after it was connected).
+    reconnecting_since: Mutex<Option<u64>>,
     log: LogFn,
     stop: StopFn,
 }
@@ -43,7 +45,19 @@ fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 impl BridgeState {
     /// `log`: the connection log's line sink (masked by the sink); `stop`: kills this connection's `openvpn.exe`.
     pub fn new(log: LogFn, stop: StopFn) -> BridgeState {
-        BridgeState { ui: Mutex::default(), status: Mutex::default(), response: Mutex::default(), log, stop }
+        BridgeState {
+            ui: Mutex::default(),
+            status: Mutex::default(),
+            response: Mutex::default(),
+            reconnecting_since: Mutex::default(),
+            log,
+            stop,
+        }
+    }
+
+    /// Since when OpenVPN restarts the tunnel itself (`None`: up, or not connected yet).
+    pub fn reconnecting_since(&self) -> Option<u64> {
+        *lock(&self.reconnecting_since)
     }
 
     /// The `AuthUIState` JSON for `auth-state` (`None`: nothing pending).
@@ -112,6 +126,10 @@ impl BridgeFiles for InProcessFiles {
     }
     fn stop_openvpn(&mut self) {
         (self.0.stop)();
+    }
+    /// In memory (`liveness` reads it), never a file.
+    fn tunnel(&mut self, reconnecting_since: Option<u64>) {
+        *lock(&self.0.reconnecting_since) = reconnecting_since;
     }
 }
 

@@ -2,7 +2,7 @@
 //! fixed texts (only the connection's name, never a server, user name, address or log line).
 
 use macvpn_app_core::connection_notices::{
-    ENABLED_KEY, Notice, NoticeTracker, content, content_named, enabled, reason_text,
+    DeadOutcome, ENABLED_KEY, Notice, NoticeTracker, content, content_named, enabled, reason_text,
 };
 use macvpn_app_core::failure_reason::FailureKind;
 use macvpn_app_core::manager::{ConnectionEvent, auth_timeout_reason};
@@ -266,6 +266,62 @@ fn a_disconnect_without_a_network_says_whether_it_reconnects() {
         );
         assert_eq!(content(&gone, "u".into()).body, "2 percig nem volt hálózat.");
     });
+}
+
+/// A dead tunnel the app disconnected (dead-tunnel detection): whether it is reconnected, stays down, or was given up.
+#[test]
+fn a_dead_tunnel_says_what_happens_to_it() {
+    let notice = |outcome| Notice::NotResponding { key: "k".into(), name: "Office VPN".into(), outcome };
+    with_language(AppLanguage::En, || {
+        let n = content(&notice(DeadOutcome::Reconnects), "u".into());
+        assert_eq!(
+            (n.title.as_str(), n.body.as_str()),
+            ("Office VPN stopped responding", "The VPN server stopped answering. It is being reconnected.")
+        );
+        assert_eq!(n.user_info, (CONNECTION_KEY, "k".to_string()));
+        assert_eq!(
+            content(&notice(DeadOutcome::Disconnected), "u".into()).body,
+            "The VPN server stopped answering, so it was disconnected."
+        );
+        assert_eq!(
+            content(&notice(DeadOutcome::KeepsTrying), "u".into()).body,
+            "It stopped responding again after 3 reconnects. It is tried again every 5 minutes for up to an hour."
+        );
+        let unnamed = Notice::NotResponding { key: "k".into(), name: "".into(), outcome: DeadOutcome::KeepsTrying };
+        assert_eq!(content(&unnamed, "u".into()).title, "A VPN connection stopped responding");
+    });
+    with_language(AppLanguage::Hu, || {
+        let n = content(&notice(DeadOutcome::Reconnects), "u".into());
+        assert_eq!(n.title, "Office VPN: nem válaszol");
+        assert_eq!(n.body, "A VPN-szerver nem válaszol. A kapcsolat újracsatlakozik.");
+    });
+    assert_eq!(macvpn_app_core::reconnect::MAX_DEAD_RECONNECTS, 3, "the notice names 3");
+    // The slow tier: one notice when it starts (after the last failure's reason), one when the hour is over.
+    with_language(AppLanguage::En, || {
+        let start = Notice::KeepsTrying {
+            key: "k".into(),
+            name: "Office VPN".into(),
+            reason: Some("The server could not be reached.".into()),
+        };
+        let n = content(&start, "u".into());
+        assert_eq!(
+            (n.title.as_str(), n.body.as_str()),
+            (
+                "Office VPN could not reconnect",
+                "The server could not be reached. It is tried again every 5 minutes for up to an hour."
+            )
+        );
+        let end = Notice::RetriesEnded { key: "k".into(), name: "Office VPN".into() };
+        assert_eq!(
+            content(&end, "u".into()).body,
+            "It was tried for an hour. Connect it again when the server is back."
+        );
+    });
+    with_language(AppLanguage::Hu, || {
+        let end = Notice::RetriesEnded { key: "k".into(), name: "Office VPN".into() };
+        assert_eq!(content(&end, "u".into()).title, "Office VPN: nem sikerült újracsatlakozni");
+    });
+    assert_eq!((macvpn_app_core::reconnect::SLOW_RETRY, macvpn_app_core::reconnect::SLOW_FOR), (300.0, 3600.0));
 }
 
 #[test]

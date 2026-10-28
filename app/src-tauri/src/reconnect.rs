@@ -4,15 +4,19 @@
 //! runs the planner's actions (a connect, a disconnect of a tunnel on its own network or after a long network
 //! loss, a notice). After a network change it checks (debounced) whether the connections up or connecting still
 //! have a physical network under them; the ones that do not "wait for network" in the rows and the tray
-//! ([`Reconnect::waiting_for_network`]). Probes, log reads and connects never run on the manager's, the main or a
-//! hook's thread. No OS `cfg`: the OS is behind `Platform::network()` and the lifecycle.
+//! ([`Reconnect::waiting_for_network`]). While a network is there it also asks the helper about the connected
+//! tunnels (dead-tunnel detection, [`macvpn_app_core::liveness`]): OpenVPN restarting itself shows "Reconnecting…",
+//! a dead tunnel is disconnected and, by the planner's rules, reconnected. Probes, log reads, helper polls and
+//! connects never run on the manager's, the main or a hook's thread. No OS `cfg`: the OS is behind
+//! `Platform::network()`, the helper and the lifecycle.
 
 use macvpn_app_core::deps::ConnectionRepository;
 use macvpn_app_core::reconnect::{self, Action, Planner, fingerprint};
 use macvpn_app_core::{ConnectionEvent, ConnectionItem, DisconnectCause};
 use macvpn_core::date::Date;
+use macvpn_core::liveness::Liveness;
 use macvpn_core::log::LogTailer;
-use macvpn_core::models::{Connection, ConnectionState, parse_uuid};
+use macvpn_core::models::{Connection, ConnectionState, VPNKind, parse_uuid};
 use macvpn_core::vpn_networks::VpnNetworks;
 use macvpn_platform_api::NetworkSnapshot;
 use std::collections::HashMap;
@@ -44,6 +48,13 @@ pub enum Event {
     /// The system woke: the connected managed keys before the poller's refresh.
     Wake(Vec<String>),
     NetworkChanged,
+    /// The app's disconnect of a dead tunnel returned (its reconnect may follow).
+    DeadDown(String),
+    /// The connection went from up or connecting to down (any cause): its lease mark goes.
+    Down(String),
+    /// Ask the tunnels now (a smoke run; the planner's own schedule otherwise).
+    #[cfg(debug_assertions)]
+    LivenessNow,
 }
 
 /// Owned by `AppState` (created with it, so the lifecycle hooks registered before `connect_hooks` can send);
@@ -56,6 +67,9 @@ pub struct Reconnect {
     store: Arc<dyn ConnectionRepository>,
     /// The network change watcher (outside the sandbox). Dropping it stops it.
     watch: Mutex<Option<Box<dyn Send>>>,
+    /// A smoke run moves the driver's clock forward (seconds) instead of waiting minutes.
+    #[cfg(debug_assertions)]
+    skew: Mutex<f64>,
 }
 
 impl Reconnect {
@@ -67,6 +81,8 @@ impl Reconnect {
             planner: Mutex::default(),
             store,
             watch: Mutex::new(None),
+            #[cfg(debug_assertions)]
+            skew: Mutex::new(0.0),
         }
     }
 
@@ -93,6 +109,35 @@ impl Reconnect {
     /// The connections waiting for network (their rows and the tray say so).
     pub fn waiting_for_network(&self) -> Vec<String> {
         self.planner().waiting_for_network()
+    }
+
+    /// OpenVPN restarting itself (their rows show "Reconnecting…").
+    pub fn reconnecting(&self) -> Vec<String> {
+        self.planner().reconnecting()
+    }
+
+    /// The slow tier's next attempts (key, Unix time; their rows show "Retrying in … min").
+    pub fn slow_retries(&self) -> Vec<(String, f64)> {
+        self.planner().slow_retries().into_iter().map(|(k, d)| (k, d.time_interval_since_1970())).collect()
+    }
+
+    /// The tunnels found dead and disconnected (their rows show "Not responding").
+    pub fn not_responding(&self) -> Vec<String> {
+        self.planner().not_responding()
+    }
+
+    /// A smoke run: the driver's clock moves `seconds` forward (the planner's timers with it).
+    #[cfg(debug_assertions)]
+    pub fn skew(&self, seconds: f64) {
+        *self.skew.lock().unwrap_or_else(PoisonError::into_inner) += seconds;
+    }
+
+    /// The driver's time.
+    fn now(&self) -> Date {
+        #[cfg(debug_assertions)]
+        return Date::now().adding(*self.skew.lock().unwrap_or_else(PoisonError::into_inner));
+        #[cfg(not(debug_assertions))]
+        Date::now()
     }
 
     /// Quitting: the network watcher stops.
@@ -163,6 +208,8 @@ fn networks(state: &AppState, c: &Connection) -> VpnNetworks {
 /// Starts the driver thread and the network watcher (outside the sandbox). Once, from `connect_hooks`.
 pub fn start(state: &Arc<AppState>) {
     let Some(rx) = state.reconnect.rx.lock().unwrap_or_else(PoisonError::into_inner).take() else { return };
+    // Connections a lease started that were left up by "Quit, Keep Them Running": still the leases'.
+    state.reconnect.planner().restore_leased(&reconnect::lease_marks(state.prefs.as_ref()));
     wire(state);
     if !state.env.sandbox {
         let watching = state.clone();
@@ -177,14 +224,14 @@ pub fn start(state: &Arc<AppState>) {
 
 fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
     let r = &state.reconnect;
-    let mut shown_waiting: Vec<String> = Vec::new();
+    let mut shown: (Vec<String>, Vec<String>, Vec<String>, Vec<String>) = Default::default();
     loop {
         match rx.recv_timeout(TICK) {
             Ok(e) => handle(state, e),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
-        let now = Date::now();
+        let now = r.now();
         if r.planner().survivors_due(now) {
             // Probed and read without the planner's lock (the manager's hooks ask it).
             let snap = snapshot(state).unwrap_or_default();
@@ -193,10 +240,15 @@ fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
             actions.into_iter().for_each(|a| act(state, a));
         }
         network_loss(state, now);
-        // The rows and the tray follow the connections waiting for network.
-        let waiting = r.waiting_for_network();
-        if waiting != shown_waiting {
-            shown_waiting = waiting;
+        liveness(state, now);
+        // Decided outside a returning call (a drop that started the slow tier).
+        let queued = r.planner().take_actions();
+        queued.into_iter().for_each(|a| act(state, a));
+        // The rows and the tray follow the connections waiting for network, reconnecting or not responding.
+        let retrying: Vec<String> = r.slow_retries().into_iter().map(|(k, at)| format!("{k}@{at}")).collect();
+        let now_shown = (r.waiting_for_network(), r.reconnecting(), r.not_responding(), retrying);
+        if now_shown != shown {
+            shown = now_shown;
             state.publisher.mark();
         }
         if !r.planner().due(now) {
@@ -230,9 +282,37 @@ fn network_loss(state: &Arc<AppState>, now: Date) {
     }
 }
 
+/// The engines whose tunnels report liveness (the helper's `liveness`); the others' death shows in their state.
+fn watched(kind: VPNKind) -> bool {
+    matches!(kind, VPNKind::Wireguard | VPNKind::Openvpn)
+}
+
+/// Dead-tunnel detection: when due, the connected tunnels are asked (without the planner's lock) and the planner
+/// decides.
+fn liveness(state: &Arc<AppState>, now: Date) {
+    let r = &state.reconnect;
+    if !r.planner().liveness_due(now) {
+        return;
+    }
+    let polled: Vec<(String, String, Option<Liveness>)> = connected_keys(state)
+        .into_iter()
+        .filter_map(|key| managed(state, &key).map(|c| (key, c)))
+        .filter(|(_, c)| watched(c.kind))
+        .map(|(key, c)| {
+            let facts = state.helper.liveness(&c.id);
+            (key, c.name, facts)
+        })
+        .collect();
+    let prefs = state.prefs.clone();
+    let enabled = move |key: &str| parse_uuid(key).is_some_and(|u| reconnect::is_enabled(prefs.as_ref(), &u));
+    // The planner decides with the time of the answers (the polls take a moment).
+    let actions = r.planner().liveness_checked(r.now(), &polled, &enabled);
+    actions.into_iter().for_each(|a| act(state, a));
+}
+
 fn handle(state: &Arc<AppState>, e: Event) {
     let r = &state.reconnect;
-    let now = Date::now();
+    let now = r.now();
     match e {
         Event::Started(key) => {
             if managed(state, &key).is_none() {
@@ -241,6 +321,9 @@ fn handle(state: &Arc<AppState>, e: Event) {
             let ours = r.is_attempting(&key);
             let snap = if ours { None } else { snapshot(state) };
             r.planner().connect_started(&key, snap.as_ref().and_then(fingerprint), ours);
+            // A lease's connect is marked (kept across a relaunch); the user's own connect takes it over.
+            let leased = r.planner().is_leased(&key);
+            reconnect::set_lease_mark(state.prefs.as_ref(), &key, leased);
             // Connecting without a network: it waits for one (checked like after a change).
             if snap.is_some_and(|s| !s.has_network()) {
                 r.planner().check_network_soon(now);
@@ -249,6 +332,11 @@ fn handle(state: &Arc<AppState>, e: Event) {
         Event::Connected(key) => {
             let Some(c) = managed(state, &key) else { return };
             let n = networks(state, &c);
+            // Up without a connect the planner saw (already up when the app started): it is up on this network.
+            if !r.planner().knows_network(&key) {
+                let fp = snapshot(state).as_ref().and_then(fingerprint);
+                r.planner().adopt(&key, fp);
+            }
             r.planner().connected(&key, n);
         }
         Event::Dropped(key, name) => {
@@ -275,13 +363,20 @@ fn handle(state: &Arc<AppState>, e: Event) {
         Event::UserDisconnected(key) => r.planner().user_disconnected(&key),
         Event::LeaseConnect(key, true) => r.planner().lease_connect_began(&key),
         Event::LeaseConnect(key, false) => r.planner().lease_connect_ended(&key),
-        Event::Forget(key) => r.planner().forget(&key),
+        Event::Forget(key) => {
+            r.planner().forget(&key);
+            reconnect::set_lease_mark(state.prefs.as_ref(), &key, false);
+        }
         Event::Sleep(connected) => {
             let fp = snapshot(state).as_ref().and_then(fingerprint);
             r.planner().sleep(&connected, fp);
         }
         Event::Wake(connected) => r.planner().wake(now, &connected),
         Event::NetworkChanged => r.planner().network_changed(now),
+        Event::DeadDown(key) => r.planner().dead_down(&key, now),
+        Event::Down(key) => reconnect::set_lease_mark(state.prefs.as_ref(), &key, false),
+        #[cfg(debug_assertions)]
+        Event::LivenessNow => r.planner().liveness_soon(),
     }
 }
 
@@ -299,6 +394,15 @@ fn act(state: &Arc<AppState>, action: Action) {
             let manager = state.manager.clone();
             // Not the user's: the planner may reconnect it when the network is back. `down` restores DNS and routes.
             std::thread::spawn(move || manager.disconnect_for(&c, DisconnectCause::NoNetwork));
+        }
+        Action::DisconnectNotResponding(key) => {
+            let Some(c) = managed(state, &key) else { return };
+            let s = state.clone();
+            // Not the user's: `down` restores DNS and routes, then the planner may reconnect it.
+            std::thread::spawn(move || {
+                s.manager.disconnect_for(&c, DisconnectCause::NotResponding);
+                s.reconnect.send(Event::DeadDown(key));
+            });
         }
         Action::Connect(key) => {
             let Some(c) = managed(state, &key) else { return };
@@ -326,6 +430,9 @@ fn wire(state: &Arc<AppState>) {
         }
         if new.is_connected() && !previous.as_ref().is_some_and(ConnectionState::is_connected) {
             s.reconnect.send(Event::Connected(key.to_string()));
+        }
+        if !was_idle && !new.is_active() {
+            s.reconnect.send(Event::Down(key.to_string()));
         }
     });
     let s = state.clone();

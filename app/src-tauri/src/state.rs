@@ -165,6 +165,12 @@ impl AppState {
         // The connections with no physical network under them (the network loss rule): "Waiting for network…" in
         // their rows and the tray, never "connected".
         vm.set_waiting_for_network(&self.reconnect.waiting_for_network());
+        // Dead-tunnel detection: OpenVPN restarting itself is "Reconnecting…" (never "connected"), a tunnel found
+        // dead and disconnected is "Not responding".
+        vm.set_reconnecting(&self.reconnect.reconnecting());
+        vm.set_not_responding(&self.reconnect.not_responding());
+        // The slow tier: "Retrying in … min" on a down row.
+        vm.set_retrying(&self.reconnect.slow_retries());
         vm.manage = self.connections.view();
         let facts = self.setup_checked.load(std::sync::atomic::Ordering::SeqCst).then(|| setup_facts(&setup));
         vm.setup = SetupView::build(

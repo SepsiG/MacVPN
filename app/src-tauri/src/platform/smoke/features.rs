@@ -509,6 +509,71 @@ fn notices(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
 
 // MARK: Auto-reconnect
 
+/// Step 7, dead-tunnel detection: the office tunnel (OpenVPN, at home) restarts itself: "Reconnecting…" in its row and the
+/// connecting shield; after the limit (the driver's clock moved on) it is disconnected and reconnected, with the
+/// notices. With "Reconnect Automatically" off it is only disconnected: "Not responding" and the failure shield.
+fn dead_tunnel(
+    state: &Arc<AppState>,
+    key: &str,
+    shows: &dyn Fn(RowState, TrayIcon) -> Option<()>,
+) -> Vec<(&'static str, bool)> {
+    use macvpn_app_core::connection_notices::DeadOutcome;
+    use macvpn_core::liveness::Liveness;
+    let say = |line: String| eprintln!("MacVPN smoke: reconnect: {line}");
+    let (Some(fake), Some(uuid)) = (fake(), parse_uuid(key)) else { return vec![("deadTunnel", false)] };
+    if let Some(c) = connection(state, key) {
+        state.manager.disconnect(&c);
+    }
+    set_network(home());
+    state.reconnect.send(Event::NetworkChanged);
+    std::thread::sleep(Duration::from_secs_f64(planner::NETWORK_DEBOUNCE + 1.0));
+    let up = connect(state, key);
+    let restarting = |since: f64| Some(Liveness::OpenVpn { reconnecting_since: Some(since as u64) });
+    let mut checks = Vec::new();
+    for auto in [true, false] {
+        if let Some(u) = parse_uuid(key) {
+            planner::set_enabled(state.prefs.as_ref(), &u, auto);
+        }
+        let (ups, downs, start) = (calls("up", key), calls("down", key), posted().len());
+        fake.set_liveness(&uuid, restarting(Date::now().time_interval_since_1970()));
+        state.reconnect.send(Event::LivenessNow);
+        let reconnecting = wait_for(10, || shows(RowState::Reconnecting, TrayIcon::Connecting)).is_some();
+        state.reconnect.skew(macvpn_app_core::liveness::OPENVPN_RECONNECT_LIMIT + 1.0);
+        state.reconnect.send(Event::LivenessNow);
+        let down = wait_for(10, || (calls("down", key) > downs).then_some(())).is_some();
+        fake.set_liveness(&uuid, Some(Liveness::OpenVpn { reconnecting_since: None }));
+        let outcome = if auto { DeadOutcome::Reconnects } else { DeadOutcome::Disconnected };
+        let dead = Notice::NotResponding { key: key.to_string(), name: OFFICE_NAME.into(), outcome };
+        let (title, body) = expected(&dead, OFFICE_NAME);
+        let noticed = wait_for(10, || posted_since(start, &title, Some(&body)).then_some(())).is_some();
+        let after = if auto {
+            let again = wait_for(15, || (calls("up", key) > ups).then_some(())).is_some();
+            let back = wait_for(10, || state.manager.state(key).is_connected().then_some(())).is_some();
+            let (reconnected, _) =
+                expected(&Notice::Reconnected { key: key.to_string(), name: OFFICE_NAME.into() }, OFFICE_NAME);
+            let told = wait_for(10, || posted_since(start, &reconnected, None).then_some(())).is_some();
+            say(format!("dead tunnel (auto) up_again={again} connected={back} reconnected_notice={told}"));
+            again && back && told
+        } else {
+            let shown = wait_for(10, || shows(RowState::NotResponding, TrayIcon::Failure)).is_some();
+            std::thread::sleep(Duration::from_secs_f64(planner::SETTLE + 1.0));
+            let stays = calls("up", key) == ups;
+            say(format!("dead tunnel (off) not_responding_shown={shown} no_up={stays}"));
+            shown && stays
+        };
+        say(format!("dead tunnel auto={auto} up={up} reconnecting={reconnecting} down={down} notice={noticed}"));
+        checks.push((
+            if auto { "deadTunnelReconnects" } else { "deadTunnelDisconnects" },
+            up && reconnecting && down && noticed && after,
+        ));
+    }
+    if let Some(u) = parse_uuid(key) {
+        planner::set_enabled(state.prefs.as_ref(), &u, true);
+    }
+    fake.set_liveness(&uuid, None);
+    checks
+}
+
 /// A scripted physical network: the default gateway (its MAC's last byte), the Wi-Fi name, the connected subnets.
 fn snapshot(gateway: &str, mac: u8, ssid: Option<&str>, connected: &[&str]) -> Option<NetworkSnapshot> {
     Some(NetworkSnapshot {
@@ -652,6 +717,7 @@ fn reconnect(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     let untouched = calls("down", &office_key) == downs;
     say(format!("network loss waiting={waiting} debounced={debounced} back={back} untouched={untouched}"));
     checks.push(("networkLoss", waiting && debounced && back && untouched));
+    checks.extend(dead_tunnel(state, &office_key, &shows));
     for key in [&home_key, &office_key] {
         if let Some(c) = connection(state, key) {
             state.manager.disconnect(&c);

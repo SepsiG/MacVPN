@@ -141,3 +141,32 @@ test('a connection card waiting for network says so in the busy tone', async () 
   assert.match(card, /Waiting for network…/);
   assert.match(card, /class="bubble [^"]*"[\s\S]*busy/);
 });
+
+// Dead-tunnel detection (2026-10-28): OpenVPN restarting itself is "Reconnecting…" (busy, never connected); a tunnel
+// found dead and disconnected is "Not responding" (the failure tone).
+test('a reconnecting or not responding connection card says so in its tone', async () => {
+  const { statusLine } = await import('../status.ts');
+  const reconnecting = { ...row('a'), state: 'reconnecting' } as never;
+  assert.equal(statusLine(reconnecting, 0).status, 'Reconnecting…');
+  assert.equal(statusLine(reconnecting, 0).tone, 'busy');
+  const card = await html('../MenuRow.svelte', { row: reconnecting, now: 0, onToggle: noop });
+  assert.match(card, /Reconnecting…/);
+  assert.match(card, /class="bubble [^"]*"[\s\S]*busy/);
+  const dead = { ...row('a'), state: 'notResponding' } as never;
+  assert.equal(statusLine(dead, 0).status, 'Not responding');
+  assert.equal(statusLine(dead, 0).tone, 'fail');
+  const card2 = await html('../MenuRow.svelte', { row: dead, now: 0, onToggle: noop });
+  assert.match(card2, /Not responding/);
+  assert.match(card2, /class="bubble [^"]*"[\s\S]*fail/);
+});
+
+// The slow tier (2026-10-28): a down connection that is tried again later says when, in whole minutes.
+test('a connection the slow tier retries shows the minutes to its next attempt', async () => {
+  const { statusLine } = await import('../status.ts');
+  const retrying = { ...row('a'), state: 'retrying', at: 1000 + 4 * 60 - 10 } as never;
+  assert.equal(statusLine(retrying, 1000 * 1000).status, 'Retrying in 4 min');
+  assert.equal(statusLine(retrying, 1000 * 1000).tone, 'busy');
+  assert.equal(statusLine(retrying, (1000 + 300) * 1000).status, 'Retrying in 1 min');
+  const card = await html('../MenuRow.svelte', { row: retrying, now: 1000 * 1000, onToggle: noop });
+  assert.match(card, /Retrying in 4 min/);
+});

@@ -64,6 +64,8 @@ pub struct PeerStatus {
     pub rx: u64,
     pub tx: u64,
     pub allowed_ips: usize,
+    /// `PersistentKeepalive` in seconds (0: off; dead-tunnel detection).
+    pub keepalive: u16,
 }
 
 /// A system string on one line, bounded.

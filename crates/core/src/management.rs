@@ -103,6 +103,9 @@ pub enum ManagementEvent {
     AuthPending(Option<i64>),
     /// `>STATE:…,CONNECTED,…`
     Connected,
+    /// `>STATE:…,RECONNECTING,…`: OpenVPN restarts the tunnel itself (`ping-restart`, `SIGUSR1`); dead-tunnel
+    /// detection reports it once the tunnel had been connected.
+    Reconnecting,
     Fatal,
     Ignored,
 }
@@ -231,6 +234,9 @@ impl ManagementParser {
         }
         if swift_str::eq(fields[1], "CONNECTED") {
             return ManagementEvent::Connected;
+        }
+        if swift_str::eq(fields[1], "RECONNECTING") {
+            return ManagementEvent::Reconnecting;
         }
         ManagementEvent::Ignored
     }

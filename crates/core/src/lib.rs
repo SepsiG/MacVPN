@@ -16,6 +16,7 @@ pub mod fsx;
 pub mod helper_args;
 pub mod importer;
 pub mod l10n;
+pub mod liveness;
 pub mod log;
 pub mod management;
 pub mod mfa;

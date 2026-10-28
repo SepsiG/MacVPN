@@ -9,6 +9,7 @@
 //! mvpn respond openvpn <id>   (stdin: kind=crv1|static|webauth-ack|cancel, response=<value>)
 //! mvpn status                  (also restores the DNS of connections that no longer run, see `dns`)
 //! mvpn dns-reconcile           (only that)
+//! mvpn liveness <id>           (root layer 10: the tunnel's liveness facts for dead-tunnel detection, see `liveness`)
 //! mvpn version
 //!   any of them: --lang <en|hu>
 //! mvpn validate …              (the old mvpn-validate, see `validate`; the config on stdin, no secrets)
@@ -64,6 +65,7 @@ mod dns;
 mod exec;
 mod fsx;
 mod hook_dns;
+mod liveness;
 mod lock;
 mod log;
 mod mgmt_bridge;
@@ -180,6 +182,7 @@ pub fn main() -> i32 {
             dns::reconcile(&ctx.s, true);
             0
         }
+        macvpn_core::liveness::LIVENESS => liveness::main(&ctx),
         "respond" => {
             if ctx.kind != "openvpn" {
                 return ctx.die(tr("Usage: mvpn respond openvpn <id>", &[])).0;
@@ -243,7 +246,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_9() {
-        assert_eq!(VERSION.trim(), "9");
+    fn version_is_10() {
+        assert_eq!(VERSION.trim(), "10");
     }
 }

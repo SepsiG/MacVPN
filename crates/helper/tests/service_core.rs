@@ -1,6 +1,7 @@
 //! The WinVPN Service's request handling over fake engines (crates/helper/src/windows/service.rs).
 
 use macvpn_core::l10n::{AppLanguage, with_language};
+use macvpn_core::liveness::{Liveness, WgPeer};
 use macvpn_core::models::VPNKind;
 use macvpn_core::service_proto::{EngineFacts, LogSlice, OpenVpnFacts, Request, SERVICE_VERSION, WireGuardFacts};
 use macvpn_core::service_proto::{EngineUpdate, UPDATE_BUSY};
@@ -53,6 +54,17 @@ impl Engine for Fake {
     }
     fn update_check(&self) -> Result<EngineUpdate, String> {
         self.check.clone().unwrap_or_else(|| Err("default".into()))
+    }
+    fn liveness(&self, id: &str) -> Option<Liveness> {
+        self.up.lock().unwrap().iter().any(|u| u == id).then(|| {
+            Liveness::WireGuard(vec![WgPeer {
+                last_handshake: Some(1_700_000_100),
+                rx: 1,
+                tx: 2,
+                keepalive: 25,
+                endpoint: true,
+            }])
+        })
     }
     fn update(&self) -> Result<EngineUpdate, UpdateRefusal> {
         *self.updates.lock().unwrap() += 1;
@@ -527,5 +539,30 @@ fn clear_log_empties_only_the_owners_log() {
         s.handle(&alice(), &req(&["down", "wireguard", ID], b""));
         assert_eq!(s.handle(&alice(), &req(&["clear-log", ID], b"")).code, 0);
         assert_eq!(s.handle(&bob(), &req(&["clear-log", ID], b"")).code, 1);
+    });
+}
+
+/// Dead-tunnel detection (`liveness <id>`): only the owner gets its running connection's times and counters; another
+/// user's or an unknown ID answers "Invalid ID"; after `down` there is nothing to report.
+#[test]
+fn liveness_answers_only_the_owner() {
+    with_language(AppLanguage::En, || {
+        let (s, _d) = service();
+        assert_eq!(s.handle(&alice(), &req(&["up", "wireguard", ID], &framed(WG, "password=hunter22\n"))).code, 0);
+        let r = s.handle(&alice(), &req(&["liveness", ID], b""));
+        assert_eq!(r.code, 0);
+        assert_eq!(String::from_utf8(r.stdout).unwrap(), "wireguard 1\npeer 1700000100 1 2 25 1\n");
+        let lower = s.handle(&alice(), &req(&["liveness", &ID.to_ascii_lowercase()], b""));
+        assert_eq!(lower.code, 0);
+        for r in [
+            s.handle(&bob(), &req(&["liveness", ID], b"")),
+            s.handle(&alice(), &req(&["liveness", "../x"], b"")),
+            s.handle(&alice(), &req(&["liveness", "1F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"], b"")),
+        ] {
+            assert_eq!((r.code, err(&r).as_str(), r.stdout.len()), (1, "Invalid ID", 0));
+        }
+        s.handle(&alice(), &req(&["down", "wireguard", ID], b""));
+        let r = s.handle(&alice(), &req(&["liveness", ID], b""));
+        assert_eq!((r.code, r.stdout.len()), (1, 0));
     });
 }

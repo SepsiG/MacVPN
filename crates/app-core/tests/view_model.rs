@@ -118,6 +118,76 @@ fn connections_waiting_for_network_never_show_connected() {
     assert_eq!((vm.tray, row(&vm, svc).state), (TrayIcon::Failure, RowState::WaitingForNetwork));
 }
 
+/// Dead-tunnel detection (2026-10-28): OpenVPN restarting itself is "Reconnecting…" with the connecting shield,
+/// never connected; a tunnel found dead and disconnected is "Not responding" with the failure shield (an
+/// authentication wait still wins); waiting for network wins over reconnecting.
+#[test]
+fn reconnecting_and_not_responding_rows_and_the_tray() {
+    let f = Fixture::new(AppLanguage::En);
+    let svc = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    let other = "48B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    f.native.set_list(Ok(vec![
+        SystemVpn::new(svc, "Corp", "IKEv2", "Connected"),
+        SystemVpn::new(other, "Lab", "IKEv2", "Disconnected"),
+    ]));
+    let m = f.manager();
+    m.refresh();
+    let build = || ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), false);
+    let row = |vm: &ViewModel, id: &str| vm.rows.iter().find(|r| r.id == id).unwrap().clone();
+    let mut vm = build();
+    vm.set_reconnecting(&[other.to_string(), "nope".to_string()]);
+    vm.set_not_responding(&[svc.to_string()]);
+    assert_eq!((vm.tray, row(&vm, svc).state), (TrayIcon::Active, RowState::Connected { ip: None, since: None }));
+    vm.set_reconnecting(&[svc.to_string()]);
+    assert_eq!((vm.tray, row(&vm, svc).state), (TrayIcon::Connecting, RowState::Reconnecting));
+    assert!(row(&vm, svc).switch_on, "it can still be switched off");
+    let json = serde_json::to_value(&vm).unwrap();
+    assert_eq!(json["rows"].as_array().unwrap().iter().find(|r| r["id"] == svc).unwrap()["state"], "reconnecting");
+    // Waiting for network wins.
+    let mut vm = build();
+    vm.set_waiting_for_network(&[svc.to_string()]);
+    vm.set_reconnecting(&[svc.to_string()]);
+    assert_eq!((vm.tray, row(&vm, svc).state), (TrayIcon::WaitingForNetwork, RowState::WaitingForNetwork));
+    // Not responding: only a disconnected row, and the tray shows the failure.
+    let mut vm = build();
+    vm.set_not_responding(&[other.to_string()]);
+    assert_eq!((vm.tray, row(&vm, other).state), (TrayIcon::Failure, RowState::NotResponding));
+    assert!(!row(&vm, other).switch_on);
+    let json = serde_json::to_value(&vm).unwrap();
+    assert_eq!(json["rows"].as_array().unwrap().iter().find(|r| r["id"] == other).unwrap()["state"], "notResponding");
+    // An authentication wait still wins.
+    f.native.set_list(Ok(vec![SystemVpn::new(other, "Lab", "IKEv2", "Disconnected")]));
+    m.refresh();
+    let mut snap = m.snapshot();
+    snap.awaiting_auth = true;
+    let mut vm = ViewModel::build(&snap, "en", |_| true, Vec::new(), false);
+    vm.set_not_responding(&[other.to_string()]);
+    assert_eq!(vm.tray, TrayIcon::Auth);
+}
+
+/// The slow tier: a down row says when it is tried again; a row up or connecting is left alone.
+#[test]
+fn a_row_the_slow_tier_retries_shows_its_next_attempt() {
+    let f = Fixture::new(AppLanguage::En);
+    let up = "38B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    let down = "48B51E6D-5D77-4ABE-BFDF-B0E5DE45B1C4";
+    f.native.set_list(Ok(vec![
+        SystemVpn::new(up, "Corp", "IKEv2", "Connected"),
+        SystemVpn::new(down, "Lab", "IKEv2", "Disconnected"),
+    ]));
+    let m = f.manager();
+    m.refresh();
+    let mut vm = ViewModel::build(&m.snapshot(), "en", |_| true, Vec::new(), false);
+    vm.set_not_responding(&[down.to_string()]);
+    vm.set_retrying(&[(up.to_string(), 1_800_000_300.0), (down.to_string(), 1_800_000_300.0)]);
+    let row = |id: &str| vm.rows.iter().find(|r| r.id == id).unwrap().state.clone();
+    assert_eq!(row(down), RowState::Retrying { at: 1_800_000_300.0 });
+    assert!(matches!(row(up), RowState::Connected { .. }));
+    let json = serde_json::to_value(&vm).unwrap();
+    let r = json["rows"].as_array().unwrap().iter().find(|r| r["id"] == down).unwrap().clone();
+    assert_eq!((r["state"].as_str(), r["at"].as_f64()), (Some("retrying"), Some(1_800_000_300.0)));
+}
+
 #[test]
 fn the_waiting_for_network_tooltip() {
     let tip = |language| {

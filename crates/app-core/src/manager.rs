@@ -260,6 +260,9 @@ pub enum DisconnectCause {
     /// No physical network for `reconnect::OFFLINE_GRACE` (the network loss rule): not the user's, so
     /// auto-reconnect may bring it back when the network is; leases on it end as on a drop.
     NoNetwork,
+    /// The tunnel stopped answering while the network is there (dead-tunnel detection): not the user's, so
+    /// auto-reconnect may bring it back; leases on it end as on a drop.
+    NotResponding,
 }
 
 #[derive(Default, Clone)]

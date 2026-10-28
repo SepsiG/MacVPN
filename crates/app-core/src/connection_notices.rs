@@ -64,6 +64,35 @@ pub enum Notice {
         name: String,
         reconnects: bool,
     },
+    /// The fast reconnect attempts gave up: tried again every 5 minutes for an hour (`reason`: the last failure).
+    KeepsTrying {
+        key: String,
+        name: String,
+        reason: Option<String>,
+    },
+    /// The hour of slow retries is over.
+    RetriesEnded {
+        key: String,
+        name: String,
+    },
+    /// A dead tunnel (the server stopped answering while the network is there), disconnected by the app.
+    NotResponding {
+        key: String,
+        name: String,
+        outcome: DeadOutcome,
+    },
+}
+
+/// What happens to a dead tunnel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeadOutcome {
+    /// "Reconnect Automatically" is on: it is reconnected.
+    Reconnects,
+    /// The switch is off (or a paired app started it): it stays down.
+    Disconnected,
+    /// It was found dead too often lately ([`crate::reconnect::MAX_DEAD_RECONNECTS`]): the slow tier tries it every
+    /// 5 minutes for an hour.
+    KeepsTrying,
 }
 
 /// The last state seen per connection, and the connects started by auto-reconnect. "Connected" is reported only for
@@ -147,7 +176,10 @@ fn own_name(notice: &Notice) -> &str {
         | Notice::Failed { name, .. }
         | Notice::NotReconnected { name, .. }
         | Notice::ReconnectFailed { name, .. }
-        | Notice::DisconnectedNoNetwork { name, .. } => name.as_str(),
+        | Notice::DisconnectedNoNetwork { name, .. }
+        | Notice::NotResponding { name, .. }
+        | Notice::KeepsTrying { name, .. }
+        | Notice::RetriesEnded { name, .. } => name.as_str(),
         Notice::DisconnectedHere { .. } => "",
     }
 }
@@ -173,6 +205,12 @@ fn title(notice: &Notice, name: &str) -> String {
         (Notice::DisconnectedHere { .. }, true) => l10n::tr("A VPN connection dropped", &[]),
         (Notice::DisconnectedNoNetwork { .. }, false) => l10n::tr("%@ disconnected", &n),
         (Notice::DisconnectedNoNetwork { .. }, true) => l10n::tr("A VPN connection dropped", &[]),
+        (Notice::NotResponding { .. }, false) => l10n::tr("%@ stopped responding", &n),
+        (Notice::NotResponding { .. }, true) => l10n::tr("A VPN connection stopped responding", &[]),
+        (Notice::KeepsTrying { .. } | Notice::RetriesEnded { .. }, false) => l10n::tr("%@ could not reconnect", &n),
+        (Notice::KeepsTrying { .. } | Notice::RetriesEnded { .. }, true) => {
+            l10n::tr("A VPN connection could not reconnect", &[])
+        }
     }
 }
 
@@ -201,6 +239,26 @@ pub fn content_named(notice: &Notice, name: &str, unique: String) -> Notificatio
         }
         Notice::DisconnectedNoNetwork { key, reconnects: false, .. } => {
             (key, l10n::tr("There was no network for 2 minutes.", &[]))
+        }
+        Notice::NotResponding { key, outcome: DeadOutcome::Reconnects, .. } => {
+            (key, l10n::tr("The VPN server stopped answering. It is being reconnected.", &[]))
+        }
+        Notice::NotResponding { key, outcome: DeadOutcome::Disconnected, .. } => {
+            (key, l10n::tr("The VPN server stopped answering, so it was disconnected.", &[]))
+        }
+        Notice::NotResponding { key, outcome: DeadOutcome::KeepsTrying, .. } => (
+            key,
+            l10n::tr(
+                "It stopped responding again after 3 reconnects. It is tried again every 5 minutes for up to an hour.",
+                &[],
+            ),
+        ),
+        Notice::KeepsTrying { key, reason, .. } => {
+            let next = l10n::tr("It is tried again every 5 minutes for up to an hour.", &[]);
+            (key, reason.as_ref().map_or(next.clone(), |r| format!("{r} {next}")))
+        }
+        Notice::RetriesEnded { key, .. } => {
+            (key, l10n::tr("It was tried for an hour. Connect it again when the server is back.", &[]))
         }
     };
     NotificationContent { id: unique, title: title(notice, name), body, user_info: (CONNECTION_KEY, key.clone()) }

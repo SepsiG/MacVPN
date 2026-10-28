@@ -93,6 +93,15 @@ pub enum RowState {
     /// Up or connecting, but the physical network is gone ([`ViewModel::set_waiting_for_network`]): never from a
     /// `ConnectionState` alone.
     WaitingForNetwork,
+    /// Up, but OpenVPN restarts the tunnel itself ([`ViewModel::set_reconnecting`]): never shown as connected.
+    Reconnecting,
+    /// Disconnected because the tunnel stopped answering ([`ViewModel::set_not_responding`]), until the user acts
+    /// or it is up again.
+    NotResponding,
+    /// Down, and the slow tier tries it again at `at` (Unix seconds; [`ViewModel::set_retrying`]).
+    Retrying {
+        at: f64,
+    },
 }
 
 impl From<&ConnectionState> for RowState {
@@ -704,7 +713,58 @@ impl ViewModel {
         if matches!(self.tray, TrayIcon::Active | TrayIcon::Connecting) {
             self.tray = TrayIcon::WaitingForNetwork;
         }
-        // The folders above a connection still really up (its folder and every ancestor).
+        self.light_folders();
+    }
+
+    /// The connections whose OpenVPN restarts the tunnel itself (the planner's `reconnecting`): their rows say
+    /// "Reconnecting…" instead of "connected", and the tray shows the half-filled shield (connecting) instead of the
+    /// check mark. Call after [`Self::set_waiting_for_network`] (waiting for network wins).
+    pub fn set_reconnecting(&mut self, keys: &[String]) {
+        let mut any = false;
+        for row in self.rows.iter_mut().filter(|r| keys.contains(&r.id)) {
+            if matches!(row.state, RowState::Connected { .. }) {
+                row.state = RowState::Reconnecting;
+                any = true;
+            }
+        }
+        if !any {
+            return;
+        }
+        if self.tray == TrayIcon::Active {
+            self.tray = TrayIcon::Connecting;
+        }
+        self.light_folders();
+    }
+
+    /// The connections found dead and disconnected (the planner's `not_responding`): their rows say "Not
+    /// responding" instead of a plain "disconnected", and the tray shows the failure (an authentication wait still
+    /// wins). A row connecting again shows that instead.
+    pub fn set_not_responding(&mut self, keys: &[String]) {
+        let mut any = false;
+        for row in self.rows.iter_mut().filter(|r| keys.contains(&r.id)) {
+            if row.state == RowState::Disconnected {
+                row.state = RowState::NotResponding;
+                any = true;
+            }
+        }
+        if any && self.tray != TrayIcon::Auth {
+            self.tray = TrayIcon::Failure;
+        }
+    }
+
+    /// The connections the slow tier tries again later (the planner's `slow_retries`: key, Unix time of the next
+    /// attempt): a down row (disconnected, failed or not responding) says "Retrying in … min". Call last.
+    pub fn set_retrying(&mut self, retries: &[(String, f64)]) {
+        for row in &mut self.rows {
+            let Some((_, at)) = retries.iter().find(|(k, _)| *k == row.id) else { continue };
+            if matches!(row.state, RowState::Disconnected | RowState::Failed { .. } | RowState::NotResponding) {
+                row.state = RowState::Retrying { at: *at };
+            }
+        }
+    }
+
+    /// A folder's dot is green only for a connection really up below it (its folder and every ancestor).
+    fn light_folders(&mut self) {
         let parents: HashMap<&str, Option<&str>> = self
             .tree
             .iter()

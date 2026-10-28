@@ -366,7 +366,8 @@ Credential Manager round trip skips itself in an SSH key logon, so it is part of
 
 `crates/helper` (package `macvpn-helper`, binary `mvpn`: installed as `/usr/local/libexec/macvpn/mvpn` on macOS and
 as `C:\Program Files\WinVPN\WinVPNService.exe` on Windows; root layer version in `crates/helper/VERSION`, 8 from
-1.2.0, 9 in 2.0.0: the DNS manager, the log caps, strongSwan's credentials and concurrent connections).
+1.2.0, 9 in 2.0.0: the DNS manager, the log caps, strongSwan's credentials and concurrent connections; 10 in 2.0.3:
+`mvpn liveness <id>` for dead-tunnel detection, see [Dead tunnels](#dead-tunnels-and-the-live-network-switch)).
 
 - `src/shared/`: the logic every OS shares, with no `cfg`, no `unsafe` and no process or file I/O: the command
   line (`cli`), the framed stdin (`framing`), masking, the `respond` answer, the status JSON, the validation
@@ -392,7 +393,7 @@ The Windows counterpart of the root layer (spec 4.1; [the 2b plan](superpowers/p
   error 1939).
 - **The protocol** (`macvpn_core::service_proto`, `SERVICE_VERSION` 1): one request per pipe connection, the
   argument list of `mvpn` (`up|down <kind> <id> [--debug] [--accept-risky …] [--lang en|hu]`, `respond`, `status`,
-  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `wireguard-check`, `wireguard-update`) plus the framed
+  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `liveness <id>`, `wireguard-check`, `wireguard-update`) plus the framed
   stdin body of root layer 8 (`core::helper_args::up_stdin`, shared with macOS' `MvpnClient`), zeroized after use;
   the answer is an exit code with stdout/stderr. A whole request has a 5 s deadline; one in-flight request per SID.
 - **The pipe:** `\\.\pipe\WinVPN`, owner SYSTEM, a protected DACL (NETWORK denied, INTERACTIVE gets
@@ -677,6 +678,73 @@ entry to the backup.
   feeds the planner (`Event::{Sleep, Wake, NetworkChanged, Failed, Forget, …}`), probes when due and executes the
   actions. Only managed connections enter it. `Reconnect::stop()` runs from `AppState::stop_polling`. UI: the
   "Reconnect Automatically" switch in `manage/Detail.svelte` (`set_auto_reconnect`).
+
+### Dead tunnels and the live network switch
+
+A tunnel that dies while the physical network is there (maintainer decision 2026-10-28), next to the network loss
+rule in the same planner:
+
+- **The facts:** `macvpn_core::liveness` (`LIVENESS` = `liveness`): `wireguard <n>` + `peer <handshake> <rx> <tx>
+  <keepalive> <endpoint>` lines, or `openvpn up` / `openvpn reconnecting <since>`; times and counters only, strictly
+  parsed, at most 64 peers and 8 KiB. `HelperClient::liveness(id)` (default `None`).
+- **macOS, root layer 10:** `mvpn liveness <id>` (`crates/helper/src/macos/liveness.rs`): the app passes only the UUID;
+  the root layer reads `kind` from its own run directory (`/var/run/macvpn/<ID>`, not a symlink). WireGuard: the
+  interface from `iface` → the utun wg-quick recorded → `wg show <utun> dump`; only the numbers are kept and the
+  output (it holds the private and preshared keys) is zeroized. OpenVPN: the run file `tunnel` (`up` |
+  `reconnecting <t>`, root 0600, read with `O_NOFOLLOW`) that the management bridge writes on `>STATE:…,RECONNECTING`
+  after the first `CONNECTED` and on the next `CONNECTED` (`BridgeFiles::tunnel`). Nothing to report: exit 1 without
+  output. A root layer 9 answers its usage error (`MvpnClient::liveness` → `None`), and the setup check asks for the
+  usual **Update required (9 → 10)**.
+- **Windows:** the service's `liveness <id>` (owner only, like `log`; `SERVICE_VERSION` stays 1, an older service
+  answers the usage error → `None`): WireGuard from `WireGuardGetConfiguration` (`wg_nt::liveness`, the same decoder
+  as the debug peer status, plus `PersistentKeepalive`), OpenVPN from the in-process bridge's state
+  (`BridgeState::reconnecting_since`). RAS connections are not asked (`RasHelper::liveness` → `None`).
+- **The rule** (`app-core liveness::Monitor`, pure): WireGuard by its timers: with `PersistentKeepalive` dead after
+  `STALE_AFTER` (180 s + one poll) without a handshake; without it dead when the sent bytes grew after the session
+  expired (`REJECT_AFTER_TIME`) and no handshake came within `REKEY_ATTEMPT_TIME` (90 s); an idle tunnel is never dead;
+  a tunnel is dead only when every peer with an endpoint is. OpenVPN `reconnecting` → `Health::Reconnecting`, dead
+  after 120 s. Ages count from the later of the handshake and the start of the watch (restarted at sleep, wake and a
+  network outage).
+- **The planner** (`reconnect::Planner::{liveness_due, liveness_checked, dead_down, reconnecting, not_responding}`):
+  polls every `POLL` (30 s) only awake, with a network, nothing waiting for one and no network check pending (so a
+  network loss and a dead tunnel never act on the same event). A dead tunnel: `Action::DisconnectNotResponding`
+  (`DisconnectCause::NotResponding`, not the user's) and `Notice::NotResponding { outcome: Reconnects | Disconnected |
+  GaveUp }`; with "Reconnect Automatically" on, not a lease's, and where `decide` would reconnect, a held candidate
+  that the driver releases after the disconnect (`Event::DeadDown`). At most `MAX_DEAD_RECONNECTS` (3) per
+  `DEAD_STABLE` (600 s without being found dead with fresh evidence of life). The same limit makes any other drop
+  while the network is there (engine exit, `ping-exit`, DPD) a candidate. A tunnel whose VPN network is directly
+  reachable is disconnected as after a wake.
+- **The live switch:** `network_checked` compares each active connection's network with the one it was last seen on
+  (`seen_on`, cleared at a wake: the wake keeps its same-network rule). A switch moves the connection
+  (`fingerprints` = the new network), runs the overlap check, and starts the close watch (`Monitor::switched`: first
+  poll `SWITCH_FIRST` after the check, then every `SWITCH_POLL` for `SWITCH_WINDOW`; WireGuard dead when more was sent
+  than its keepalives explain and nothing was received for `SWITCH_SILENCE`; OpenVPN restarting for
+  `SWITCH_OPENVPN_LIMIT`). A candidate from a drop while awake moves too, and "another network" waits while a change
+  is being checked.
+- **The slow tier:** when the fast attempts give up (`failed` after the `RETRY_DELAYS`, a drop or a dead tunnel
+  beyond `MAX_DEAD_RECONNECTS`), a connection that should be up (switch on, not a lease's, not the user's
+  disconnect, not a refused sign-in or certificate) is tried every `SLOW_RETRY` (300 s) for `SLOW_FOR` (3600 s): a
+  due slow entry becomes a one-shot candidate (`evaluate`: no network waits; another network or the VPN's own
+  network ends it with `NotReconnected`; a locked vault tries again silently). One notice when it starts
+  (`Notice::KeepsTrying`, or `NotResponding { KeepsTrying }`) and one when the hour is over (`RetriesEnded`); the
+  user's connect or disconnect, the switch off, or `DEAD_STABLE` of proven life end it. `slow_retries()` →
+  `RowState::Retrying { at }` ("Retrying in … min"). A drop's notice is queued (`take_actions`).
+- **Lease marks across a relaunch:** `reconnect::LEASED_KEY` (`leaseStartedConnections`, a preference of UUIDs)
+  holds the connections a lease started while they are up; the driver sets it at a lease's `Started`, clears it at
+  the user's own `Started`, at `Event::Down` (any transition from up or connecting to down) and at `Forget`, and
+  `Planner::restore_leased` reads it at start, so a connection left up by "Quit, Keep Them Running" stays the
+  leases' (never reconnected).
+- **IKEv2 dead peer detection (macOS):** `strongswan::default_dpd_block` appends `connections { <conn> { dpd_delay =
+  30s } }` to the run copy when the connection sets no `dpd_delay` (the settings parser merges same-named
+  sections); `dpd_action` stays the config's (default `clear`), so a dead peer ends the SA and the drop is
+  reconnected.
+- **Adoption:** a connection already up at launch gets the network it is up on at its first `Connected`
+  (`Planner::adopt`).
+- **The view:** `RowState::{Reconnecting, NotResponding}`; the tray: reconnecting → `Connecting` (half shield), not
+  responding → `Failure` (an authentication wait wins).
+- **The driver** (`app/src-tauri/src/reconnect.rs`): asks `state.helper.liveness` for the connected WireGuard and
+  OpenVPN connections without the planner's lock; a smoke run can move its clock (`Reconnect::skew`) and force a poll
+  (`Event::LivenessNow`).
 
 ### macOS DNS manager (root layer)
 

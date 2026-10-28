@@ -44,7 +44,9 @@
 #               with "Connection Notifications" off; auto-reconnect over a scripted network and the sleep / wake hooks
 #               (reconnected at home, not on another network, not with the detail's switch off; a tunnel still up
 #               after waking on the network it routes is disconnected, at a café it stays; the network gone under
-#               it shows "Waiting for network…" in its row and the tray, and connected again once it is back);
+#               it shows "Waiting for network…" in its row and the tray, and connected again once it is back; a
+#               tunnel the stand-in reports as restarting itself shows "Reconnecting…", then is found dead and
+#               reconnected, or with the switch off disconnected and shown "Not responding");
 #   ras.js   – Windows only (WinVPN 2c; its connections are created in the vault for the step and deleted after it):
 #               the New menu without Cisco IPsec, an IKEv2 PSK connection greyed with the Windows reason, a Cisco
 #               IPsec connection with option A's text and "Make an L2TP/IPsec Copy", IKEv2 (EAP) and SSTP connected and

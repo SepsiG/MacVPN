@@ -20,9 +20,12 @@ fn hold_state_and_ignored_lines() {
     assert_eq!(parse(">STATE:1760000000,AUTH_PENDING,timeout 120,,,,,"), ManagementEvent::AuthPending(Some(120)));
     assert_eq!(parse(">STATE:1760000000,AUTH_PENDING,,,,,,"), ManagementEvent::AuthPending(None));
     assert_eq!(parse(">STATE:1760000000,AUTH_PENDING,timeout x,,,,,"), ManagementEvent::AuthPending(None));
+    assert_eq!(parse(">STATE:1760000000,RECONNECTING,ping-restart,,,,,"), ManagementEvent::Reconnecting);
+    assert_eq!(parse(">STATE:1760000000,RECONNECTING,SIGUSR1,,,,,"), ManagementEvent::Reconnecting);
     let long = format!(">HOLD:{}", "x".repeat(5000));
     for line in [
-        ">STATE:1760000000,RECONNECTING,SIGUSR1,,,,,",
+        ">STATE:1760000000,WAIT,,,,,,",
+        ">STATE:1760000000,EXITING,ping-exit,,,,,",
         ">ECHO:1760000000,Initialization Sequence Completed",
         ">LOG:1760000000,I,Initialization Sequence Completed",
         ">INFO:OpenVPN Management Interface Version 5",

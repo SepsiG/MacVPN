@@ -203,9 +203,12 @@ test('unsubscribing names the catalog, the count and the active connections', as
     { id: 'b', name: 'Lab', state: 'disconnected', catalog: { catalogId: 'C1' } },
     { id: 'c', name: 'Mine', state: 'connected', catalog: null },
     { id: 'd', name: 'Lab 2', state: 'waitingForNetwork', catalog: { catalogId: 'C1' } },
+    { id: 'e', name: 'Lab 3', state: 'reconnecting', catalog: { catalogId: 'C1' } },
+    { id: 'f', name: 'Lab 4', state: 'notResponding', catalog: { catalogId: 'C1' } },
   ] as never[];
   // A connection waiting for network (the network loss rule) is still up: it is disconnected first too.
-  assert.deepEqual(activeRows(rows, 'C1').map((r: { name: string }) => r.name), ['Office', 'Lab 2']);
+  // So is one OpenVPN restarts itself; one found dead is already down.
+  assert.deepEqual(activeRows(rows, 'C1').map((r: { name: string }) => r.name), ['Office', 'Lab 2', 'Lab 3']);
   const active = activeRows(rows.slice(0, 3), 'C1').map((r: { name: string }) => r.name);
   const out = await html('./UnsubscribeDialog.svelte', { name: 'Acme VPN', connections: 2, active, onconfirm: noop, oncancel: noop });
   assert.match(out, /Unsubscribe from Acme VPN\?/);

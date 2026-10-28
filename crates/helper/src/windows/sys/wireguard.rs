@@ -638,6 +638,13 @@ impl Engine for WireGuardEngine {
         }
     }
 
+    /// Dead-tunnel detection: the peers' handshake, counters and keepalive (no key). Polled: an error is not logged.
+    fn liveness(&self, id: &str) -> Option<macvpn_core::liveness::Liveness> {
+        let runs = self.runs();
+        let block = runs.get(id)?.adapter.get_config().ok()?;
+        Some(wg_nt::liveness(&block))
+    }
+
     fn update_check(&self) -> Result<EngineUpdate, String> {
         let now = unix_now();
         let mut cache = self.checked.lock().unwrap_or_else(PoisonError::into_inner);

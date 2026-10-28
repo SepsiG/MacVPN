@@ -25,6 +25,7 @@ pub mod failure_reason;
 pub mod folders;
 pub mod import_export;
 pub mod live;
+pub mod liveness;
 pub mod logs;
 pub mod manager;
 pub mod migration;

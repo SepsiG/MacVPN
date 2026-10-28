@@ -230,3 +230,33 @@ fn clear_log_empties_the_users_log_and_its_rotated_part_in_place() {
     assert_eq!(std::fs::read_to_string(&target).unwrap(), "keep\n");
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+/// Root layer 10's `mvpn liveness <id>` (dead-tunnel detection): only the ID goes to the root layer; an older root
+/// layer (its usage error), another failure or an answer of another form is `None` (nothing is decided).
+#[test]
+fn liveness_asks_with_the_id_only_and_an_older_root_layer_is_none() {
+    use macvpn_core::liveness::{Liveness, WgPeer};
+    let line =
+        "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn liveness 11111111-2222-3333-4444-555555555555 --lang en";
+    let client =
+        |mock: &MockCommandRunner| MvpnClient::with_runners(mock, None, None, Some(AppLanguage::En)).liveness(&id());
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::stdout("wireguard 1\npeer 1700000000 10 20 25 1\n"));
+    assert_eq!(
+        client(&mock),
+        Some(Liveness::WireGuard(vec![WgPeer {
+            last_handshake: Some(1_700_000_000),
+            rx: 10,
+            tx: 20,
+            keepalive: 25,
+            endpoint: true
+        }]))
+    );
+    assert_eq!(mock.calls()[0].command_line(), line);
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::new(1, "", "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> …"));
+    assert_eq!(client(&mock), None);
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::stdout("garbage\n"));
+    assert_eq!(client(&mock), None);
+}

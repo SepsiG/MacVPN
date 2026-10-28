@@ -591,6 +591,21 @@ impl StrongSwanValidator {
         ids
     }
 
+    /// Whether connection `conn` sets `key` itself (a key directly in its section, parsed like [`Self::visit`]).
+    pub fn conn_sets(text: &str, conn: &str, key: &str) -> bool {
+        let mut found = false;
+        Self::visit(text, &mut |path: &[Section], event: Visit<'_>| {
+            if let ([_, c], Visit::Key(k, _)) = (path, event)
+                && c.context == Context::Conn
+                && c.name == conn
+                && k == key
+            {
+                found = true;
+            }
+        });
+        found
+    }
+
     /// The first connection and the first child name (for `swanctl --initiate --child`).
     pub fn names(text: &str) -> Option<(String, String)> {
         static HEADER: LazyLock<Regex> =

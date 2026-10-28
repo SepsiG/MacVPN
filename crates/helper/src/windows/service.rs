@@ -15,6 +15,7 @@ use crate::shared::status_json::{self, StatusLine};
 use crate::shared::{cli, respond, validate};
 use crate::windows::diagnostics::{self, PeerStatus, Snapshot};
 use macvpn_core::l10n::with_language;
+use macvpn_core::liveness::{LIVENESS, Liveness};
 use macvpn_core::models::VPNKind;
 use macvpn_core::service_proto::{
     CLEAR_LOG, EngineFacts, EngineUpdate, LogSlice, Request, Response, SERVICE_VERSION, UPDATE_BUSY, WIREGUARD_CHECK,
@@ -122,6 +123,11 @@ pub trait Engine: Send + Sync {
     fn update(&self) -> Result<EngineUpdate, UpdateRefusal> {
         Err(UpdateRefusal::Failed(tr("Not available on this system yet", &[])))
     }
+    /// Dead-tunnel detection: the running connection's liveness facts (`liveness <id>`). `None`: not running, or
+    /// nothing to report.
+    fn liveness(&self, _id: &str) -> Option<Liveness> {
+        None
+    }
     /// Debug mode, after a successful `up` (G-6): the adapter's name and its peers' status (WireGuard; `wg show`
     /// on macOS). `None`: the engine has none.
     fn peer_status(&self, _id: &str) -> Option<(String, Vec<PeerStatus>)> {
@@ -189,7 +195,7 @@ fn usage() -> Response {
     Response::fail(
         2,
         &tr(
-            "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id>",
+            "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id> | liveness <id>",
             &[],
         ),
     )
@@ -263,6 +269,7 @@ impl<H: Host> Service<H> {
             "auth-state" => self.auth_state(caller, &a.kind),
             "log" => self.log(caller, &a.kind, &a.id),
             CLEAR_LOG => self.clear_log(caller, &a.kind),
+            LIVENESS => self.liveness(caller, &a.kind),
             // Engine updates: nothing of the request but the command is used (the service decides what to fetch).
             WIREGUARD_CHECK if a.kind.is_empty() => self.wireguard_check(),
             WIREGUARD_UPDATE if a.kind.is_empty() => self.wireguard_update(),
@@ -278,6 +285,17 @@ impl<H: Host> Service<H> {
         let id = raw.to_ascii_uppercase();
         let kind = lock(&self.owned).get(&id).filter(|o| o.sid == caller.sid).map(|o| o.kind)?;
         Some((id, kind))
+    }
+
+    /// `liveness <id>`: the caller's own running connection's liveness facts (dead-tunnel detection); only times
+    /// and counters. Another user's or an unknown ID: "Invalid ID"; nothing to report: exit 1 with no output.
+    fn liveness(&self, caller: &Caller, raw: &str) -> Response {
+        let Some((id, kind)) = self.owned_kind(caller, raw) else { return invalid_id() };
+        // The engine is asked without the service's locks held.
+        match self.host.engine(kind).and_then(|e| e.liveness(&id)) {
+            Some(l) => Response::ok(l.encode()),
+            None => Response { code: 1, stdout: Vec::new(), stderr: Vec::new() },
+        }
     }
 
     fn status(&self, caller: &Caller) -> String {

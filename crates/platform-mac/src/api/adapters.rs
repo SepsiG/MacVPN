@@ -101,6 +101,11 @@ impl HelperClient for Helper {
         let owner = macvpn_core::fsx::FileOwner::from_uid(crate::system::user_id());
         crate::mvpn_client::clear_log_in(Path::new(crate::mvpn_client::LOG_DIR), id, &owner, note)
     }
+
+    /// `sudo -n mvpn liveness <id>` (root layer 10).
+    fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
+        self.client().liveness(id)
+    }
 }
 
 /// `scutil --nc list / show` (quick time limit) and the in-process `SCNetworkConnection` driver.

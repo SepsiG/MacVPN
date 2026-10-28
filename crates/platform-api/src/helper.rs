@@ -40,6 +40,12 @@ pub trait HelperClient: Send + Sync {
     fn clear_log(&self, _id: &Uuid, _note: &str) -> Result<(), String> {
         Ok(())
     }
+    /// Dead-tunnel detection: the running tunnel's liveness facts (macOS root layer 10 `mvpn liveness <id>`, the
+    /// WinVPN Service's `liveness <id>`). `None`: not known (an older root layer or service, nothing running, an
+    /// engine without such facts, any error): nothing is decided then. Default: this helper has none.
+    fn liveness(&self, _id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
+        None
+    }
 }
 
 /// The management bridge's UI state file (`/var/run/macvpn-ui/<id>.json`), read safely.

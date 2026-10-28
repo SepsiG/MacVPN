@@ -905,4 +905,9 @@ impl HelperClient for RasHelper {
     fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
         if self.ras.has_log(id) { self.ras.clear_log_of(id, note) } else { self.service.clear_log(id, note) }
     }
+
+    /// The service's tunnels only (a RAS connection's death shows in its own state).
+    fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
+        if self.ras.has_log(id) { None } else { self.service.liveness(id) }
+    }
 }

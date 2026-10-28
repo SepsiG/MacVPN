@@ -17,6 +17,7 @@ use crate::shared::cli::is_uuid;
 use crate::shared::l10n::tr;
 use crate::windows::diagnostics::PeerStatus;
 use crate::windows::wg_plan::{Endpoint, Plan, Prefix};
+use macvpn_core::liveness::{Liveness, WgPeer};
 use macvpn_core::update::sha256_hex;
 use std::net::{IpAddr, SocketAddr};
 use zeroize::Zeroizing;
@@ -211,6 +212,7 @@ pub fn peer_status(block: &[u8]) -> Vec<PeerStatus> {
             rx,
             tx,
             allowed_ips: allowed as usize,
+            keepalive: u16_at(block, at + 72).unwrap_or(0),
         });
         if next > block.len() {
             break;
@@ -218,6 +220,23 @@ pub fn peer_status(block: &[u8]) -> Vec<PeerStatus> {
         at = next;
     }
     out
+}
+
+/// Dead-tunnel detection's facts (`liveness <id>`) from the same block: every peer's handshake, counters,
+/// keepalive and whether it has an endpoint. No key, no address.
+pub fn liveness(block: &[u8]) -> Liveness {
+    Liveness::WireGuard(
+        peer_status(block)
+            .into_iter()
+            .map(|p| WgPeer {
+                last_handshake: p.last_handshake,
+                rx: p.rx,
+                tx: p.tx,
+                keepalive: p.keepalive,
+                endpoint: p.endpoint.is_some(),
+            })
+            .collect(),
+    )
 }
 
 /// The domain separator of the adapter identity hash (a new one gives every connection new adapters).

@@ -479,6 +479,16 @@ impl Engine for OpenVpnEngine {
         Some(EngineState { state, iface: String::new(), ip, since: Some(run.since) })
     }
 
+    /// Dead-tunnel detection: OpenVPN restarting itself (the bridge's view of `>STATE:…,RECONNECTING`), only while
+    /// the process runs and the first connect is done.
+    fn liveness(&self, id: &str) -> Option<macvpn_core::liveness::Liveness> {
+        let run = self.run_of(id)?;
+        if run.proc.exited() || !lock(&run.out).done {
+            return None;
+        }
+        Some(macvpn_core::liveness::Liveness::OpenVpn { reconnecting_since: run.bridge.reconnecting_since() })
+    }
+
     fn respond(&self, id: &str, body: &[u8]) -> Result<(), String> {
         let run = self.run_of(id).ok_or_else(|| tr("Invalid ID", &[]))?;
         run.bridge.set_response(body);

@@ -13,7 +13,13 @@ export type RowState =
   | { state: 'failed'; reason: string }
   | { state: 'awaitingAuth'; wait: 'code' | 'web' | 'credentials'; deadline: number | null }
   /// Up or connecting, but the physical network is gone (the network loss rule): never shown as connected.
-  | { state: 'waitingForNetwork' };
+  | { state: 'waitingForNetwork' }
+  /// Up, but OpenVPN restarts the tunnel itself (dead-tunnel detection): never shown as connected.
+  | { state: 'reconnecting' }
+  /// Disconnected because the tunnel stopped answering (dead-tunnel detection), until the user acts.
+  | { state: 'notResponding' }
+  /// Down; tried again automatically at `at` (Unix seconds; the slow tier after the fast attempts gave up).
+  | { state: 'retrying'; at: number };
 
 export type Kind = 'openvpn' | 'wireguard' | 'strongswan' | 'sstp' | 'l2tp' | 'cisco';
 
