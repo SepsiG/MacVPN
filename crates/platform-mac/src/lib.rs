@@ -21,6 +21,7 @@ pub mod command;
 pub mod control_socket;
 pub mod dialogs;
 pub mod http;
+pub mod if_counters;
 mod keychain_ffi;
 pub mod legacy_store;
 pub mod log_stream;

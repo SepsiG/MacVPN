@@ -71,6 +71,17 @@ pub trait NativeController: Send + Sync {
     fn clear_log(&self, _connection: &Uuid, _note: &str) -> Result<bool, String> {
         Ok(false)
     }
+    /// Live traffic of the connected service `service_id` (a managed native connection's or a system VPN's): its
+    /// byte counters when the platform knows its tunnel (macOS: `SCNetworkConnectionCopyStatistics`, else its
+    /// interface's counters; WinVPN: the RAS connection's statistics). `None`: nothing is shown.
+    fn traffic(&self, _service_id: &str) -> Option<crate::traffic::TrafficReading> {
+        None
+    }
+    /// The connected service's tunnel address (macOS: `SCNetworkConnectionCopyExtendedStatus`), shown like a
+    /// helper kind's; `None`: not known.
+    fn address(&self, _service_id: &str) -> Option<String> {
+        None
+    }
 }
 
 /// A native connection's profile in the platform's format, ready for [`NativeProfiles::install`].

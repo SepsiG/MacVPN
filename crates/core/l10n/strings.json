@@ -5338,7 +5338,7 @@
       "hu": "Használat: mvpn-validate [--lang en|hu] <openvpn|wireguard|strongswan|sstp> <fájl> [--accept-risky nevek] | --swan-names <fájl> | --sstp-params <fájl> | --sstp-ca <fájl>",
       "scope": "core"
     },
-    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id> | liveness <id>": {
+    "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id> | liveness <id> | traffic <id>": {
       "hu": "Használat: up|down <openvpn|wireguard> <azonosító> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <azonosító> | status | version | engine | auth-state <azonosító> | log <azonosító> <eltolás> | clear-log <azonosító> | liveness <azonosító>",
       "scope": "mvpn",
       "only": [
@@ -6484,6 +6484,22 @@
       "only": [
         "windows"
       ]
+    },
+    "%@/s": {
+      "hu": "%@/s",
+      "scope": "app"
+    },
+    "↓ %@  ↑ %@": {
+      "hu": "↓ %@  ↑ %@",
+      "scope": "app"
+    },
+    "Since connecting: %@ down, %@ up": {
+      "hu": "A kapcsolódás óta: le %@, fel %@",
+      "scope": "app"
+    },
+    "Now: %@ down, %@ up": {
+      "hu": "Most: le %@, fel %@",
+      "scope": "app"
     }
   },
   "version": 1

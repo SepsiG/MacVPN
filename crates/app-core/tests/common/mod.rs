@@ -179,6 +179,8 @@ pub struct Start {
 pub struct MockNative {
     list: Mutex<Result<Vec<SystemVpn>, String>>,
     addresses: Mutex<HashMap<String, Option<String>>>,
+    /// The connected services' tunnel addresses (`NativeController::address`).
+    tunnel_addresses: Mutex<HashMap<String, String>>,
     shows: Mutex<Vec<String>>,
     starts: Mutex<Vec<Start>>,
     stops: Mutex<Vec<String>>,
@@ -194,6 +196,7 @@ impl Default for MockNative {
         MockNative {
             list: Mutex::new(Ok(Vec::new())),
             addresses: Mutex::new(HashMap::new()),
+            tunnel_addresses: Mutex::new(HashMap::new()),
             shows: Mutex::new(Vec::new()),
             starts: Mutex::new(Vec::new()),
             stops: Mutex::new(Vec::new()),
@@ -211,6 +214,14 @@ impl MockNative {
 
     pub fn set_address(&self, service_id: &str, address: Option<&str>) {
         self.addresses.lock().unwrap().insert(service_id.to_string(), address.map(str::to_string));
+    }
+
+    pub fn set_address_of(&self, service_id: &str, address: Option<&str>) {
+        let mut all = self.tunnel_addresses.lock().unwrap();
+        match address {
+            Some(a) => all.insert(service_id.to_string(), a.to_string()),
+            None => all.remove(service_id),
+        };
     }
 
     pub fn set_start_error(&self, error: Option<&str>) {
@@ -247,6 +258,10 @@ impl MockNative {
 impl NativeController for MockNative {
     fn list(&self) -> Result<Vec<SystemVpn>, String> {
         self.list.lock().unwrap().clone()
+    }
+
+    fn address(&self, service_id: &str) -> Option<String> {
+        self.tunnel_addresses.lock().unwrap().get(service_id).cloned()
     }
 
     fn remote_address(&self, service_id: &str) -> Option<String> {

@@ -41,7 +41,8 @@
 //!   Folders: `folders.js` (Connections) creates a folder from the New menu, a subfolder from its context menu,
 //!   colours the folder, drags a seeded connection into the subfolder, collapses and expands the folder, and
 //!   deletes the subfolder moving its contents up (`FOLDERS …`; the folders are kept in the vault).
-//!   After the folders, the 2.0 features (`features.rs`: `appearance.js`, `engines.js`, `notices.js`, `reconnect.js`;
+//!   After the folders, the 2.0 features (`features.rs`: `appearance.js`, `engines.js`, `notices.js`, `reconnect.js`,
+//!   `traffic.js`;
 //!   the scripted network, the recorded notices and the engines step's reports are its hooks). On Windows then
 //!   WinVPN 2c's native VPNs (`ras.rs`: `ras.js`; [`FakeNative`] answers each connection's `WinVPN-<UUID>` entry
 //!   as the `RasEngine` does, listed while the sandbox engine keeps its saved profile, and dials nothing).
@@ -278,6 +279,26 @@ impl HelperClient for FakeHelper {
             return None;
         }
         self.liveness.lock().unwrap_or_else(PoisonError::into_inner).get(id).cloned()
+    }
+
+    /// Live traffic (features' `traffic` step): fake counters of a connected connection that grow with its time
+    /// up, 1.5 MB/s down and 40 kB/s up (the reported `utun99` is not read).
+    fn traffic(&self, tunnel: &macvpn_platform_api::HelperTunnel<'_>) -> Option<macvpn_platform_api::TrafficReading> {
+        let since = self
+            .up
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .iter()
+            .find(|e| e.0 == *tunnel.id && e.3 == "connected")
+            .map(|e| e.2)?;
+        let up = (Date::now().time_interval_since_1970() - since).max(0.0);
+        Some(macvpn_platform_api::TrafficReading {
+            generation: since as u64,
+            rx: 4096 + (up * 1_500_000.0) as u64,
+            tx: 1024 + (up * 40_000.0) as u64,
+            width: macvpn_platform_api::CounterWidth::Bits64,
+            from_zero: true,
+        })
     }
 
     /// "Clear Log…" (manage.js): logged with whether the note is the localized header the time filter reads.

@@ -15,8 +15,15 @@
   import OtpFields from './OtpFields.svelte';
   import SecretField from './SecretField.svelte';
   import Status from './Status.svelte';
+  import TrafficLine from '../TrafficLine.svelte';
+  import type { TrafficView } from '../traffic';
 
-  let { row, epoch, selectedRemoved = false }: { row: Row; epoch: number; selectedRemoved?: boolean } = $props();
+  let {
+    row,
+    epoch,
+    selectedRemoved = false,
+    traffic = null,
+  }: { row: Row; epoch: number; selectedRemoved?: boolean; traffic?: TrafficView | null } = $props();
 
   const session = untrack(() => (row.storedSecrets ? new EditorSession(row.id) : null));
 
@@ -56,6 +63,7 @@
       <div class="title">
         <h1>{row.name}</h1>
         <p class="secondary">{tr('%@ · system VPN (not created by MacVPN)', row.typeLabel)}</p>
+        {#if traffic && row.state === 'connected'}<TrafficLine {traffic} size="md" />{/if}
       </div>
       <button class:primary={!row.switchOn} onclick={toggle} disabled={removed || row.state === 'disconnecting'}>{row.switchOn ? tr('Disconnect') : tr('Connect')}</button>
     </div>

@@ -1,7 +1,7 @@
 //! The management bridge running inside the service: its state in memory instead of files (every OS).
 
 use macvpn_helper::shared::bridge::{Bridge, BridgeArgs, BridgeFiles};
-use macvpn_helper::windows::bridge_state::{BridgeState, InProcessFiles, OneCommandAtATime, StateWatch};
+use macvpn_helper::windows::bridge_state::{BridgeState, ByteCounter, InProcessFiles, OneCommandAtATime, StateWatch};
 use std::collections::VecDeque;
 use std::io::{self, Read, Write};
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -435,4 +435,40 @@ fn one_command_at_a_time_on_its_own() {
             > at(&events, &Event::Read("ERROR: unknown command\r\n".into()))
     );
     // A notification is no answer: `>HOLD`, `>LOG`, `>STATE` lines never let the next command through.
+}
+
+/// Live traffic: the engine's stream (StateWatch over ByteCounter over OneCommandAtATime) asks for the byte counters
+/// once, at the first `>STATE:` line, only after the bridge's last command was answered; keeps the latest
+/// `>BYTECOUNT:`; and the bridge still connects (it ignores the answer and the counter lines).
+#[test]
+fn the_byte_counters_are_asked_once_and_kept() {
+    let (stream, events) = Timeline::new(&[
+        Some(
+            ">INFO:OpenVPN Management Interface Version 5 -- type 'help' for more info\r\n>HOLD:Waiting for hold release:0\r\n",
+        ),
+        Some(STATE_ON_OK),
+        Some("SUCCESS: hold release succeeded\r\n"),
+        Some(">STATE:1700000000,WAIT,,,,,,\r\n"),
+        Some("SUCCESS: bytecount interval changed\r\n"),
+        Some(">BYTECOUNT:1000,200\r\n>STATE:1700000001,CONNECTED,SUCCESS,10.8.0.2,192.0.2.1,1194,,\r\n"),
+        Some(">BYTECOUNT:5000,900\r\n"),
+    ]);
+    let state = Arc::new(BridgeState::new(Box::new(|_| {}), Box::new(|| {})));
+    let bytes = Arc::new(Mutex::new(None));
+    let ip = Arc::new(Mutex::new(None));
+    let stream = StateWatch::new(
+        ByteCounter::new(OneCommandAtATime::with_wait(stream, Duration::from_secs(5)), bytes.clone()),
+        ip.clone(),
+    );
+    let args = BridgeArgs::in_process(ID, 420.0).unwrap();
+    Bridge::new(args, stream, InProcessFiles::new(state.clone()), None).run();
+    let events = events.lock().unwrap().clone();
+    assert_eq!(writes(&events), ["state on\n", "hold release\n", "bytecount 1\n"]);
+    assert!(
+        at(&events, &Event::Write("bytecount 1\n".into()))
+            > at(&events, &Event::Read("SUCCESS: hold release succeeded\r\n".into()))
+    );
+    assert_eq!(*bytes.lock().unwrap(), Some((5000, 900)));
+    assert_eq!(ip.lock().unwrap().as_deref(), Some("10.8.0.2"));
+    assert_eq!(state.mgmt_status().as_deref(), Some("ok"));
 }

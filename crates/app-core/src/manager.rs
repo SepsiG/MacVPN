@@ -74,6 +74,23 @@ impl ConnectionItem {
     }
 }
 
+/// A connected tunnel whose traffic the app reads ([`ConnectionManager::tunnels`]).
+#[derive(Debug, Clone, PartialEq)]
+pub struct Tunnel {
+    /// The row's key (a managed connection's UUID string, a system VPN's service ID).
+    pub key: String,
+    pub source: TunnelSource,
+}
+
+/// Where a tunnel's counters are asked.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TunnelSource {
+    /// A root-backed (helper) kind, with what the helper last reported.
+    Helper { id: Uuid, kind: VPNKind, iface: Option<String>, ip: Option<String>, since: Option<f64> },
+    /// A native service (managed native connection or system VPN).
+    Native { service_id: String },
+}
+
 /// How a managed native connection maps to the listed services.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NativeMatch {
@@ -396,6 +413,11 @@ struct Inner {
     credentials_cancelled: HashSet<String>,
     /// The vault is locked ([`ConnectionManager::enter_locked`]): only the active connections are kept, redacted.
     locked: bool,
+    /// The tunnel interface the helper last reported for a connected root-backed connection (live traffic).
+    ifaces: HashMap<String, String>,
+    /// When a native service (managed or a system VPN) was seen to connect: only a connect this app saw (a service
+    /// already up at the first refresh has no time).
+    native_since: HashMap<String, Date>,
 }
 
 impl Inner {
@@ -470,6 +492,25 @@ impl Inner {
             return previous.clone();
         }
         current
+    }
+
+    /// A native service's state with its tunnel address and the time this app saw it connect.
+    fn native_details(
+        &mut self,
+        key: &str,
+        previous: Option<&ConnectionState>,
+        current: ConnectionState,
+        address: Option<&String>,
+        now: Date,
+    ) -> ConnectionState {
+        if !current.is_connected() {
+            self.native_since.remove(key);
+            return current;
+        }
+        if previous.is_some_and(|p| !p.is_connected()) {
+            self.native_since.entry(key.to_string()).or_insert(now);
+        }
+        ConnectionState::Connected { ip: address.cloned(), since: self.native_since.get(key).copied() }
     }
 
     fn fail_native(&mut self, key: &str, name: &str, reason: String) -> ConnectionState {
@@ -913,6 +954,41 @@ impl ConnectionManager {
         self.read(Inner::has_active)
     }
 
+    /// Live traffic of a native service: the platform's [`NativeController::traffic`] (`None` on macOS).
+    pub fn native_traffic(&self, service_id: &str) -> Option<macvpn_platform_api::TrafficReading> {
+        self.deps.native.traffic(service_id)
+    }
+
+    /// The connected tunnels whose traffic can be read (live traffic): the managed root-backed connections with
+    /// what the helper reported, the managed native ones by their bound service and the unmanaged system VPNs.
+    pub fn tunnels(&self) -> Vec<Tunnel> {
+        self.read(|i| {
+            let connected = |key: &str| i.states.get(key).is_some_and(ConnectionState::is_connected);
+            let mut out = Vec::new();
+            for c in &i.connections {
+                let key = uuid_string(&c.id);
+                let Some(ConnectionState::Connected { ip, since }) = i.states.get(&key) else { continue };
+                let source = if c.kind.is_native() {
+                    let Some(service_id) = c.native_service_id.clone() else { continue };
+                    TunnelSource::Native { service_id }
+                } else {
+                    TunnelSource::Helper {
+                        id: c.id,
+                        kind: c.kind,
+                        iface: i.ifaces.get(&key).cloned(),
+                        ip: ip.clone(),
+                        since: since.map(|d| d.time_interval_since_1970()),
+                    }
+                };
+                out.push(Tunnel { key, source });
+            }
+            for s in i.system_services.iter().filter(|s| connected(&s.id)) {
+                out.push(Tunnel { key: s.id.clone(), source: TunnelSource::Native { service_id: s.id.clone() } });
+            }
+            out
+        })
+    }
+
     pub fn has_failure(&self) -> bool {
         self.read(|i| i.states.values().any(|s| matches!(s, ConnectionState::Failed(_))))
     }
@@ -1319,6 +1395,13 @@ impl ConnectionManager {
             .filter(|s| pending.contains(&s.id))
             .map(|s| (s.id.clone(), self.system_failure_reason(s)))
             .collect();
+        // The connected native services' tunnel addresses (in-process reads), before the locked section.
+        let addresses: HashMap<String, String> = services
+            .iter()
+            .flatten()
+            .filter(|s| s.status == "Connected")
+            .filter_map(|s| self.deps.native.address(&s.id).map(|a| (s.id.clone(), a)))
+            .collect();
         let now = self.now();
         let native = self.deps.native.as_ref();
         let applied = self.mutate(|i| {
@@ -1394,13 +1477,20 @@ impl ConnectionManager {
                         next.insert(key, pending);
                         continue;
                     }
-                    service.map_or(ConnectionState::Disconnected, |s| s.connection_state())
+                    let current = service.as_ref().map_or(ConnectionState::Disconnected, |s| s.connection_state());
+                    let address = service.as_ref().and_then(|s| addresses.get(&s.id));
+                    i.native_details(&key, previous.as_ref(), current, address, now)
                 } else {
                     let Some(root) = &root else {
                         next.insert(key, previous.unwrap_or(ConnectionState::Disconnected));
                         continue;
                     };
-                    root.iter().find(|r| r.id == c.id).map_or(ConnectionState::Disconnected, |r| r.connection_state())
+                    let reported = root.iter().find(|r| r.id == c.id);
+                    match reported.filter(|r| r.state == "connected").and_then(|r| r.iface.clone()) {
+                        Some(iface) if !iface.is_empty() => i.ifaces.insert(key.clone(), iface),
+                        _ => i.ifaces.remove(&key),
+                    };
+                    reported.map_or(ConnectionState::Disconnected, |r| r.connection_state())
                 };
                 let resolved = i.resolve(&key, &c.name, previous.as_ref(), current, c.kind.is_native());
                 next.insert(key, resolved);
@@ -1443,7 +1533,9 @@ impl ConnectionManager {
                         next.insert(s.id.clone(), pending);
                         continue;
                     }
-                    let resolved = i.resolve(&s.id, &s.name, previous.as_ref(), s.connection_state(), true);
+                    let current =
+                        i.native_details(&s.id, previous.as_ref(), s.connection_state(), addresses.get(&s.id), now);
+                    let resolved = i.resolve(&s.id, &s.name, previous.as_ref(), current, true);
                     next.insert(s.id.clone(), resolved);
                 }
                 i.system_services = unmanaged;

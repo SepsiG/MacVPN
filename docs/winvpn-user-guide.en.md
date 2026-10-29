@@ -349,7 +349,7 @@ Double-click a `.ovpn` or `.sstp` file in File Explorer: WinVPN opens the **Conn
 ## 5. Connecting
 
 - **From the popover:** click the switch on the connection's card. The badge on the type bubble and the line under the name show the state:
-  - **green:** connected (with the IP address and the elapsed time); the switch is green too
+  - **green:** connected (with the IP address and the elapsed time); the switch is green too. Below it, the traffic since the connection came up and the current rate: **↓ 12.4 MB  ↑ 1.2 MB · ↓ 350 kB/s  ↑ 20.0 kB/s** (↓ download, ↑ upload; 1 kB = 1000 bytes, so the numbers can be slightly higher than Explorer's KB). The same line is in the Connections window under the connection's name, and in a system VPN's details. It updates every second while the popover or the window is open. A reconnect (automatic, or OpenVPN's own) keeps the totals; connecting again with the switch starts them from zero. Every type shows it; L2TP/IPsec connections and system VPNs show their IP address too.
   - **amber, pulsing:** **Connecting…** or **Disconnecting…** (the switch is amber), or **Waiting for authentication**: a one-time code, a sign-in in the browser or missing credentials (see [5.2](#52-multi-factor-authentication-mfa) and [5.3](#53-credentials-asked-when-connecting))
   - **red:** error (with a short reason)
   - **grey:** not connected
@@ -404,7 +404,7 @@ If a connection needs a user name, password, shared secret (PSK) or private key 
 
 ### 5.4 Paired apps (control API)
 
-Another program of your user account, for example a Remote Desktop app, can bring WinVPN connections up and down for you once you pair it. This is off by default.
+Another program of your user account, for example the companion app [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop), can bring WinVPN connections up and down for you once you pair it. This is off by default.
 
 1. Open the **Connections** window (**Manage Connections…**) and select **Paired apps** in the sidebar.
 2. Turn on **Allow other apps to control VPNs**. While it is off, no program can reach WinVPN this way.

@@ -20,6 +20,7 @@ pub mod run_key;
 pub mod system_vpn;
 pub mod texts;
 pub mod toast;
+pub mod traffic;
 pub mod update;
 pub mod update_check;
 pub mod wireguard_update;

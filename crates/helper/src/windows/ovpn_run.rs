@@ -6,7 +6,7 @@
 //! Portable (no `cfg`): tested on every OS.
 
 use crate::shared::l10n::tr;
-use crate::shared::mask::Masker;
+use crate::shared::mask::{self, Masker};
 use crate::shared::ovpn_log;
 use crate::windows::ovpn_args::Driver;
 
@@ -20,13 +20,23 @@ pub struct Output {
     pub done: bool,
     pub auth_failed: bool,
     pub dco_incompatible: bool,
+    /// OpenVPN could not bind its management port (`socket.c` `socket_bind` with the prefix `MANAGEMENT`): another
+    /// socket took it after the service chose it. The engine starts it again on another port.
+    pub mgmt_bind_failed: bool,
     last: Vec<u8>,
 }
 
 impl Output {
     /// `masker`: the connection's secrets (the last line goes into an error message).
     pub fn new(masker: Masker) -> Output {
-        Output { masker, done: false, auth_failed: false, dco_incompatible: false, last: Vec::new() }
+        Output {
+            masker,
+            done: false,
+            auth_failed: false,
+            dco_incompatible: false,
+            mgmt_bind_failed: false,
+            last: Vec::new(),
+        }
     }
 
     /// One line as OpenVPN wrote it (without `\n`; a `\r` before it is dropped). Returns the line for the connection
@@ -41,6 +51,7 @@ impl Output {
         self.done |= ovpn_log::ovpn_done(line);
         self.auth_failed |= ovpn_log::ovpn_auth_failed(line);
         self.dco_incompatible |= ovpn_log::dco_incompatible(line);
+        self.mgmt_bind_failed |= mgmt_bind_failed(line);
         let last = ovpn_log::ovpn_last_line(line);
         if !last.is_empty() {
             self.last = self.masker.line(&last);
@@ -52,6 +63,11 @@ impl Output {
     pub fn last_line(&self) -> String {
         String::from_utf8_lossy(&self.last).into_owned()
     }
+}
+
+/// `MANAGEMENT: Socket bind failed on local address [AF_INET]127.0.0.1:<port>: …` (not an `ECHO:` line).
+fn mgmt_bind_failed(line: &[u8]) -> bool {
+    mask::find(line, b"ECHO:").is_none() && mask::find(line, b"MANAGEMENT: Socket bind failed").is_some()
 }
 
 /// What the wait loop sees at one look.
@@ -206,6 +222,11 @@ mod tests {
         assert!(o.done);
         o.line(b"2026 AUTH: Received control message: AUTH_FAILED");
         assert!(o.auth_failed);
+        // The management port taken by someone else (OpenVPN 2.7's message; an echo of it is not it).
+        o.line(b"2026-10-22 10:00:00 ECHO:MANAGEMENT: Socket bind failed on local address");
+        assert!(!o.mgmt_bind_failed);
+        o.line(b"2026-10-22 10:00:00 MANAGEMENT: Socket bind failed on local address [AF_INET]127.0.0.1:40000: Permission denied (WSAEACCES) (errno=10013)");
+        assert!(o.mgmt_bind_failed);
     }
 
     #[test]

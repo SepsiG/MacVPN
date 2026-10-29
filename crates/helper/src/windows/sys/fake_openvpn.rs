@@ -2,7 +2,8 @@
 //! `debug_assertions`, and the console's `--fake-openvpn` is the only thing that runs it). The OpenVPN engine
 //! starts `mvpn.exe` itself with the real argv (`--config …`); this speaks OpenVPN's management protocol on the
 //! loopback port with the password from `mgmt.pw`, and prints OpenVPN-like lines. The scenario is a comment line of
-//! the config: `# winvpn-fake: ok|userpass|crv1|authfail|dco|exit|hang`.
+//! the config: `# winvpn-fake: ok|userpass|crv1|authfail|dco|exit|hang|portbusy|portbusy-once` (`portbusy`: its
+//! management bind fails, every start; `-once`: only the first start of the console's data directory).
 //!
 //! What it prints for the tests to check: its environment's variable names, the driver it was given, and the
 //! stored password it received (`userpass` only: the connection log must show it masked).
@@ -57,13 +58,27 @@ pub fn main(args: &[String]) -> i32 {
     }
     let password = std::fs::read_to_string(&pw_file).unwrap_or_default();
     let password = password.lines().next().unwrap_or_default().to_string();
-    let Ok(listener) = TcpListener::bind(("127.0.0.1", port)) else {
-        say("2026-10-22 10:00:00 MANAGEMENT: Socket bind failed on local address");
+    // `<data>/run/<ID>/config.ovpn`: the marker lives in `<data>/run`, which outlasts one start.
+    let first = || {
+        let marker = std::path::Path::new(&config).parent().and_then(|d| d.parent()).map(|r| r.join("fake-portbusy"));
+        marker.is_some_and(|m| std::fs::OpenOptions::new().write(true).create_new(true).open(m).is_ok())
+    };
+    let busy = scenario == "portbusy" || (scenario == "portbusy-once" && first());
+    let listener = if busy { None } else { TcpListener::bind(("127.0.0.1", port)).ok() };
+    let Some(listener) = listener else {
+        // OpenVPN 2.7's lines (`socket.c` `socket_bind`, then the fatal exit).
+        say(&format!(
+            "2026-10-22 10:00:00 MANAGEMENT: Socket bind failed on local address [AF_INET]127.0.0.1:{port}: Permission denied (WSAEACCES) (errno=10013)"
+        ));
+        say("2026-10-22 10:00:00 Exiting due to fatal error");
         return 1;
     };
     say(&format!("2026-10-22 10:00:00 MANAGEMENT: TCP Socket listening on [AF_INET]127.0.0.1:{port}"));
-    let Ok((stream, _)) = listener.accept() else { return 1 };
-    serve(stream, &password, &scenario, tap);
+    // As OpenVPN: one client at a time, and it listens again once a client goes away.
+    for stream in listener.incoming() {
+        let Ok(stream) = stream else { return 1 };
+        serve(stream, &password, &scenario, tap);
+    }
     forever()
 }
 
@@ -92,6 +107,9 @@ fn serve(mut s: TcpStream, password: &str, scenario: &str, tap: bool) {
         let line = line.trim_end();
         if line == "state on" {
             let _ = s.write_all(b"SUCCESS: real-time state notification set to ON\r\n");
+        } else if line.starts_with("bytecount ") {
+            // As OpenVPN: the answer, then the counters every interval (one line is enough here).
+            let _ = s.write_all(b"SUCCESS: bytecount interval changed\r\n>BYTECOUNT:4096,1024\r\n");
         } else if line == "signal SIGTERM" {
             let _ = s.write_all(b"SUCCESS: signal SIGTERM thrown\r\n");
             say("2026-10-22 10:00:02 SIGTERM[hard,] received, process exiting");

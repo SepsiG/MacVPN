@@ -43,6 +43,8 @@ pub struct Helper {
     standard: ProcessCommandRunner,
     up: ProcessCommandRunner,
     quick: ProcessCommandRunner,
+    /// strongSwan's sums over its CHILD_SAs per connection, with the run they belong to (live traffic).
+    child_sums: Mutex<std::collections::HashMap<Uuid, (u64, macvpn_core::traffic::ChildSums)>>,
 }
 
 impl Helper {
@@ -51,6 +53,7 @@ impl Helper {
             standard: ProcessCommandRunner::new(RunnerTimeouts::STANDARD),
             up: ProcessCommandRunner::new(RunnerTimeouts::UP),
             quick: ProcessCommandRunner::new(RunnerTimeouts::QUICK),
+            child_sums: Mutex::default(),
         }
     }
 
@@ -106,6 +109,32 @@ impl HelperClient for Helper {
     fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
         self.client().liveness(id)
     }
+
+    /// OpenVPN, WireGuard, SSTP: the reported interface's counters (`utun` / `ppp`), read as the user. strongSwan
+    /// (no interface): `sudo -n mvpn traffic <id>` (root layer 11), its CHILD_SAs summed so a rekey never lowers the
+    /// totals; an older root layer gives no data.
+    fn traffic(&self, tunnel: &macvpn_platform_api::HelperTunnel<'_>) -> Option<macvpn_platform_api::TrafficReading> {
+        if tunnel.kind != VPNKind::Strongswan {
+            return crate::if_counters::helper_reading(tunnel);
+        }
+        let children = self.client().traffic(tunnel.id)?;
+        let run = tunnel.since.map_or(0, |s| s.max(0.0) as u64);
+        let (rx, tx) = {
+            let mut all = self.child_sums.lock().unwrap_or_else(PoisonError::into_inner);
+            let entry = all.entry(*tunnel.id).or_insert_with(|| (run, Default::default()));
+            if entry.0 != run {
+                *entry = (run, Default::default());
+            }
+            entry.1.update(&children)
+        };
+        Some(macvpn_platform_api::TrafficReading {
+            generation: macvpn_platform_api::traffic::generation(&[run]),
+            rx,
+            tx,
+            width: macvpn_platform_api::CounterWidth::Bits64,
+            from_zero: true,
+        })
+    }
 }
 
 /// `scutil --nc list / show` (quick time limit) and the in-process `SCNetworkConnection` driver.
@@ -146,6 +175,34 @@ impl NativeController for Native {
 
     fn stop(&self, service_id: &str) -> Result<(), String> {
         self.0.stop(service_id).map_err(|e| e.to_string())
+    }
+
+    /// `SCNetworkConnectionCopyStatistics` (`BytesIn` / `BytesOut`, as the user), else the counters of the interface
+    /// its extended status names (`ppp0`, `ipsec0`). The counters start with each connection.
+    fn traffic(&self, service_id: &str) -> Option<macvpn_platform_api::TrafficReading> {
+        use macvpn_platform_api::traffic::generation;
+        let reading = |generation, rx, tx| macvpn_platform_api::TrafficReading {
+            generation,
+            rx,
+            tx,
+            width: macvpn_platform_api::CounterWidth::Bits64,
+            from_zero: true,
+        };
+        let service = generation(&service_id.bytes().map(u64::from).collect::<Vec<_>>());
+        if let Some((rx, tx)) =
+            crate::sc_ffi::statistics(service_id).as_ref().and_then(crate::native_vpn::statistics_counters)
+        {
+            return Some(reading(service, rx, tx));
+        }
+        let iface =
+            crate::sc_ffi::extended_status(service_id).as_ref().and_then(crate::native_vpn::extended_interface)?;
+        let c = crate::if_counters::read(&iface)?;
+        Some(reading(generation(&[service, u64::from(c.index)]), c.rx, c.tx))
+    }
+
+    /// The IPv4 address of `SCNetworkConnectionCopyExtendedStatus`.
+    fn address(&self, service_id: &str) -> Option<String> {
+        crate::sc_ffi::extended_status(service_id).as_ref().and_then(crate::native_vpn::extended_address)
     }
 }
 

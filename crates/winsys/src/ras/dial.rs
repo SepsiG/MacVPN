@@ -16,9 +16,10 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 use windows_sys::Win32::NetworkManagement::Rras::{
-    HRASCONN, PROJECTION_INFO_TYPE_IKEv2, PROJECTION_INFO_TYPE_PPP, RAS_PROJECTION_INFO, RASAPIVERSION_601,
+    HRASCONN, PROJECTION_INFO_TYPE_IKEv2, PROJECTION_INFO_TYPE_PPP, RAS_PROJECTION_INFO, RAS_STATS, RASAPIVERSION_601,
     RASCONNSTATE, RASCONNSTATUSW, RASCONNW, RASCS_Connected, RASDIALDLG, RASDIALPARAMSW, RasDialW, RasEnumConnectionsW,
-    RasGetConnectStatusW, RasGetEntryDialParamsW, RasGetErrorStringW, RasGetProjectionInfoEx, RasHangUpW,
+    RasGetConnectStatusW, RasGetConnectionStatistics, RasGetEntryDialParamsW, RasGetErrorStringW,
+    RasGetProjectionInfoEx, RasHangUpW,
 };
 use windows_sys::core::{BOOL, PCWSTR};
 
@@ -393,6 +394,26 @@ fn raw_status(handle: Handle) -> std::result::Result<Status, u32> {
         return Err(code);
     }
     Ok(Status { state: s.rasconnstate as u32, error: s.dwError, device_name: field_text(&s.szDeviceName) })
+}
+
+/// A connection's statistics (`RasGetConnectionStatistics`), counted from its dial on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Stats {
+    /// Bytes received (32-bit: wraps at 4 GiB).
+    pub rx: u32,
+    /// Bytes sent (32-bit).
+    pub tx: u32,
+    /// How long it has been connected, in milliseconds.
+    pub duration_ms: u32,
+}
+
+/// The statistics of `handle`.
+pub fn statistics(handle: Handle) -> Result<Stats> {
+    let mut s = RAS_STATS { dwSize: std::mem::size_of::<RAS_STATS>() as u32, ..Default::default() };
+    // SAFETY: `s` is a writable RAS_STATS with `dwSize` set; the call validates the handle and keeps nothing.
+    let code = unsafe { RasGetConnectionStatistics(handle.raw(), &mut s) };
+    rc("RasGetConnectionStatistics", code)?;
+    Ok(Stats { rx: s.dwBytesRcved, tx: s.dwBytesXmited, duration_ms: s.dwConnectDuration })
 }
 
 /// The tunnel's IPv4 address of a connected connection (`RasGetProjectionInfoEx`, PPP or IKEv2), `None` when IPv4

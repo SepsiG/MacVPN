@@ -1,6 +1,6 @@
 {
   "identifier": "menu",
-  "description": "The menu popover (menu, local content only): its rows (connect, disconnect, open a window), the Settings section (updates, launch at login, appearance, notifications, the user guide, Back Up / Restore, the vault's Lock Now and automatic unlock) and Quit; the view model, the platform (its texts) and listening to events. Nothing that changes the machine or deletes data.",
+  "description": "The menu popover (menu, local content only): its rows (connect, disconnect, open a window), the Settings section (updates, launch at login, appearance, notifications, the user guide, Back Up / Restore, the vault's Lock Now and automatic unlock) and Quit; the view model, the platform (its texts), the live traffic of the connected rows and listening to events. Nothing that changes the machine or deletes data.",
   "windows": [
     "menu"
   ],
@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "allow-get-view-model",
     "allow-get-platform",
+    "allow-get-traffic",
     "allow-connect",
     "allow-disconnect",
     "allow-open-window",

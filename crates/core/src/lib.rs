@@ -35,6 +35,7 @@ pub mod swift_json;
 pub mod swift_str;
 pub mod system_otp;
 pub mod target_os;
+pub mod traffic;
 pub mod update;
 pub mod url;
 pub mod validators;

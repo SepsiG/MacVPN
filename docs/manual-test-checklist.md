@@ -14,177 +14,195 @@ Előfeltétel: a Macen a 2.0.0-s DMG-ből telepített MacVPN, a Windows-gépen a
 
 ### Megjelenés
 
-- [ ] Nyitva a popover, a Kapcsolatok, a Rendszerállapot és egy MFA kódbekérő ablak (például a labor `openvpn-static-challenge.ovpn` kapcsolatával); **Beállítások → Megjelenés → Sötét** → mind egyszerre sötét lesz, Windowson a címsorok is
-- [ ] Ugyanígy **Világos** → mind egyszerre világos; **Rendszer szerint** → mind a rendszer módját veszi fel
-- [ ] Kilépés és újraindítás után a választott mód megmarad (a popover és az elsőként megnyitott ablak is ebben jelenik meg)
-- [ ] **Rendszer szerint** mellett a rendszer módjának átváltása futás közben (macOS: Rendszerbeállítások → Megjelenés; Windows: Gépház → Személyre szabás → Színek → Alapértelmezett alkalmazásmód) → a nyitott ablakok és a popover azonnal követik
-- [ ] A mód váltása után először megnyitott ablak (például a Rendszerállapot, ha addig nem volt nyitva) már az új módban nyílik
-- [ ] Windows: **Sötét** módban világos Windowson a fájlválasztó ablak (Import fájlból…) és a rendszergazdai megerősítés világos marad (ismert korlát), az értesítési terület ikonja a tálca színét követi
+- [x] Nyitva a popover, a Kapcsolatok, a Rendszerállapot és egy MFA kódbekérő ablak (például a labor `openvpn-static-challenge.ovpn` kapcsolatával); **Beállítások → Megjelenés → Sötét** → mind egyszerre sötét lesz, Windowson a címsorok is
+- [x] Ugyanígy **Világos** → mind egyszerre világos; **Rendszer szerint** → mind a rendszer módját veszi fel
+- [x] Kilépés és újraindítás után a választott mód megmarad (a popover és az elsőként megnyitott ablak is ebben jelenik meg)
+- [x] **Rendszer szerint** mellett a rendszer módjának átváltása futás közben (macOS: Rendszerbeállítások → Megjelenés; Windows: Gépház → Személyre szabás → Színek → Alapértelmezett alkalmazásmód) → a nyitott ablakok és a popover azonnal követik
+- [x] A mód váltása után először megnyitott ablak (például a Rendszerállapot, ha addig nem volt nyitva) már az új módban nyílik
+- [x] Windows: **Sötét** módban világos Windowson a fájlválasztó ablak (Import fájlból…) és a rendszergazdai megerősítés világos marad (ismert korlát), az értesítési terület ikonja a tálca színét követi
 
 ### Tálca / menüsor ikon: csatlakozás folyamatban (2026-10-28)
 
-- [ ] Egy lassan felépülő kapcsolat (például OpenVPN egy nem válaszoló szerverrel, vagy a labor egy kapcsolata) bekapcsolása → amíg a sor „Csatlakozás…”, az ikon **félig kitöltött pajzs** (nem pipás); fölé víve „MacVPN – Csatlakozás…” / „WinVPN – Csatlakozás…”; felépülés után pipás pajzs, „… – Csatlakozva”
-- [ ] Egy kapcsolat fent, egy második bekapcsolása → a második felépüléséig félig kitöltött pajzs, utána pipás
-- [ ] MFA kód / hitelesítő adat bekérése alatt kulcs ikon, „… – Hitelesítésre vár”; sikertelen csatlakozás → felkiáltójeles pajzs, a felirat a terméknév
-- [ ] macOS: natív (L2TP / Cisco IPsec) kapcsolat a rendszer jóváhagyására várva → félig kitöltött pajzs
-- [ ] Automatikus újracsatlakozás (alvás után / hálózatváltáskor) alatt félig kitöltött pajzs, utána pipás
-- [ ] Nyelvváltás (Beállítások → Nyelv) csatlakozás közben → a felirat azonnal az új nyelvű
-- [ ] macOS: világos és sötét menüsoron mind az öt ikon jól látszik; Windows: világos és sötét tálcán a félig kitöltött pajzs is a tálca színét követi, és mód váltásakor csatlakozás közben is átszíneződik (G-7)
+- [x] Egy lassan felépülő kapcsolat (például OpenVPN egy nem válaszoló szerverrel, vagy a labor egy kapcsolata) bekapcsolása → amíg a sor „Csatlakozás…”, az ikon **félig kitöltött pajzs** (nem pipás); fölé víve „MacVPN – Csatlakozás…” / „WinVPN – Csatlakozás…”; felépülés után pipás pajzs, „… – Csatlakozva”
+- [x] Egy kapcsolat fent, egy második bekapcsolása → a második felépüléséig félig kitöltött pajzs, utána pipás
+- [x] MFA kód / hitelesítő adat bekérése alatt kulcs ikon, „… – Hitelesítésre vár”; sikertelen csatlakozás → felkiáltójeles pajzs, a felirat a terméknév
+- [x] macOS: natív (L2TP / Cisco IPsec) kapcsolat a rendszer jóváhagyására várva → félig kitöltött pajzs
+- [x] Automatikus újracsatlakozás (alvás után / hálózatváltáskor) alatt félig kitöltött pajzs, utána pipás
+- [x] Nyelvváltás (Beállítások → Nyelv) csatlakozás közben → a felirat azonnal az új nyelvű
+- [x] macOS: világos és sötét menüsoron mind az öt ikon jól látszik; Windows: világos és sötét tálcán a félig kitöltött pajzs is a tálca színét követi, és mód váltásakor csatlakozás közben is átszíneződik (G-7)
 
 ### Kapcsolatértesítések
 
-- [ ] Az „Office VPN” csatlakoztatása → értesítés „Office VPN: csatlakozva” (angolul „Office VPN connected”), a szövegben „Kattints a naplóért.”
-- [ ] A WinVPN/MacVPN indulásakor már élő kapcsolatról nem jön „csatlakozva” értesítés
-- [ ] macOS: élő OpenVPN-kapcsolatnál `sudo pkill -f 'openvpn.*<azonosító>'`; Windows: a labor OpenVPN-szerverének leállítása (vagy a hálózati kábel kihúzása) → „Office VPN: megszakadt a kapcsolat”, alatta „A szerver nem válaszol.” (vagy „Kattints a naplóért.”)
-- [ ] Kattintás az értesítésre → a Kapcsolatok ablak a kapcsolat **Napló** fülén nyílik meg
-- [ ] Rossz jelszóval csatlakozva → „Office VPN: sikertelen csatlakozás”, alatta „A szerver elutasította a bejelentkezést.”
-- [ ] A saját **Bontás** és a „Leállítás és kilépés” → nincs értesítés
-- [ ] **Beállítások → Kapcsolatértesítések** ki → a fenti esetek egyikénél sem jön értesítés; egy MFA-kapcsolat „…: hitelesítés szükséges” értesítése továbbra is megjelenik; visszakapcsolva újra jönnek
-- [ ] A zárolási képernyőn (macOS: lezárt képernyő; Windows: Win+L) megjelenő értesítésben nincs szervernév, cím vagy felhasználónév, csak a kapcsolat neve és az általános ok
-- [ ] Zárolt széf mellett megszakadó kapcsolat → a cím általános: „Egy VPN-kapcsolat megszakadt”, a kapcsolat neve nem látszik
-- [ ] Windows: a telepített MSI-ből (Start menüből) indított WinVPN értesítése megjelenik (fejlesztői buildből nem jön értesítés), és a rá kattintás futó WinVPN mellett a Napló fület nyitja
+- [x] Az „Office VPN” csatlakoztatása → értesítés „Office VPN: csatlakozva” (angolul „Office VPN connected”), a szövegben „Kattints a naplóért.”
+- [x] A WinVPN/MacVPN indulásakor már élő kapcsolatról nem jön „csatlakozva” értesítés
+- [x] macOS: élő OpenVPN-kapcsolatnál `sudo pkill -f 'openvpn.*<azonosító>'`; Windows: a labor OpenVPN-szerverének leállítása (vagy a hálózati kábel kihúzása) → „Office VPN: megszakadt a kapcsolat”, alatta „A szerver nem válaszol.” (vagy „Kattints a naplóért.”)
+- [x] Kattintás az értesítésre → a Kapcsolatok ablak a kapcsolat **Napló** fülén nyílik meg
+- [x] Rossz jelszóval csatlakozva → „Office VPN: sikertelen csatlakozás”, alatta „A szerver elutasította a bejelentkezést.”
+- [x] A saját **Bontás** és a „Leállítás és kilépés” → nincs értesítés
+- [x] **Beállítások → Kapcsolatértesítések** ki → a fenti esetek egyikénél sem jön értesítés; egy MFA-kapcsolat „…: hitelesítés szükséges” értesítése továbbra is megjelenik; visszakapcsolva újra jönnek
+- [x] A zárolási képernyőn (macOS: lezárt képernyő; Windows: Win+L) megjelenő értesítésben nincs szervernév, cím vagy felhasználónév, csak a kapcsolat neve és az általános ok
+- [x] Zárolt széf mellett megszakadó kapcsolat → a cím általános: „Egy VPN-kapcsolat megszakadt”, a kapcsolat neve nem látszik
+- [x] Windows: a telepített MSI-ből (Start menüből) indított WinVPN értesítése megjelenik (fejlesztői buildből nem jön értesítés), és a rá kattintás futó WinVPN mellett a Napló fület nyitja
 
 ### Hiányzó motorok
 
-- [ ] macOS: `brew uninstall sstp-client` → az SSTP-kapcsolatok a popoverben, a Kapcsolatok listájában és a részleteknél szürkék, „SSTP · Nincs telepítve: sstp-client – Rendszerállapot” felirattal; a kapcsoló és a **Csatlakozás** gomb tiltott
-- [ ] macOS: a sorban a **Rendszerállapot** linkre kattintva megnyílik a Rendszerállapot ablak (a listában a sor nem lesz kijelölve, és nem indul húzás)
-- [ ] macOS: a Kapcsolatok ablak **Új** menüjében nincs SSTP; egy `.sstp` fájl importja (**Import fájlból…**) → „<fájl>: A(z) sstp-client nincs telepítve. Előbb telepítsd a Rendszerállapot ablakban.”, semmi nem mentődik; az ablakra ejtve és a Finderből megnyitva is ugyanez; egy `.sstp` és egy `.ovpn` együttes importjánál az `.ovpn` bekerül
-- [ ] macOS: `brew install sstp-client` a Terminálban, utána a popover megnyitása → egy percen belül az SSTP-sorok normálak, **Újraellenőrzés** nélkül
-- [ ] macOS: Homebrew nélküli gépen vagy tesztfiókban (ha van ilyen) → minden Homebrew-s típus sora „Nincs telepítve: Homebrew – Rendszerállapot”, az L2TP és a Cisco IPsec kapcsolatok használhatók; ha egyik Homebrew-s típus sem használható, az **Új** menü csak a használható típusokat mutatja
-- [ ] Windows: az OpenVPN Community eltávolítva (Gépház → Alkalmazások → Telepített alkalmazások) → az OpenVPN-sorok „Nincs telepítve: OpenVPN Community – Rendszerállapot”, a WireGuard-sorok normálak; az **Új** menüben nincs OpenVPN; egy `.ovpn` importja elutasítva a szöveggel
-- [ ] Windows: a szolgáltatás leállítva (rendszergazdai PowerShell: `sc.exe stop WinVPN`) → minden sor a szolgáltatás szövegét mutatja („A WinVPN szolgáltatás nem érhető el.”); `sc.exe start WinVPN` és a popover újranyitása → egy percen belül a sorok normálak
-- [ ] Windows: OpenVPN Community nélkül indítva a WinVPN-t → a Rendszerállapot **nem** nyílik meg magától, a popover Rendszerállapot-csempéjén nincs „!” (az OpenVPN választható motor); a WinVPN szolgáltatás nélkül (`sc.exe stop WinVPN`, majd a WinVPN újraindítása) → a Rendszerállapot magától megnyílik, a csempén „!”; `sc.exe start WinVPN`
-- [ ] Egy csapatkatalógus, amelyben OpenVPN-kapcsolat van, hiányzó OpenVPN mellett is szinkronizál, a kapcsolat szürkén látszik; az OpenVPN telepítése után új szinkronizálás nélkül csatlakozik
+- [x] macOS: `brew uninstall sstp-client` → az SSTP-kapcsolatok a popoverben, a Kapcsolatok listájában és a részleteknél szürkék, „SSTP · Nincs telepítve: sstp-client – Rendszerállapot” felirattal; a kapcsoló és a **Csatlakozás** gomb tiltott
+- [x] macOS: a sorban a **Rendszerállapot** linkre kattintva megnyílik a Rendszerállapot ablak (a listában a sor nem lesz kijelölve, és nem indul húzás)
+- [x] macOS: a Kapcsolatok ablak **Új** menüjében nincs SSTP; egy `.sstp` fájl importja (**Import fájlból…**) → „<fájl>: A(z) sstp-client nincs telepítve. Előbb telepítsd a Rendszerállapot ablakban.”, semmi nem mentődik; az ablakra ejtve és a Finderből megnyitva is ugyanez; egy `.sstp` és egy `.ovpn` együttes importjánál az `.ovpn` bekerül
+- [x] macOS: `brew install sstp-client` a Terminálban, utána a popover megnyitása → egy percen belül az SSTP-sorok normálak, **Újraellenőrzés** nélkül
+- [x] macOS: Homebrew nélküli gépen vagy tesztfiókban (ha van ilyen) → minden Homebrew-s típus sora „Nincs telepítve: Homebrew – Rendszerállapot”, az L2TP és a Cisco IPsec kapcsolatok használhatók; ha egyik Homebrew-s típus sem használható, az **Új** menü csak a használható típusokat mutatja
+- [x] Windows: az OpenVPN Community eltávolítva (Gépház → Alkalmazások → Telepített alkalmazások) → az OpenVPN-sorok „Nincs telepítve: OpenVPN Community – Rendszerállapot”, a WireGuard-sorok normálak; az **Új** menüben nincs OpenVPN; egy `.ovpn` importja elutasítva a szöveggel
+- [x] Windows: a szolgáltatás leállítva (rendszergazdai PowerShell: `sc.exe stop WinVPN`) → minden sor a szolgáltatás szövegét mutatja („A WinVPN szolgáltatás nem érhető el.”); `sc.exe start WinVPN` és a popover újranyitása → egy percen belül a sorok normálak
+- [x] Windows: OpenVPN Community nélkül indítva a WinVPN-t → a Rendszerállapot **nem** nyílik meg magától, a popover Rendszerállapot-csempéjén nincs „!” (az OpenVPN választható motor); a WinVPN szolgáltatás nélkül (`sc.exe stop WinVPN`, majd a WinVPN újraindítása) → a Rendszerállapot magától megnyílik, a csempén „!”; `sc.exe start WinVPN`
+- [x] Egy csapatkatalógus, amelyben OpenVPN-kapcsolat van, hiányzó OpenVPN mellett is szinkronizál, a kapcsolat szürkén látszik; az OpenVPN telepítése után új szinkronizálás nélkül csatlakozik
 
 ### Automatikus újracsatlakozás
 
-- [ ] Egy MacVPN-ben/WinVPN-ben létrehozott kapcsolat részleteinél (Kapcsolatok ablak) ott az **Automatikus újracsatlakozás** kapcsoló, alapból bekapcsolva; rendszer VPN-nél nincs ilyen kapcsoló
-- [ ] A kikapcsolt állapot kilépés és újraindítás után megmarad; a kapcsolat törlése és ugyanannak a fájlnak az újraimportálása után a kapcsoló ismét be van kapcsolva
-- [ ] (a) Otthoni Wi-Fin egy SSTP- vagy IKEv2-kapcsolat él, a fedél 2 percre lecsukva, majd felnyitva → néhány másodpercen belül „…: újracsatlakozva”
-- [ ] (b) Ugyanez, de a fedelet egy másik Wi-Fin vagy telefonos hotspoton nyitod fel → nem csatlakozik újra, „…: nem csatlakozott újra”, alatta „Másik hálózaton vagy.”
+- [x] Egy MacVPN-ben/WinVPN-ben létrehozott kapcsolat részleteinél (Kapcsolatok ablak) ott az **Automatikus újracsatlakozás** kapcsoló, alapból bekapcsolva; rendszer VPN-nél nincs ilyen kapcsoló
+- [x] A kikapcsolt állapot kilépés és újraindítás után megmarad; a kapcsolat törlése és ugyanannak a fájlnak az újraimportálása után a kapcsoló ismét be van kapcsolva
+- [x] (a) Otthoni Wi-Fin egy SSTP- vagy IKEv2-kapcsolat él, a fedél 2 percre lecsukva, majd felnyitva → néhány másodpercen belül „…: újracsatlakozva”
+- [x] (b) Ugyanez, de a fedelet egy másik Wi-Fin vagy telefonos hotspoton nyitod fel → nem csatlakozik újra, „…: nem csatlakozott újra”, alatta „Másik hálózaton vagy.”
 - [ ] (c) Az „Office VPN” otthonról felépítve, a fedél lecsukva, a gép az „irodában” (a 10.20.30.0/24-et adó második routeren) felnyitva, ha a kapcsolat közben megszakadt → nem csatlakozik újra, „A VPN hálózata itt közvetlenül elérhető.” (az elérhetőségi ellenőrzés megelőzi a hálózat összevetését); ha a kapcsolat túlélte az alvást, az (f2) szerint bomlik
 - [ ] (c2) Ugyanazon a hálózaton egy WireGuard-kapcsolat, amelynek `DNS =` sora a helyi router címére mutat: csatlakoztatva, fedél lecsukva, a kapcsolat alvás közben megszakad (például a labor WireGuard-szervere leállítva), felnyitva → „…: nem csatlakozott újra”, alatta „A VPN DNS-szervere itt közvetlenül elérhető.”
-- [ ] (d) Kézi **Bontás**, alvás, ébresztés → a kapcsolat bontva marad, nincs értesítés
-- [ ] (e) A kapcsolat **Automatikus újracsatlakozás** kapcsolója kikapcsolva, a kapcsolat alvás közben megszakad → nincs újracsatlakozás
-- [ ] (f) OpenVPN `ping-restart`-tal (a labor OpenVPN-kapcsolata): 30 másodperc alvás, ébresztés → a kapcsolat végig „Csatlakozva”, nincs értesítés, a naplóban az OpenVPN saját újraindulása (`Inactivity timeout (--ping-restart)` vagy `Restart pause`)
-- [ ] (f2) A 10.20.30.0/24-et route-oló WireGuard- vagy OpenVPN-kapcsolat otthon felépítve, a fedél lecsukva, a 10.20.30.0/24-es hálózaton („iroda”, vagy a második router) felnyitva → néhány másodpercen belül bontva, „…: megszakadt a kapcsolat”, alatta „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”; utána otthon egy újabb alvás után is bontva marad, amíg kézzel nem csatlakoztatod
-- [ ] (f3) Ugyanez a kapcsolat egy „kávézóban” (másik Wi-Fi vagy telefonos hotspot) felnyitva → csatlakozva marad, nincs értesítés
-- [ ] (g) Az Ethernet-kábel 20 másodpercre kihúzva egy olyan kapcsolattal, amely ettől megszakad → a kábel visszadugása után néhány másodpercen belül „…: újracsatlakozva”
-- [ ] (h) Windows: Modern Standby laptopon (csak ha van ilyen gép), különben a VM alvó állapotával: ugyanaz, mint (a)
-- [ ] Zárolt széffel ébresztve (macOS: **Széf zárolása most** alvás előtt) → „…: nem csatlakozott újra”, alatta „Az újracsatlakozáshoz oldd fel a széfet.”
-- [ ] Egyszer használatos kódos (MFA) kapcsolat újracsatlakozásakor a kódbekérő ablak újra megjelenik; **Mégse** → nincs további próbálkozás és nincs „nem sikerült újracsatlakozni” értesítés
-- [ ] Wi-Fin a hálózati próba élő futtatása (csak olvas) → az átjáró címe és MAC-je látszik; az SSID csak helymeghatározási engedéllyel, különben üres (akkor a MAC dönt). macOS: `cargo test --locked -p macvpn-platform-mac --test net_probe live_snapshot_of_this_mac -- --ignored --nocapture`; Windows (a laptopon, Git Bashben): `cargo test --locked -p macvpn-platform-win --test windows probe_the_network_snapshot -- --ignored --nocapture`
-- [ ] Windows: Modern Standby gépen (csak ha van ilyen gép) az alvás és az ébredés után az (a) eset működik; ha nem, jegyezd fel, hogy a Wi-Fi visszatérése (hálózatváltás) indította-e az újracsatlakozást
+- [x] (d) Kézi **Bontás**, alvás, ébresztés → a kapcsolat bontva marad, nincs értesítés
+- [x] (e) A kapcsolat **Automatikus újracsatlakozás** kapcsolója kikapcsolva, a kapcsolat alvás közben megszakad → nincs újracsatlakozás
+- [x] (f) OpenVPN `ping-restart`-tal (a labor OpenVPN-kapcsolata): 30 másodperc alvás, ébresztés → a kapcsolat végig „Csatlakozva”, nincs értesítés, a naplóban az OpenVPN saját újraindulása (`Inactivity timeout (--ping-restart)` vagy `Restart pause`)
+- [x] (f2) A 10.20.30.0/24-et route-oló WireGuard- vagy OpenVPN-kapcsolat otthon felépítve, a fedél lecsukva, a 10.20.30.0/24-es hálózaton („iroda”, vagy a második router) felnyitva → néhány másodpercen belül bontva, „…: megszakadt a kapcsolat”, alatta „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”; utána otthon egy újabb alvás után is bontva marad, amíg kézzel nem csatlakoztatod
+- [x] (f3) Ugyanez a kapcsolat egy „kávézóban” (másik Wi-Fi vagy telefonos hotspot) felnyitva → csatlakozva marad, nincs értesítés
+- [x] (g) Az Ethernet-kábel 20 másodpercre kihúzva egy olyan kapcsolattal, amely ettől megszakad → a kábel visszadugása után néhány másodpercen belül „…: újracsatlakozva”
+- [x] (h) Windows: Modern Standby laptopon (csak ha van ilyen gép), különben a VM alvó állapotával: ugyanaz, mint (a)
+- [x] Zárolt széffel ébresztve (macOS: **Széf zárolása most** alvás előtt) → „…: nem csatlakozott újra”, alatta „Az újracsatlakozáshoz oldd fel a széfet.”
+- [x] Egyszer használatos kódos (MFA) kapcsolat újracsatlakozásakor a kódbekérő ablak újra megjelenik; **Mégse** → nincs további próbálkozás és nincs „nem sikerült újracsatlakozni” értesítés
+- [x] Wi-Fin a hálózati próba élő futtatása (csak olvas) → az átjáró címe és MAC-je látszik; az SSID csak helymeghatározási engedéllyel, különben üres (akkor a MAC dönt). macOS: `cargo test --locked -p macvpn-platform-mac --test net_probe live_snapshot_of_this_mac -- --ignored --nocapture`; Windows (a laptopon, Git Bashben): `cargo test --locked -p macvpn-platform-win --test windows probe_the_network_snapshot -- --ignored --nocapture`
+- [x] Windows: Modern Standby gépen (csak ha van ilyen gép) az alvás és az ébredés után az (a) eset működik; ha nem, jegyezd fel, hogy a Wi-Fi visszatérése (hálózatváltás) indította-e az újracsatlakozást
 
 ### Hálózatvesztés a VPN alatt (2026-10-28, macOS és Windows)
 
 Mindkét terméken (MacVPN és WinVPN), típusonként: OpenVPN, WireGuard, strongSwan IKEv2 (macOS), L2TP / Cisco IPsec (macOS natív), L2TP/IPsec, IKEv2, SSTP (Windows VPN-kliens). A „vár” = a sor „Hálózatra vár…”, az ikon félig kitöltött pajzs, fölé víve „MacVPN – Hálózatra vár…” / „WinVPN – Hálózatra vár…”; sosem pipás pajzs.
 
-- [ ] (n1) Wi-Fi ki (egyetlen hálózat), **Automatikus újracsatlakozás** be → kb. 3 mp múlva vár, a menüben és a Kapcsolatok ablakban is; az ikon nem pipás. Wi-Fi vissza 1 percen belül → a túlélő alagút (OpenVPN, WireGuard, strongSwan) újra „Csatlakozva”, nincs értesítés; ami közben megszakadt, az „…: újracsatlakozva”. Jegyezd fel típusonként, melyik élte túl
-- [ ] (n2) Ugyanez kikapcsolt **Automatikus újracsatlakozás** mellett → a túlélő alagút újra „Csatlakozva”; a megszakadt kapcsolat bontva marad, „…: megszakadt a kapcsolat” értesítéssel, a DNS az eredeti (macOS: `scutil --dns`, Windows: `Get-DnsClientServerAddress`)
-- [ ] (n3) Ethernet-kábel kihúzva (Wi-Fi kikapcsolva) → ugyanaz, mint (n1); visszadugva ugyanaz, mint (n1)
-- [ ] (n4) Kábel kihúzva, de a Wi-Fi közben él → nincs várakozás (van másik fizikai hálózat), az ikon pipás marad
-- [ ] (n5) Rövid kiesés: Wi-Fi ki, 1–2 mp múlva vissza → semmi nem látszik (se „Hálózatra vár…”, se ikonváltás), nincs értesítés
-- [ ] (n6) Hosszú kiesés, kapcsolóval: Wi-Fi ki 2,5 percre → 2 perc után a kapcsolat bontva, értesítés „…: megszakadt a kapcsolat” / „2 percig nem volt hálózat. Újracsatlakozik, amikor visszajön a hálózat.”; a DNS és az útvonalak az eredetiek (`scutil --dns`, `netstat -rn` / `route print`); Wi-Fi vissza (ugyanaz a hálózat) → néhány mp-en belül „…: újracsatlakozva”
-- [ ] (n7) Hosszú kiesés, kapcsoló nélkül → 2 perc után bontva, „2 percig nem volt hálózat.”; Wi-Fi vissza → bontva marad
-- [ ] (n8) Másik Wi-Fi-re váltás: a kapcsolat otthon felépítve, Wi-Fi ki, egy másik Wi-Fi-hez (vagy hotspothoz) csatlakozás 2 percen belül → a túlélő alagút „Csatlakozva” marad (forgalom átmegy-e: jegyezd fel típusonként); 2 perc után → bontva, majd „…: nem csatlakozott újra” / „Másik hálózaton vagy.”
-- [ ] (n9) Váltás az „irodai” hálózatra (a 10.20.30.0/24-et adó második router) kiesés után, túlélő alagúttal → bontva, „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”
-- [ ] (n10) Párosított app (vezérlő API) által indított kapcsolat, hosszú kiesés → 2 perc után bontva („2 percig nem volt hálózat.” a második mondat nélkül), a hálózat visszatérése után sem csatlakozik újra
-- [ ] (n11) Csatlakozás indítása hálózat nélkül → néhány mp múlva „Hálózatra vár…”
-- [ ] (n12) Kiesés közben a sor kapcsolójával **Bontás** → azonnal bontva, a „Hálózatra vár…” eltűnik, a hálózat visszatérése után sem csatlakozik újra
-- [ ] (n13) Alvás hálózat nélkül (Wi-Fi ki, fedél le 5 percre, fel) → ébredés után nem bont azonnal; a 2 perces határ az ébredéstől számít
-- [ ] (n14) Nyelvváltás várakozás közben → a sor és az ikon felirata azonnal az új nyelvű
-- [ ] (n15) Windows: a VPN saját adaptere (TAP, Wintun, WireGuard, a Windows VPN-kliens PPP-adaptere) nem számít hálózatnak: Wi-Fi ki egy felépült kapcsolattal → vár (nem marad pipás)
+- [x] (n1) Wi-Fi ki (egyetlen hálózat), **Automatikus újracsatlakozás** be → kb. 3 mp múlva vár, a menüben és a Kapcsolatok ablakban is; az ikon nem pipás. Wi-Fi vissza 1 percen belül → a túlélő alagút (OpenVPN, WireGuard, strongSwan) újra „Csatlakozva”, nincs értesítés; ami közben megszakadt, az „…: újracsatlakozva”. Jegyezd fel típusonként, melyik élte túl
+- [x] (n2) Ugyanez kikapcsolt **Automatikus újracsatlakozás** mellett → a túlélő alagút újra „Csatlakozva”; a megszakadt kapcsolat bontva marad, „…: megszakadt a kapcsolat” értesítéssel, a DNS az eredeti (macOS: `scutil --dns`, Windows: `Get-DnsClientServerAddress`)
+- [x] (n3) Ethernet-kábel kihúzva (Wi-Fi kikapcsolva) → ugyanaz, mint (n1); visszadugva ugyanaz, mint (n1)
+- [x] (n4) Kábel kihúzva, de a Wi-Fi közben él → nincs várakozás (van másik fizikai hálózat), az ikon pipás marad
+- [x] (n5) Rövid kiesés: Wi-Fi ki, 1–2 mp múlva vissza → semmi nem látszik (se „Hálózatra vár…”, se ikonváltás), nincs értesítés
+- [x] (n6) Hosszú kiesés, kapcsolóval: Wi-Fi ki 2,5 percre → 2 perc után a kapcsolat bontva, értesítés „…: megszakadt a kapcsolat” / „2 percig nem volt hálózat. Újracsatlakozik, amikor visszajön a hálózat.”; a DNS és az útvonalak az eredetiek (`scutil --dns`, `netstat -rn` / `route print`); Wi-Fi vissza (ugyanaz a hálózat) → néhány mp-en belül „…: újracsatlakozva”
+- [x] (n7) Hosszú kiesés, kapcsoló nélkül → 2 perc után bontva, „2 percig nem volt hálózat.”; Wi-Fi vissza → bontva marad
+- [x] (n8) Másik Wi-Fi-re váltás: a kapcsolat otthon felépítve, Wi-Fi ki, egy másik Wi-Fi-hez (vagy hotspothoz) csatlakozás 2 percen belül → a túlélő alagút „Csatlakozva” marad (forgalom átmegy-e: jegyezd fel típusonként); 2 perc után → bontva, majd „…: nem csatlakozott újra” / „Másik hálózaton vagy.”
+- [x] (n9) Váltás az „irodai” hálózatra (a 10.20.30.0/24-et adó második router) kiesés után, túlélő alagúttal → bontva, „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”
+- [x] (n10) Párosított app (vezérlő API) által indított kapcsolat, hosszú kiesés → 2 perc után bontva („2 percig nem volt hálózat.” a második mondat nélkül), a hálózat visszatérése után sem csatlakozik újra
+- [x] (n11) Csatlakozás indítása hálózat nélkül → néhány mp múlva „Hálózatra vár…”
+- [x] (n12) Kiesés közben a sor kapcsolójával **Bontás** → azonnal bontva, a „Hálózatra vár…” eltűnik, a hálózat visszatérése után sem csatlakozik újra
+- [x] (n13) Alvás hálózat nélkül (Wi-Fi ki, fedél le 5 percre, fel) → ébredés után nem bont azonnal; a 2 perces határ az ébredéstől számít
+- [x] (n14) Nyelvváltás várakozás közben → a sor és az ikon felirata azonnal az új nyelvű
+- [x] (n15) Windows: a VPN saját adaptere (TAP, Wintun, WireGuard, a Windows VPN-kliens PPP-adaptere) nem számít hálózatnak: Wi-Fi ki egy felépült kapcsolattal → vár (nem marad pipás)
 
 ### Halott alagút észlelése (2026-10-28, macOS és Windows)
 
 Előfeltétel: a VPN-labor fut (lásd „A VPN-labor előkészítése”), a labor egy szolgáltatása a laborgépen `docker compose -p macvpn-lab -f scripts/vpn-lab/compose.yaml stop <szolgáltatás>` paranccsal áll le és `… start <szolgáltatás>` paranccsal indul (lent röviden `docker compose stop …`); a kliens hálózata végig él (Wi-Fi és kábel marad). A labor WireGuard-profiljában `PersistentKeepalive = 25` van, az OpenVPN-szerveren `keepalive 10 60` (a kliens 60 mp után `ping-restart`). A „halott” jelzés: értesítés „…: nem válaszol”, alatta a kimenet; a „Nem válaszol” sor piros; a „Újracsatlakozás…” sor sárga, a pajzs félig kitöltött, sosem pipás. A WinVPN-en a 2.0.3-as WinVPN Service kell.
 
-- [ ] macOS: a 2.0.2-ről 2.0.3-ra frissítve a Rendszerállapot „Frissítés szükséges (9 → 10)” sort mutat; addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-sorok „Nem használható: …”; **Engedélyezés** után „Telepítve (verzió 10)”, és minden sor normál. Frissítés előtt egy élő kapcsolat: az Engedélyezés bontja, utána (Automatikus újracsatlakozással) magától újra felépül
-- [ ] macOS: a 10-es root réteg kézzel: `sudo /usr/local/libexec/macvpn/mvpn liveness <egy élő WireGuard-kapcsolat azonosítója>` → `wireguard 1` és egy `peer …` sor, csak számokkal (se kulcs, se cím, se `utun`); egy OpenVPN-kapcsolatnál `openvpn up`; ismeretlen azonosítóval kimenet nélkül, kilépési kód 1
-- [ ] (d0) **IKEv2 halott-társ észlelés (macOS)**: a labor `ikev2-psk.swanctl.conf` profiljával (`dpd_delay` nélkül) csatlakozás, a naplóban „dead peer detection added (dpd_delay = 30s)” / magyarul „halott-társ észlelés hozzáadva…”; `sudo swanctl --list-conns` → a kapcsolatnál `dpd_delay 30s` (vagy `DPD: 30s`). A labor IPsec-szerverét leállítva (`docker compose stop ipsec`) kb. 3–4 percen belül „…: megszakadt a kapcsolat”, majd újracsatlakozási próbák. Egy `dpd_delay = 0s` sorral bővített configgal: nincs hozzáadás (a naplóban nincs ilyen sor)
-- [ ] (d1) **WireGuard, a szerver eltűnik** (`PersistentKeepalive`-val): csatlakozás a labor WireGuard-profiljával, majd a laborgépen `docker compose stop wireguard` → kb. 3½–4 percen belül „…: nem válaszol” / „A VPN-szerver nem válaszol. A kapcsolat újracsatlakozik.”; a kapcsolat bont és újra felépül (a WireGuard szerver nélkül is „felépül”), majd újabb 3½–4 perc után újra; a 4. alkalommal „3 újracsatlakozás után is újra elnémult. 5 percenként újrapróbálja, legfeljebb egy órán át.”, a sor „Újrapróbálás 5 perc múlva” (percenként csökken), 5 percenként egy próbálkozás (értesítés nélkül), egy óra után „…: nem sikerült újracsatlakozni” / „Egy órán át próbálkozott. Csatlakoztasd újra, ha a szerver ismét elérhető.”, a sor „Nem válaszol”, a pajzson felkiáltójel. Közben a DNS és az útvonalak minden bontás után az eredetiek (macOS: `scutil --dns`, `netstat -rn`; Windows: `Get-DnsClientServerAddress`, `route print`). `docker compose start wireguard`, a sor kapcsolójával csatlakozás → rendben
-- [ ] (d2) Ugyanez, de a szerver 3 percen belül visszajön (`docker compose start wireguard`) → nincs értesítés, a kapcsolat végig él
-- [ ] (d3) **Tétlen WireGuard `PersistentKeepalive` nélkül**: a labor WireGuard-profiljából a `PersistentKeepalive` sor törölve, csatlakozás, semmi forgalom a VPN felé (böngésző bezárva) → 15 percig nincs „nem válaszol”, a sor végig „Csatlakozva”. Ezután `docker compose stop wireguard`, majd forgalom a VPN felé (`curl -m 5 http://10.99.0.10/` többször, vagy `ping 10.99.0.10`) → kb. 3–6 percen belül „…: nem válaszol”
-- [ ] (d4) **OpenVPN, a szerver leáll**: csatlakozás a labor `openvpn-tun-dco.ovpn` profiljával, `docker compose stop openvpn` → kb. 1 perc múlva (a `ping-restart` után) a sor „Újracsatlakozás…”, a menüsor / tálca ikonja félig kitöltött pajzs („… – Csatlakozás…”), sosem pipás; további 2 perc után „…: nem válaszol” / „… A kapcsolat újracsatlakozik.”, majd az újracsatlakozás nem sikerül (a szerver áll): 10 és 30 mp múlva újra próbál, végül „…: nem sikerült újracsatlakozni” / „A szerver nem válaszol.” (vagy „A szerver nem érhető el.”)
-- [ ] (d5) OpenVPN, a szerver 2 percen belül visszajön (`docker compose start openvpn` a „Újracsatlakozás…” alatt) → az OpenVPN magától visszaáll, a sor újra „Csatlakozva”, nincs értesítés
-- [ ] (d6) **Kikapcsolt Automatikus újracsatlakozás**: (d1) vagy (d4) a kapcsolat részleteinél kikapcsolt **Automatikus újracsatlakozás**sal → „A VPN-szerver nem válaszol, ezért a kapcsolat bontva lett.”, a sor „Nem válaszol” (piros), a pajzson felkiáltójel; nem csatlakozik újra. A sor kapcsolójával csatlakozás → a „Nem válaszol” eltűnik; vagy **Bontás**/semmi: marad, amíg nem csatlakoztatod
-- [ ] (d7) **Párosított app** (vezérlő API) által indított kapcsolat, (d1) → bontva, „… ezért a kapcsolat bontva lett.”, sosem csatlakozik újra
-- [ ] (d8) Hálózatvesztés közben nincs kettős bontás: (d1) közben a Wi-Fi ki → „Hálózatra vár…”, nincs „nem válaszol”; 2 perc után csak a „2 percig nem volt hálózat.” értesítés jön
-- [ ] (d9) Alvás alatt nincs észlelés: (d1) indítva, fedél le 10 percre, fel → ébredés után nem bont azonnal; ha a szerver áll, az ébredés után ~3½–4 perccel jön a „nem válaszol”
-- [ ] (d10) **OpenVPN `ping-exit`**: egy OpenVPN-profil `ping 10` + `ping-exit 60` sorokkal (a `keepalive` helyett), `docker compose stop openvpn` → kb. 1 perc múlva „…: megszakadt a kapcsolat” / „A szerver nem válaszol.”, majd újracsatlakozási próbák (Automatikus újracsatlakozással), végül „…: nem sikerült újracsatlakozni”
-- [ ] (d11) **A motor leáll**: macOS: élő OpenVPN-nél `sudo pkill -f 'openvpn.*<azonosító>'`; Windows: rendszergazdaként `taskkill.exe /F /IM openvpn.exe` → „…: megszakadt a kapcsolat”, néhány mp múlva „…: újracsatlakozva”. Háromszor egymás után 10 percen belül → a negyedik után már nem csatlakozik újra
-- [ ] (d12) **Az app újraindul élő kapcsolattal**: kilépés a kilépés kérdésénél **Kilépés, fussanak tovább** gombbal (a kapcsolat fennmarad), újraindítás → a kapcsolat „Csatlakozva”; utána (d1) → újracsatlakozik ugyanazon a hálózaton (nem „A hálózatot nem sikerült azonosítani.”)
-- [ ] (d13) Windows: a WinVPN Service újraindul élő kapcsolattal (rendszergazdaként `Restart-Service WinVPN`) → „…: megszakadt a kapcsolat”, majd „…: újracsatlakozva”, ha a szolgáltatás visszajött
-- [ ] (d13a) **Lassú próbálkozás**: OpenVPN a leállított labor-szerverrel → a 3 gyors próbálkozás után „…: nem sikerült újracsatlakozni” / „A szerver nem válaszol. 5 percenként újrapróbálja, legfeljebb egy órán át.”, a sor „Újrapróbálás 5 perc múlva”; a szerver 10 perc múlva visszaindítva → a következő próbálkozás felépíti („…: újracsatlakozva”). Közben a sor kapcsolójával **Bontás** (vagy **Csatlakozás**, vagy az **Automatikus újracsatlakozás** ki) → azonnal abbamarad, nincs több próbálkozás. Wi-Fi ki a várakozás alatt → nem próbálkozik, amíg nincs hálózat
-- [ ] (d13b) **Párosított app kapcsolata újraindítás után**: egy párosított app indít egy kapcsolatot, kilépés **Kilépés, fussanak tovább**, újraindítás → a kapcsolat „Csatlakozva”; a labor szerverét leállítva → bontva, „… ezért a kapcsolat bontva lett.”, sosem csatlakozik újra. Ugyanez, de újraindítás után a felhasználó a sor kapcsolójával bontja és újra csatlakoztatja → ezután már a felhasználóé: leállított szervernél újracsatlakozik
-- [ ] (d14) Nyelvváltás „Újracsatlakozás…” / „Nem válaszol” közben → a sor és az ikon felirata azonnal az új nyelvű
+- [x] macOS: a 2.0.2-ről 2.0.3-ra frissítve a Rendszerállapot „Frissítés szükséges (9 → 10)” sort mutat; addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-sorok „Nem használható: …”; **Engedélyezés** után „Telepítve (verzió 10)”, és minden sor normál. Frissítés előtt egy élő kapcsolat: az Engedélyezés bontja, utána (Automatikus újracsatlakozással) magától újra felépül
+- [x] macOS: a 10-es root réteg kézzel: `sudo /usr/local/libexec/macvpn/mvpn liveness <egy élő WireGuard-kapcsolat azonosítója>` → `wireguard 1` és egy `peer …` sor, csak számokkal (se kulcs, se cím, se `utun`); egy OpenVPN-kapcsolatnál `openvpn up`; ismeretlen azonosítóval kimenet nélkül, kilépési kód 1
+- [x] (d0) **IKEv2 halott-társ észlelés (macOS)**: a labor `ikev2-psk.swanctl.conf` profiljával (`dpd_delay` nélkül) csatlakozás, a naplóban „dead peer detection added (dpd_delay = 30s)” / magyarul „halott-társ észlelés hozzáadva…”; `sudo swanctl --list-conns` → a kapcsolatnál `dpd_delay 30s` (vagy `DPD: 30s`). A labor IPsec-szerverét leállítva (`docker compose stop ipsec`) kb. 3–4 percen belül „…: megszakadt a kapcsolat”, majd újracsatlakozási próbák. Egy `dpd_delay = 0s` sorral bővített configgal: nincs hozzáadás (a naplóban nincs ilyen sor)
+- [x] (d1) **WireGuard, a szerver eltűnik** (`PersistentKeepalive`-val): csatlakozás a labor WireGuard-profiljával, majd a laborgépen `docker compose stop wireguard` → kb. 3½–4 percen belül „…: nem válaszol” / „A VPN-szerver nem válaszol. A kapcsolat újracsatlakozik.”; a kapcsolat bont és újra felépül (a WireGuard szerver nélkül is „felépül”), majd újabb 3½–4 perc után újra; a 4. alkalommal „3 újracsatlakozás után is újra elnémult. 5 percenként újrapróbálja, legfeljebb egy órán át.”, a sor „Újrapróbálás 5 perc múlva” (percenként csökken), 5 percenként egy próbálkozás (értesítés nélkül), egy óra után „…: nem sikerült újracsatlakozni” / „Egy órán át próbálkozott. Csatlakoztasd újra, ha a szerver ismét elérhető.”, a sor „Nem válaszol”, a pajzson felkiáltójel. Közben a DNS és az útvonalak minden bontás után az eredetiek (macOS: `scutil --dns`, `netstat -rn`; Windows: `Get-DnsClientServerAddress`, `route print`). `docker compose start wireguard`, a sor kapcsolójával csatlakozás → rendben
+- [x] (d2) Ugyanez, de a szerver 3 percen belül visszajön (`docker compose start wireguard`) → nincs értesítés, a kapcsolat végig él
+- [x] (d3) **Tétlen WireGuard `PersistentKeepalive` nélkül**: a labor WireGuard-profiljából a `PersistentKeepalive` sor törölve, csatlakozás, semmi forgalom a VPN felé (böngésző bezárva) → 15 percig nincs „nem válaszol”, a sor végig „Csatlakozva”. Ezután `docker compose stop wireguard`, majd forgalom a VPN felé (`curl -m 5 http://10.99.0.10/` többször, vagy `ping 10.99.0.10`) → kb. 3–6 percen belül „…: nem válaszol”
+- [x] (d4) **OpenVPN, a szerver leáll**: csatlakozás a labor `openvpn-tun-dco.ovpn` profiljával, `docker compose stop openvpn` → kb. 1 perc múlva (a `ping-restart` után) a sor „Újracsatlakozás…”, a menüsor / tálca ikonja félig kitöltött pajzs („… – Csatlakozás…”), sosem pipás; további 2 perc után „…: nem válaszol” / „… A kapcsolat újracsatlakozik.”, majd az újracsatlakozás nem sikerül (a szerver áll): 10 és 30 mp múlva újra próbál, végül „…: nem sikerült újracsatlakozni” / „A szerver nem válaszol.” (vagy „A szerver nem érhető el.”)
+- [x] (d5) OpenVPN, a szerver 2 percen belül visszajön (`docker compose start openvpn` a „Újracsatlakozás…” alatt) → az OpenVPN magától visszaáll, a sor újra „Csatlakozva”, nincs értesítés
+- [x] (d6) **Kikapcsolt Automatikus újracsatlakozás**: (d1) vagy (d4) a kapcsolat részleteinél kikapcsolt **Automatikus újracsatlakozás**sal → „A VPN-szerver nem válaszol, ezért a kapcsolat bontva lett.”, a sor „Nem válaszol” (piros), a pajzson felkiáltójel; nem csatlakozik újra. A sor kapcsolójával csatlakozás → a „Nem válaszol” eltűnik; vagy **Bontás**/semmi: marad, amíg nem csatlakoztatod
+- [x] (d7) **Párosított app** (vezérlő API) által indított kapcsolat, (d1) → bontva, „… ezért a kapcsolat bontva lett.”, sosem csatlakozik újra
+- [x] (d8) Hálózatvesztés közben nincs kettős bontás: (d1) közben a Wi-Fi ki → „Hálózatra vár…”, nincs „nem válaszol”; 2 perc után csak a „2 percig nem volt hálózat.” értesítés jön
+- [x] (d9) Alvás alatt nincs észlelés: (d1) indítva, fedél le 10 percre, fel → ébredés után nem bont azonnal; ha a szerver áll, az ébredés után ~3½–4 perccel jön a „nem válaszol”
+- [x] (d10) **OpenVPN `ping-exit`**: egy OpenVPN-profil `ping 10` + `ping-exit 60` sorokkal (a `keepalive` helyett), `docker compose stop openvpn` → kb. 1 perc múlva „…: megszakadt a kapcsolat” / „A szerver nem válaszol.”, majd újracsatlakozási próbák (Automatikus újracsatlakozással), végül „…: nem sikerült újracsatlakozni”
+- [x] (d11) **A motor leáll**: macOS: élő OpenVPN-nél `sudo pkill -f 'openvpn.*<azonosító>'`; Windows: rendszergazdaként `taskkill.exe /F /IM openvpn.exe` → „…: megszakadt a kapcsolat”, néhány mp múlva „…: újracsatlakozva”. Háromszor egymás után 10 percen belül → a negyedik után már nem csatlakozik újra
+- [x] (d12) **Az app újraindul élő kapcsolattal**: kilépés a kilépés kérdésénél **Kilépés, fussanak tovább** gombbal (a kapcsolat fennmarad), újraindítás → a kapcsolat „Csatlakozva”; utána (d1) → újracsatlakozik ugyanazon a hálózaton (nem „A hálózatot nem sikerült azonosítani.”)
+- [x] (d13) Windows: a WinVPN Service újraindul élő kapcsolattal (rendszergazdaként `Restart-Service WinVPN`) → „…: megszakadt a kapcsolat”, majd „…: újracsatlakozva”, ha a szolgáltatás visszajött
+- [x] (d13a) **Lassú próbálkozás**: OpenVPN a leállított labor-szerverrel → a 3 gyors próbálkozás után „…: nem sikerült újracsatlakozni” / „A szerver nem válaszol. 5 percenként újrapróbálja, legfeljebb egy órán át.”, a sor „Újrapróbálás 5 perc múlva”; a szerver 10 perc múlva visszaindítva → a következő próbálkozás felépíti („…: újracsatlakozva”). Közben a sor kapcsolójával **Bontás** (vagy **Csatlakozás**, vagy az **Automatikus újracsatlakozás** ki) → azonnal abbamarad, nincs több próbálkozás. Wi-Fi ki a várakozás alatt → nem próbálkozik, amíg nincs hálózat
+- [x] (d13b) **Párosított app kapcsolata újraindítás után**: egy párosított app indít egy kapcsolatot, kilépés **Kilépés, fussanak tovább**, újraindítás → a kapcsolat „Csatlakozva”; a labor szerverét leállítva → bontva, „… ezért a kapcsolat bontva lett.”, sosem csatlakozik újra. Ugyanez, de újraindítás után a felhasználó a sor kapcsolójával bontja és újra csatlakoztatja → ezután már a felhasználóé: leállított szervernél újracsatlakozik
+- [x] (d14) Nyelvváltás „Újracsatlakozás…” / „Nem válaszol” közben → a sor és az ikon felirata azonnal az új nyelvű
 
 ### Hálózatváltás élő kapcsolattal (2026-10-28, macOS és Windows)
 
 Előfeltétel: két hálózat, mindkettő eléri a labort (például két Wi-Fi, vagy Wi-Fi és kábel, vagy egy telefonos hotspot, ha a labor publikus címen fut); a kapcsolatokon **Automatikus újracsatlakozás** be, ha a pont mást nem mond.
 
-- [ ] (s1) **Wi-Fi A → Wi-Fi B** WireGuarddal (a labor profilja): a kapcsolat a váltás után vagy „Csatlakozva” marad, és a forgalom átmegy (`curl http://10.99.0.10/`) — nincs értesítés; vagy ha nem megy át (a szerver nem éri el az új címet), a váltás után kb. 30–60 mp-en belül „…: nem válaszol” / „… A kapcsolat újracsatlakozik.”, majd „…: újracsatlakozva” **az új hálózaton**. Jegyezd fel, melyik történt
-- [ ] (s2) Ugyanez OpenVPN-nel: túlél (az OpenVPN „Újracsatlakozás…”-t mutathat pár mp-ig, majd „Csatlakozva”), vagy ha 1 percig „Újracsatlakozás…”, akkor „nem válaszol” és újracsatlakozás az új hálózaton
-- [ ] (s3) **Wi-Fi → kábel**: Wi-Fin csatlakozva, kábel bedugva, Wi-Fi ki → ugyanaz, mint (s1)/(s2)
-- [ ] (s4) **Telefonos hotspot**: otthoni Wi-Fin csatlakozva, átváltás a hotspotra → ugyanaz, mint (s1)/(s2)
-- [ ] (s5) Váltás az „irodai” hálózatra (a 10.20.30.0/24-et adó második router) az „Office VPN”-nel → azonnal bontva, „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”; nem csatlakozik újra
-- [ ] (s6) Kikapcsolt **Automatikus újracsatlakozás**, váltás, a kapcsolat nem viszi a forgalmat → „A VPN-szerver nem válaszol, ezért a kapcsolat bontva lett.”, „Nem válaszol” sor, nem csatlakozik újra
-- [ ] (s7) Párosított app által indított kapcsolat, váltás, nem viszi a forgalmat → bontva, sosem csatlakozik újra
-- [ ] (s8) Wi-Fi ki, 1 percen belül egy másik Wi-Fi be (vissza a „Hálózatra vár…”-ból, másik hálózaton) → ugyanaz, mint (s1)/(s2): a működő alagút marad, a halottat az új hálózaton csatlakoztatja újra; 2 percnél hosszabb kiesés után marad a régi szabály (bontva, majd „Másik hálózaton vagy.”)
-- [ ] (s9) Alvás után másik hálózaton ébredés **nem** váltás: a megszakadt kapcsolat „…: nem csatlakozott újra” / „Másik hálózaton vagy.” (a régi szabály)
-- [ ] (s10) macOS: L2TP / Cisco IPsec (natív) kapcsolat, Wi-Fi A → B: ha a macOS bontja, „…: megszakadt a kapcsolat”, majd „…: újracsatlakozva” az új hálózaton; Windows: L2TP/IKEv2/SSTP ugyanez (a Windows VPN-kliense maga is újrahívhat)
+- [x] (s1) **Wi-Fi A → Wi-Fi B** WireGuarddal (a labor profilja): a kapcsolat a váltás után vagy „Csatlakozva” marad, és a forgalom átmegy (`curl http://10.99.0.10/`) — nincs értesítés; vagy ha nem megy át (a szerver nem éri el az új címet), a váltás után kb. 30–60 mp-en belül „…: nem válaszol” / „… A kapcsolat újracsatlakozik.”, majd „…: újracsatlakozva” **az új hálózaton**. Jegyezd fel, melyik történt
+- [x] (s2) Ugyanez OpenVPN-nel: túlél (az OpenVPN „Újracsatlakozás…”-t mutathat pár mp-ig, majd „Csatlakozva”), vagy ha 1 percig „Újracsatlakozás…”, akkor „nem válaszol” és újracsatlakozás az új hálózaton
+- [x] (s3) **Wi-Fi → kábel**: Wi-Fin csatlakozva, kábel bedugva, Wi-Fi ki → ugyanaz, mint (s1)/(s2)
+- [x] (s4) **Telefonos hotspot**: otthoni Wi-Fin csatlakozva, átváltás a hotspotra → ugyanaz, mint (s1)/(s2)
+- [x] (s5) Váltás az „irodai” hálózatra (a 10.20.30.0/24-et adó második router) az „Office VPN”-nel → azonnal bontva, „A VPN hálózata itt közvetlenül elérhető, ezért a kapcsolat bontva lett.”; nem csatlakozik újra
+- [x] (s6) Kikapcsolt **Automatikus újracsatlakozás**, váltás, a kapcsolat nem viszi a forgalmat → „A VPN-szerver nem válaszol, ezért a kapcsolat bontva lett.”, „Nem válaszol” sor, nem csatlakozik újra
+- [x] (s7) Párosított app által indított kapcsolat, váltás, nem viszi a forgalmat → bontva, sosem csatlakozik újra
+- [x] (s8) Wi-Fi ki, 1 percen belül egy másik Wi-Fi be (vissza a „Hálózatra vár…”-ból, másik hálózaton) → ugyanaz, mint (s1)/(s2): a működő alagút marad, a halottat az új hálózaton csatlakoztatja újra; 2 percnél hosszabb kiesés után marad a régi szabály (bontva, majd „Másik hálózaton vagy.”)
+- [x] (s9) Alvás után másik hálózaton ébredés **nem** váltás: a megszakadt kapcsolat „…: nem csatlakozott újra” / „Másik hálózaton vagy.” (a régi szabály)
+- [x] (s10) macOS: L2TP / Cisco IPsec (natív) kapcsolat, Wi-Fi A → B: ha a macOS bontja, „…: megszakadt a kapcsolat”, majd „…: újracsatlakozva” az új hálózaton; Windows: L2TP/IKEv2/SSTP ugyanez (a Windows VPN-kliense maga is újrahívhat)
+
+### Forgalmi adatok (2026-10-29, macOS és Windows)
+
+Csatlakozott kapcsolatnál a menü kártyáján az IP és az eltelt idő alatt, a Kapcsolatok ablak részleteinek fejlécében (és egy rendszer VPN részleteiben) egy sor mutatja a kapcsolat óta letöltött és feltöltött adatot és az aktuális sebességet: „↓ 12.4 MB  ↑ 1.2 MB · ↓ 350 kB/s  ↑ 20.0 kB/s”. Mértékegységek: 1000-es lépcsők (B, kB, MB, GB, TB), 100 alatt egy tizedes. Források: macOS OpenVPN/WireGuard/SSTP a jelentett `utun` / `ppp` interfész; macOS strongSwan a 11-es root réteg `mvpn traffic` parancsa (CHILD_SA-számlálók); macOS natív és rendszer VPN `SCNetworkConnectionCopyStatistics`; Windows OpenVPN a szolgáltatás `traffic` parancsa (OpenVPN `>BYTECOUNT`), WireGuard az adapter, RAS-kapcsolatok a Windows statisztikája.
+
+- [ ] (f1) macOS **OpenVPN**, **WireGuard**, **SSTP**: csatlakozás után 1–2 mp-en belül megjelenik a sor; `curl -o /dev/null http://10.99.0.10/<nagy fájl>` közben a ↓ összeg nő, a sebesség nagyjából a `curl` által mutatott érték (± a 3 mp-es simítás)
+- [ ] (f2) macOS **strongSwan (IKEv2)**: 2.0.3-ról frissítve előbb „Frissítés szükséges (10 → 11)”; amíg nincs Engedélyezés, nincs forgalmi sor (soha nem „0 B”), utána megjelenik és nő. Az IP a virtuális IP (`swanctl --list-sas`); egy CHILD_SA-újrakulcsolás (vagy a labor rövid `rekey_time`-ja) után az összeg nem csökken
+- [ ] (f2b) macOS natív **L2TP / Cisco IPsec** (és egy MacVPN-en kívüli rendszer VPN): a sorban megjelenik az IP és — ha az app látta a csatlakozást — az eltelt idő, alatta a forgalmi sor, nagy letöltésnél nő. A már futó szolgáltatásnál (az app indítása előtt csatlakozott) az idő nem látszik, az IP és a forgalom igen
+- [ ] (f3) Windows **OpenVPN** DCO-val és TAP-Windows6-tal (`--disable-dco`-t kiváltó config): megjelenik a sor (forrás: a szolgáltatás `traffic` parancsa, OpenVPN `>BYTECOUNT`), nagy letöltésnél nő; az OpenVPN saját újracsatlakozása (szerver újraindítása, ugyanaz az `openvpn.exe`) után folytatódik; új csatlakozás 0-ról indul. Régebbi (2.0.3-as) szolgáltatással a sor az adapter számlálójából jön (vagy nem jelenik meg), hibaüzenet soha
+- [ ] (f4) Windows **WireGuard**: a sor megjelenik és nő
+- [ ] (f5) Windows **IKEv2**, **SSTP**, **L2TP/IPsec** (WinVPN-ben létrehozott) és egy **rendszer VPN** (saját Windows VPN): a sor megjelenik és nő; az L2TP-n és a rendszer VPN-en az IP is látszik, a rendszer VPN-nél a részletek fejlécében is
+- [ ] (f6) **Nagy letöltés** (legalább 1 GB, Windows RAS-on 4 GB fölött is, ha a labor bírja): az összeg MB-ról GB-ra vált („1.0 GB”), sosem csökken, nem ugrik vissza
+- [ ] (f7) **Tétlenség**: a letöltés vége után kb. 3–4 mp-en belül a sebesség „0 B/s” (vagy néhány B/s háttérforgalom), az összeg marad
+- [ ] (f8) **Újracsatlakozás megtartja az összeget**: OpenVPN-nél a labor szerverének újraindítása („Újracsatlakozás…”, majd „Csatlakozva”), WireGuardnál halott alagút → automatikus újracsatlakozás, alvás/ébredés otthon → a sor újra megjelenik, az összeg a korábbi értékről folytatódik (nem nulláz, nem negatív)
+- [ ] (f9) **Friss csatlakozás nulláz**: a kapcsolóval bontás, majd csatlakozás → az összeg kicsiről indul
+- [ ] (f10) **Magyar nyelv**: tizedesvessző („12,4 MB”, „1,3 MB/s”), a tooltip „A kapcsolódás óta: le …, fel … · Most: le …, fel …”; nyelvváltáskor a következő másodpercben már az új formátum
+- [ ] (f11) **Ablak rejtve / látható**: a menü és a Kapcsolatok ablak zárva → a háttérben csak az állapotlekérdezéssel (3 mp-enként, aktív kapcsolatnál) olvas, külön időzítő nincs (Tevékenységfigyelő / Feladatkezelő: a CPU nem nő); a menü megnyitásakor a sor azonnal a helyes összeggel jelenik meg, a sebesség 1–2 mp-en belül
+- [ ] (f12) A tálca/menüsor ikon és a tooltipje nem változott (a forgalom nincs benne)
 
 ### DNS-visszaállítás (macOS)
 
-- [ ] OpenVPN DNS-sel: csatlakozás → `scutil --dns` és `networksetup -getdnsservers Wi-Fi` a VPN DNS-ét mutatja, a naplóban „DNS set and verified on … network service(s)”; `sudo ls -l /var/db/macvpn/dns/` → a `ledger` fájl root tulajdonú, `-rw-------`, a mappa `drwx------`
-- [ ] Bontás → a DNS az eredeti (`networksetup -getdnsservers Wi-Fi` ugyanaz, mint csatlakozás előtt), a naplóban „original DNS restored and verified”, a `ledger` eltűnt
-- [ ] WireGuard `DNS =` sorral ugyanígy: csatlakozáskor a VPN DNS-e, bontáskor az eredeti, mindkettő ellenőrizve a naplóban
-- [ ] Két kapcsolat, A (OpenVPN) majd B (WireGuard), mindkettő DNS-sel: B DNS-e érvényes; A bontása → B DNS-e marad; B bontása → az eredeti DNS
-- [ ] Fordított sorrend: A, majd B, B bontása → A DNS-e jön vissza; A bontása → az eredeti DNS
-- [ ] Újraindítás kapcsolódás közben (**Kilépés, fussanak tovább**, majd az Apple-menü → Újraindítás): bejelentkezés és a MacVPN indítása után → a DNS az eredeti, a `ledger` eltűnt
-- [ ] `kill -9`: élő OpenVPN-kapcsolatnál `sudo pkill -9 -f 'openvpn.*<azonosító>'` → néhány másodpercen belül (a következő állapotlekérdezéskor) az eredeti DNS, a naplóban „original DNS restored and verified”; WireGuardnál `sudo pkill -9 wireguard-go` ugyanígy
-- [ ] Ha egy régebbi verzió VPN-DNS-t hagyott beállítva (ha előfordult): a Rendszerbeállítások → Hálózat → a szolgáltatás → Részletek… → DNS alatt kézzel visszaállítva → a weboldalak VPN nélkül megnyílnak; a 2.0 ezután nem hagy maradványt
+- [x] OpenVPN DNS-sel: csatlakozás → `scutil --dns` és `networksetup -getdnsservers Wi-Fi` a VPN DNS-ét mutatja, a naplóban „DNS set and verified on … network service(s)”; `sudo ls -l /var/db/macvpn/dns/` → a `ledger` fájl root tulajdonú, `-rw-------`, a mappa `drwx------`
+- [x] Bontás → a DNS az eredeti (`networksetup -getdnsservers Wi-Fi` ugyanaz, mint csatlakozás előtt), a naplóban „original DNS restored and verified”, a `ledger` eltűnt
+- [x] WireGuard `DNS =` sorral ugyanígy: csatlakozáskor a VPN DNS-e, bontáskor az eredeti, mindkettő ellenőrizve a naplóban
+- [x] Két kapcsolat, A (OpenVPN) majd B (WireGuard), mindkettő DNS-sel: B DNS-e érvényes; A bontása → B DNS-e marad; B bontása → az eredeti DNS
+- [x] Fordított sorrend: A, majd B, B bontása → A DNS-e jön vissza; A bontása → az eredeti DNS
+- [x] Újraindítás kapcsolódás közben (**Kilépés, fussanak tovább**, majd az Apple-menü → Újraindítás): bejelentkezés és a MacVPN indítása után → a DNS az eredeti, a `ledger` eltűnt
+- [x] `kill -9`: élő OpenVPN-kapcsolatnál `sudo pkill -9 -f 'openvpn.*<azonosító>'` → néhány másodpercen belül (a következő állapotlekérdezéskor) az eredeti DNS, a naplóban „original DNS restored and verified”; WireGuardnál `sudo pkill -9 wireguard-go` ugyanígy
+- [x] Ha egy régebbi verzió VPN-DNS-t hagyott beállítva (ha előfordult): a Rendszerbeállítások → Hálózat → a szolgáltatás → Részletek… → DNS alatt kézzel visszaállítva → a weboldalak VPN nélkül megnyílnak; a 2.0 ezután nem hagy maradványt
 
 ### Naplóméret-korlát
 
-- [ ] macOS: élő OpenVPN-kapcsolatnál `ps -ww -o args= -p $(pgrep -x openvpn)` → a parancssorban `--mute 20` a `--config` után
-- [ ] macOS: élő kapcsolat naplóját mesterségesen 5 MiB fölé növelve (`sudo sh -c 'head -c 6000000 /dev/zero | tr "\0" "x" | fold -w 100 >> /var/log/macvpn/<azonosító>.log'`) → a következő állapotlekérdezés után `ls -l /var/log/macvpn/<azonosító>.log*`: a `.log` kicsi, a `.log.1` legfeljebb 5 MiB; a kapcsolat él, a Napló fül tovább követi
-- [ ] macOS: egy régebbi verzióból maradt, 5 MiB-nál nagyobb `<azonosító>.log.1` a kapcsolat következő csatlakozásakor vagy bontásakor 5 MiB-ra rövidül
-- [ ] Windows: élő OpenVPN-kapcsolatnál rendszergazdai PowerShellben `Get-CimInstance Win32_Process -Filter "Name='openvpn.exe'" | Select-Object -ExpandProperty CommandLine` → benne `--mute 20`
-- [ ] Windows: hosszú, hibakereső módú OpenVPN-kapcsolat, amíg a napló eléri a 8 MiB-ot (`Get-Item C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log`) → megjelenik az `<AZONOSÍTÓ>.log.1`, az új napló első sora erről szól, a Napló fül elölről indul; a kapcsolat újbóli csatlakoztatása után a `.log.1` eltűnik
+- [x] macOS: élő OpenVPN-kapcsolatnál `ps -ww -o args= -p $(pgrep -x openvpn)` → a parancssorban `--mute 20` a `--config` után
+- [x] macOS: élő kapcsolat naplóját mesterségesen 5 MiB fölé növelve (`sudo sh -c 'head -c 6000000 /dev/zero | tr "\0" "x" | fold -w 100 >> /var/log/macvpn/<azonosító>.log'`) → a következő állapotlekérdezés után `ls -l /var/log/macvpn/<azonosító>.log*`: a `.log` kicsi, a `.log.1` legfeljebb 5 MiB; a kapcsolat él, a Napló fül tovább követi
+- [x] macOS: egy régebbi verzióból maradt, 5 MiB-nál nagyobb `<azonosító>.log.1` a kapcsolat következő csatlakozásakor vagy bontásakor 5 MiB-ra rövidül
+- [x] Windows: élő OpenVPN-kapcsolatnál rendszergazdai PowerShellben `Get-CimInstance Win32_Process -Filter "Name='openvpn.exe'" | Select-Object -ExpandProperty CommandLine` → benne `--mute 20`
+- [x] Windows: hosszú, hibakereső módú OpenVPN-kapcsolat, amíg a napló eléri a 8 MiB-ot (`Get-Item C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log`) → megjelenik az `<AZONOSÍTÓ>.log.1`, az új napló első sora erről szól, a Napló fül elölről indul; a kapcsolat újbóli csatlakoztatása után a `.log.1` eltűnik
 
 ### Napló: törlés és időszűrő
 
 A Kapcsolatok ablak Napló fülének két új funkciója (a smoke teszt `scripts/smoke/manage.js` a felületét és a megerősítést már ellenőrizte; itt a valódi naplók a kérdés).
 
-- [ ] **Napló törlése…** → a kérdés „Törlöd a naplót: <név>? Ez nem vonható vissza.” (angolul „Clear the log of <name>? This cannot be undone.”); **Mégse** → a napló változatlan
-- [ ] macOS: élő OpenVPN-kapcsolatnál **Napló törlése…** → megerősítve nincs jelszókérés; a Napló fül első sora „═══ Napló törölve: <idő> ═══”, alatta tovább jönnek az új sorok (például bontáskor a lépések); `ls -l /var/log/macvpn/<azonosító>.log*`: a `.log` kicsi, a `.log.1` (ha volt) 0 bájt, a tulajdonos és a `-rw-------` változatlan
-- [ ] macOS: ugyanez WireGuarddal, IKEv2-vel és SSTP-vel; L2TP/Cisco IPsec debug csatlakozás közben a gyűjtött sorok helyén a „Napló törölve” sor, a gyűjtés folytatódik
-- [ ] macOS: a törlés után a kapcsolat bontása és újracsatlakozása rendben (a root réteg naplózása nem akad meg; az állapot helyes)
-- [ ] Windows: élő OpenVPN- és WireGuard-kapcsolatnál **Napló törlése…** → a Napló fül elölről indul a „Napló törölve” sorral, az új sorok jönnek; rendszergazdaként `Get-ChildItem C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log*` → a `.log` kicsi, a `.log.1` eltűnt
-- [ ] Windows: egy L2TP-, IKEv2- és SSTP-kapcsolat naplója (`%LOCALAPPDATA%\WinVPN\logs\ras\<AZONOSÍTÓ>.log`) ugyanígy kiürül, csatlakozás közben is
-- [ ] Windows: két felhasználó a gépen (gyors felhasználóváltás): a másik felhasználó kapcsolatának naplóját a saját WinVPN-ünk nem látja és nem tudja törölni (a szolgáltatás „Érvénytelen azonosító”-val utasítja el)
-- [ ] Időszűrő: **Utolsó 5 perc** egy órája futó kapcsolatnál → csak az utolsó 5 perc sorai, a folytatósorok (idő nélküliek) az előttük lévő sorral együtt; **Ma**, **Utolsó óra** ugyanígy; **Bármikor** → minden sor
-- [ ] Időszűrő: **Egyéni időszak** → **Ettől**/**Eddig** helyi idővel; csak **Ettől** vagy csak **Eddig** is működik; a **Parancsok**/**Hibák** szűrővel és a kereséssel együtt; a **Másolás** pontosan a látható sorokat másolja
-- [ ] Időszűrő a különböző naplóformákkal: OpenVPN (`2026-10-28 14:03:05`), macOS WireGuard (`DEBUG: (utun5) 2026/10/28 14:03:05`, debug módban), macOS SSTP (`[pppd] Wed Oct 28 14:03:05 2026 : …`, debug módban), a `═══ … ═══` fejléc, a „Napló törölve” sor
+- [x] **Napló törlése…** → a kérdés „Törlöd a naplót: <név>? Ez nem vonható vissza.” (angolul „Clear the log of <name>? This cannot be undone.”); **Mégse** → a napló változatlan
+- [x] macOS: élő OpenVPN-kapcsolatnál **Napló törlése…** → megerősítve nincs jelszókérés; a Napló fül első sora „═══ Napló törölve: <idő> ═══”, alatta tovább jönnek az új sorok (például bontáskor a lépések); `ls -l /var/log/macvpn/<azonosító>.log*`: a `.log` kicsi, a `.log.1` (ha volt) 0 bájt, a tulajdonos és a `-rw-------` változatlan
+- [x] macOS: ugyanez WireGuarddal, IKEv2-vel és SSTP-vel; L2TP/Cisco IPsec debug csatlakozás közben a gyűjtött sorok helyén a „Napló törölve” sor, a gyűjtés folytatódik
+- [x] macOS: a törlés után a kapcsolat bontása és újracsatlakozása rendben (a root réteg naplózása nem akad meg; az állapot helyes)
+- [x] Windows: élő OpenVPN- és WireGuard-kapcsolatnál **Napló törlése…** → a Napló fül elölről indul a „Napló törölve” sorral, az új sorok jönnek; rendszergazdaként `Get-ChildItem C:\ProgramData\WinVPN\logs\<AZONOSÍTÓ>.log*` → a `.log` kicsi, a `.log.1` eltűnt
+- [x] Windows: egy L2TP-, IKEv2- és SSTP-kapcsolat naplója (`%LOCALAPPDATA%\WinVPN\logs\ras\<AZONOSÍTÓ>.log`) ugyanígy kiürül, csatlakozás közben is
+- [x] Windows: két felhasználó a gépen (gyors felhasználóváltás): a másik felhasználó kapcsolatának naplóját a saját WinVPN-ünk nem látja és nem tudja törölni (a szolgáltatás „Érvénytelen azonosító”-val utasítja el)
+- [x] Időszűrő: **Utolsó 5 perc** egy órája futó kapcsolatnál → csak az utolsó 5 perc sorai, a folytatósorok (idő nélküliek) az előttük lévő sorral együtt; **Ma**, **Utolsó óra** ugyanígy; **Bármikor** → minden sor
+- [x] Időszűrő: **Egyéni időszak** → **Ettől**/**Eddig** helyi idővel; csak **Ettől** vagy csak **Eddig** is működik; a **Parancsok**/**Hibák** szűrővel és a kereséssel együtt; a **Másolás** pontosan a látható sorokat másolja
+- [x] Időszűrő a különböző naplóformákkal: OpenVPN (`2026-10-28 14:03:05`), macOS WireGuard (`DEBUG: (utun5) 2026/10/28 14:03:05`, debug módban), macOS SSTP (`[pppd] Wed Oct 28 14:03:05 2026 : …`, debug módban), a `═══ … ═══` fejléc, a „Napló törölve” sor
 
 ### Motorfrissítések
 
-- [ ] macOS: ha `brew outdated openvpn wireguard-tools strongswan sstp-client bash` listáz valamit (ha nincs elavult csomag: **nem tesztelhető**) → a Rendszerállapot VPN-eszközök sora zöld marad, „openvpn: Frissítés elérhető: x → y”, és **Frissítés** gombot mutat; a gomb csak ezekre fut `brew upgrade`-et, a kimenet élőben; utána a sor ajánlat nélkül zöld
-- [ ] macOS: napi `brew update`: a MacVPN indítása után kb. egy perccel `defaults read local.macvpn lastBrewUpdate` friss időt mutat; 24 órán belüli újraindításkor nem fut újra (az érték nem változik); `defaults delete local.macvpn lastBrewUpdate` és újraindítás után kb. egy perccel újra lefut
-- [ ] macOS: hálózat nélkül indítva a `brew update` nem okoz hibasort a Rendszerállapotban; a hálózat visszatérése után legkésőbb egy órán belül lefut
-- [ ] Windows: a Rendszerállapot megnyitása után néhány másodperccel a WireGuard-sor „wireguard-nt 1.1.0” ajánlat nélkül (ha az 1.1 a legújabb), az OpenVPN-sor a winget vagy a hivatalos oldal ajánlatát mutatja, ha van újabb
-- [ ] Windows (rendszergazdai PowerShell): a Rendszerállapot megnyitása után a `C:\ProgramData\WinVPN\engines\wireguard-nt` mappa létezik és üres; `icacls.exe C:\ProgramData\WinVPN\engines\wireguard-nt` → csak SYSTEM és Administrators, védett; a `service.log`-ban nincs „wireguard-nt check:” sor
-- [ ] Windows: hálózat nélkül a Rendszerállapotban nincs hibasor és nincs **Frissítés**; a `service.log`-ban egy „wireguard-nt check: the listing: …” sor
-- [ ] Windows (ha megjelent újabb wireguard-nt): **Frissítés** élő WireGuard-kapcsolat mellett → „A wireguard-nt csak akkor frissíthető, ha ezen a gépen nincs élő WireGuard-kapcsolat. …”; bontás után → „A(z) <v> wireguard-nt telepítve.”, a sor `<v>`-t mutat, `Get-AuthenticodeSignature C:\ProgramData\WinVPN\engines\wireguard-nt\wireguard.dll` → WireGuard LLC, egy WireGuard-kapcsolat működik; `sc.exe stop WinVPN`, `sc.exe start WinVPN` → a sor továbbra is `<v>`, a `service.log`-ban „wireguard.dll <v> loaded (downloaded)”
-- [ ] Windows (ha a rögzítettnél újabb OpenVPN jelent meg, és a winget nem kínál újabbat): **Frissítés** → az `OpenVPN-<új>-I<nnn>-amd64.msi` a `%LOCALAPPDATA%\WinVPN\downloads` mappába töltődik, egy UAC-kérdés, az msiexec telepíti, utána a sor zöld az új verzióval
+- [x] macOS: ha `brew outdated openvpn wireguard-tools strongswan sstp-client bash` listáz valamit (ha nincs elavult csomag: **nem tesztelhető**) → a Rendszerállapot VPN-eszközök sora zöld marad, „openvpn: Frissítés elérhető: x → y”, és **Frissítés** gombot mutat; a gomb csak ezekre fut `brew upgrade`-et, a kimenet élőben; utána a sor ajánlat nélkül zöld
+- [x] macOS: napi `brew update`: a MacVPN indítása után kb. egy perccel `defaults read local.macvpn lastBrewUpdate` friss időt mutat; 24 órán belüli újraindításkor nem fut újra (az érték nem változik); `defaults delete local.macvpn lastBrewUpdate` és újraindítás után kb. egy perccel újra lefut
+- [x] macOS: hálózat nélkül indítva a `brew update` nem okoz hibasort a Rendszerállapotban; a hálózat visszatérése után legkésőbb egy órán belül lefut
+- [x] Windows: a Rendszerállapot megnyitása után néhány másodperccel a WireGuard-sor „wireguard-nt 1.1.0” ajánlat nélkül (ha az 1.1 a legújabb), az OpenVPN-sor a winget vagy a hivatalos oldal ajánlatát mutatja, ha van újabb
+- [x] Windows (rendszergazdai PowerShell): a Rendszerállapot megnyitása után a `C:\ProgramData\WinVPN\engines\wireguard-nt` mappa létezik és üres; `icacls.exe C:\ProgramData\WinVPN\engines\wireguard-nt` → csak SYSTEM és Administrators, védett; a `service.log`-ban nincs „wireguard-nt check:” sor
+- [x] Windows: hálózat nélkül a Rendszerállapotban nincs hibasor és nincs **Frissítés**; a `service.log`-ban egy „wireguard-nt check: the listing: …” sor
+- [x] Windows (ha megjelent újabb wireguard-nt): **Frissítés** élő WireGuard-kapcsolat mellett → „A wireguard-nt csak akkor frissíthető, ha ezen a gépen nincs élő WireGuard-kapcsolat. …”; bontás után → „A(z) <v> wireguard-nt telepítve.”, a sor `<v>`-t mutat, `Get-AuthenticodeSignature C:\ProgramData\WinVPN\engines\wireguard-nt\wireguard.dll` → WireGuard LLC, egy WireGuard-kapcsolat működik; `sc.exe stop WinVPN`, `sc.exe start WinVPN` → a sor továbbra is `<v>`, a `service.log`-ban „wireguard.dll <v> loaded (downloaded)”
+- [x] Windows (ha a rögzítettnél újabb OpenVPN jelent meg, és a winget nem kínál újabbat): **Frissítés** → az `OpenVPN-<új>-I<nnn>-amd64.msi` a `%LOCALAPPDATA%\WinVPN\downloads` mappába töltődik, egy UAC-kérdés, az msiexec telepíti, utána a sor zöld az új verzióval
 
 ### Frissítés 1.5 → 2.0 (macOS)
 
-- [ ] Az 1.5.0-ról a 2.0.0-ra frissítve a Rendszerállapot „Frissítés szükséges (8 → 9)” sort mutat; addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-sorok „Nem használható: Jogosultság (root scriptek + sudoers) – Rendszerállapot”; **Engedélyezés** és egy admin jelszó után minden sor normál
-- [ ] A frissítés után a **Kapcsolatértesítések** be van kapcsolva, a **Megjelenés** „Rendszer szerint”, minden kapcsolatnál az **Automatikus újracsatlakozás** be van kapcsolva; a széf, a kapcsolatok és a mappák változatlanok
-- [ ] (automatikus: a kiadás előtti `node scripts/l10n-baseline.mjs --check`, `docs/RELEASING.md` 2. lépés) egyetlen régi macOS-szöveg sem változott
+- [x] Az 1.5.0-ról a 2.0.0-ra frissítve a Rendszerállapot „Frissítés szükséges (8 → 9)” sort mutat; addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-sorok „Nem használható: Jogosultság (root scriptek + sudoers) – Rendszerállapot”; **Engedélyezés** és egy admin jelszó után minden sor normál
+- [x] A frissítés után a **Kapcsolatértesítések** be van kapcsolva, a **Megjelenés** „Rendszer szerint”, minden kapcsolatnál az **Automatikus újracsatlakozás** be van kapcsolva; a széf, a kapcsolatok és a mappák változatlanok
+- [x] (automatikus: a kiadás előtti `node scripts/l10n-baseline.mjs --check`, `docs/RELEASING.md` 2. lépés) egyetlen régi macOS-szöveg sem változott
 
 ## A VPN-labor előkészítése
 
@@ -216,17 +234,17 @@ Előfeltétel: a kiadott `WinVPN-2.0.0-x64.msi`; egy rendszergazdai fiók, egy n
 
 ### Telepítés és szolgáltatás (rendszergazda)
 
-- [ ] A 2.0.0-s MSI a korábbi WinVPN (1.5.0) fölé telepítve → frissít, nem második példány; a széf és a kapcsolatok megmaradnak
-- [ ] `sc.exe qc WinVPN` → `SERVICE_START_NAME : LocalSystem`, `START_TYPE : 2 AUTO_START`, `BINARY_PATH_NAME : "C:\Program Files\WinVPN\WinVPNService.exe" service`; `sc.exe query WinVPN` → `RUNNING`
-- [ ] `sc.exe qfailure WinVPN` → `RESET_PERIOD 86400`, `RESTART -- Delay = 5000` és `30000`; `sc.exe qfailureflag WinVPN` → TRUE; a `C:\ProgramData\WinVPN\service.log`-ban nincs „cannot set the recovery actions” sor
-- [ ] `icacls.exe C:\ProgramData\WinVPN` → csak SYSTEM és Administrators, védett (öröklés nélkül)
-- [ ] A `C:\Program Files\WinVPN` tartalma: `WinVPN.exe`, `WinVPNService.exe`, `wireguard.dll`, `THIRD-PARTY-NOTICES.txt`; `Get-AuthenticodeSignature "C:\Program Files\WinVPN\wireguard.dll"` → `Valid`, WireGuard LLC
-- [ ] `icacls.exe "C:\Program Files\WinVPN"` → védett (egyik sor sem `(I)`): SYSTEM és Administrators `(OI)(CI)(F)`, Users, Authenticated Users és a két „ALL … APPLICATION PACKAGES” csoport `(OI)(CI)(RX)`, más nincs; `icacls.exe "C:\Program Files\WinVPN\WinVPNService.exe"` → ugyanezek `(I)`-vel (biztonsági áttekintés 2. rész, P2-M2)
-- [ ] `msiexec.exe /i WinVPN-2.0.0-x64.msi INSTALLDIR=C:\WinVPN` (és a grafikus telepítő) → mappaválasztó nincs (Üdvözlő → Kész), a WinVPN mégis a `C:\Program Files\WinVPN` alá kerül, `C:\WinVPN` nem jön létre
-- [ ] Ugyanaz a 2.0.0-s MSI újra → lefut (azonos verzió frissítésként, P2-L2). Visszaléptetés: a tiltást a telepítendő csomag hordozza, ezért csak a 2.0.0-tól kiadott MSI-k tagadják meg; ha már van újabb kiadás (2.0.1+), a 2.0.0-s MSI fölötte → „A newer version of WinVPN is already installed.”, semmi nem változik (ha nincs: **nem tesztelhető**). Az 1.x MSI-k (még `AllowDowngrades`) továbbra is visszaléptetnének: ezeket ne kínáld letöltésre
-- [ ] `icacls.exe "C:\Program Files\WinVPN" /grant "*S-1-5-32-545:(OI)(CI)M"`, majd `sc.exe stop WinVPN`, `sc.exe start WinVPN` → nem indul; a `C:\ProgramData\WinVPN\service.log` utolsó sora „refusing to start: C:\Program Files\WinVPN\WinVPNService.exe is not admin-only …”; a 2.0.0-s MSI újratelepítése visszaállítja a jogosultságokat, a szolgáltatás fut
-- [ ] Élő OpenVPN-kapcsolat mellett `sc.exe stop WinVPN` → az alagút és az `openvpn.exe` eltűnik (Feladatkezelő); `sc.exe start WinVPN` → az app a kapcsolatot megszakadtként mutatja
-- [ ] Egy normál felhasználó által a telepítés **előtt** létrehozott `C:\ProgramData\WinVPN` (saját jogosultságokkal) → a szolgáltatás nem javítja; a Rendszerállapot „A(z) … mappa jogosultságai nem biztonságosak…” szöveget mutat, az OpenVPN/WireGuard kapcsolódás ezzel tér vissza; a rendszergazda törli a mappát, `sc.exe stop WinVPN`, `sc.exe start WinVPN` → rendben
+- [x] A 2.0.0-s MSI a korábbi WinVPN (1.5.0) fölé telepítve → frissít, nem második példány; a széf és a kapcsolatok megmaradnak
+- [x] `sc.exe qc WinVPN` → `SERVICE_START_NAME : LocalSystem`, `START_TYPE : 2 AUTO_START`, `BINARY_PATH_NAME : "C:\Program Files\WinVPN\WinVPNService.exe" service`; `sc.exe query WinVPN` → `RUNNING`
+- [x] `sc.exe qfailure WinVPN` → `RESET_PERIOD 86400`, `RESTART -- Delay = 5000` és `30000`; `sc.exe qfailureflag WinVPN` → TRUE; a `C:\ProgramData\WinVPN\service.log`-ban nincs „cannot set the recovery actions” sor
+- [x] `icacls.exe C:\ProgramData\WinVPN` → csak SYSTEM és Administrators, védett (öröklés nélkül)
+- [x] A `C:\Program Files\WinVPN` tartalma: `WinVPN.exe`, `WinVPNService.exe`, `wireguard.dll`, `THIRD-PARTY-NOTICES.txt`; `Get-AuthenticodeSignature "C:\Program Files\WinVPN\wireguard.dll"` → `Valid`, WireGuard LLC
+- [x] `icacls.exe "C:\Program Files\WinVPN"` → védett (egyik sor sem `(I)`): SYSTEM és Administrators `(OI)(CI)(F)`, Users, Authenticated Users és a két „ALL … APPLICATION PACKAGES” csoport `(OI)(CI)(RX)`, más nincs; `icacls.exe "C:\Program Files\WinVPN\WinVPNService.exe"` → ugyanezek `(I)`-vel (biztonsági áttekintés 2. rész, P2-M2)
+- [x] `msiexec.exe /i WinVPN-2.0.0-x64.msi INSTALLDIR=C:\WinVPN` (és a grafikus telepítő) → mappaválasztó nincs (Üdvözlő → Kész), a WinVPN mégis a `C:\Program Files\WinVPN` alá kerül, `C:\WinVPN` nem jön létre
+- [x] Ugyanaz a 2.0.0-s MSI újra → lefut (azonos verzió frissítésként, P2-L2). Visszaléptetés: a tiltást a telepítendő csomag hordozza, ezért csak a 2.0.0-tól kiadott MSI-k tagadják meg; ha már van újabb kiadás (2.0.1+), a 2.0.0-s MSI fölötte → „A newer version of WinVPN is already installed.”, semmi nem változik (ha nincs: **nem tesztelhető**). Az 1.x MSI-k (még `AllowDowngrades`) továbbra is visszaléptetnének: ezeket ne kínáld letöltésre
+- [x] `icacls.exe "C:\Program Files\WinVPN" /grant "*S-1-5-32-545:(OI)(CI)M"`, majd `sc.exe stop WinVPN`, `sc.exe start WinVPN` → nem indul; a `C:\ProgramData\WinVPN\service.log` utolsó sora „refusing to start: C:\Program Files\WinVPN\WinVPNService.exe is not admin-only …”; a 2.0.0-s MSI újratelepítése visszaállítja a jogosultságokat, a szolgáltatás fut
+- [x] Élő OpenVPN-kapcsolat mellett `sc.exe stop WinVPN` → az alagút és az `openvpn.exe` eltűnik (Feladatkezelő); `sc.exe start WinVPN` → az app a kapcsolatot megszakadtként mutatja
+- [x] Egy normál felhasználó által a telepítés **előtt** létrehozott `C:\ProgramData\WinVPN` (saját jogosultságokkal) → a szolgáltatás nem javítja; a Rendszerállapot „A(z) … mappa jogosultságai nem biztonságosak…” szöveget mutat, az OpenVPN/WireGuard kapcsolódás ezzel tér vissza; a rendszergazda törli a mappát, `sc.exe stop WinVPN`, `sc.exe start WinVPN` → rendben
 
 ### Az admin teszthalmaz
 

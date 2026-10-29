@@ -1,5 +1,6 @@
 //! Thin, audited wrappers around the libc calls `std` does not offer (the user database, `mkdtemp`, `poll`,
-//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, `getxattr`, `getifaddrs`, and the close-on-exec sweep for children).
+//! `fcntl`, `kill`, `access`, `confstr`, `getentropy`, `getxattr`, `getifaddrs`, `if_nametoindex`, the
+//! interface list `sysctl`, and the close-on-exec sweep for children).
 //!
 //! Every function here is a direct call with plain integer arguments or with buffers whose length is passed
 //! alongside; none of them keeps a pointer past the call. Everything else in the crate is safe Rust.
@@ -302,4 +303,42 @@ pub fn interface_prefixes() -> Vec<(String, macvpn_core::netaddr::IpPrefix)> {
     // SAFETY: the list `getifaddrs` returned, freed once; no reference into it outlives this point.
     unsafe { libc::freeifaddrs(head) };
     out
+}
+
+/// `if_nametoindex(name)`: the interface's index; 0: no such interface (or a name with a NUL).
+pub fn if_index(name: &str) -> u32 {
+    let Ok(c) = CString::new(name) else { return 0 };
+    // SAFETY: `c` is NUL-terminated and alive for the call, which only reads it.
+    unsafe { libc::if_nametoindex(c.as_ptr()) }
+}
+
+/// `sysctl {CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, index}`: the routing messages of interface `index` (its
+/// `RTM_IFINFO2` with the 64-bit counters, and its addresses). `None`: the call failed.
+pub fn iflist2(index: u32) -> Option<Vec<u8>> {
+    let mut mib = [libc::CTL_NET, libc::PF_ROUTE, 0, 0, libc::NET_RT_IFLIST2, i32::try_from(index).ok()?];
+    for _ in 0..3 {
+        let mut len: libc::size_t = 0;
+        // SAFETY: `mib` holds the 6 names passed; a null old buffer with a length pointer only asks for the size.
+        let rc = unsafe {
+            libc::sysctl(mib.as_mut_ptr(), mib.len() as u32, std::ptr::null_mut(), &mut len, std::ptr::null_mut(), 0)
+        };
+        if rc != 0 || len > 1 << 20 {
+            return None;
+        }
+        // Room for an address added between the two calls.
+        let mut buf = vec![0u8; len + 512];
+        let mut got: libc::size_t = buf.len();
+        // SAFETY: `buf` is `got` writable bytes; the kernel writes at most `got` and stores the length it wrote.
+        let rc = unsafe {
+            libc::sysctl(mib.as_mut_ptr(), mib.len() as u32, buf.as_mut_ptr().cast(), &mut got, std::ptr::null_mut(), 0)
+        };
+        if rc == 0 {
+            buf.truncate(got.min(buf.len()));
+            return Some(buf);
+        }
+        if io::Error::last_os_error().raw_os_error() != Some(libc::ENOMEM) {
+            return None;
+        }
+    }
+    None
 }

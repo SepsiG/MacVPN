@@ -39,6 +39,7 @@ pub mod quit;
 pub mod reconnect;
 pub mod setup;
 pub mod shared_credentials;
+pub mod traffic;
 pub mod updates;
 pub mod vault;
 pub mod vault_setup;

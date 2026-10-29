@@ -29,6 +29,9 @@ const UP_TIMEOUT: Duration = Duration::from_secs(480);
 const DOWN_TIMEOUT: Duration = Duration::from_secs(30);
 /// `status`, `respond`, `auth-state`, `log`, `engine`, and every write.
 const QUICK_TIMEOUT: Duration = Duration::from_secs(20);
+/// `traffic`: read about once a second while a window shows it, and by the status poll; a slow service gives no
+/// data rather than holding either up.
+const TRAFFIC_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Why a call got no answer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -202,6 +205,23 @@ impl HelperClient for ServiceClient {
         let id = uuid_string(id);
         let out = self.call(&[macvpn_core::liveness::LIVENESS, &id], b"", QUICK_TIMEOUT).ok()?;
         macvpn_core::liveness::Liveness::parse(&out)
+    }
+
+    /// OpenVPN: the service's `traffic <id>` (OpenVPN's `>BYTECOUNT`); an older service answers its usage error, and
+    /// then (or with nothing to report) the adapter holding the tunnel address. WireGuard: its adapter's counters
+    /// (`GetIfEntry2`), read as the user without asking the service.
+    fn traffic(&self, tunnel: &macvpn_platform_api::HelperTunnel<'_>) -> Option<macvpn_platform_api::TrafficReading> {
+        if tunnel.kind == VPNKind::Openvpn {
+            let id = uuid_string(tunnel.id);
+            let counted = self
+                .call(&[macvpn_core::traffic::TRAFFIC, &id], b"", TRAFFIC_TIMEOUT)
+                .ok()
+                .and_then(|out| macvpn_core::traffic::ByteCount::parse(&out));
+            if let Some(b) = counted {
+                return Some(crate::pure::traffic::service_count_reading(&b));
+            }
+        }
+        super::traffic::service_reading(tunnel)
     }
 }
 

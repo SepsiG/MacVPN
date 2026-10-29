@@ -4,6 +4,10 @@
 //! The `SCPreferences` notification functions of the system VPN watcher (`sc_watch`) and the `SCDynamicStore`
 //! functions of the network change watcher (`net_watch`) are declared here too.
 //!
+//! The live traffic reads a connected service's `SCNetworkConnectionCopyStatistics` and
+//! `SCNetworkConnectionCopyExtendedStatus` (user-level, as the user) and copies them out as a
+//! [`crate::native_vpn::Plist`]; the dictionaries are owned (+1) and released when their wrapper drops.
+//!
 //! Audit notes: the connection object returned by `SCNetworkConnectionCreateWithServiceID` is owned (+1) and
 //! released when the wrapper drops; no callout or context is registered (both null), so nothing calls back into
 //! Rust. The options dictionary is built from owned Core Foundation objects and only borrowed for the call.
@@ -30,6 +34,8 @@ unsafe extern "C" {
     ) -> CFTypeRef;
     fn SCNetworkConnectionStart(connection: CFTypeRef, user_options: CFDictionaryRef, linger: Boolean) -> Boolean;
     fn SCNetworkConnectionStop(connection: CFTypeRef, force_disconnect: Boolean) -> Boolean;
+    fn SCNetworkConnectionCopyStatistics(connection: CFTypeRef) -> CFDictionaryRef;
+    fn SCNetworkConnectionCopyExtendedStatus(connection: CFTypeRef) -> CFDictionaryRef;
     fn SCError() -> c_int;
     fn SCErrorString(status: c_int) -> *const c_char;
     pub(crate) fn SCPreferencesCreate(
@@ -177,4 +183,77 @@ pub fn stop(service_id: &str) -> Result<(), Failure> {
     // SAFETY: a valid connection.
     let ok = unsafe { SCNetworkConnectionStop(conn.0.as_CFTypeRef(), 1) };
     if ok == 0 { Err(Failure::Stop(last_error())) } else { Ok(()) }
+}
+
+/// How deep a copied dictionary is followed.
+const PLIST_DEPTH: usize = 4;
+/// The most entries copied per dictionary or array.
+const PLIST_ITEMS: usize = 64;
+
+/// A Core Foundation value copied out: dictionaries with string keys, arrays, integers and strings (the rest is
+/// `Other`).
+fn plist_of(value: &CFType, depth: usize) -> crate::native_vpn::Plist {
+    use crate::native_vpn::Plist;
+    use core_foundation::array::CFArray;
+    use core_foundation::number::CFNumber;
+    if let Some(n) = value.downcast::<CFNumber>() {
+        return n.to_i64().map_or(Plist::Other, Plist::Num);
+    }
+    if let Some(s) = value.downcast::<CFString>() {
+        return Plist::Str(s.to_string());
+    }
+    if depth == 0 {
+        return Plist::Other;
+    }
+    if let Some(d) = value.downcast::<CFDictionary>() {
+        let (keys, values) = d.get_keys_and_values();
+        let mut out = Vec::new();
+        for (k, v) in keys.into_iter().zip(values).take(PLIST_ITEMS) {
+            if k.is_null() || v.is_null() {
+                continue;
+            }
+            // SAFETY: the dictionary (alive here) holds both; a get-rule wrapper retains them for this scope.
+            let (k, v) = unsafe { (CFType::wrap_under_get_rule(k), CFType::wrap_under_get_rule(v)) };
+            if let Some(k) = k.downcast::<CFString>() {
+                out.push((k.to_string(), plist_of(&v, depth - 1)));
+            }
+        }
+        return Plist::Dict(out);
+    }
+    if let Some(a) = value.downcast::<CFArray>() {
+        let items = a.get_all_values();
+        let mut out = Vec::new();
+        for item in items.into_iter().take(PLIST_ITEMS).filter(|i| !i.is_null()) {
+            // SAFETY: as above, the array holds the value.
+            let item = unsafe { CFType::wrap_under_get_rule(item) };
+            out.push(plist_of(&item, depth - 1));
+        }
+        return Plist::Array(out);
+    }
+    Plist::Other
+}
+
+fn copied(
+    service_id: &str,
+    copy: unsafe extern "C" fn(CFTypeRef) -> CFDictionaryRef,
+) -> Option<crate::native_vpn::Plist> {
+    let conn = connection(service_id)?;
+    // SAFETY: a valid connection; the call returns a +1 dictionary or null.
+    let raw = unsafe { copy(conn.0.as_CFTypeRef()) };
+    if raw.is_null() {
+        return None;
+    }
+    // SAFETY: a +1 object (copy rule), released on drop.
+    let d = unsafe { CFType::wrap_under_create_rule(raw.cast()) };
+    Some(plist_of(&d, PLIST_DEPTH))
+}
+
+/// `SCNetworkConnectionCopyStatistics` of the service (`None`: not available, e.g. not connected).
+pub fn statistics(service_id: &str) -> Option<crate::native_vpn::Plist> {
+    copied(service_id, SCNetworkConnectionCopyStatistics)
+}
+
+/// `SCNetworkConnectionCopyExtendedStatus` of the service.
+pub fn extended_status(service_id: &str) -> Option<crate::native_vpn::Plist> {
+    copied(service_id, SCNetworkConnectionCopyExtendedStatus)
 }

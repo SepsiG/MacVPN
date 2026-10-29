@@ -11,6 +11,9 @@
 //!   WLAN service, a non-Wi-Fi interface, no connection, and access denied (Windows 11 24H2 without location
 //!   permission) are all "unknown".
 //! - [`watch`]: a change watch (`NotifyIpInterfaceChange` + `NotifyRouteChange2`).
+//! - [`if_counters`], [`luid_of_alias`], [`luid_of_address`]: an interface's byte counters (`GetIfEntry2`), found
+//!   by its alias (`ConvertInterfaceAliasToLuid`) or by the unicast address it holds (`GetUnicastIpAddressTable`),
+//!   for the live traffic.
 //!
 //! Every `unsafe` block says why it is sound.
 
@@ -20,14 +23,15 @@ use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use windows_sys::Win32::Foundation::{
-    ERROR_BAD_NET_NAME, ERROR_BUFFER_OVERFLOW, ERROR_HOST_UNREACHABLE, ERROR_NETWORK_UNREACHABLE, ERROR_NO_DATA,
-    ERROR_NOT_FOUND, HANDLE, NO_ERROR, WIN32_ERROR,
+    ERROR_BAD_NET_NAME, ERROR_BUFFER_OVERFLOW, ERROR_FILE_NOT_FOUND, ERROR_HOST_UNREACHABLE, ERROR_INVALID_PARAMETER,
+    ERROR_NETWORK_UNREACHABLE, ERROR_NO_DATA, ERROR_NOT_FOUND, HANDLE, NO_ERROR, WIN32_ERROR,
 };
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    CancelMibChangeNotify2, ConvertInterfaceLuidToGuid, FreeMibTable, GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER,
-    GAA_FLAG_SKIP_MULTICAST, GetAdaptersAddresses, GetIpForwardTable2, IP_ADAPTER_ADDRESSES_LH, MIB_IPFORWARD_ROW2,
-    MIB_IPFORWARD_TABLE2, MIB_IPINTERFACE_ROW, MIB_IPNET_ROW2, MIB_NOTIFICATION_TYPE, NotifyIpInterfaceChange,
-    NotifyRouteChange2, ResolveIpNetEntry2,
+    CancelMibChangeNotify2, ConvertInterfaceAliasToLuid, ConvertInterfaceLuidToGuid, FreeMibTable,
+    GAA_FLAG_SKIP_ANYCAST, GAA_FLAG_SKIP_DNS_SERVER, GAA_FLAG_SKIP_MULTICAST, GetAdaptersAddresses, GetIfEntry2,
+    GetIpForwardTable2, GetUnicastIpAddressTable, IP_ADAPTER_ADDRESSES_LH, MIB_IF_ROW2, MIB_IPFORWARD_ROW2,
+    MIB_IPFORWARD_TABLE2, MIB_IPINTERFACE_ROW, MIB_IPNET_ROW2, MIB_NOTIFICATION_TYPE, MIB_UNICASTIPADDRESS_ROW,
+    MIB_UNICASTIPADDRESS_TABLE, NotifyIpInterfaceChange, NotifyRouteChange2, ResolveIpNetEntry2,
 };
 use windows_sys::Win32::NetworkManagement::Ndis::{IfOperStatusUp, NET_LUID_LH};
 use windows_sys::Win32::NetworkManagement::WiFi::{
@@ -549,4 +553,68 @@ pub fn adapters_with_dns() -> io::Result<Vec<AdapterDiag>> {
         p = a.Next;
     }
     Ok(out)
+}
+
+/// An interface's byte counters (live traffic), as `GetIfEntry2` reads them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IfCounters {
+    /// The interface's index (a recreated adapter gets another one).
+    pub index: u32,
+    pub luid: u64,
+    /// `InOctets`.
+    pub rx: u64,
+    /// `OutOctets`.
+    pub tx: u64,
+}
+
+/// The counters of interface `luid` (`GetIfEntry2`); `Ok(None)`: no such interface.
+pub fn if_counters(luid: u64) -> io::Result<Option<IfCounters>> {
+    let mut row = MIB_IF_ROW2 { InterfaceLuid: NET_LUID_LH { Value: luid }, ..Default::default() };
+    // SAFETY: `row` is a valid, writable MIB_IF_ROW2 with the LUID set (the call's key); nothing is kept.
+    let code = unsafe { GetIfEntry2(&mut row) };
+    match code {
+        NO_ERROR => Ok(Some(IfCounters { index: row.InterfaceIndex, luid, rx: row.InOctets, tx: row.OutOctets })),
+        ERROR_FILE_NOT_FOUND | ERROR_NOT_FOUND => Ok(None),
+        _ => Err(io::Error::from_raw_os_error(code as i32)),
+    }
+}
+
+/// The LUID of the interface whose alias (friendly name) is `alias` (`ConvertInterfaceAliasToLuid`); `Ok(None)`:
+/// no such interface.
+pub fn luid_of_alias(alias: &str) -> io::Result<Option<u64>> {
+    if alias.is_empty() || alias.len() > 256 || alias.contains('\0') {
+        return Ok(None);
+    }
+    let wide: Vec<u16> = alias.encode_utf16().chain(Some(0)).collect();
+    let mut luid = NET_LUID_LH { Value: 0 };
+    // SAFETY: `wide` is NUL-terminated and alive for the call; `luid` is a valid out pointer.
+    let code = unsafe { ConvertInterfaceAliasToLuid(wide.as_ptr(), &mut luid) };
+    match code {
+        // SAFETY: every bit pattern of the 64-bit union is a valid `Value` (the call filled it).
+        NO_ERROR => Ok(Some(unsafe { luid.Value })),
+        ERROR_INVALID_PARAMETER | ERROR_FILE_NOT_FOUND | ERROR_NOT_FOUND => Ok(None),
+        _ => Err(io::Error::from_raw_os_error(code as i32)),
+    }
+}
+
+/// The LUID of the interface that holds the unicast address `ip` (`GetUnicastIpAddressTable`); `Ok(None)`: no
+/// interface holds it, or more than one does (never a guess).
+pub fn luid_of_address(ip: IpAddr) -> io::Result<Option<u64>> {
+    let mut table: *mut MIB_UNICASTIPADDRESS_TABLE = std::ptr::null_mut();
+    // SAFETY: `table` is a valid out pointer; on success the system allocated the table, freed below.
+    check(unsafe { GetUnicastIpAddressTable(AF_UNSPEC, &mut table) })?;
+    let mut found: Vec<u64> = Vec::new();
+    // SAFETY: the table holds `NumEntries` rows starting at `Table` (a variable-length array); it is freed exactly
+    // once, after the last read.
+    unsafe {
+        let rows: &[MIB_UNICASTIPADDRESS_ROW] =
+            std::slice::from_raw_parts((&raw const (*table).Table).cast(), (*table).NumEntries as usize);
+        for row in rows {
+            if ip_of_inet(&row.Address) == Some(ip) && !found.contains(&row.InterfaceLuid.Value) {
+                found.push(row.InterfaceLuid.Value);
+            }
+        }
+        FreeMibTable(table.cast());
+    }
+    Ok(if found.len() == 1 { found.first().copied() } else { None })
 }

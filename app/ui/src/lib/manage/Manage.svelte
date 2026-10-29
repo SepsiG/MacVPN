@@ -21,8 +21,11 @@
   import SystemDetail from './SystemDetail.svelte';
   import { removedRow, shownRow } from './live';
   import type { Row } from '../api';
+  import { browserDeps, pollTraffic, type TrafficMap } from '../traffic';
 
   let vm = $state<ViewModel | null>(null);
+  /// The connected rows' live traffic (read while the window is shown and the selected row is connected).
+  let traffic = $state<TrafficMap>({});
   let report = $state<Report | null>(null);
   let notice = $state<Notice | null>(null);
   let dropping = $state(false);
@@ -79,9 +82,15 @@
       }),
     ];
     api.viewModel().then(apply, console.error);
+    const stopTraffic = pollTraffic(
+      () => row?.state === 'connected',
+      (t) => (traffic = t),
+      browserDeps(api.traffic),
+    );
     // Files opened from Finder before this window was loaded.
     takeOpened().catch(console.error);
     return () => {
+      stopTraffic();
       for (const u of unlisten) u.then((f) => f());
     };
   });
@@ -194,11 +203,11 @@
       </CatalogGate>
     {:else if row && row.managed && row.kind}
       {#key row.id}
-        <Detail {row} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} onselect={(id) => select(id).catch(console.error)} />
+        <Detail {row} traffic={traffic[row.id] ?? null} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} onselect={(id) => select(id).catch(console.error)} />
       {/key}
     {:else if row}
       {#key row.id}
-        <SystemDetail {row} epoch={vm!.manage.editorsEpoch} selectedRemoved={removed} />
+        <SystemDetail {row} traffic={traffic[row.id] ?? null} epoch={vm!.manage.editorsEpoch} selectedRemoved={removed} />
       {/key}
     {:else}
       <div class="empty">

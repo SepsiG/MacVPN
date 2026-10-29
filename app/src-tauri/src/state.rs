@@ -94,6 +94,8 @@ pub struct AppState {
     pub notices: Mutex<macvpn_app_core::connection_notices::NoticeTracker>,
     /// Auto-reconnect (decision 4): the planner, its driver's events and the network watcher.
     pub reconnect: crate::reconnect::Reconnect,
+    /// The live traffic sessions (`crate::traffic`).
+    pub traffic: crate::traffic::TrafficApp,
 }
 
 impl AppState {

@@ -46,6 +46,12 @@ pub trait HelperClient: Send + Sync {
     fn liveness(&self, _id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
         None
     }
+    /// Live traffic: the running tunnel's byte counters, read cheaply as the user (never through the root layer
+    /// or the service). `None`: not known (no interface reported, an engine without such counters, any error):
+    /// nothing is shown then. Default: this helper has none.
+    fn traffic(&self, _tunnel: &crate::traffic::HelperTunnel<'_>) -> Option<crate::traffic::TrafficReading> {
+        None
+    }
 }
 
 /// The management bridge's UI state file (`/var/run/macvpn-ui/<id>.json`), read safely.

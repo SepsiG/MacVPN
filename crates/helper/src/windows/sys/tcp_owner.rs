@@ -3,13 +3,19 @@
 //! loopback port any local process could have bound first (Windows even lets a second socket bind an address in
 //! use with `SO_REUSEADDR`), so before the service sends the management password it checks that the socket that
 //! accepted *its* connection belongs to the `openvpn.exe` it started.
+//!
+//! The row's state is not used: Windows 11 reports a wrong `dwState` for some live connections, most often one a
+//! listener accepted on a SYN retry (the connect came while nobody listened yet, as the service's does while OpenVPN
+//! starts): one end of an established connection shows as CLOSED, LISTEN, FIN_WAIT1 or 0 for a second or more,
+//! while the other end's row says ESTABLISHED and data flows. The connection is found by its two ends instead (no
+//! other live connection has them), and a row without an owner (PID 0: TIME_WAIT) never counts.
 
 use std::io;
 use std::mem::size_of;
 use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream};
 use windows_sys::Win32::Foundation::{ERROR_INSUFFICIENT_BUFFER, NO_ERROR};
 use windows_sys::Win32::NetworkManagement::IpHelper::{
-    GetExtendedTcpTable, MIB_TCP_STATE_ESTAB, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
+    GetExtendedTcpTable, MIB_TCPROW_OWNER_PID, TCP_TABLE_OWNER_PID_ALL,
 };
 use windows_sys::Win32::Networking::WinSock::AF_INET;
 
@@ -59,18 +65,20 @@ pub fn rows() -> io::Result<Vec<Row>> {
     Err(io::Error::other("the TCP table kept growing"))
 }
 
-/// The PID owning the other end of `stream`, an established IPv4 connection: the one row whose local end is
-/// `stream`'s peer and whose remote end is `stream`'s local address. `None`: no such row, more than one with
-/// different owners, or the table could not be read (fail closed).
+/// The PID owning the other end of `stream`, a connected IPv4 socket (see [`owner_of`]). `None`: no owner, or the
+/// table could not be read (fail closed).
 pub fn peer_pid(stream: &TcpStream) -> Option<u32> {
     let (SocketAddr::V4(me), SocketAddr::V4(peer)) = (stream.local_addr().ok()?, stream.peer_addr().ok()?) else {
         return None;
     };
-    let rows = rows().ok()?;
-    let mut owners = rows
-        .iter()
-        .filter(|r| r.local == peer && r.remote == me && r.state == MIB_TCP_STATE_ESTAB as u32)
-        .map(|r| r.pid);
+    owner_of(&rows().ok()?, me, peer)
+}
+
+/// The owner of the other end of the connection `me` → `peer`: the rows whose local end is `peer` and whose remote
+/// end is `me`, whatever their state (see the module comment), with an owner. `None`: no such row, or more than one
+/// with different owners.
+fn owner_of(rows: &[Row], me: SocketAddrV4, peer: SocketAddrV4) -> Option<u32> {
+    let mut owners = rows.iter().filter(|r| r.local == peer && r.remote == me && r.pid != 0).map(|r| r.pid);
     let first = owners.next()?;
     owners.all(|p| p == first).then_some(first)
 }
@@ -93,14 +101,45 @@ mod tests {
     }
 
     #[test]
-    fn a_connection_that_is_gone_has_no_owner() {
-        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
-        let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
-        let (server, _) = listener.accept().unwrap();
-        drop(server);
-        drop(listener);
-        // The peer's row is no longer ESTABLISHED (closed, FIN_WAIT, …): no owner.
-        std::thread::sleep(std::time::Duration::from_millis(200));
-        assert_eq!(peer_pid(&client), None);
+    fn the_owner_is_found_by_the_two_ends_whatever_the_state() {
+        let a = |port| SocketAddrV4::new(Ipv4Addr::LOCALHOST, port);
+        let (me, peer) = (a(40001), a(50001));
+        let row = |local, remote, state, pid| Row { local, remote, state, pid };
+        // Windows' wrong states of a live connection (CLOSED, LISTEN, FIN_WAIT1, 0) do not hide its owner.
+        for state in [0, 1, 2, 5, 6] {
+            assert_eq!(owner_of(&[row(peer, me, state, 7), row(me, peer, 5, 9)], me, peer), Some(7));
+        }
+        // Not the other end: our own row, another connection's, the listener.
+        assert_eq!(owner_of(&[row(me, peer, 5, 9), row(peer, a(40002), 5, 7), row(peer, a(0), 2, 7)], me, peer), None);
+        // Without an owner (TIME_WAIT, a closed socket), or two different owners: none.
+        assert_eq!(owner_of(&[row(peer, me, 11, 0)], me, peer), None);
+        assert_eq!(owner_of(&[row(peer, me, 5, 7), row(peer, me, 11, 0)], me, peer), Some(7));
+        assert_eq!(owner_of(&[row(peer, me, 5, 7), row(peer, me, 5, 8)], me, peer), None);
+    }
+
+    /// Connections accepted on a SYN retry (the connect came before the listener, as the service's does while
+    /// OpenVPN starts): Windows reported a wrong state for one end of some of them, and the old check (ESTABLISHED
+    /// rows only) found no owner.
+    #[test]
+    fn the_owner_of_a_connection_accepted_on_a_syn_retry_is_found() {
+        let me = std::process::id();
+        let tries: Vec<_> = (0..6)
+            .map(|_| {
+                std::thread::spawn(move || {
+                    let port = TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+                    let late = std::thread::spawn(move || {
+                        std::thread::sleep(std::time::Duration::from_millis(300));
+                        let listener = TcpListener::bind(("127.0.0.1", port)).unwrap();
+                        listener.accept().unwrap().0
+                    });
+                    let client = TcpStream::connect(("127.0.0.1", port)).unwrap();
+                    let server = late.join().unwrap();
+                    (peer_pid(&client), peer_pid(&server))
+                })
+            })
+            .collect();
+        for t in tries {
+            assert_eq!(t.join().unwrap(), (Some(me), Some(me)));
+        }
     }
 }

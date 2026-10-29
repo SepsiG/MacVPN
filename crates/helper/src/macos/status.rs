@@ -94,9 +94,14 @@ pub fn one(s: &Settings, d: &Path) -> State {
             let conn = fsx::cat(&d.join("conn"));
             if let Some(sw) = find_swanctl(s)
                 && crate::macos::strongswan::is_name(&conn)
-                && let Some(st) = crate::macos::strongswan::sa_state(&sw, &conn, mode(s))
+                && let Some(listed) = crate::macos::strongswan::list_sas(&sw, &conn, mode(s))
+                && let Some(st) = listed.state
             {
                 state = st;
+                // The virtual IP the IKE SA got (root layer 11), shown like the other kinds' tunnel address.
+                if st == "connected" {
+                    ip = listed.vip.unwrap_or_default();
+                }
             }
         }
         _ => {}
@@ -110,11 +115,11 @@ pub fn one(s: &Settings, d: &Path) -> State {
     State { state, iface, ip }
 }
 
-fn mode(s: &Settings) -> EnvMode {
+pub(crate) fn mode(s: &Settings) -> EnvMode {
     if s.test_mode { EnvMode::Inherit } else { EnvMode::Minimal }
 }
 
-fn find_swanctl(s: &Settings) -> Option<std::path::PathBuf> {
+pub(crate) fn find_swanctl(s: &Settings) -> Option<std::path::PathBuf> {
     let b = s.brew.as_ref()?;
     [b.join("bin/swanctl"), b.join("sbin/swanctl")].into_iter().find(|c| crate::macos::exec::is_executable(c))
 }

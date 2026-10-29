@@ -224,3 +224,61 @@ impl<R: CommandRunner, D: NativeConnectionDriver> NativeVPNController<R, D> {
         self.driver.stop(service_id).map_err(NativeError::Driver)
     }
 }
+
+// MARK: - Live traffic and the address
+
+/// A property list value copied out of `SCNetworkConnectionCopyStatistics` / `…CopyExtendedStatus` (`sc_ffi`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum Plist {
+    Dict(Vec<(String, Plist)>),
+    Array(Vec<Plist>),
+    Num(i64),
+    Str(String),
+    Other,
+}
+
+impl Plist {
+    pub fn get(&self, key: &str) -> Option<&Plist> {
+        match self {
+            Plist::Dict(entries) => entries.iter().find(|(k, _)| k == key).map(|(_, v)| v),
+            _ => None,
+        }
+    }
+
+    fn num(&self) -> Option<u64> {
+        match self {
+            Plist::Num(n) => u64::try_from(*n).ok(),
+            _ => None,
+        }
+    }
+
+    fn str(&self) -> Option<&str> {
+        match self {
+            Plist::Str(s) => Some(s),
+            _ => None,
+        }
+    }
+}
+
+/// The byte counters (received, sent) in a service's statistics: `BytesIn` / `BytesOut` of its `PPP` or `IPSec`
+/// (or other) section. `None`: none there.
+pub fn statistics_counters(stats: &Plist) -> Option<(u64, u64)> {
+    let Plist::Dict(sections) = stats else { return None };
+    let pick = |d: &Plist| Some((d.get("BytesIn")?.num()?, d.get("BytesOut")?.num()?));
+    ["PPP", "IPSec", "IPsec", "VPN"]
+        .iter()
+        .filter_map(|k| stats.get(k))
+        .chain(sections.iter().map(|(_, v)| v))
+        .find_map(pick)
+}
+
+/// The tunnel's IPv4 address (the first of `IPv4.Addresses`) in a service's extended status.
+pub fn extended_address(ext: &Plist) -> Option<String> {
+    let Some(Plist::Array(addresses)) = ext.get("IPv4")?.get("Addresses") else { return None };
+    addresses.iter().filter_map(Plist::str).find(|a| a.parse::<std::net::Ipv4Addr>().is_ok()).map(str::to_string)
+}
+
+/// The tunnel interface (`IPv4.InterfaceName`, `ppp0` / `ipsec0`) in a service's extended status.
+pub fn extended_interface(ext: &Plist) -> Option<String> {
+    ext.get("IPv4")?.get("InterfaceName")?.str().filter(|n| crate::if_counters::is_tunnel_name(n)).map(str::to_string)
+}

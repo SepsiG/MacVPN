@@ -93,3 +93,20 @@ fn probe_the_default_gateway_answers_with_a_mac() {
     eprintln!("ssid of {}: {:?}", a.alias, net::wlan_ssid(a.guid).unwrap_or(None));
     assert!(mac.is_some_and(|m| m != [0; 6]));
 }
+
+/// Live traffic: the loopback adapter found by its address and by its alias, and its counters read as a standard
+/// user; an unknown alias or address is "no such interface", not an error.
+#[test]
+fn interface_counters_by_address_and_alias() {
+    let lo = net::adapters().unwrap().into_iter().find(|a| a.if_type == 24).unwrap();
+    let ip = lo.unicast.iter().map(|(ip, _)| *ip).find(|ip| ip.is_ipv4()).unwrap();
+    assert_eq!(net::luid_of_address(ip).unwrap(), Some(lo.luid));
+    assert_eq!(net::luid_of_alias(&lo.alias).unwrap(), Some(lo.luid));
+    let c = net::if_counters(lo.luid).unwrap().expect("the loopback's counters");
+    assert_eq!(c.luid, lo.luid);
+    assert!(c.index > 0);
+    assert_eq!(net::luid_of_alias("WinVPN no such adapter").unwrap(), None);
+    assert_eq!(net::luid_of_alias("").unwrap(), None);
+    assert_eq!(net::luid_of_address("192.0.2.123".parse().unwrap()).unwrap(), None);
+    assert_eq!(net::if_counters(0xFFFF_FFFF_FFFF).unwrap(), None);
+}

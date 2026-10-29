@@ -23,6 +23,7 @@ pub mod prefs;
 pub mod product;
 pub mod setup;
 pub mod system;
+pub mod traffic;
 pub mod ui;
 pub mod updates;
 
@@ -45,6 +46,7 @@ pub use setup::{
     SystemSetup,
 };
 pub use system::{DownloadMark, Shell, SystemInfo, SystemVpnWatch};
+pub use traffic::{CounterWidth, HelperTunnel, TrafficReading};
 pub use ui::{
     AppLifecycle, ClipboardMark, FilePanels, NativeWindow, Notifier, SecretClipboard, TerminateReply, WindowChrome,
 };

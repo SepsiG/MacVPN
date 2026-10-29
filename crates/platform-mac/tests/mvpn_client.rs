@@ -260,3 +260,23 @@ fn liveness_asks_with_the_id_only_and_an_older_root_layer_is_none() {
     mock.respond(line, CommandResult::stdout("garbage\n"));
     assert_eq!(client(&mock), None);
 }
+
+/// Root layer 11's `mvpn traffic <id>` (live traffic of a strongSwan connection): only the ID goes to the root layer;
+/// an older root layer (its usage error), another failure or an answer of another form is `None` (no traffic shown).
+#[test]
+fn traffic_asks_with_the_id_only_and_an_older_root_layer_is_none() {
+    use macvpn_core::traffic::ChildCount;
+    let line = "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn traffic 11111111-2222-3333-4444-555555555555 --lang en";
+    let client =
+        |mock: &MockCommandRunner| MvpnClient::with_runners(mock, None, None, Some(AppLanguage::En)).traffic(&id());
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::stdout("strongswan 1\nchild 7 12345 6789\n"));
+    assert_eq!(client(&mock), Some(vec![ChildCount { id: 7, rx: 12345, tx: 6789 }]));
+    assert_eq!(mock.calls()[0].command_line(), line);
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::new(1, "", "Usage: mvpn up|down <openvpn|wireguard|strongswan|sstp> <id> …"));
+    assert_eq!(client(&mock), None);
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::stdout("bytes 1 2 3\n"));
+    assert_eq!(client(&mock), None);
+}

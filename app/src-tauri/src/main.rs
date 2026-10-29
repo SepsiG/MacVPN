@@ -36,6 +36,7 @@ mod reconnect;
 mod shared_credentials;
 mod state;
 mod system;
+mod traffic;
 mod tray;
 mod update_window;
 mod vault;
@@ -253,6 +254,7 @@ fn build_state(
         open_files: open_files::OpenFilesApp::default(),
         notices: Default::default(),
         reconnect: reconnect::Reconnect::new(storage.connections.clone()),
+        traffic: traffic::TrafficApp::default(),
     })
 }
 
@@ -378,7 +380,11 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                 .spawn(move || {
                     let manager = state.manager.clone();
                     state.poller.run(
-                        || manager.refresh(),
+                        || {
+                            manager.refresh();
+                            // The background reading of the live traffic (nothing without a connected tunnel).
+                            traffic::sample(&state);
+                        },
                         || manager.has_active(),
                         window_open,
                         || state.live_trusted.load(Ordering::SeqCst),
@@ -594,6 +600,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![
             commands::get_view_model,
             commands::get_platform,
+            traffic::get_traffic,
             commands::connect,
             commands::disconnect,
             commands::pin,

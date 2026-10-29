@@ -4,6 +4,7 @@
 const COMMANDS: &[&str] = &[
     "get_view_model",
     "get_platform",
+    "get_traffic",
     "connect",
     "disconnect",
     "pin",

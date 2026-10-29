@@ -367,7 +367,9 @@ Credential Manager round trip skips itself in an SSH key logon, so it is part of
 `crates/helper` (package `macvpn-helper`, binary `mvpn`: installed as `/usr/local/libexec/macvpn/mvpn` on macOS and
 as `C:\Program Files\WinVPN\WinVPNService.exe` on Windows; root layer version in `crates/helper/VERSION`, 8 from
 1.2.0, 9 in 2.0.0: the DNS manager, the log caps, strongSwan's credentials and concurrent connections; 10 in 2.0.3:
-`mvpn liveness <id>` for dead-tunnel detection, see [Dead tunnels](#dead-tunnels-and-the-live-network-switch)).
+`mvpn liveness <id>` for dead-tunnel detection, see [Dead tunnels](#dead-tunnels-and-the-live-network-switch); 11 in
+the release after 2.0.3: `mvpn traffic <id>` and strongSwan's virtual IP in `mvpn status`, see [Live
+traffic](#live-traffic)).
 
 - `src/shared/`: the logic every OS shares, with no `cfg`, no `unsafe` and no process or file I/O: the command
   line (`cli`), the framed stdin (`framing`), masking, the `respond` answer, the status JSON, the validation
@@ -393,7 +395,7 @@ The Windows counterpart of the root layer (spec 4.1; [the 2b plan](superpowers/p
   error 1939).
 - **The protocol** (`macvpn_core::service_proto`, `SERVICE_VERSION` 1): one request per pipe connection, the
   argument list of `mvpn` (`up|down <kind> <id> [--debug] [--accept-risky …] [--lang en|hu]`, `respond`, `status`,
-  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `liveness <id>`, `wireguard-check`, `wireguard-update`) plus the framed
+  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `liveness <id>`, `traffic <id>`, `wireguard-check`, `wireguard-update`) plus the framed
   stdin body of root layer 8 (`core::helper_args::up_stdin`, shared with macOS' `MvpnClient`), zeroized after use;
   the answer is an exit code with stdout/stderr. A whole request has a 5 s deadline; one in-flight request per SID.
 - **The pipe:** `\\.\pipe\WinVPN`, owner SYSTEM, a protected DACL (NETWORK denied, INTERACTIVE gets
@@ -745,6 +747,55 @@ rule in the same planner:
 - **The driver** (`app/src-tauri/src/reconnect.rs`): asks `state.helper.liveness` for the connected WireGuard and
   OpenVPN connections without the planner's lock; a smoke run can move its clock (`Reconnect::skew`) and force a poll
   (`Event::LivenessNow`).
+
+### Live traffic
+
+Next to a connected row's address and time (maintainer request 2026-10-29): the bytes received and sent since the
+connection came up and the current rate, in the menu's cards, the Connections window's detail header and a system
+VPN's detail, for every engine on both OSes.
+
+- **The readings** (`platform-api::traffic`): `TrafficReading { generation, rx, tx, width, from_zero }` from
+  `HelperClient::traffic(&HelperTunnel)` and `NativeController::traffic(service_id)` (defaults `None`).
+  - macOS OpenVPN, WireGuard, SSTP (`platform-mac::if_counters`): the interface `mvpn status` reports (`utun`, `ppp`),
+    64-bit `if_data64` through `sysctl` `NET_RT_IFLIST2` for its index, as the user; generation = index + the run's
+    `since`.
+  - macOS strongSwan (no interface): root layer 11's `mvpn traffic <id>` (`crates/helper/src/macos/traffic.rs`): the
+    app passes only the UUID, the root layer reads the connection name it recorded (`<run>/conn`) and
+    `swanctl --list-sas --ike <name>` (`strongswan::parse_list_sas`), and prints `strongswan <n>` + `child <id> <rx>
+    <tx>` (charon's CHILD_SA numbers and bytes only: no SPI, ID, address or name; `core::traffic`). A rekey makes a
+    new CHILD_SA with fresh counters: the app sums them over their numbers (`core::traffic::ChildSums`; a number seen
+    before adds its growth, a new or lower one its counters whole), so the totals never drop; generation = the run's
+    `since`. A root layer 10 answers its usage error: no traffic. `mvpn status` also reports the IKE SA's first
+    virtual IP (IPv4 first) as the strongSwan connection's `ip`.
+  - macOS native L2TP / Cisco IPsec and system VPNs (`sc_ffi`, `native_vpn::{statistics_counters, extended_address,
+    extended_interface}`): `SCNetworkConnectionCopyStatistics` (`BytesIn` / `BytesOut` of its `PPP` / `IPSec`
+    section), else the counters of the interface `SCNetworkConnectionCopyExtendedStatus` names; both user-level.
+    `NativeController::address` gives the extended status' IPv4 address; the manager shows it, and the time it saw
+    the service connect (a service already up at the first refresh has none: never a guessed time).
+  - Windows (`platform-win::{pure,win}::traffic`, `winsys::net::{if_counters, luid_of_alias, luid_of_address}`):
+    WireGuard's own adapter by the alias the service reports (`GetIfEntry2`, from zero). OpenVPN: the service's
+    `traffic <id>` (owner only, like `liveness`; `SERVICE_VERSION` stays 1, an older service answers its usage error =
+    no data, a 2 s timeout): `bytes <rx> <tx> <run>` from OpenVPN's management `>BYTECOUNT`, which the engine's stream
+    asks for once OpenVPN reports a state (`bridge_state::ByteCounter` writes `bytecount 1` through
+    `OneCommandAtATime`; the bridge ignores the answer and the counter lines); one generation per `openvpn.exe` run.
+    Without it, the DCO / TAP adapter holding the tunnel address (`GetUnicastIpAddressTable`; exactly one match or
+    nothing), counted from its first reading (the adapter is reused). RAS connections (IKEv2, SSTP, L2TP, system
+    VPNs) by `RasGetConnectionStatistics` (`winsys::ras::statistics`, 32-bit), a new generation when a handle value
+    comes back with a shorter connected time (`RasGenerations`); their IPv4 address (`NativeController::address`)
+    from the dial or `RasGetProjectionInfoEx`.
+- **The totals and the rate** (`app-core::traffic`, pure): per key a session; a new generation adds its counters whole
+  (or from its first reading when not `from_zero`), a 64-bit fall is a restart, a 32-bit fall from the upper to the
+  lower half a wrap; never down. The rate is the change over the last `RATE_WINDOW` (3 s) of readings, unknown when
+  the newest reading is older than 6 s. Counters that never moved show nothing. A fresh connect the reconnect planner
+  did not start (`Event::Started`, not `is_attempting`) or a key up without a connect seen restarts the session;
+  an auto-reconnect keeps it. Texts: SI units (1000 steps, as macOS), one decimal under 100, the language's decimal
+  separator.
+- **When** (`app/src-tauri/src/traffic.rs`): `get_traffic` (allowed to the menu and the Connections window) reads a
+  round when the popover or a window is shown and the last round is older than 0.8 s; the UI calls it every second
+  only while `document.visibilityState` is `visible` and a shown row is connected (`lib/traffic.ts`). The status poll
+  (3 s while a connection is active) also reads a round, so restarts while nothing is shown keep the totals (for
+  strongSwan that is one more `sudo -n mvpn traffic` per poll). The control API and the tray tooltip carry no
+  traffic.
 
 ### macOS DNS manager (root layer)
 

@@ -546,21 +546,136 @@ fn others_running(ctx: &Ctx) -> usize {
         .count()
 }
 
-/// Whether swanctl reports the IKE SA (`status`): `Some("connected")`, `Some("connecting")` or `None`.
-pub fn sa_state(swanctl: &Path, conn: &str, mode: EnvMode) -> Option<&'static str> {
-    let (_, out) = crate::macos::exec::capture(&Cmd::new(swanctl).args(["--list-sas", "--ike", conn]), mode, 1 << 20)?;
-    if crate::shared::mask::find(&out, b"ESTABLISHED").is_some() {
-        Some("connected")
-    } else if crate::shared::mask::find(&out, b"CONNECTING").is_some() {
-        Some("connecting")
-    } else {
-        None
+/// What `swanctl --list-sas --ike <conn>` (its default text output) says about a connection.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ListedSas {
+    /// `connected` (an IKE SA is ESTABLISHED), `connecting`, or `None`.
+    pub state: Option<&'static str>,
+    /// The first virtual IP the IKE SA got (IPv4 before IPv6), if any.
+    pub vip: Option<String>,
+    /// Each CHILD_SA's unique number and byte counters (never its SPIs).
+    pub children: Vec<macvpn_core::traffic::ChildCount>,
+}
+
+/// A count in `swanctl`'s ` 12345 bytes` field.
+fn bytes_field(line: &str) -> Option<u64> {
+    line.split(',').find_map(|part| {
+        let n = part.trim().strip_suffix(" bytes")?.trim();
+        (!n.is_empty() && n.len() <= 20 && n.bytes().all(|b| b.is_ascii_digit())).then(|| n.parse().ok()).flatten()
+    })
+}
+
+/// The virtual IPs at the end of an IKE SA's `local  '<id>' @ <host>[<port>] [<vip>] …` line.
+fn vips(line: &str) -> Vec<std::net::IpAddr> {
+    let mut out = Vec::new();
+    let mut rest = line.trim_end();
+    while let Some(inner) = rest.strip_suffix(']') {
+        let Some(open) = inner.rfind(" [") else { break };
+        match inner[open + 2..].parse::<std::net::IpAddr>() {
+            Ok(ip) => out.insert(0, ip),
+            Err(_) => break,
+        }
+        rest = &inner[..open];
     }
+    out
+}
+
+/// Parses `swanctl --list-sas` output (strongSwan's `list_sas.c` text): IKE SA headers `<name>: #<n>, <STATE>, …`
+/// (no indent), their `  local  … [<vip>]` line, CHILD_SA headers `  <name>: #<n>, reqid …`, and their
+/// `    in  <spi>, <n> bytes, …` / `    out <spi>, <n> bytes, …` lines.
+pub fn parse_list_sas(out: &[u8]) -> ListedSas {
+    let text = String::from_utf8_lossy(out);
+    let mut listed = ListedSas::default();
+    let mut ike_established = false;
+    let mut child: Option<usize> = None;
+    for line in text.lines() {
+        if !line.starts_with(' ') {
+            child = None;
+            ike_established = line.contains(", ESTABLISHED,");
+            if ike_established {
+                listed.state = Some("connected");
+            } else if line.contains(", CONNECTING,") && listed.state.is_none() {
+                listed.state = Some("connecting");
+            }
+        } else if let Some(rest) = line.strip_prefix("  local ") {
+            if ike_established && listed.vip.is_none() {
+                let v = vips(rest);
+                listed.vip = v.iter().find(|ip| ip.is_ipv4()).or(v.first()).map(ToString::to_string);
+            }
+        } else if line.starts_with("  ") && !line.starts_with("   ") && line.contains(", reqid ") {
+            let id = line.split_once(": #").and_then(|(_, r)| r.split(',').next()).and_then(|n| n.parse().ok());
+            child = id.and_then(|id| {
+                (listed.children.len() < macvpn_core::traffic::MAX_CHILDREN).then(|| {
+                    listed.children.push(macvpn_core::traffic::ChildCount { id, rx: 0, tx: 0 });
+                    listed.children.len() - 1
+                })
+            });
+        } else if let Some(i) = child {
+            let t = line.trim_start();
+            if let Some(n) = t.strip_prefix("in ").and_then(bytes_field) {
+                listed.children[i].rx = n;
+            } else if let Some(n) = t.strip_prefix("out ").and_then(bytes_field) {
+                listed.children[i].tx = n;
+            }
+        }
+    }
+    listed
+}
+
+/// `swanctl --list-sas --ike <conn>`, parsed; `None`: swanctl did not run.
+pub fn list_sas(swanctl: &Path, conn: &str, mode: EnvMode) -> Option<ListedSas> {
+    let (_, out) = crate::macos::exec::capture(&Cmd::new(swanctl).args(["--list-sas", "--ike", conn]), mode, 1 << 20)?;
+    Some(parse_list_sas(&out))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use macvpn_core::traffic::ChildCount;
+
+    /// strongSwan 6.x `swanctl --list-sas --ike office` (the SPIs and the IDs must never leave the parser).
+    const LISTED: &str = "office: #3, ESTABLISHED, IKEv2, 1a2b3c4d5e6f7a8b_i* 8b7a6f5e4d3c2b1a_r
+  local  'C=CH, O=Lab, CN=alice [x]' @ 192.168.1.5[4500] [10.10.10.2] [fd00::2]
+  remote 'vpn.example' @ 203.0.113.1[4500]
+  AES_CBC-256/HMAC_SHA2_256_128/PRF_HMAC_SHA2_256/ECP_256
+  established 120s ago, rekeying in 13800s
+  office-net: #7, reqid 1, INSTALLED, TUNNEL-in-UDP, ESP:AES_GCM_16-256
+    installed 100s ago, rekeying in 3200s, expires in 3900s
+    in  c5d7a1b4,  12345 bytes,   100 packets,     1s ago
+    out c1234567,   6789 bytes,    80 packets,     1s ago
+    local  10.10.10.2/32
+    remote 0.0.0.0/0
+  office-net: #8, reqid 1, INSTALLED, TUNNEL-in-UDP, ESP:AES_GCM_16-256
+    installed 2s ago, rekeying in 3500s, expires in 3900s
+    in  d5d7a1b4,      0 bytes,     0 packets
+    out d1234567,     64 bytes,     1 packets,     0s ago
+    local  10.10.10.2/32
+    remote 0.0.0.0/0
+";
+
+    #[test]
+    fn list_sas_gives_the_state_the_virtual_ip_and_the_child_counters() {
+        let l = parse_list_sas(LISTED.as_bytes());
+        assert_eq!(l.state, Some("connected"));
+        assert_eq!(l.vip.as_deref(), Some("10.10.10.2"));
+        assert_eq!(l.children, [ChildCount { id: 7, rx: 12345, tx: 6789 }, ChildCount { id: 8, rx: 0, tx: 64 }]);
+        let out = macvpn_core::traffic::encode_children(&l.children);
+        for secret in ["c5d7a1b4", "c1234567", "1a2b3c4d", "alice", "203.0.113.1"] {
+            assert!(!out.contains(secret), "{out}");
+        }
+    }
+
+    #[test]
+    fn list_sas_without_an_sa_or_a_virtual_ip() {
+        assert_eq!(parse_list_sas(b""), ListedSas::default());
+        let connecting = "office: #1, CONNECTING, IKEv2, 1a2b3c4d5e6f7a8b_i* 0000000000000000_r\n  local  'alice' @ 192.168.1.5[500]\n";
+        let l = parse_list_sas(connecting.as_bytes());
+        assert_eq!((l.state, l.vip, l.children.len()), (Some("connecting"), None, 0));
+        let v6 = "office: #1, ESTABLISHED, IKEv2, a_i* b_r\n  local  'alice' @ 192.168.1.5[4500] [fd00::2]\n";
+        assert_eq!(parse_list_sas(v6.as_bytes()).vip.as_deref(), Some("fd00::2"));
+        let none = "office: #1, ESTABLISHED, IKEv2, a_i* b_r\n  local  'alice [x]' @ 192.168.1.5[4500]\n";
+        assert_eq!(parse_list_sas(none.as_bytes()).vip, None);
+    }
 
     const ID: &str = "6C7B5599-9608-4703-8F4D-10114DDD4B26";
 

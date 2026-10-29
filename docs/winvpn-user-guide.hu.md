@@ -349,7 +349,7 @@ Kattints duplán egy `.ovpn` vagy `.sstp` fájlra a Fájlkezelőben: a WinVPN me
 ## 5. Csatlakozás
 
 - **A popoverből:** kattints a kapcsolat kártyáján a kapcsolóra. Az állapotot a típusbuborék jelvénye és a név alatti sor mutatja:
-  - **zöld:** kapcsolódva (mellette az IP és az eltelt idő); a kapcsoló is zöld
+  - **zöld:** kapcsolódva (mellette az IP és az eltelt idő); a kapcsoló is zöld. Alatta a kapcsolódás óta letöltött és feltöltött adat és az aktuális sebesség: **↓ 12,4 MB  ↑ 1,2 MB · ↓ 350 kB/s  ↑ 20,0 kB/s** (↓ letöltés, ↑ feltöltés; 1 kB = 1000 bájt, ezért a számok kicsit nagyobbak lehetnek a Fájlkezelő KB-jánál). Ugyanez a sor a Kapcsolatok ablakban is ott van a kapcsolat neve alatt, és egy rendszer VPN részleteiben is. Másodpercenként frissül, amíg a tálcamenü vagy az ablak nyitva van. Újracsatlakozáskor (automatikusan vagy az OpenVPN sajátjánál) az összeg megmarad; a kapcsolóval újra csatlakozva nulláról indul. Minden típusnál látszik; az L2TP/IPsec kapcsolatok és a rendszer VPN-ek az IP-címüket is mutatják.
   - **borostyánsárga, lüktet:** **Csatlakozás…** vagy **Bontás…** (a kapcsoló borostyánsárga), illetve **Hitelesítésre vár**: egyszer használatos kódra, böngészős bejelentkezésre vagy hiányzó hitelesítő adatokra (lásd [5.2](#52-többfaktoros-hitelesítés-mfa) és [5.3](#53-hitelesítő-adatok-bekérése-csatlakozáskor))
   - **piros:** hiba (mellette a rövid ok)
   - **szürke:** nincs kapcsolat
@@ -404,7 +404,7 @@ Ha egy kapcsolathoz felhasználónév, jelszó, közös kulcs (PSK) vagy privát
 
 ### 5.4 Párosított appok (vezérlő API)
 
-A felhasználói fiókod egy másik programja, például egy Remote Desktop app, párosítás után fel- és lekapcsolhatja helyetted a WinVPN kapcsolatait. Alapból ki van kapcsolva.
+A felhasználói fiókod egy másik programja, például a [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) társalkalmazás, párosítás után fel- és lekapcsolhatja helyetted a WinVPN kapcsolatait. Alapból ki van kapcsolva.
 
 1. Nyisd meg a **Kapcsolatok** ablakot (**Kapcsolatok kezelése…**), és az oldalsávban válaszd a **Párosított appok** pontot.
 2. Kapcsold be: **Más appok vezérelhetik a VPN-eket**. Kikapcsolva egyetlen program sem érheti el így a WinVPN-t.

@@ -26,4 +26,5 @@ pub(crate) mod shell;
 pub(crate) mod system;
 pub(crate) mod system_vpns;
 pub(crate) mod toast;
+pub(crate) mod traffic;
 pub(crate) mod updater;

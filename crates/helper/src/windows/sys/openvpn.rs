@@ -4,9 +4,10 @@
 //! `mgmt.pw`, `askpass`; created new with the data directory's protection, removed on down); `openvpn.exe` as
 //! SYSTEM with the fixed argv of `ovpn_args` and a cleared environment, in the service's kill-on-close job; its
 //! output through `log_safe` into the connection log (masked by the sink); the loopback management interface with
-//! a random password, used only once its accepting socket is shown to be this child's; the shared bridge on a
-//! thread (MFA through `auth-state` / `respond`), one management command at a time; the macOS wait rules and
-//! messages.
+//! a random password on a port outside Windows' dynamic port range (started again on another port, at most twice,
+//! when OpenVPN could not bind it or another process answered it), used only once its accepting socket is shown to
+//! be this child's; the shared bridge on a thread (MFA through `auth-state` / `respond`), one management command at
+//! a time; the macOS wait rules and messages.
 
 use super::data_dir::DataDir;
 use super::detect::Ready;
@@ -15,7 +16,7 @@ use super::service_log::ServiceLog;
 use crate::shared::bridge::{Bridge, BridgeArgs};
 use crate::shared::l10n::tr;
 use crate::shared::mask::{MAX_LINE, Masker};
-use crate::windows::bridge_state::{BridgeState, InProcessFiles, OneCommandAtATime, StateWatch};
+use crate::windows::bridge_state::{BridgeState, ByteCounter, InProcessFiles, OneCommandAtATime, StateWatch};
 use crate::windows::ovpn_args::{self, Driver};
 use crate::windows::ovpn_run::{self, Failure, Output, Snapshot, Verdict, Wait};
 use crate::windows::service::{Engine, EngineState, LogSink, UpRequest};
@@ -41,6 +42,12 @@ const GRACE: Duration = Duration::from_secs(5);
 const KILL_WAIT: Duration = Duration::from_secs(5);
 /// The look interval of the wait loop.
 const TICK: Duration = Duration::from_millis(200);
+/// The management ports: below Windows' default dynamic (ephemeral) range 49152–65535, so no connecting socket of
+/// any process is given one of them by chance (an outgoing connection's port would make OpenVPN's bind fail; the
+/// service's own connect to a port nobody listens on yet could reach itself). Above the common fixed ports.
+const MGMT_PORTS: std::ops::RangeInclusive<u16> = 30000..=48999;
+/// How many times `openvpn.exe` is started again on another management port.
+const PORT_RETRIES: usize = 2;
 
 /// Finds the `openvpn.exe` to run (production: [`super::detect::ready`]).
 pub type Detector = Box<dyn Fn() -> Result<Ready, String> + Send + Sync>;
@@ -113,6 +120,8 @@ struct Run {
     readers_done: Arc<AtomicUsize>,
     bridge: Arc<BridgeState>,
     ip: Arc<Mutex<Option<String>>>,
+    /// OpenVPN's latest `>BYTECOUNT` (received, sent) of this process.
+    bytes: Arc<Mutex<Option<(u64, u64)>>>,
     since: u64,
 }
 
@@ -131,6 +140,9 @@ enum Attempt {
     Failed(Failure),
     /// Before `openvpn.exe` ran, or a broken management connection: the localized message.
     Setup(String),
+    /// The management port was not this `openvpn.exe`'s (its bind failed, or another process answered there): it
+    /// was stopped; another port may work. The message if none does.
+    PortTaken(String),
 }
 
 pub struct OpenVpnEngine {
@@ -252,6 +264,7 @@ impl OpenVpnEngine {
             readers_done: Arc::new(AtomicUsize::new(0)),
             bridge: bridge.clone(),
             ip: Arc::new(Mutex::new(None)),
+            bytes: Arc::new(Mutex::new(None)),
             since: unix_now(),
         });
         // Registered before anything waits: a `down` from now on stops this attempt.
@@ -264,16 +277,23 @@ impl OpenVpnEngine {
         let stream = match mgmt::connect(port, pid, &password, deadline, &gone) {
             Ok(s) => s,
             Err(e) => {
+                let squatted = e.kind() == std::io::ErrorKind::AddrInUse && e.to_string() == mgmt::NOT_OPENVPNS;
                 setup("management", e);
                 // OpenVPN ended before its management interface came up: its last line says why (as on macOS).
                 let exited = proc.exited();
                 if exited {
                     run.drain_output();
                 }
-                let failure = exited.then(|| Failure::Exited(lock(&run.out).last_line()));
+                let (failure, bind_failed) = {
+                    let out = lock(&run.out);
+                    (exited.then(|| Failure::Exited(out.last_line())), exited && out.mgmt_bind_failed)
+                };
+                let message = || tr("The management connection to OpenVPN failed", &[]);
                 return Err(match (self.discard(id, &run), failure) {
+                    (true, Some(f)) if bind_failed => Attempt::PortTaken(f.message()),
+                    (true, None) if squatted => Attempt::PortTaken(message()),
                     (true, Some(f)) => Attempt::Failed(f),
-                    (true, None) => Attempt::Setup(tr("The management connection to OpenVPN failed", &[])),
+                    (true, None) => Attempt::Setup(message()),
                     (false, _) => Attempt::Setup(self.cancelled_message(&run)),
                 });
             }
@@ -283,7 +303,8 @@ impl OpenVpnEngine {
         let args = BridgeArgs::in_process(id, ovpn_run::MFA_MAX_SECS as f64).expect("a canonical ID");
         let (files, ip) = (InProcessFiles::new(bridge.clone()), run.ip.clone());
         // One command in flight at a time: OpenVPN on Windows can drop a command sent while it answers the last one.
-        let stream = StateWatch::new(OneCommandAtATime::new(stream), ip);
+        // Its byte counters for `traffic` (asked once OpenVPN reports a state).
+        let stream = StateWatch::new(ByteCounter::new(OneCommandAtATime::new(stream), run.bytes.clone()), ip);
         std::thread::spawn(move || Bridge::new(args, stream, files, creds).run());
         self.wait(id, &run, driver)
     }
@@ -353,12 +374,14 @@ fn management_password() -> std::io::Result<Zeroizing<Vec<u8>>> {
     Ok(out)
 }
 
-/// A random port in 49152–65535 that is free on 127.0.0.1 right now (up to 3 tries).
+/// A random port of [`MGMT_PORTS`] that is free on 127.0.0.1 right now (up to 8 tries: a port of a range Windows
+/// excludes, as Hyper-V's, does not bind either).
 fn free_port() -> Option<u16> {
-    for _ in 0..3 {
+    let span = MGMT_PORTS.end() - MGMT_PORTS.start() + 1;
+    for _ in 0..8 {
         let mut b = [0u8; 2];
         macvpn_winsys::random::fill(&mut b).ok()?;
-        let port = 49152 + u16::from_le_bytes(b) % 16384;
+        let port = MGMT_PORTS.start() + u16::from_le_bytes(b) % span;
         if TcpListener::bind((Ipv4Addr::LOCALHOST, port)).is_ok() {
             return Some(port);
         }
@@ -433,6 +456,7 @@ impl Engine for OpenVpnEngine {
         let mut driver = ovpn_args::choose_driver(std::str::from_utf8(req.config).unwrap_or_default());
         // A run of this ID is taken down first (as macOS' `up` does).
         self.down(req.id)?;
+        let mut port_retries = PORT_RETRIES;
         loop {
             if !ready.has(driver) {
                 return Err(ovpn_run::needs_driver(driver));
@@ -444,6 +468,11 @@ impl Engine for OpenVpnEngine {
                         .line("[WinVPN] DCO cannot run this connection (pushed options); retrying with TAP-Windows6");
                     driver = Driver::TapWindows6;
                 }
+                Err(Attempt::PortTaken(_)) if port_retries > 0 => {
+                    port_retries -= 1;
+                    req.log.line("[WinVPN] The management port was taken; retrying with another port");
+                }
+                Err(Attempt::PortTaken(m)) => return Err(m),
                 Err(Attempt::Failed(f)) => return Err(f.message()),
                 Err(Attempt::Setup(m)) => return Err(m),
             }
@@ -489,6 +518,16 @@ impl Engine for OpenVpnEngine {
         Some(macvpn_core::liveness::Liveness::OpenVpn { reconnecting_since: run.bridge.reconnecting_since() })
     }
 
+    /// Live traffic: OpenVPN's latest `>BYTECOUNT` of this process run, while it runs and once connected.
+    fn traffic(&self, id: &str) -> Option<macvpn_core::traffic::ByteCount> {
+        let run = self.run_of(id)?;
+        if run.proc.exited() || !lock(&run.out).done {
+            return None;
+        }
+        let (rx, tx) = (*lock(&run.bytes))?;
+        Some(macvpn_core::traffic::ByteCount { rx, tx, run: run.since })
+    }
+
     fn respond(&self, id: &str, body: &[u8]) -> Result<(), String> {
         let run = self.run_of(id).ok_or_else(|| tr("Invalid ID", &[]))?;
         run.bridge.set_response(body);
@@ -513,9 +552,12 @@ mod tests {
     }
 
     #[test]
-    fn a_free_port_is_in_the_dynamic_range() {
-        let p = free_port().unwrap();
-        assert!(p >= 49152);
-        TcpListener::bind((Ipv4Addr::LOCALHOST, p)).unwrap();
+    fn a_free_port_is_below_the_dynamic_range() {
+        assert!(*MGMT_PORTS.end() < 49152);
+        for _ in 0..50 {
+            let p = free_port().unwrap();
+            assert!(MGMT_PORTS.contains(&p), "{p}");
+        }
+        TcpListener::bind((Ipv4Addr::LOCALHOST, free_port().unwrap())).unwrap();
     }
 }

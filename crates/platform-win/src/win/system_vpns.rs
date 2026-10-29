@@ -144,6 +144,20 @@ impl SystemVpns {
             .collect())
     }
 
+    /// The tunnel's IPv4 address of the VPN's RAS connection, if it is connected.
+    pub(crate) fn address(&self, id: &str) -> Option<String> {
+        let f = self.find(id).ok()?;
+        let conn = SystemVpns::connection(&f, &ras::connections().ok()?)?;
+        ras::ipv4(conn.handle).ok().flatten().map(|a| a.to_string())
+    }
+
+    /// Live traffic of the VPN's RAS connection, if it is connected.
+    pub(crate) fn traffic(&self, id: &str) -> Option<macvpn_platform_api::TrafficReading> {
+        let f = self.find(id).ok()?;
+        let conn = SystemVpns::connection(&f, &ras::connections().ok()?)?;
+        super::traffic::ras_reading(conn.handle)
+    }
+
     /// The entry's server (`szLocalPhoneNumber`).
     pub(crate) fn remote_address(&self, id: &str) -> Option<String> {
         self.find(id).ok().map(|f| f.entry.server).filter(|s| !s.is_empty())

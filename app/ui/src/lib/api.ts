@@ -4,6 +4,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { CatalogBadge, SubscriptionView } from './catalog/catalogApi';
 import type { PlatformReply } from './l10n-core.ts';
+import type { TrafficMap } from './traffic.ts';
 
 export type RowState =
   | { state: 'disconnected' }
@@ -613,6 +614,8 @@ export const api = {
   viewModel: () => invoke<ViewModel>('get_view_model'),
   /// The OS and product the texts are worded for (read-only; not part of the view model).
   platform: () => invoke<PlatformReply>('get_platform'),
+  /// The connected rows' live traffic by row id (read-only; read by a shown window about once a second).
+  traffic: () => invoke<TrafficMap>('get_traffic'),
   connect: (id: string, debug: boolean) => invoke<void>('connect', { id, debug }),
   disconnect: (id: string) => invoke<void>('disconnect', { id }),
   pin: (id: string) => invoke<void>('pin', { id }),

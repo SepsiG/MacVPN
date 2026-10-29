@@ -191,6 +191,26 @@ impl RasEngine {
             .collect()
     }
 
+    /// Live traffic of the connection's RAS connection while it is connected (IKEv2, SSTP and L2TP dialled here).
+    pub(crate) fn traffic_of(&self, id: &Uuid) -> Option<macvpn_platform_api::TrafficReading> {
+        let inner = self.inner().ok()?;
+        let handle = inner
+            .lock()
+            .get(id)
+            .filter(|s| matches!(s.dial.state(), DialState::Connected { .. }))
+            .and_then(|s| s.handle)?;
+        super::traffic::ras_reading(handle)
+    }
+
+    /// The tunnel's IPv4 address of a connected connection dialled here.
+    pub(crate) fn address_of(&self, id: &Uuid) -> Option<String> {
+        let inner = self.inner().ok()?;
+        match inner.lock().get(id)?.dial.state() {
+            DialState::Connected { ipv4, .. } => ipv4.clone(),
+            _ => None,
+        }
+    }
+
     /// The connection has a RAS log (it was dialled through this engine at least once).
     pub(crate) fn has_log(&self, id: &Uuid) -> bool {
         self.inner().is_ok_and(|i| i.paths.log(id).is_file())
@@ -772,6 +792,22 @@ impl NativeController for RasEngine {
         self.inner()?.disconnect(&id)
     }
 
+    /// The tunnel's IPv4 address: a managed entry's dial, or the user's own Windows VPN's connection.
+    fn address(&self, service_id: &str) -> Option<String> {
+        match names::connection_id(service_id) {
+            Some(id) => self.address_of(&id),
+            None => self.system.address(service_id),
+        }
+    }
+
+    /// The RAS connection's statistics: a managed entry's dial, or the user's own Windows VPN's connection.
+    fn traffic(&self, service_id: &str) -> Option<macvpn_platform_api::TrafficReading> {
+        match names::connection_id(service_id) {
+            Some(id) => self.traffic_of(&id),
+            None => self.system.traffic(service_id),
+        }
+    }
+
     fn managed_service_id(&self, connection: &Uuid) -> Option<String> {
         Some(names::entry_name(connection))
     }
@@ -909,5 +945,10 @@ impl HelperClient for RasHelper {
     /// The service's tunnels only (a RAS connection's death shows in its own state).
     fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
         if self.ras.has_log(id) { None } else { self.service.liveness(id) }
+    }
+
+    /// A RAS connection's statistics (IKEv2, SSTP), else the service tunnel's adapter counters.
+    fn traffic(&self, tunnel: &macvpn_platform_api::HelperTunnel<'_>) -> Option<macvpn_platform_api::TrafficReading> {
+        if rc::is_helper_kind(tunnel.kind) { self.ras.traffic_of(tunnel.id) } else { self.service.traffic(tunnel) }
     }
 }

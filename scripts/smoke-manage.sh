@@ -46,7 +46,9 @@
 #               after waking on the network it routes is disconnected, at a café it stays; the network gone under
 #               it shows "Waiting for network…" in its row and the tray, and connected again once it is back; a
 #               tunnel the stand-in reports as restarting itself shows "Reconnecting…", then is found dead and
-#               reconnected, or with the switch off disconnected and shown "Not responding");
+#               reconnected, or with the switch off disconnected and shown "Not responding"); traffic.js – the live
+#               traffic line of a connected connection over the stand-in's growing counters, in its detail header and
+#               its popover card (totals, rates, the run's decimal separator, growing; gone once disconnected);
 #   ras.js   – Windows only (WinVPN 2c; its connections are created in the vault for the step and deleted after it):
 #               the New menu without Cisco IPsec, an IKEv2 PSK connection greyed with the Windows reason, a Cisco
 #               IPsec connection with option A's text and "Make an L2TP/IPsec Copy", IKEv2 (EAP) and SSTP connected and
@@ -281,7 +283,7 @@ grep '^MacVPN smoke: backup' "$LOG" || true
 grep '^MacVPN smoke: catalog' "$LOG" || true
 grep '^MacVPN smoke: open' "$LOG" || true
 grep '^MacVPN smoke: publish' "$LOG" || true
-grep -E '^MacVPN smoke: (appearance|engines|notices|reconnect)' "$LOG" || true
+grep -E '^MacVPN smoke: (appearance|engines|notices|reconnect|traffic)' "$LOG" || true
 fail() { echo "✗ $1"; sed 's/^/  app: /' "$LOG"; exit 1; }
 grep -q '^MacVPN smoke: done' "$LOG" || fail "the smoke run did not finish"
 LANGUAGE=$(sed -n 's/^MacVPN smoke: language //p' "$LOG")
@@ -501,8 +503,9 @@ ADDED_MS=$(sed -n 's/^MacVPN smoke: live: added listed=\([0-9]*\)$/\1/p' "$LOG")
 grep -q '^MacVPN smoke: folders: store work=true colour=teal subfolders=0 item_in_work=true$' "$LOG" || fail "folders: the stored tree"
 
 # The 2.0 features: the Appearance setting in the popover and the Connections window; a missing engine's row, New
-# menu and import, and the row back once installed; the connection notices and their switch; auto-reconnect.
-for SECTION in appearance engines notices reconnect; do
+# menu and import, and the row back once installed; the connection notices and their switch; auto-reconnect; the
+# live traffic line.
+for SECTION in appearance engines notices reconnect traffic; do
   grep -q "^MacVPN smoke: $SECTION: ok$" "$LOG" || fail "$SECTION: $(grep "^MacVPN smoke: $SECTION: " "$LOG" | tail -1)"
 done
 grep -q '^MacVPN smoke: notice: Zz Notices' "$LOG" || fail "notices: nothing was recorded"
@@ -545,7 +548,7 @@ for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
 if [ "$SMOKE_OS" = windows ]; then
-  echo "✓ smoke test passed on Windows (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Explorer, publishing, appearance, missing engines, notices, auto-reconnect, native VPNs (L2TP, IKEv2, SSTP, Cisco copy), menu corners (round=$CORNERS), quit flows, quit request; skipped: Dock, screenshots)${PLACEMENT_SKIPPED}"
+  echo "✓ smoke test passed on Windows (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Explorer, publishing, appearance, missing engines, notices, auto-reconnect, live traffic, native VPNs (L2TP, IKEv2, SSTP, Cisco copy), menu corners (round=$CORNERS), quit flows, quit request; skipped: Dock, screenshots)${PLACEMENT_SKIPPED}"
   exit 0
 fi
-echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, appearance, missing engines, notices, auto-reconnect, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"
+echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, appearance, missing engines, notices, auto-reconnect, live traffic, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"

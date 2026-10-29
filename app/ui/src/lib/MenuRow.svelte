@@ -8,13 +8,23 @@
   import { statusLine, statusText } from './status';
   import TypeIcon from './TypeIcon.svelte';
   import TeamBadge from './catalog/TeamBadge.svelte';
+  import TrafficLine from './TrafficLine.svelte';
+  import type { TrafficView } from './traffic';
 
   let {
     row,
     now,
     onToggle,
     color = null,
-  }: { row: Row; now: number; onToggle: (row: Row, debug: boolean) => void; color?: FolderColor | null } = $props();
+    traffic = null,
+  }: {
+    row: Row;
+    now: number;
+    onToggle: (row: Row, debug: boolean) => void;
+    color?: FolderColor | null;
+    /// The live traffic while connected (none: not known).
+    traffic?: TrafficView | null;
+  } = $props();
 
   const line = $derived(statusLine(row, now));
 
@@ -48,6 +58,9 @@
         >
       {/if}
     </div>
+    {#if traffic && row.state === 'connected'}
+      <div class="traffic-row"><TrafficLine {traffic} /></div>
+    {/if}
     {#if row.catalog?.pendingRemoval}
       <div class="removal">{tr('Removed from the team catalog — disappears after you disconnect')}</div>
     {/if}
@@ -146,6 +159,11 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .traffic-row {
+    display: flex;
+    min-width: 0;
+    margin-top: 2px;
   }
   .removal {
     margin-top: 2px;

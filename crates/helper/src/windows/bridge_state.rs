@@ -7,6 +7,9 @@
 //! `>STATE:…,CONNECTED,…` line (OpenVPN on Windows logs no adapter name at the default verbosity; the address is
 //! what `status` reports).
 //!
+//! [`ByteCounter`] asks OpenVPN for its byte counters once it reports a state (`bytecount 1`, through
+//! [`OneCommandAtATime`]) and keeps the latest `>BYTECOUNT:` for the service's `traffic` (live traffic).
+//!
 //! [`OneCommandAtATime`] sends the bridge's next command only once OpenVPN has answered the last one (OpenVPN on
 //! Windows can lose a command that arrives while it answers the one before).
 //!
@@ -194,6 +197,79 @@ impl<S: Read> Read for StateWatch<S> {
 }
 
 impl<S: Write> Write for StateWatch<S> {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.inner.write(buf)
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.inner.flush()
+    }
+}
+
+/// The interval OpenVPN reports its byte counters at (seconds).
+const BYTECOUNT_INTERVAL: u32 = 1;
+
+/// The management stream as the bridge sees it (unchanged), asking OpenVPN for its byte counters: at the first
+/// `>STATE:` line (the bridge's `state on` was answered, OpenVPN no longer holds) it writes `bytecount 1` once into
+/// the inner stream (over [`OneCommandAtATime`], so it never overlaps the bridge's commands; the bridge ignores the
+/// `SUCCESS:` answer and the `>BYTECOUNT:` lines), and keeps the latest `>BYTECOUNT:<in>,<out>` in `bytes`. OpenVPN
+/// counts from its process start; a reconnect inside the process keeps counting.
+pub struct ByteCounter<S> {
+    inner: S,
+    bytes: Arc<Mutex<Option<(u64, u64)>>>,
+    line: Vec<u8>,
+    skipping: bool,
+    asked: bool,
+}
+
+impl<S> ByteCounter<S> {
+    pub fn new(inner: S, bytes: Arc<Mutex<Option<(u64, u64)>>>) -> ByteCounter<S> {
+        ByteCounter { inner, bytes, line: Vec::new(), skipping: false, asked: false }
+    }
+
+    /// Whether a complete line asks for the counters now.
+    fn see(&mut self, bytes: &[u8]) -> bool {
+        let mut ask = false;
+        for &b in bytes {
+            if b == b'\n' {
+                if !self.skipping {
+                    let line = std::mem::take(&mut self.line);
+                    let line = line.strip_suffix(b"\r").unwrap_or(&line);
+                    if let Some(c) = std::str::from_utf8(line)
+                        .ok()
+                        .and_then(|l| macvpn_core::traffic::ByteCount::from_management(l, 0))
+                    {
+                        *lock(&self.bytes) = Some((c.rx, c.tx));
+                    } else if line.starts_with(b">STATE:") && !self.asked {
+                        self.asked = true;
+                        ask = true;
+                    }
+                }
+                self.line.clear();
+                self.skipping = false;
+            } else if !self.skipping {
+                self.line.push(b);
+                if self.line.len() > WATCH_LINE_MAX {
+                    self.line.clear();
+                    self.skipping = true;
+                }
+            }
+        }
+        ask
+    }
+}
+
+impl<S: Read + Write> Read for ByteCounter<S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        if self.see(&buf[..n]) {
+            // Lost (a closed stream): no counters, nothing else changes.
+            let _ = self.inner.write_all(format!("bytecount {BYTECOUNT_INTERVAL}\n").as_bytes());
+        }
+        Ok(n)
+    }
+}
+
+impl<S: Write> Write for ByteCounter<S> {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         self.inner.write(buf)
     }

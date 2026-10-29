@@ -19,6 +19,10 @@
 //!   another network → "… not reconnected" with "You are on a different network."; the switch off → no `up`; a
 //!   tunnel routing 10.20.30.0/24 still up after waking at the office (on 10.20.30.0/24) → a `down` and "… so it
 //!   was disconnected."; the same tunnel waking at a café → stays up.
+//! - `traffic` (`traffic.js`, the live traffic): a connected connection whose stand-in counters grow (1.5 MB/s
+//!   down, 40 kB/s up) shows "↓ … ↑ …" with the rates in its detail header (Connections window) and in its popover
+//!   card; the totals grow between two reads; the numbers use the run's decimal separator (Hungarian: a comma). Gone
+//!   once it is disconnected.
 //!
 //! The step's connections and its result connection (the scripts write `<SECTION> <phase> OK|FAILED …` into its
 //! name) are created in the vault here and deleted at the end, so the later steps and the final checks see the
@@ -56,6 +60,9 @@ const HOME_VPN: &str = "F8111111-2222-4333-8444-555555555555";
 const HOME_NAME: &str = "Zz Reconnect home";
 const OFFICE_VPN: &str = "F9111111-2222-4333-8444-555555555555";
 const OFFICE_NAME: &str = "Zz Reconnect office";
+/// The live traffic step's connection.
+const TRAFFIC: &str = "FA111111-2222-4333-8444-555555555555";
+const TRAFFIC_NAME: &str = "Zz Traffic";
 const OVPN: &str = "client\ndev tun\nremote vpn.example.com 1194\n";
 #[cfg(target_os = "macos")]
 const SSTP: &str = "server=vpn.example.com\nport=443\nuser=alice\ncert=system\nroute_all=yes\npeer_dns=yes\n";
@@ -179,6 +186,7 @@ pub fn run(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         (NOTICES, NOTICES_NAME, VPNKind::Openvpn, OVPN.to_string()),
         (HOME_VPN, HOME_NAME, VPNKind::Openvpn, OVPN.to_string()),
         (OFFICE_VPN, OFFICE_NAME, VPNKind::Openvpn, format!("{OVPN}route 10.20.30.0 255.255.255.0\n")),
+        (TRAFFIC, TRAFFIC_NAME, VPNKind::Openvpn, OVPN.to_string()),
     ];
     for (id, name, kind, config) in &seeds {
         let Some(uuid) = parse_uuid(id) else { return };
@@ -193,6 +201,7 @@ pub fn run(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     engines(app, state, dir);
     notices(app, state, dir);
     reconnect(app, state, dir);
+    traffic(app, state, dir);
 
     // Back to the run's state: nothing connected, every switch on, the step's connections gone.
     set_network(None);
@@ -505,6 +514,26 @@ fn notices(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         ("silentWhenOff", silent),
         ("switchOn", passed(&on) && switched_on),
     ]));
+}
+
+// MARK: Live traffic
+
+fn traffic(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    let say = |line: String| eprintln!("MacVPN smoke: traffic: {line}");
+    let key = parse_uuid(TRAFFIC).map(|u| uuid_string(&u)).unwrap_or_default();
+    let separator = if l10n::AppLanguage::current() == l10n::AppLanguage::Hu { "," } else { "." };
+    let vars = [("id", js(&key)), ("name", js(TRAFFIC_NAME)), ("separator", js(separator))];
+    let up = connect(state, &key);
+    let detail = phase(app, state, dir, (crate::manage::MANAGE_WINDOW, "traffic.js"), ("TRAFFIC", "detail"), &vars);
+    crate::tray::show_menu(app);
+    let card = phase(app, state, dir, (crate::tray::MENU_WINDOW, "traffic.js"), ("TRAFFIC", "card"), &vars);
+    crate::tray::hide_menu(app);
+    if let Some(c) = connection(state, &key) {
+        state.manager.disconnect(&c);
+    }
+    let gone = wait_for(10, || (!crate::traffic::view(state).contains_key(&key)).then_some(())).is_some();
+    say(format!("up={up} detail {} card {} gone={gone}", shown(&detail), shown(&card)));
+    say(verdict(&[("up", up), ("detail", passed(&detail)), ("card", passed(&card)), ("goneWhenDown", gone)]));
 }
 
 // MARK: Auto-reconnect

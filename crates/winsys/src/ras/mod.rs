@@ -26,8 +26,8 @@ mod watch;
 
 pub use creds::{clear_psk, has_psk, set_psk};
 pub use dial::{
-    Conn, Dial, DialEvent, DialParams, Handle, Saved, Status, connections, dial, dial_dlg, dial_saved, error_text,
-    hang_up, ipv4, saved_credentials, status,
+    Conn, Dial, DialEvent, DialParams, Handle, Saved, Stats, Status, connections, dial, dial_dlg, dial_saved,
+    error_text, hang_up, ipv4, saved_credentials, statistics, status,
 };
 pub use entry::{Auth, Entry, EntryName, Phonebook, Strategy, system_entries, validate_name};
 pub use ini::{

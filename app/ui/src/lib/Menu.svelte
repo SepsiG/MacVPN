@@ -20,9 +20,12 @@
   import LockedMenu from './vault/LockedMenu.svelte';
   import { backupApi } from './vault/backupApi';
   import { isTeamRoot } from './catalog/status';
+  import { browserDeps, pollTraffic, type TrafficMap } from './traffic';
 
   let vm = $state<ViewModel | null>(null);
   let now = $state(Date.now());
+  /// The connected rows' live traffic (read while the popover is shown).
+  let traffic = $state<TrafficMap>({});
   /// The active-connections question of a quit (not an update's: the Update window asks that).
   const askingQuit = $derived(vm?.quit?.step === 'activeConnections' && vm.quit.origin !== 'update');
   /// An alert's text (update check result, launch-at-login failure), shown in place of the menu.
@@ -71,11 +74,17 @@
     const unlisten = [onViewModel(apply)];
     api.viewModel().then(apply, console.error);
     const timer = setInterval(() => (now = Date.now()), 1000);
+    const stopTraffic = pollTraffic(
+      () => !!vm?.rows.some((r) => r.state === 'connected'),
+      (t) => (traffic = t),
+      browserDeps(api.traffic),
+    );
     // The popover window follows the content's height; many connections scroll inside the list instead.
     const observer = new ResizeObserver(measure);
     if (root) observer.observe(root);
     return () => {
       clearInterval(timer);
+      stopTraffic();
       observer.disconnect();
       for (const u of unlisten) u.then((f) => f());
     };
@@ -222,7 +231,7 @@
           </div>
         {:else if rowById.get(entry.id)}
           <div class="indent" style:--level={indentLevel(entry.depth)}>
-            <MenuRow row={rowById.get(entry.id)!} {now} onToggle={toggle} color={entry.color} />
+            <MenuRow row={rowById.get(entry.id)!} {now} onToggle={toggle} color={entry.color} traffic={traffic[entry.id] ?? null} />
           </div>
         {/if}
       {/each}

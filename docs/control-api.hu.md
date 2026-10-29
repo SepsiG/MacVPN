@@ -4,6 +4,8 @@
 
 Ez az útmutató fejlesztőknek szól, akik azt szeretnék, hogy egy másik program ugyanazon a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait. A legtöbb felhasználónak nincs rá szüksége; minden mást a [felhasználói útmutató](user-guide.hu.md) ír le. A windowsos változat, a WinVPN ugyanezt az API-t egy névvel ellátott csövön (named pipe) kínálja: lásd [11.](#11-windows-winvpn)
 
+Az API a [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) társalkalmazáshoz készült, amely RDP-, SSH-, webes admin- és MikroTik-kapcsolatokat kezel, és mindegyikhez felépíti a szükséges VPN-t. Működő példa egy párosított appra.
+
 ## Tartalom
 
 1. [Mit tud](#1-mit-tud)

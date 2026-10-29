@@ -25,6 +25,11 @@ fn connected(ip: Option<&str>) -> ConnectionState {
     ConnectionState::Connected { ip: ip.map(str::to_string), since: None }
 }
 
+/// Connected, without an address, with the time the manager saw it connect.
+fn seen_connected(state: &ConnectionState) -> bool {
+    matches!(state, ConnectionState::Connected { ip: None, since: Some(_) })
+}
+
 fn failed_state(reason: &str) -> ConnectionState {
     ConnectionState::Failed(reason.to_string())
 }
@@ -334,7 +339,8 @@ fn native_connect_success() {
     m.refresh();
     f.native.set_list(Ok(list("Connected")));
     m.refresh();
-    assert_eq!(m.state(&uuid_string(&c.id)), connected(None));
+    // Seen to connect: the time is shown (live traffic plan: the same detail as the other engines).
+    assert!(seen_connected(&m.state(&uuid_string(&c.id))));
 }
 
 #[test]
@@ -759,7 +765,7 @@ fn system_connect_success_then_disconnect() {
     m.connect_system(&s);
     f.native.set_list(Ok(list("Connected")));
     m.refresh();
-    assert_eq!(m.state(SVC), connected(None));
+    assert!(seen_connected(&m.state(SVC)));
     f.native.set_list(Ok(list("Disconnected")));
     m.disconnect_system(&s);
     assert_eq!(m.state(SVC), ConnectionState::Disconnected);
@@ -812,7 +818,7 @@ fn bound_connect_and_status_use_the_service_id() {
     assert_ne!(m.state(&uuid_string(&c.id)), connected(None), "the foreign service's state is not ours");
     f.native.set_list(Ok(two_services("Disconnected", "Connected")));
     m.refresh();
-    assert_eq!(m.state(&uuid_string(&c.id)), connected(None));
+    assert!(seen_connected(&m.state(&uuid_string(&c.id))));
     m.disconnect(&bound);
     assert_eq!(f.native.stops(), [SVC]);
 }
@@ -1023,4 +1029,71 @@ fn unsupported_settings_are_read_at_reload() {
     assert!(asked.contains(&(VPNKind::Strongswan, "auth = eap-mschapv2\n".into())));
     m.enter_locked();
     assert!(m.unsupported_reasons().is_empty(), "nothing kept while locked");
+}
+
+/// Live traffic: the connected tunnels with what the helper reported (the interface, the address, the run's
+/// start), the managed native ones by their bound service and the connected system VPNs; nothing else.
+#[test]
+fn tunnels_lists_the_connected_ones_with_their_interface() {
+    use macvpn_app_core::manager::{Tunnel, TunnelSource};
+    let f = Fixture::new(HU);
+    let ovpn = Connection::new("Iroda", VPNKind::Openvpn);
+    let wg = Connection::new("Otthon", VPNKind::Wireguard);
+    let mut l2tp_c = l2tp_connection(None);
+    l2tp_c.native_service_id = Some(SVC.into());
+    f.store.save(&ovpn, Some("remote x\n")).unwrap();
+    f.store.save(&wg, Some("x")).unwrap();
+    f.store.save(&l2tp_c, None).unwrap();
+    let json = format!(
+        r#"[{{"id":"{}","kind":"openvpn","state":"connected","iface":"utun7","ip":"10.8.0.2","since":1800000000}},{{"id":"{}","kind":"wireguard","state":"connecting","iface":"utun9","ip":null,"since":null}}]"#,
+        uuid_string(&ovpn.id),
+        uuid_string(&wg.id)
+    );
+    f.helper.respond("status", Ok(&json));
+    f.native.set_list(Ok(vec![
+        SystemVpn::new(SVC, "Office L2TP", "L2TP", "Connected"),
+        SystemVpn::new(OTHER, "Other", "IKEv2", "Connected"),
+        SystemVpn::new(WG_SVC, "Home", "WireGuard (app)", "Disconnected"),
+    ]));
+    let m = f.manager();
+    m.refresh();
+    let tunnels = m.tunnels();
+    assert_eq!(
+        tunnels,
+        [
+            Tunnel {
+                key: uuid_string(&ovpn.id),
+                source: TunnelSource::Helper {
+                    id: ovpn.id,
+                    kind: VPNKind::Openvpn,
+                    iface: Some("utun7".into()),
+                    ip: Some("10.8.0.2".into()),
+                    since: Some(1_800_000_000.0),
+                },
+            },
+            Tunnel { key: uuid_string(&l2tp_c.id), source: TunnelSource::Native { service_id: SVC.into() } },
+            Tunnel { key: OTHER.into(), source: TunnelSource::Native { service_id: OTHER.into() } },
+        ]
+    );
+    // Down: the interface is forgotten with the state.
+    f.helper.respond("status", Ok("[]"));
+    m.refresh();
+    assert!(m.tunnels().iter().all(|t| t.key != uuid_string(&ovpn.id)));
+}
+
+/// A native service: its tunnel address from the platform (`NativeController::address`) and the time the manager saw
+/// it connect; a service already up at the first refresh has no time; down forgets it.
+#[test]
+fn native_services_show_their_address_and_the_time_they_were_seen_to_connect() {
+    let f = Fixture::new(HU);
+    f.native.set_list(Ok(list("Connected")));
+    f.native.set_address_of(SVC, Some("10.0.0.5"));
+    let m = f.manager();
+    m.refresh();
+    assert_eq!(m.state(SVC), connected(Some("10.0.0.5")), "already up: no time");
+    f.native.set_list(Ok(list("Disconnected")));
+    m.refresh();
+    f.native.set_list(Ok(list("Connected")));
+    m.refresh();
+    assert!(matches!(m.state(SVC), ConnectionState::Connected { ip: Some(ip), since: Some(_) } if ip == "10.0.0.5"));
 }

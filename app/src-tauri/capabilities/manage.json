@@ -1,6 +1,6 @@
 {
   "identifier": "manage",
-  "description": "The Connections window (manage, local content only): the connections, their editors, import / export, folders and colours, the log, shared credentials, paired apps, team catalogs and publishing, and the native VPNs' administrator steps (each also checks the calling window in Rust); the view model, the platform (its texts) and listening to events.",
+  "description": "The Connections window (manage, local content only): the connections, their editors, import / export, folders and colours, the log, shared credentials, paired apps, team catalogs and publishing, and the native VPNs' administrator steps (each also checks the calling window in Rust); the view model, the platform (its texts), the live traffic of the connected rows and listening to events.",
   "windows": [
     "manage"
   ],
@@ -9,6 +9,7 @@
     "core:event:allow-unlisten",
     "allow-get-view-model",
     "allow-get-platform",
+    "allow-get-traffic",
     "allow-connect",
     "allow-disconnect",
     "allow-pin",

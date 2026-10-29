@@ -4,6 +4,8 @@
 
 This guide is for developers who want another program on the same Mac to bring MacVPN connections up and down. Most MacVPN users never need it. The [User guide](user-guide.en.md) covers everything else. WinVPN, the Windows version, offers the same API over a named pipe: see [11](#11-windows-winvpn).
 
+The API was built for [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop), a companion app that manages RDP, SSH, web admin and MikroTik connections and brings up the VPN each one needs. It is a working example of a paired app.
+
 ## Contents
 
 1. [What it does](#1-what-it-does)

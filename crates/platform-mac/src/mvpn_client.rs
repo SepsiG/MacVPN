@@ -196,6 +196,17 @@ impl<'a> MvpnClient<'a> {
         macvpn_core::liveness::Liveness::parse(result.stdout.as_bytes())
     }
 
+    /// `mvpn traffic <id>` (root layer 11): a strongSwan connection's CHILD_SA byte counters. `None` on any
+    /// failure, also from an older root layer (its usage error) or an answer of another form: no traffic is shown.
+    pub fn traffic(&self, id: &Uuid) -> Option<Vec<macvpn_core::traffic::ChildCount>> {
+        let args = vec![macvpn_core::traffic::TRAFFIC.to_string(), uuid_string(id)];
+        let result = self.sudo(&args, None, Some(self.status_runner)).ok()?;
+        if result.exit_code != 0 {
+            return None;
+        }
+        macvpn_core::traffic::parse_children(result.stdout.as_bytes())
+    }
+
     pub fn status(&self) -> Result<Vec<RootStatus>, ClientError> {
         let result = self.sudo(&["status".to_string()], None, Some(self.status_runner))?;
         let stdout = result.stdout.clone();

@@ -203,3 +203,44 @@ fn list_and_remote_address_use_scutil() {
     assert_eq!(c.remote_address("S").as_deref(), Some("vpn.example.com"));
     assert_eq!(c.remote_address("F"), None);
 }
+
+mod live_traffic {
+    use macvpn_platform_mac::native_vpn::{Plist, extended_address, extended_interface, statistics_counters};
+
+    fn dict(entries: &[(&str, Plist)]) -> Plist {
+        Plist::Dict(entries.iter().map(|(k, v)| (k.to_string(), v.clone())).collect())
+    }
+
+    fn counters(rx: i64, tx: i64) -> Plist {
+        dict(&[("BytesIn", Plist::Num(rx)), ("BytesOut", Plist::Num(tx)), ("PacketsIn", Plist::Num(9))])
+    }
+
+    #[test]
+    fn statistics_of_ppp_and_ipsec_services() {
+        assert_eq!(statistics_counters(&dict(&[("PPP", counters(1000, 200))])), Some((1000, 200)));
+        assert_eq!(statistics_counters(&dict(&[("IPSec", counters(5, 6))])), Some((5, 6)));
+        assert_eq!(statistics_counters(&dict(&[("Other", counters(7, 8))])), Some((7, 8)));
+        assert_eq!(statistics_counters(&dict(&[("PPP", dict(&[("BytesIn", Plist::Num(1))]))])), None);
+        assert_eq!(statistics_counters(&dict(&[("PPP", counters(-1, 2))])), None);
+        assert_eq!(statistics_counters(&Plist::Other), None);
+    }
+
+    #[test]
+    fn the_address_and_the_interface_of_the_extended_status() {
+        let ext = dict(&[
+            ("Status", Plist::Num(2)),
+            (
+                "IPv4",
+                dict(&[
+                    ("Addresses", Plist::Array(vec![Plist::Str("nope".into()), Plist::Str("10.0.0.5".into())])),
+                    ("InterfaceName", Plist::Str("ppp0".into())),
+                ]),
+            ),
+        ]);
+        assert_eq!(extended_address(&ext).as_deref(), Some("10.0.0.5"));
+        assert_eq!(extended_interface(&ext).as_deref(), Some("ppp0"));
+        let bad = dict(&[("IPv4", dict(&[("InterfaceName", Plist::Str("../x".into()))]))]);
+        assert_eq!((extended_address(&bad), extended_interface(&bad)), (None, None));
+        assert_eq!(extended_address(&dict(&[])), None);
+    }
+}

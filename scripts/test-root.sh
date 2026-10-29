@@ -43,7 +43,7 @@ SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=10
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=11
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
@@ -548,6 +548,44 @@ OUT=$(live "../$LW"); case "$OUT" in *"Invalid ID"*"exit 1") ok "liveness: érv�
 ln -s "$LV/$LO" "$LV/$(uuidgen)"; LL=$(ls -l "$LV" | awk '/->/{print $9}')
 OUT=$(live "$LL"); [ "$OUT" = "exit 1" ] && ok "liveness: symlinkelt futási könyvtár → 1" || { nok "liveness: symlinkelt futási könyvtár → 1"; echo "$OUT"; }
 echo "reconnecting 01x" >"$LV/$LO/tunnel"; OUT=$(live "$LO"); [ "$OUT" = "exit 1" ] && ok "liveness: hibás tunnel fájl → 1" || { nok "liveness: hibás tunnel fájl → 1"; echo "$OUT"; }
+
+# Root réteg 11: `mvpn traffic <id>` (élő forgalom, strongSwan). Csak az azonosító jön az apptól; a réteg a saját futási
+# könyvtárából veszi a kapcsolat nevét, és `swanctl --list-sas --ike <név>` CHILD_SA-számlálóit adja vissza: csak
+# számok (SPI, azonosító, cím soha). Más típus / nem fut / ismeretlen: kilépési kód 1, kimenet nélkül. A `status` a
+# strongSwan virtuális IP-jét is mutatja.
+TRB="$T/trafbrew"; mkdir -p "$TRB/bin"
+cat >"$TRB/bin/swanctl" <<'FAKE'
+#!/bin/bash
+[ "$*" = "--list-sas --ike office" ] || exit 0
+cat <<'OUT'
+office: #3, ESTABLISHED, IKEv2, 1a2b3c4d5e6f7a8b_i* 8b7a6f5e4d3c2b1a_r
+  local  'alice' @ 192.168.1.5[4500] [10.10.10.2]
+  remote 'vpn.example' @ 203.0.113.1[4500]
+  established 120s ago, rekeying in 13800s
+  office-net: #7, reqid 1, INSTALLED, TUNNEL-in-UDP, ESP:AES_GCM_16-256
+    installed 100s ago, rekeying in 3200s, expires in 3900s
+    in  c5d7a1b4,  12345 bytes,   100 packets,     1s ago
+    out c1234567,   6789 bytes,    80 packets,     1s ago
+OUT
+FAKE
+chmod 755 "$TRB/bin/swanctl"
+TS=$(uuidgen); mkdir -p "$LV/$TS"; echo strongswan >"$LV/$TS/kind"; echo office >"$LV/$TS/conn"
+TQ=$(uuidgen); mkdir -p "$LV/$TQ"; echo strongswan >"$LV/$TQ/kind"; echo other >"$LV/$TQ/conn"
+traf() { env MVPN_RUN_BASE="$LV" MVPN_BREW="$TRB" "$SH" "$MVPN" traffic "$@" 2>&1; echo "exit $?"; }
+OUT=$(traf "$TS")
+[ "$OUT" = "$(printf 'strongswan 1\nchild 7 12345 6789\nexit 0')" ] && ok "traffic: strongSwan CHILD_SA számlálók" || { nok "traffic: strongSwan CHILD_SA számlálók"; echo "$OUT"; }
+case "$OUT" in *c5d7*|*c1234*|*1a2b*|*alice*|*203.0.113*|*10.10.10*|*office*) nok "traffic: SPI / azonosító / cím / név a kimenetben";; *) ok "traffic: csak számok";; esac
+for X in "$TQ" "$LW" "$LO" "$(uuidgen)"; do
+  OUT=$(traf "$X"); [ "$OUT" = "exit 1" ] || { nok "traffic: nincs mit jelenteni → 1, kimenet nélkül ($X)"; echo "$OUT"; }
+done; ok "traffic: nincs mit jelenteni → 1, kimenet nélkül"
+OUT=$(traf "../$TS"); case "$OUT" in *"Invalid ID"*"exit 1") ok "traffic: érvénytelen azonosító";; *) nok "traffic: érvénytelen azonosító"; echo "$OUT";; esac
+echo '../x' >"$LV/$TQ/conn"; OUT=$(traf "$TQ"); [ "$OUT" = "exit 1" ] && ok "traffic: hibás kapcsolatnév → 1" || { nok "traffic: hibás kapcsolatnév → 1"; echo "$OUT"; }
+SJ=$(env MVPN_RUN_BASE="$LV" MVPN_BREW="$TRB" "$SH" "$MVPN" status 2>/dev/null)
+python3 -c '
+import json, sys
+d = {x["id"]: x for x in json.loads(sys.stdin.read())}
+assert (d[sys.argv[1]]["state"], d[sys.argv[1]]["ip"]) == ("connected", "10.10.10.2"), d[sys.argv[1]]
+' "$TS" <<<"$SJ" && ok "status: strongSwan virtuális IP" || { nok "status: strongSwan virtuális IP"; echo "$SJ"; }
 
 # status-kori napló-átmásolás: csak ha a zár szabad (nem blokkolva megszerzi, majd elengedi), és titok nélkül maszkol:
 # a jelszó / auth sorok kimaradnak.

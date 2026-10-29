@@ -21,6 +21,7 @@ use macvpn_core::service_proto::{
     CLEAR_LOG, EngineFacts, EngineUpdate, LogSlice, Request, Response, SERVICE_VERSION, UPDATE_BUSY, WIREGUARD_CHECK,
     WIREGUARD_UPDATE,
 };
+use macvpn_core::traffic::{ByteCount, TRAFFIC};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -128,6 +129,11 @@ pub trait Engine: Send + Sync {
     fn liveness(&self, _id: &str) -> Option<Liveness> {
         None
     }
+    /// Live traffic: the running connection's byte counters of its engine run (`traffic <id>`; OpenVPN's
+    /// `>BYTECOUNT`). `None`: not running, not connected yet, or an engine without them.
+    fn traffic(&self, _id: &str) -> Option<ByteCount> {
+        None
+    }
     /// Debug mode, after a successful `up` (G-6): the adapter's name and its peers' status (WireGuard; `wg show`
     /// on macOS). `None`: the engine has none.
     fn peer_status(&self, _id: &str) -> Option<(String, Vec<PeerStatus>)> {
@@ -195,7 +201,7 @@ fn usage() -> Response {
     Response::fail(
         2,
         &tr(
-            "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id> | liveness <id>",
+            "Usage: up|down <openvpn|wireguard> <id> [--debug] [--accept-risky a,b] [--lang en|hu] | respond openvpn <id> | status | version | engine | auth-state <id> | log <id> <offset> | clear-log <id> | liveness <id> | traffic <id>",
             &[],
         ),
     )
@@ -270,6 +276,7 @@ impl<H: Host> Service<H> {
             "log" => self.log(caller, &a.kind, &a.id),
             CLEAR_LOG => self.clear_log(caller, &a.kind),
             LIVENESS => self.liveness(caller, &a.kind),
+            TRAFFIC => self.traffic(caller, &a.kind),
             // Engine updates: nothing of the request but the command is used (the service decides what to fetch).
             WIREGUARD_CHECK if a.kind.is_empty() => self.wireguard_check(),
             WIREGUARD_UPDATE if a.kind.is_empty() => self.wireguard_update(),
@@ -294,6 +301,17 @@ impl<H: Host> Service<H> {
         // The engine is asked without the service's locks held.
         match self.host.engine(kind).and_then(|e| e.liveness(&id)) {
             Some(l) => Response::ok(l.encode()),
+            None => Response { code: 1, stdout: Vec::new(), stderr: Vec::new() },
+        }
+    }
+
+    /// `traffic <id>`: the caller's own running connection's byte counters (live traffic); only numbers. Another
+    /// user's or an unknown ID: "Invalid ID"; nothing to report: exit 1 with no output.
+    fn traffic(&self, caller: &Caller, raw: &str) -> Response {
+        let Some((id, kind)) = self.owned_kind(caller, raw) else { return invalid_id() };
+        // The engine is asked without the service's locks held.
+        match self.host.engine(kind).and_then(|e| e.traffic(&id)) {
+            Some(b) => Response::ok(b.encode()),
             None => Response { code: 1, stdout: Vec::new(), stderr: Vec::new() },
         }
     }

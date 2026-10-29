@@ -10,6 +10,7 @@
 //! mvpn status                  (also restores the DNS of connections that no longer run, see `dns`)
 //! mvpn dns-reconcile           (only that)
 //! mvpn liveness <id>           (root layer 10: the tunnel's liveness facts for dead-tunnel detection, see `liveness`)
+//! mvpn traffic <id>            (root layer 11: a strongSwan connection's CHILD_SA byte counters, see `traffic`)
 //! mvpn version
 //!   any of them: --lang <en|hu>
 //! mvpn validate …              (the old mvpn-validate, see `validate`; the config on stdin, no secrets)
@@ -79,6 +80,7 @@ mod status;
 mod strongswan;
 mod sys;
 mod testmode;
+mod traffic;
 mod updown;
 mod validate;
 mod wireguard;
@@ -183,6 +185,7 @@ pub fn main() -> i32 {
             0
         }
         macvpn_core::liveness::LIVENESS => liveness::main(&ctx),
+        macvpn_core::traffic::TRAFFIC => traffic::main(&ctx),
         "respond" => {
             if ctx.kind != "openvpn" {
                 return ctx.die(tr("Usage: mvpn respond openvpn <id>", &[])).0;
@@ -247,6 +250,6 @@ mod tests {
 
     #[test]
     fn version_is_10() {
-        assert_eq!(VERSION.trim(), "10");
+        assert_eq!(VERSION.trim(), "11");
     }
 }

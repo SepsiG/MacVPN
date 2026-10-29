@@ -14,6 +14,8 @@
   import Modal from './Modal.svelte';
   import TeamConnectionBar from '../catalog/TeamConnectionBar.svelte';
   import AdminActionButton from './AdminActionButton.svelte';
+  import TrafficLine from '../TrafficLine.svelte';
+  import type { TrafficView } from '../traffic';
 
   let {
     row,
@@ -21,8 +23,11 @@
     filters,
     onnotice,
     onselect = () => {},
+    traffic = null,
   }: {
     row: Row;
+    /// The live traffic while connected (none: not known).
+    traffic?: TrafficView | null;
     manage: ManageView;
     filters: Choice<LogFilter>[];
     onnotice: (n: Notice) => void;
@@ -88,6 +93,7 @@
             }}>{tr('System Status')}</button
           >{/if}
       </span>
+      {#if traffic && row.state === 'connected'}<TrafficLine {traffic} size="md" />{/if}
       {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
     </div>
     <div class="actions">

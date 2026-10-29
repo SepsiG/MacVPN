@@ -101,6 +101,12 @@ fn a_connection_comes_up_with_the_stored_credentials_and_goes_down() {
         let st = String::from_utf8(c.call(&["status"], b"").stdout).unwrap();
         st.contains(ID) && st.contains("connected") && st.contains("10.8.0.2")
     });
+    // Live traffic: the engine asked OpenVPN for its byte counters once it reported a state, and `traffic` answers
+    // its latest `>BYTECOUNT` with this process run's start.
+    eventually("the byte counters in traffic", || {
+        let out = c.call(&["traffic", ID], b"").stdout;
+        macvpn_core::traffic::ByteCount::parse(&out).is_some_and(|b| (b.rx, b.tx) == (4096, 1024) && b.run > 0)
+    });
     // The log: OpenVPN's lines, the bridge's events; the password masked; never the management password; the
     // child's environment is only the Windows folders; DCO for a config DCO can run.
     let log = c.log();
@@ -111,9 +117,10 @@ fn a_connection_comes_up_with_the_stored_credentials_and_goes_down() {
     for secret in ["s3cret-pw", "kp-secret", pw] {
         assert!(!log.contains(secret), "{secret} in {log}");
     }
-    // Down: OpenVPN is stopped and the run directory is gone.
+    // Down: OpenVPN is stopped and the run directory is gone; nothing to count any more.
     assert_eq!(c.call(&["down", "openvpn", ID], b"").code, 0);
     assert!(!dir.exists());
+    assert_ne!(c.call(&["traffic", ID], b"").code, 0);
     let st = String::from_utf8(c.call(&["status"], b"").stdout).unwrap();
     assert!(!st.contains(ID), "{st}");
 }
@@ -207,4 +214,27 @@ fn a_down_while_connecting_stops_the_connect() {
     assert!(!c.run_dir().exists());
     let st = String::from_utf8(c.call(&["status"], b"").stdout).unwrap();
     assert!(!st.contains(ID), "{st}");
+}
+
+#[test]
+fn a_taken_management_port_starts_openvpn_again_on_another() {
+    let c = Console::start();
+    // The bind fails once: the second start, on another port, connects.
+    let r = c.up("portbusy-once", "dev tun\n", "");
+    assert_eq!(r.code, 0, "{}", err(&r));
+    let log = c.log();
+    let ports: Vec<&str> =
+        log.lines().filter_map(|l| l.split("127.0.0.1:").nth(1)).map(|p| p.split(':').next().unwrap()).collect();
+    assert_eq!(ports.len(), 2, "{log}");
+    assert_ne!(ports[0], ports[1], "{log}");
+    assert_eq!(log.matches("[WinVPN] The management port was taken; retrying with another port").count(), 1);
+    assert_eq!(c.call(&["down", "openvpn", ID], b"").code, 0);
+    // Taken every time: two more starts, then OpenVPN's own reason.
+    let r = c.up("portbusy", "dev tun\n", "");
+    assert_eq!((r.code, err(&r).as_str()), (1, "openvpn exited: 2026-10-22 10:00:00 Exiting due to fatal error"));
+    let log = c.log();
+    let tail = &log[log.rfind("Initialization Sequence Completed").unwrap_or(0)..];
+    assert_eq!(tail.matches("fake openvpn: driver").count(), 3, "{log}");
+    assert_eq!(tail.matches("retrying with another port").count(), 2, "{log}");
+    assert!(!c.run_dir().exists());
 }

@@ -66,6 +66,13 @@ impl Engine for Fake {
             }])
         })
     }
+    fn traffic(&self, id: &str) -> Option<macvpn_core::traffic::ByteCount> {
+        self.up.lock().unwrap().iter().any(|u| u == id).then_some(macvpn_core::traffic::ByteCount {
+            rx: 12_400_000,
+            tx: 1_200_000,
+            run: 1_700_000_000,
+        })
+    }
     fn update(&self) -> Result<EngineUpdate, UpdateRefusal> {
         *self.updates.lock().unwrap() += 1;
         self.update.clone().unwrap_or_else(|| Err(UpdateRefusal::Failed("default".into())))
@@ -564,5 +571,33 @@ fn liveness_answers_only_the_owner() {
         s.handle(&alice(), &req(&["down", "wireguard", ID], b""));
         let r = s.handle(&alice(), &req(&["liveness", ID], b""));
         assert_eq!((r.code, r.stdout.len()), (1, 0));
+    });
+}
+
+/// Live traffic (`traffic <id>`): only the owner gets its running connection's byte counters; another user's or an
+/// unknown ID answers "Invalid ID"; after `down` there is nothing to report (exit 1, no output). The usage text names
+/// the command (an older service's usage error is "no data" for the app).
+#[test]
+fn traffic_answers_only_the_owner() {
+    with_language(AppLanguage::En, || {
+        let (s, _d) = service();
+        assert_eq!(s.handle(&alice(), &req(&["up", "wireguard", ID], &framed(WG, "password=hunter22\n"))).code, 0);
+        let r = s.handle(&alice(), &req(&["traffic", ID], b""));
+        assert_eq!(r.code, 0);
+        assert_eq!(String::from_utf8(r.stdout).unwrap(), "bytes 12400000 1200000 1700000000\n");
+        assert_eq!(s.handle(&alice(), &req(&["traffic", &ID.to_ascii_lowercase()], b"")).code, 0);
+        for r in [
+            s.handle(&bob(), &req(&["traffic", ID], b"")),
+            s.handle(&alice(), &req(&["traffic", "../x"], b"")),
+            s.handle(&alice(), &req(&["traffic", "1F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"], b"")),
+        ] {
+            assert_eq!((r.code, err(&r).as_str(), r.stdout.len()), (1, "Invalid ID", 0));
+        }
+        s.handle(&alice(), &req(&["down", "wireguard", ID], b""));
+        let r = s.handle(&alice(), &req(&["traffic", ID], b""));
+        assert_eq!((r.code, r.stdout.len()), (1, 0));
+        let usage = s.handle(&alice(), &req(&["nonsense"], b""));
+        assert_eq!(usage.code, 2);
+        assert!(err(&usage).ends_with("| liveness <id> | traffic <id>"), "{}", err(&usage));
     });
 }

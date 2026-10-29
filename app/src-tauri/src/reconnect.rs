@@ -315,10 +315,15 @@ fn handle(state: &Arc<AppState>, e: Event) {
     let now = r.now();
     match e {
         Event::Started(key) => {
+            let ours = r.is_attempting(&key);
+            // A connect the planner did not start (the user's, the control API's): the traffic totals start again;
+            // an auto-reconnect keeps them.
+            if !ours {
+                state.traffic.restart(&key);
+            }
             if managed(state, &key).is_none() {
                 return;
             }
-            let ours = r.is_attempting(&key);
             let snap = if ours { None } else { snapshot(state) };
             r.planner().connect_started(&key, snap.as_ref().and_then(fingerprint), ours);
             // A lease's connect is marked (kept across a relaunch); the user's own connect takes it over.
@@ -430,6 +435,10 @@ fn wire(state: &Arc<AppState>) {
         }
         if new.is_connected() && !previous.as_ref().is_some_and(ConnectionState::is_connected) {
             s.reconnect.send(Event::Connected(key.to_string()));
+        }
+        // Up without a connect seen (a system VPN connected outside the app): a new traffic session.
+        if was_idle && new.is_connected() {
+            s.traffic.restart(key);
         }
         if !was_idle && !new.is_active() {
             s.reconnect.send(Event::Down(key.to_string()));
