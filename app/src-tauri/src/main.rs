@@ -626,6 +626,8 @@ fn main() {
             manage::editor_save,
             manage::editor_forget,
             manage::editor_choose_ca,
+            manage::editor_wireguard_generate,
+            manage::editor_wireguard_copy,
             manage::create_connection,
             manage::import_files,
             manage::answer_question,

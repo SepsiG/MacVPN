@@ -28,10 +28,13 @@ use macvpn_core::models::{
 };
 use macvpn_core::validators::openvpn::OpenVPNValidator;
 use macvpn_core::validators::sstp::{CertMode, SSTPConfig};
+use macvpn_core::vault::Entropy;
+use macvpn_core::wireguard_keys::{self, KeyLine};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// The largest config text an editor accepts (the root layer's limit too).
 pub const MAX_CONFIG_BYTES: usize = 1_048_576;
@@ -992,6 +995,56 @@ impl Draft {
         }
     }
 
+    /// The WireGuard key panel (a WireGuard connection's text editor only): the config's `[Interface]
+    /// PrivateKey`, the public key derived from it (live, from the draft's text), and the only peer's
+    /// `PresharedKey`.
+    fn wireguard_keys(&self) -> Option<WireGuardKeysView> {
+        let (EditorFields::Text(f), Some(VPNKind::Wireguard)) = (&self.fields, self.kind()) else { return None };
+        let keys = wireguard_keys::read(&f.text);
+        let public_key = keys.private_key.as_deref().and_then(|k| wireguard_keys::public_key(k));
+        Some(WireGuardKeysView {
+            private_key: keys.private_key.as_deref().map(|k| k.to_string()),
+            public_key,
+            peers: keys.peers,
+            preshared_key: keys.preshared_key.as_deref().map(|k| k.to_string()),
+        })
+    }
+
+    /// "Generate Key Pair" / "Generate Preshared Key": a new key from `entropy` (the OS CSPRNG) into the draft's
+    /// config text (the line replaced, or added). The key is never logged; the editor shows it as any typed edit
+    /// (unsaved until "Save"). Refused for a read-only or removed editor and for anything but WireGuard.
+    pub fn generate_wireguard_key(&mut self, which: KeyLine, entropy: &dyn Entropy) -> Result<(), String> {
+        if let Some(reason) = &self.read_only {
+            return Err(reason.clone());
+        }
+        if self.removed || self.kind() != Some(VPNKind::Wireguard) {
+            return Err("not a WireGuard editor".into());
+        }
+        let EditorFields::Text(f) = &mut self.fields else { return Err("not a WireGuard editor".into()) };
+        let fill = |buf: &mut [u8]| entropy.fill(buf);
+        let key = match which {
+            KeyLine::PrivateKey => wireguard_keys::generate_private_key(fill),
+            KeyLine::PresharedKey => wireguard_keys::generate_preshared_key(fill),
+        }
+        .map_err(|e| e.to_string())?;
+        let text = wireguard_keys::set(&f.text, which, &key).ok_or("the config needs exactly one [Peer]")?;
+        if too_long(&text, MAX_CONFIG_BYTES) {
+            return Err("invalid editor fields".into());
+        }
+        f.text = text;
+        Ok(())
+    }
+
+    /// The draft's current private key or preshared key, for the secret clipboard ("Copy").
+    pub fn wireguard_secret(&self, which: KeyLine) -> Option<Zeroizing<String>> {
+        let (EditorFields::Text(f), Some(VPNKind::Wireguard)) = (&self.fields, self.kind()) else { return None };
+        let keys = wireguard_keys::read(&f.text);
+        match which {
+            KeyLine::PrivateKey => keys.private_key,
+            KeyLine::PresharedKey => keys.preshared_key,
+        }
+    }
+
     /// The editor's view for the UI.
     pub fn view(&self, id: &str) -> EditorView {
         let risky = self.risky();
@@ -1032,6 +1085,7 @@ impl Draft {
             removed: self.removed,
             credential: self.credential.clone(),
             read_only: self.read_only.clone(),
+            wireguard: self.wireguard_keys(),
             platform: None,
         }
     }
@@ -1085,11 +1139,42 @@ pub struct EditorView {
     /// A team catalog's connection: "Managed by the team catalog “…”". The editor is read-only except for the
     /// risky settings' checkbox.
     pub read_only: Option<String>,
+    /// WireGuard: the key panel (the private key, its public key, the only peer's preshared key). Absent from the
+    /// JSON for the other kinds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wireguard: Option<WireGuardKeysView>,
     /// What the platform says about these settings (WinVPN 2c: Windows' reasons, the IKEv2 summary, the CA trust,
     /// the L2TP copy, the system VPN's PSK note); set by the Connections window
     /// ([`crate::connections::ConnectionsModel::set_native_platform`]). Absent from the JSON when `None` (MacVPN).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<EditorPlatformView>,
+}
+
+/// [`EditorView::wireguard`]: the keys of the draft's config text. The private and preshared keys are the values
+/// the config text (also in the view) holds; the public key is derived here, never in the web view.
+#[derive(Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WireGuardKeysView {
+    /// The `[Interface] PrivateKey` value as written; `None`: no line or an empty value.
+    pub private_key: Option<String>,
+    /// The public key of `private_key`; `None`: no private key, or not a valid one ("Invalid private key").
+    pub public_key: Option<String>,
+    /// The number of `[Peer]` sections ("Generate Preshared Key" needs exactly one).
+    pub peers: usize,
+    /// The only peer's `PresharedKey`; `None`: none, or not exactly one peer.
+    pub preshared_key: Option<String>,
+}
+
+/// Without the key values (a view printed for a test failure or a debug line never shows them).
+impl std::fmt::Debug for WireGuardKeysView {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WireGuardKeysView")
+            .field("private_key", &self.private_key.as_ref().map(|_| "<redacted>"))
+            .field("public_key", &self.public_key)
+            .field("peers", &self.peers)
+            .field("preshared_key", &self.preshared_key.as_ref().map(|_| "<redacted>"))
+            .finish()
+    }
 }
 
 /// [`EditorView::platform`]: the platform's notes on the editor's draft (`PlatformNotes`), plus whether the system

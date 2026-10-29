@@ -31,6 +31,8 @@ const COMMANDS: &[&str] = &[
     "editor_save",
     "editor_forget",
     "editor_choose_ca",
+    "editor_wireguard_generate",
+    "editor_wireguard_copy",
     "create_connection",
     "import_files",
     "answer_question",

@@ -1,6 +1,7 @@
 <script lang="ts">
   // OpenVPN, WireGuard, strongSwan: the config text with the error list and the risky panel, the vault
-  // secrets, the one-time code setting (the Swift `TextConfigEditor`). WinVPN, IKEv2 (the backend's `platform`
+  // secrets, the one-time code setting (the Swift `TextConfigEditor`). WireGuard: the key panel under the config
+  // (`WireGuardKeys`: Generate Key Pair, the public key with Copy, the private and preshared keys masked). WinVPN, IKEv2 (the backend's `platform`
   // notes): the settings Windows cannot run as yellow notes above the config (not save errors: the config stays
   // valid for macOS), Windows' summary of the entry and the settings it ignores in grey under it, and **Trust This
   // CA in Windows…** with a PEM file the user picks.
@@ -15,6 +16,7 @@
   import SecretField from './SecretField.svelte';
   import Status from './Status.svelte';
   import TrustCa from './TrustCa.svelte';
+  import WireGuardKeys from './WireGuardKeys.svelte';
 
   let { session, kind }: { session: EditorSession; kind: string } = $props();
 
@@ -68,6 +70,14 @@
         <li>{issue}</li>
       {/each}
     </ul>
+  {/if}
+  {#if kind === 'wireguard' && view?.wireguard}
+    <WireGuardKeys
+      keys={view.wireguard}
+      readOnly={readOnly !== null}
+      ongenerate={(which) => session.generateWireguardKey(which)}
+      oncopy={(which) => session.copyWireguardKey(which)}
+    />
   {/if}
   {#if platform && (platform.summary || platform.warnings.length > 0 || platform.trustCa)}
     <div class="platform">

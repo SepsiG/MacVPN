@@ -26,6 +26,8 @@
     "allow-editor-save",
     "allow-editor-forget",
     "allow-editor-choose-ca",
+    "allow-editor-wireguard-generate",
+    "allow-editor-wireguard-copy",
     "allow-create-connection",
     "allow-import-files",
     "allow-answer-question",

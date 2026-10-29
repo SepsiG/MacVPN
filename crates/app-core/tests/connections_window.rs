@@ -107,6 +107,88 @@ fn key_password_is_only_stored_for_openvpn() {
     assert_eq!(w.fx.secrets.get(&c.id, SecretField::KeyPassword), None);
 }
 
+// MARK: - WireGuard keys
+
+const WG_PEER_KEY: &str = "3p7bfXt9wbTTW2HC7OQ1Nz+DQ8hbeGdNrfx+FG+IK08=";
+
+#[test]
+fn wireguard_key_pair_is_generated_into_the_draft_and_its_public_key_shown() {
+    use macvpn_core::wireguard_keys::{self, KeyLine};
+    let w = window();
+    let c = w.add("WG", VPNKind::Wireguard, Some(&macvpn_core::importer::template(VPNKind::Wireguard)));
+    let view = w.model.open_editor(&key(&c)).unwrap();
+    let keys = view.wireguard.clone().expect("the key panel");
+    assert_eq!((keys.private_key.as_deref(), keys.public_key.as_deref(), keys.peers), (None, None, 1));
+
+    let entropy = macvpn_core::vault::FixedEntropy::new(7);
+    let view = w.model.generate_wireguard_key(&key(&c), KeyLine::PrivateKey, &entropy).unwrap();
+    assert!(view.dirty, "a generated key is an unsaved change");
+    let keys = view.wireguard.clone().unwrap();
+    let private = keys.private_key.clone().unwrap();
+    assert_eq!(keys.public_key, wireguard_keys::public_key(&private));
+    let EditorFields::Text(f) = &view.fields else { panic!() };
+    assert!(f.text.contains(&format!("PrivateKey = {private}\n")), "{:?}", keys);
+    assert_eq!(w.model.wireguard_secret(&key(&c), KeyLine::PrivateKey).unwrap().as_str(), private);
+    // The JSON the web view gets: the panel in camelCase; the Debug form never prints the private key.
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["wireguard"]["publicKey"].as_str(), keys.public_key.as_deref());
+    assert!(!format!("{keys:?}").contains(&private));
+
+    // A second generation replaces it (the UI asked first).
+    let again = w.model.generate_wireguard_key(&key(&c), KeyLine::PrivateKey, &entropy).unwrap();
+    let replaced = again.wireguard.unwrap().private_key.unwrap();
+    assert_ne!(replaced, private);
+    let EditorFields::Text(f) = &again.fields else { panic!() };
+    assert_eq!(f.text.matches("PrivateKey").count(), 1);
+
+    // The preshared key of the only peer; saved with a peer key, the config validates.
+    let with_psk = w.model.generate_wireguard_key(&key(&c), KeyLine::PresharedKey, &entropy).unwrap();
+    let psk = with_psk.wireguard.unwrap().preshared_key.unwrap();
+    assert!(wireguard_keys::decode_key(&psk).is_some());
+    assert_eq!(w.model.wireguard_secret(&key(&c), KeyLine::PresharedKey).unwrap().as_str(), psk);
+    let EditorFields::Text(f) = with_psk.fields else { panic!() };
+    let text = f.text.replace("PublicKey =", &format!("PublicKey = {WG_PEER_KEY}"));
+    let saved = w.model.save_editor(&key(&c), EditorFields::Text(TextFields { text, ..f })).unwrap();
+    assert!(saved.issues.is_empty(), "{:?}", saved.issues);
+    assert!(w.fx.store.load_config(&c.id).unwrap().contains(&format!("PrivateKey = {replaced}")));
+}
+
+#[test]
+fn an_edited_private_key_updates_the_public_key_or_shows_it_invalid() {
+    let w = window();
+    let c = w.add("WG", VPNKind::Wireguard, Some(&macvpn_core::importer::template(VPNKind::Wireguard)));
+    let f = w.text(&c);
+    // RFC 7748's Alice, pasted.
+    let text = f.text.replace("PrivateKey =", "PrivateKey = dwdtCnMYpX08FsFyUbJmRd9ML4frwJkqsXf7pR25LCo=");
+    let view = w.model.update_editor(&key(&c), EditorFields::Text(TextFields { text, ..f.clone() })).unwrap();
+    let keys = view.wireguard.unwrap();
+    assert_eq!(keys.public_key.as_deref(), Some("hSDwCYkwp1R0i33ctD73Wg2/Og0mOBr066SpjqqbTmo="));
+    let text = f.text.replace("PrivateKey =", "PrivateKey = not-a-key");
+    let view = w.model.update_editor(&key(&c), EditorFields::Text(TextFields { text, ..f })).unwrap();
+    let keys = view.wireguard.unwrap();
+    assert_eq!((keys.private_key.as_deref(), keys.public_key), (Some("not-a-key"), None));
+}
+
+#[test]
+fn only_a_wireguard_editor_has_the_key_panel_and_generates() {
+    use macvpn_core::wireguard_keys::KeyLine;
+    let w = window();
+    let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
+    let view = w.model.open_editor(&key(&c)).unwrap();
+    assert!(view.wireguard.is_none());
+    assert!(serde_json::to_value(&view).unwrap().get("wireguard").is_none());
+    let entropy = macvpn_core::vault::FixedEntropy::new(1);
+    assert!(w.model.generate_wireguard_key(&key(&c), KeyLine::PrivateKey, &entropy).is_err());
+    assert_eq!(w.text(&c).text, CLEAN);
+    assert!(w.model.wireguard_secret(&key(&c), KeyLine::PrivateKey).is_err());
+    // Two peers: no preshared key to generate (the button is not shown).
+    let two = format!("{}\n[Peer]\nPublicKey = {WG_PEER_KEY}\n", macvpn_core::importer::template(VPNKind::Wireguard));
+    let wg = w.add("WG", VPNKind::Wireguard, Some(&two));
+    let view = w.model.open_editor(&key(&wg)).unwrap();
+    assert_eq!(view.wireguard.unwrap().peers, 2);
+    assert!(w.model.generate_wireguard_key(&key(&wg), KeyLine::PresharedKey, &entropy).is_err());
+}
+
 #[test]
 fn validation_problems_are_listed_with_line_numbers() {
     let w = window();

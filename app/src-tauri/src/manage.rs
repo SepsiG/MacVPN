@@ -13,6 +13,7 @@ use macvpn_app_core::quit::QuitStep;
 use macvpn_app_core::updates::Notice;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::{Connection, VPNKind};
+use macvpn_core::wireguard_keys::KeyLine;
 use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::Ordering;
@@ -146,6 +147,48 @@ pub async fn editor_choose_ca(app: AppHandle, state: Shared<'_>, id: String) -> 
             shared.connections.import_ca(&id, text.as_deref())
         }
         None => shared.connections.open_editor(&id),
+    })
+    .await?
+}
+
+/// The WireGuard key line a key command acts on (`privateKey` or `presharedKey`).
+fn parse_key_line(raw: &str) -> Result<KeyLine, String> {
+    match raw {
+        "privateKey" => Ok(KeyLine::PrivateKey),
+        "presharedKey" => Ok(KeyLine::PresharedKey),
+        _ => Err("invalid key".into()),
+    }
+}
+
+/// "Generate Key Pair" (`privateKey`) / "Generate Preshared Key" (`presharedKey`) of a WireGuard editor: a new key
+/// from the platform's CSPRNG into the draft's config text (the web view only asked; it never makes key material).
+/// The key is never logged.
+#[tauri::command]
+pub async fn editor_wireguard_generate(state: Shared<'_>, id: String, key: String) -> Result<EditorView, String> {
+    managed(&state, &id)?;
+    let which = parse_key_line(&key)?;
+    let shared = state.inner().clone();
+    blocking(move || {
+        let entropy = crate::platform::get().entropy();
+        shared.connections.generate_wireguard_key(&id, which, entropy.as_ref())
+    })
+    .await?
+}
+
+/// "Copy" of a WireGuard editor's private key or preshared key: read from the backend draft (the web view sends no
+/// key) and put on the clipboard through the secret clipboard (concealed from clipboard managers, cleared a minute
+/// later, at a vault lock and at quit if it is still there).
+#[tauri::command]
+pub async fn editor_wireguard_copy(window: Window, state: Shared<'_>, id: String, key: String) -> Result<(), String> {
+    if window.label() != MANAGE_WINDOW {
+        return Err("not allowed".into());
+    }
+    managed(&state, &id)?;
+    let which = parse_key_line(&key)?;
+    let shared = state.inner().clone();
+    blocking(move || {
+        let secret = shared.connections.wireguard_secret(&id, which)?;
+        crate::clipboard::copy_secret(&secret)
     })
     .await?
 }
@@ -457,6 +500,15 @@ mod tests {
         assert_eq!(dropped_paths(&many).len(), MAX_IMPORT_FILES);
         let absolute = PathBuf::from(format!("{root}/a.ovpn"));
         assert_eq!(dropped_paths(&[PathBuf::from("relative.ovpn"), absolute.clone()]), [absolute]);
+    }
+
+    #[test]
+    fn only_the_two_wireguard_key_lines_are_accepted() {
+        assert_eq!(super::parse_key_line("privateKey"), Ok(super::KeyLine::PrivateKey));
+        assert_eq!(super::parse_key_line("presharedKey"), Ok(super::KeyLine::PresharedKey));
+        for bad in ["publicKey", "PrivateKey", "", "privateKey "] {
+            assert!(super::parse_key_line(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]

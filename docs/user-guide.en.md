@@ -252,6 +252,14 @@ Endpoint = vpn.example.com:51820
 - Values are checked: keys must be 44-character base64, `Address`/`AllowedIPs` IP addresses with an optional prefix (`10.0.0.2/32`), `Endpoint` `host:port` or `[IPv6]:port`, `MTU`/`ListenPort`/`PersistentKeepalive` numbers. No value may start with `-`.
 - WireGuard needs no username or password. It authenticates with the key pair.
 
+**Keys.** Under the config, the **Interface keys** box shows this device's keys:
+
+- **Generate Key Pair** writes a new private key into the `PrivateKey` line. MacVPN makes it from the system's secure random generator, as `wg genkey` does. If the config already has a private key, MacVPN asks first: **Replace the private key? The other side must be updated with the new public key.** Like any edit, the new key is kept when you click **Save**.
+- **Public key** is derived from the private key and follows it as you generate, paste or edit it; a malformed private key shows **Invalid private key**. This is the key the other side needs (the server's `[Peer]` for this device): **Copy** puts it on the clipboard.
+- **Private key** is masked: **Show** reveals it, **Copy** copies it the way the subscription string is copied: clipboard managers skip it, Universal Clipboard does not send it to your other devices, and it is cleared after 60 seconds, at **Lock Now** and at quit (unless you copied something else meanwhile). Give the private key to no one.
+- With exactly one `[Peer]`, the **Peer** box offers an optional **Preshared key** (`PresharedKey`) with **Generate Preshared Key**, shown and copied the same way. The other side needs the same preshared key.
+- A team catalog's connection shows and copies its keys, but cannot generate new ones.
+
 ### 3.3 IKEv2 (strongSwan)
 
 IKEv2 configs use strongSwan `swanctl.conf` syntax. A new connection (**New → IKEv2**) starts with a template. For username and password (EAP-MSCHAPv2):

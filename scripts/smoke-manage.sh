@@ -9,7 +9,8 @@
 #               native forms, stored secrets never shown, the New menu, a context menu at the window's corners and
 #               its colour picker inside the window, the search – typed without the accents' care, by an OpenVPN
 #               and a native server and by type, Up / Down and Return, the empty result and its Clear, Escape bringing every row back, Cmd+F –,
-#               New and Delete, a navigation away cancelled);
+#               New and Delete, a new WireGuard connection's Generate Key Pair with its public key and the
+#               replace question, a navigation away cancelled);
 #   setup.js  – System Status over a mock report (rows, the reinstall notice, the simulated brew output, the root
 #               installer and the uninstaller answering "cancelled" in the sandbox);
 #   update.js – the Update window over a mock release (notes stay text), Download and Install up to the quit

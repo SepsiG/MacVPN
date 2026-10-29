@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-editor-wireguard-generate"
+description = "Enables the editor_wireguard_generate command without any pre-configured scope."
+commands.allow = ["editor_wireguard_generate"]
+
+[[permission]]
+identifier = "deny-editor-wireguard-generate"
+description = "Denies the editor_wireguard_generate command without any pre-configured scope."
+commands.deny = ["editor_wireguard_generate"]

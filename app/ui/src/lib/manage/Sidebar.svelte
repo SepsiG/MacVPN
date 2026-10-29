@@ -170,7 +170,7 @@
     {#if menuOpen}
       <div class="menu" role="menu" use:popover={{ anchor: newButtonRect, align: 'end', gap: 6, maxWidth: 320 }}>
         {#each kinds as kind (kind.value)}
-          <button role="menuitem" onclick={() => create(kind.value)}>{kind.title}</button>
+          <button role="menuitem" data-kind={kind.value} onclick={() => create(kind.value)}>{kind.title}</button>
         {/each}
         {#if kinds.length === 0 && kindsNote}
           <p class="note">{kindsNote}</p>

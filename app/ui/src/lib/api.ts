@@ -374,7 +374,24 @@ export interface EditorView {
   readOnly?: string | null;
   /// What the platform says about the draft's settings (WinVPN 2c). Absent on macOS.
   platform?: EditorPlatformView;
+  /// WireGuard: the key panel, derived by the backend from the draft's config text. Absent for the other kinds.
+  wireguard?: WireGuardKeysView;
 }
+
+/// [`EditorView.wireguard`]: the config's keys. The public key is derived in the backend (never in the web view).
+export interface WireGuardKeysView {
+  /// The `[Interface] PrivateKey` value as written; null: none yet.
+  privateKey: string | null;
+  /// Its public key; null: no private key, or an invalid one.
+  publicKey: string | null;
+  /// The number of `[Peer]` sections ("Generate Preshared Key" needs exactly one).
+  peers: number;
+  /// The only peer's `PresharedKey`; null: none, or not exactly one peer.
+  presharedKey: string | null;
+}
+
+/// Which WireGuard key a key command acts on.
+export type WireGuardKeyLine = 'privateKey' | 'presharedKey';
 
 /// [`EditorView.platform`]: Windows' view of a connection's settings (WinVPN 2c).
 export interface EditorPlatformView {
@@ -643,6 +660,11 @@ export const api = {
   editorSave: (id: string, fields: EditorFields) => invoke<EditorView>('editor_save', { id, fields }),
   editorForget: (id: string) => invoke<EditorView>('editor_forget', { id }),
   editorChooseCa: (id: string) => invoke<EditorView>('editor_choose_ca', { id }),
+  /// "Generate Key Pair" / "Generate Preshared Key": the backend makes the key (OS CSPRNG) into the draft.
+  editorWireguardGenerate: (id: string, key: WireGuardKeyLine) => invoke<EditorView>('editor_wireguard_generate', { id, key }),
+  /// "Copy" of the private / preshared key: the backend copies the draft's key through the secret clipboard
+  /// (concealed, cleared a minute later); the web view sends no key.
+  editorWireguardCopy: (id: string, key: WireGuardKeyLine) => invoke<void>('editor_wireguard_copy', { id, key }),
   createConnection: (kind: Kind) => invoke<void>('create_connection', { kind }),
   importFiles: () => invoke<Report | null>('import_files'),
   /// Files opened from Finder: their outcome, once.

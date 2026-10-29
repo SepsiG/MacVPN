@@ -204,6 +204,23 @@ A Kapcsolatok ablak Napló fülének két új funkciója (a smoke teszt `scripts
 - [x] A frissítés után a **Kapcsolatértesítések** be van kapcsolva, a **Megjelenés** „Rendszer szerint”, minden kapcsolatnál az **Automatikus újracsatlakozás** be van kapcsolva; a széf, a kapcsolatok és a mappák változatlanok
 - [x] (automatikus: a kiadás előtti `node scripts/l10n-baseline.mjs --check`, `docs/RELEASING.md` 2. lépés) egyetlen régi macOS-szöveg sem változott
 
+### WireGuard-kulcsok a szerkesztőben (2026-10-29, macOS és Windows)
+
+Kézzel megadott WireGuard-kapcsolat (**Új → WireGuard**). Ahol nincs „macOS:” vagy „Windows:” jelölés, mindkettőn ellenőrizd.
+
+- [ ] (k1) Új WireGuard-kapcsolat: a config alatt az **Interface-kulcsok** dobozban a **Privát kulcs** üres („Nincs megadva”), a **Publikus kulcs** helyén „Generálj kulcspárt, vagy illessz be egy privát kulcsot a konfigurációba.”; a **Megjelenítés** és a **Másolás** tiltva
+- [ ] (k2) **Kulcspár generálása** (kérdés nélkül) → a configban `PrivateKey = <44 karakter>`, a **Publikus kulcs** megjelenik (monospace, csak olvasható), a kapcsolat „Nem mentett változások”; terminálban `echo '<a privát kulcs>' | wg pubkey` ugyanazt adja
+- [ ] (k3) Még egyszer **Kulcspár generálása** → „Lecseréled a privát kulcsot?” / „A másik oldalon is be kell állítani az új publikus kulcsot.”; **Mégse** → a kulcs nem változik; **Csere** → új privát és publikus kulcs
+- [ ] (k4) A config `PrivateKey` sorába egy másik gép kulcsa beillesztve → a publikus kulcs azonnal követi; egy karakter elrontva → „Érvénytelen privát kulcs”, a publikus kulcs eltűnik
+- [ ] (k5) A publikus kulcs **Másolás** gombja → „Kimásolva” / „A publikus kulcs kimásolva.”, beillesztve egy szerkesztőbe pontosan a kulcs
+- [ ] (k6) A privát kulcs maszkolva; **Megjelenítés** → olvasható, **Elrejtés** → újra maszkolva; **Másolás** → „Kimásolva. Egy perc múlva lekerül a vágólapról.”; beillesztve a kulcs, 60 mp múlva a vágólap üres (ha közben mást nem másoltál), **Széf zárolása most** után is üres
+- [ ] (k7) macOS: egy vágólapkezelő (pl. Maccy, Raycast) futása mellett a privát kulcs másolása nem jelenik meg az előzményei között; a publikus kulcsé igen
+- [ ] (k8) Windows: a privát kulcs másolása után a Win+V előzményekben nincs ott; a publikus kulcsé ott lehet
+- [ ] (k9) Pontosan egy `[Peer]`: a **Peer (másik oldal)** dobozban **Előre megosztott kulcs generálása** → `PresharedKey = …` a peer `PublicKey` sora után, maszkolva, Megjelenítés / Másolás mint a privát kulcsnál; másodszorra „Lecseréled az előre megosztott kulcsot?”. Két `[Peer]` szakasszal a Peer doboz nem jelenik meg
+- [ ] (k10) A generált kulcspárral, a szerveren beállított publikus kulccsal (pl. a labor WireGuard-szerverén a `[Peer]` sorba írva) **Mentés**, majd csatlakozás → handshake, a forgalom átmegy
+- [ ] (k11) A debug napló (**Csatlakozás hibakereső módban**), a napló fül és az értesítések egyikében sem szerepel a privát vagy az előre megosztott kulcs
+- [ ] (k12) Csapatkatalógus WireGuard-kapcsolata: a publikus kulcs látszik és másolható, a **Kulcspár generálása** tiltva
+
 ## Élő átjárók: UniFi, pfSense, OPNsense (2026-10-29, macOS és Windows)
 
 Valódi átjárón, amelyhez van admin-hozzáférés (a lépések: `docs/how-to.hu.md` 24. és `docs/winvpn-how-to.hu.md` 27. szakasz; a formátumokat a `Tests/Fixtures/{unifi,pfsense,opnsense}/` fixture-ök és a `vendor_profiles` tesztek már lefedik, itt a valódi kapcsolat a kérdés). Ahol nincs „macOS:” vagy „Windows:” jelölés, mindkettőn ellenőrizd. A kliens egy másik hálózaton legyen (pl. telefonos hotspot), ne az átjáró LAN-ján. Átjáró, firmware / UniFi Network **verzió: ___**

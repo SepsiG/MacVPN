@@ -373,12 +373,96 @@
         "windows"
       ]
     },
+    "Copied. It is removed from the clipboard in a minute.": {
+      "hu": "Kimásolva. Egy perc múlva lekerül a vágólapról.",
+      "scope": "app"
+    },
     "Could not clear the log": {
       "hu": "A napló nem törölhető",
       "scope": "app"
     },
     "Custom Range": {
       "hu": "Egyéni időszak",
+      "scope": "app"
+    },
+    "Generate Key Pair": {
+      "hu": "Kulcspár generálása",
+      "scope": "app"
+    },
+    "Generate Preshared Key": {
+      "hu": "Előre megosztott kulcs generálása",
+      "scope": "app"
+    },
+    "Generate a key pair, or paste a private key into the config.": {
+      "hu": "Generálj kulcspárt, vagy illessz be egy privát kulcsot a konfigurációba.",
+      "scope": "app"
+    },
+    "Hide": {
+      "hu": "Elrejtés",
+      "scope": "app"
+    },
+    "Interface keys": {
+      "hu": "Interface-kulcsok",
+      "scope": "app"
+    },
+    "Invalid private key": {
+      "hu": "Érvénytelen privát kulcs",
+      "scope": "app"
+    },
+    "Not set": {
+      "hu": "Nincs megadva",
+      "scope": "app"
+    },
+    "Optional. The other side needs the same preshared key.": {
+      "hu": "Nem kötelező. A másik oldalon ugyanezt az előre megosztott kulcsot kell megadni.",
+      "scope": "app"
+    },
+    "Peer": {
+      "hu": "Peer (másik oldal)",
+      "scope": "app"
+    },
+    "Preshared key": {
+      "hu": "Előre megosztott kulcs",
+      "scope": "app"
+    },
+    "Private key": {
+      "hu": "Privát kulcs",
+      "scope": "app"
+    },
+    "Public key": {
+      "hu": "Publikus kulcs",
+      "scope": "app"
+    },
+    "Public key copied.": {
+      "hu": "A publikus kulcs kimásolva.",
+      "scope": "app"
+    },
+    "Replace": {
+      "hu": "Csere",
+      "scope": "app"
+    },
+    "Replace the preshared key?": {
+      "hu": "Lecseréled az előre megosztott kulcsot?",
+      "scope": "app"
+    },
+    "Replace the private key?": {
+      "hu": "Lecseréled a privát kulcsot?",
+      "scope": "app"
+    },
+    "Set the public key on the other side, in the [Peer] section for this device.": {
+      "hu": "A publikus kulcsot a másik oldalon kell beállítani, az ehhez az eszközhöz tartozó [Peer] szakaszban.",
+      "scope": "app"
+    },
+    "Show": {
+      "hu": "Megjelenítés",
+      "scope": "app"
+    },
+    "The other side must be updated with the new preshared key.": {
+      "hu": "A másik oldalon is be kell állítani az új előre megosztott kulcsot.",
+      "scope": "app"
+    },
+    "The other side must be updated with the new public key.": {
+      "hu": "A másik oldalon is be kell állítani az új publikus kulcsot.",
       "scope": "app"
     },
     "dead peer detection added (dpd_delay = %@)": {

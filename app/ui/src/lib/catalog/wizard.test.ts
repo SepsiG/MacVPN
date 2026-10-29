@@ -363,7 +363,17 @@ test('no secret goes through the web view clipboard: the backend copies keys and
   const lib = fileURLToPath(new URL('..', import.meta.url));
   const files = (readdirSync(lib, { recursive: true }) as string[]).filter((f) => /\.(svelte|ts)$/.test(f) && !f.endsWith('.test.ts'));
   const writers = files.filter((f) => /navigator\.clipboard|execCommand\(\s*'copy'/.test(readFileSync(`${lib}/${f}`, 'utf8')));
-  assert.deepEqual(writers.map((f) => f.split(/[\\/]/).pop()), ['Fingerprint.svelte'], 'only the public fingerprint');
+  assert.deepEqual(
+    writers.map((f) => f.split(/[\\/]/).pop()).sort(),
+    ['Fingerprint.svelte', 'WireGuardKeys.svelte'],
+    'only the public fingerprint and the WireGuard public key',
+  );
+  // WireGuard: the web view writes only the public key; the private and preshared keys go through the backend.
+  const wg = readFileSync(`${lib}/manage/WireGuardKeys.svelte`, 'utf8');
+  assert.deepEqual(wg.match(/navigator\.clipboard\.writeText\([^)]*\)/g), ['navigator.clipboard.writeText(key)']);
+  assert.match(wg, /async function copyPublic\(key: string\) \{\s*error = null;\s*try \{\s*await navigator\.clipboard\.writeText\(key\)/);
+  assert.match(wg, /copyPublic\(pub\.key\)/);
+  assert.match(readFileSync(`${lib}/manage/session.svelte.ts`, 'utf8'), /api\.editorWireguardCopy\(this\.id, key\)/);
   const reveal = readFileSync(`${lib}/catalog/TeamKeyReveal.svelte`, 'utf8');
   assert.match(reveal, /publishApi\.copyTeamKey\(key\)/);
   assert.match(readFileSync(`${lib}/vault/copy.ts`, 'utf8'), /api\.vaultCopyRecoveryKey\(key\)/);

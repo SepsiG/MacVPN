@@ -2,7 +2,7 @@
 // change is sent (at most one request in flight; the latest fields follow), and the backend answers with the
 // derived state (dirty, risky panel, issues, …). The backend's draft is what "Save" of the unsaved-changes
 // question and the quit save, so pending changes are flushed before any of those.
-import { api, type EditorFields, type EditorView } from '../api';
+import { api, type EditorFields, type EditorView, type WireGuardKeyLine } from '../api';
 
 let active: EditorSession | null = null;
 
@@ -92,6 +92,19 @@ export class EditorSession {
   async forget(): Promise<void> {
     await this.flush();
     this.#adopt(await api.editorForget(this.id));
+  }
+
+  /// "Generate Key Pair" / "Generate Preshared Key" (WireGuard): the latest edits first, then the backend's key
+  /// into the config text.
+  async generateWireguardKey(key: WireGuardKeyLine): Promise<void> {
+    await this.flush();
+    this.#adopt(await api.editorWireguardGenerate(this.id, key));
+  }
+
+  /// "Copy" of the private / preshared key: the backend copies its draft's key, so the latest edits go first.
+  async copyWireguardKey(key: WireGuardKeyLine): Promise<void> {
+    await this.flush();
+    await api.editorWireguardCopy(this.id, key);
   }
 
   /// "Choose PEM File…" (SSTP): the panel, then the certificates into the form.

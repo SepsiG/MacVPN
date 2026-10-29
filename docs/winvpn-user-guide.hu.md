@@ -220,6 +220,14 @@ Importáld a `.conf` fájlt, vagy hozz létre újat (**Új → WireGuard**), és
 - Az értékeket is ellenőrzi: a kulcsok 44 karakteres base64 szövegek, az `Address`/`AllowedIPs` IP-címek opcionális prefixszel (`10.0.0.2/32`), az `Endpoint` `hoszt:port` vagy `[IPv6]:port`, az `MTU`/`ListenPort`/`PersistentKeepalive` számok. Egyik érték sem kezdődhet `-` jellel.
 - Windowson az `FwMark` és a `Table` csak `auto` vagy `off` lehet (`Table = off`: nem kerül fel útvonal); más értéket a mentés elutasít.
 
+**Kulcsok.** A config alatt az **Interface-kulcsok** doboz mutatja ennek az eszköznek a kulcsait:
+
+- A **Kulcspár generálása** új privát kulcsot ír a `PrivateKey` sorba. A WinVPN a rendszer biztonságos véletlenszám-forrásából készíti, ahogy a `wg genkey`. Ha a configban már van privát kulcs, a WinVPN előbb rákérdez: **Lecseréled a privát kulcsot? A másik oldalon is be kell állítani az új publikus kulcsot.** Mint minden módosítás, az új kulcs a **Mentés** után marad meg.
+- A **Publikus kulcs** a privát kulcsból származik, és követi, ha generálod, beilleszted vagy átírod; hibás privát kulcsnál ez áll: **Érvénytelen privát kulcs**. Erre a kulcsra van szüksége a másik oldalnak (a szerveren az ehhez az eszközhöz tartozó `[Peer]` szakaszban): a **Másolás** a vágólapra teszi.
+- A **Privát kulcs** maszkolva látszik: a **Megjelenítés** felfedi, a **Másolás** a [10.](#10-biztonsági-megjegyzések) részben leírt védett vágólapra teszi (nem kerül a vágólap-előzményekbe és a felhőszinkronba, 60 másodperc után törlődik). A privát kulcsot senkinek ne add oda.
+- Ha pontosan egy `[Peer]` van, a **Peer (másik oldal)** doboz egy nem kötelező **Előre megosztott kulcsot** (`PresharedKey`) is kínál az **Előre megosztott kulcs generálása** gombbal; ugyanígy jeleníthető meg és másolható. A másik oldalon ugyanezt a kulcsot kell megadni.
+- A csapatkatalógus kapcsolatánál a kulcsok megjeleníthetők és másolhatók, de új nem generálható.
+
 ### 3.3 IKEv2 (strongSwan)
 
 Az IKEv2 configot a MacVPN-hez hasonlóan strongSwan `swanctl.conf` szintaxisban kell megadni, így ugyanaz a kapcsolat mindkét rendszeren működik. Új kapcsolatnál (**Új → IKEv2**) egy sablon jelenik meg.
@@ -724,7 +732,7 @@ Ha megtartod az adataidat (a négyzet nincs bejelölve), és később újra tele
 - **Aláíratlan telepítő.** Az MSI nincs Authenticode-dal aláírva (lásd [1.2](#12-smartscreen)). Csak a hivatalos helyről töltsd le. A WinVPN által telepített frissítéseket a fejlesztő offline Ed25519 aláírásával ellenőrzi, a telepítő nevéhez, verziójához és processzortípusához kötve (lásd [8.](#8-frissítés)).
 - **A motorfrissítéseket** a kiadóik aláírása (OpenVPN Inc., WireGuard LLC) alapján fogadja el, és régebbi verziót sosem telepít (lásd [2.5](#25-az-openvpn-és-a-wireguard-frissítése)).
 - **Letöltött fájlok.** A Windows által letöltöttként megjelölt fájlt a WinVPN csak egy kérdés után importálja (lásd [4.1](#41-vpn-fájlok-megnyitása-a-fájlkezelőből)).
-- **Titkok a vágólapon.** A helyreállítási kulcsot, a csapatkulcsot és a feliratkozási kódot a WinVPN úgy másolja, hogy ne kerüljenek a Windows vágólap-előzményeibe (Win+V) és a felhőalapú vágólap-szinkronizálásba, és a vágólapfigyelő programokat is kéri, hogy hagyják ki őket. A WinVPN 60 másodperc után, a **Széf zárolása most** parancsnál és kilépéskor törli a vágólapot, hacsak közben mást nem másoltál.
+- **Titkok a vágólapon.** A helyreállítási kulcsot, a csapatkulcsot, a feliratkozási kódot és a WireGuard privát vagy előre megosztott kulcsát a WinVPN úgy másolja, hogy ne kerüljenek a Windows vágólap-előzményeibe (Win+V) és a felhőalapú vágólap-szinkronizálásba, és a vágólapfigyelő programokat is kéri, hogy hagyják ki őket. A WinVPN 60 másodperc után, a **Széf zárolása most** parancsnál és kilépéskor törli a vágólapot, hacsak közben mást nem másoltál.
 - **Párosított appok.** Alapból kikapcsolva; a vezérlő csövet csak a saját asztali munkamenetedben futó programok érik el (lásd [5.4](#54-párosított-appok-vezérlő-api)). Részletek: [a vezérlő API leírása](control-api.hu.md#4-biztonsági-modell).
 - **Mentések.** A **Teljes biztonsági mentés…** fájlja minden titkot tartalmaz, a mentés jelszavával titkosítva. Aki birtokolja a fájlt és a jelszavát, az összes VPN-hitelesítő adatodat elolvashatja: a kettőt tartsd külön. Lásd [14.](#14-biztonsági-mentés-és-visszaállítás)
 - **Csapatkatalógusok.** Lásd [16.11](#1611-biztonsági-modell).

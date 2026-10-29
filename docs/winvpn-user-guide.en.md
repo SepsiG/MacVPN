@@ -220,6 +220,14 @@ Import the `.conf` file, or create a new one (**New → WireGuard**) and fill in
 - Values are checked: keys must be 44-character base64, `Address`/`AllowedIPs` IP addresses with an optional prefix (`10.0.0.2/32`), `Endpoint` `host:port` or `[IPv6]:port`, `MTU`/`ListenPort`/`PersistentKeepalive` numbers. No value may start with `-`.
 - On Windows `FwMark` and `Table` can only be `auto` or `off` (`Table = off`: no routes are added); other values are refused when you save.
 
+**Keys.** Under the config, the **Interface keys** box shows this device's keys:
+
+- **Generate Key Pair** writes a new private key into the `PrivateKey` line. WinVPN makes it from the system's secure random generator, as `wg genkey` does. If the config already has a private key, WinVPN asks first: **Replace the private key? The other side must be updated with the new public key.** Like any edit, the new key is kept when you click **Save**.
+- **Public key** is derived from the private key and follows it as you generate, paste or edit it; a malformed private key shows **Invalid private key**. This is the key the other side needs (the server's `[Peer]` for this device): **Copy** puts it on the clipboard.
+- **Private key** is masked: **Show** reveals it, **Copy** copies it through the protected clipboard of [10](#10-security-notes) (kept out of the clipboard history and cloud sync, cleared after 60 seconds). Give the private key to no one.
+- With exactly one `[Peer]`, the **Peer** box offers an optional **Preshared key** (`PresharedKey`) with **Generate Preshared Key**, shown and copied the same way. The other side needs the same preshared key.
+- A team catalog's connection shows and copies its keys, but cannot generate new ones.
+
 ### 3.3 IKEv2 (strongSwan)
 
 IKEv2 configs use strongSwan `swanctl.conf` syntax, as in MacVPN, so the same connection works on both. A new connection (**New → IKEv2**) starts with a template.
@@ -724,7 +732,7 @@ If you keep your data (box unticked) and install WinVPN again later, the vault o
 - **Unsigned installer.** The MSI is not Authenticode-signed (see [1.2](#12-smartscreen)). Only download it from the official place. Updates installed by WinVPN itself are checked against the maintainer's offline Ed25519 signature, bound to the installer's name, version and processor type (see [8](#8-updates)).
 - **Engine updates** are trusted by their publishers' signatures (OpenVPN Inc., WireGuard LLC) and never install an older version (see [2.5](#25-updating-openvpn-and-wireguard)).
 - **Downloaded files.** A file Windows marked as downloaded is imported only after a question (see [4.1](#41-opening-vpn-files-from-file-explorer)).
-- **Secrets on the clipboard.** The recovery key, a team key and a subscription string are copied so that they stay out of the Windows clipboard history (Win+V) and cloud clipboard sync, and clipboard monitors are asked to skip them. WinVPN clears the clipboard after 60 seconds, at **Lock Now** and at quit, unless you copied something else meanwhile.
+- **Secrets on the clipboard.** The recovery key, a team key, a subscription string and a WireGuard private or preshared key are copied so that they stay out of the Windows clipboard history (Win+V) and cloud clipboard sync, and clipboard monitors are asked to skip them. WinVPN clears the clipboard after 60 seconds, at **Lock Now** and at quit, unless you copied something else meanwhile.
 - **Paired apps.** Off by default; only programs in your own desktop session can reach the control pipe (see [5.4](#54-paired-apps-control-api)). Details: [Control API guide](control-api.md#4-security-model).
 - **Backups.** A file made by **Back Up Everything…** contains every secret, encrypted with the backup password. Anyone with the file and its password can read all your VPN credentials: keep the two apart. See [14](#14-backup-and-restore).
 - **Team catalogs.** See [16.11](#1611-security-model).

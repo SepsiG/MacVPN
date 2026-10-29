@@ -42,6 +42,7 @@ pub mod validators;
 #[cfg(feature = "vault")]
 pub mod vault;
 pub mod vpn_networks;
+pub mod wireguard_keys;
 
 pub use target_os::TargetOs;
 

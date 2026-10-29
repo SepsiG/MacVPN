@@ -252,6 +252,14 @@ Endpoint = vpn.example.com:51820
 - Az értékeket is ellenőrzi: a kulcsok 44 karakteres base64 szövegek, az `Address`/`AllowedIPs` IP-címek opcionális prefixszel (`10.0.0.2/32`), az `Endpoint` `hoszt:port` vagy `[IPv6]:port`, az `MTU`/`ListenPort`/`PersistentKeepalive` számok. Egyik érték sem kezdődhet `-` jellel.
 - A WireGuard-hoz nem kell felhasználónév és jelszó, a hitelesítés a kulcspárral történik.
 
+**Kulcsok.** A config alatt az **Interface-kulcsok** doboz mutatja ennek az eszköznek a kulcsait:
+
+- A **Kulcspár generálása** új privát kulcsot ír a `PrivateKey` sorba. A MacVPN a rendszer biztonságos véletlenszám-forrásából készíti, ahogy a `wg genkey`. Ha a configban már van privát kulcs, a MacVPN előbb rákérdez: **Lecseréled a privát kulcsot? A másik oldalon is be kell állítani az új publikus kulcsot.** Mint minden módosítás, az új kulcs a **Mentés** után marad meg.
+- A **Publikus kulcs** a privát kulcsból származik, és követi, ha generálod, beilleszted vagy átírod; hibás privát kulcsnál ez áll: **Érvénytelen privát kulcs**. Erre a kulcsra van szüksége a másik oldalnak (a szerveren az ehhez az eszközhöz tartozó `[Peer]` szakaszban): a **Másolás** a vágólapra teszi.
+- A **Privát kulcs** maszkolva látszik: a **Megjelenítés** felfedi, a **Másolás** úgy másolja, mint a feliratkozási kódot: a vágólapkezelők kihagyják, az Univerzális vágólap nem küldi át a többi eszközödre, és 60 másodperc után, a **Széf zárolása most** parancsnál és kilépéskor törlődik (hacsak közben mást nem másoltál). A privát kulcsot senkinek ne add oda.
+- Ha pontosan egy `[Peer]` van, a **Peer (másik oldal)** doboz egy nem kötelező **Előre megosztott kulcsot** (`PresharedKey`) is kínál az **Előre megosztott kulcs generálása** gombbal; ugyanígy jeleníthető meg és másolható. A másik oldalon ugyanezt a kulcsot kell megadni.
+- A csapatkatalógus kapcsolatánál a kulcsok megjeleníthetők és másolhatók, de új nem generálható.
+
 ### 3.3 IKEv2 (strongSwan)
 
 Az IKEv2 configot strongSwan `swanctl.conf` szintaxisban kell megadni. Új kapcsolatnál (**Új → IKEv2**) egy sablon jelenik meg. Felhasználónév és jelszó (EAP-MSCHAPv2) esetén:

@@ -14,6 +14,8 @@ use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
 use macvpn_core::models::{Connection, NativeSettings, VPNKind, ValidationIssue, uuid_string};
 use macvpn_core::validators::sstp::SSTPConfig;
+use macvpn_core::vault::Entropy;
+use macvpn_core::wireguard_keys::KeyLine;
 use macvpn_platform_api::{AdminSteps, NativeSupport};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -760,6 +762,29 @@ impl ConnectionsModel {
             Ok(d.view(key))
         })
         .map(|v| self.with_platform(v))
+    }
+
+    /// "Generate Key Pair" / "Generate Preshared Key" of a WireGuard editor: the new key into the draft (see
+    /// [`Draft::generate_wireguard_key`]); `entropy` is the platform's CSPRNG.
+    pub fn generate_wireguard_key(
+        &self,
+        key: &str,
+        which: KeyLine,
+        entropy: &dyn Entropy,
+    ) -> Result<EditorView, String> {
+        self.with_draft(key, |d| {
+            d.generate_wireguard_key(which, entropy)?;
+            Ok(d.view(key))
+        })
+        .map(|v| self.with_platform(v))
+    }
+
+    /// The private key or preshared key of a WireGuard editor's draft, for the secret clipboard.
+    pub fn wireguard_secret(&self, key: &str, which: KeyLine) -> Result<Zeroizing<String>, String> {
+        self.unlocked()?;
+        let s = self.lock();
+        let draft = s.drafts.get(key).ok_or("no editor")?;
+        draft.wireguard_secret(which).ok_or_else(|| "no key".into())
     }
 
     // MARK: - Live system VPN list
