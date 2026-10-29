@@ -29,6 +29,7 @@ Short step-by-step instructions for MacVPN 2.0. The [user guide](user-guide.en.m
 21. [Move the admin key to a new Mac](#21-move-the-admin-key-to-a-new-mac)
 22. [Choose the appearance and the connection notifications](#22-choose-the-appearance-and-the-connection-notifications)
 23. [Reconnect automatically after sleep](#23-reconnect-automatically-after-sleep)
+24. [Connect to a UniFi, pfSense or OPNsense VPN](#24-connect-to-a-unifi-pfsense-or-opnsense-vpn)
 
 ---
 
@@ -390,3 +391,105 @@ MacVPN tries up to 3 times and tells you the result (**… reconnected**, **… 
 **To turn it off for one connection:** **Connections** window → the connection → switch off **Reconnect Automatically** (system VPNs do not have it).
 
 Details: [user guide, 5.5](user-guide.en.md#55-reconnect-automatically).
+
+## 24. Connect to a UniFi, pfSense or OPNsense VPN
+
+These gateways and firewalls make client files that MacVPN imports as they are: no error, nothing to acknowledge. The test fixtures are in `Tests/Fixtures/unifi`, `pfsense` and `opnsense`; the OpenVPN details are in [the directive policy](openvpn-directives.md#unifi-pfsense-and-opnsense). The [sources](#sources) are at the end of this section.
+
+### Ubiquiti UniFi (UniFi OS gateways: UDM, UDR, UCG, UXG, Gateway Lite / Max, …)
+
+**WireGuard (recommended by Ubiquiti for computers):**
+
+1. In the UniFi Network app: **Settings → VPN → VPN Server → Create New → WireGuard** (default port UDP 51820). If the gateway is behind another router, forward that port to it.
+2. Click **Add Client**, name it after this Mac (one client per device) and **Download** its configuration file. The QR code next to it is for the WireGuard phone app; MacVPN cannot read it, the file holds the same.
+3. In MacVPN: **New (+) → Import from File…** → the `.conf`. Nothing to fill in.
+4. **Full or split tunnel:** the file's `AllowedIPs` decides. With `0.0.0.0/0` in it, all traffic goes through the gateway; otherwise only the listed networks. To reach only the office networks, replace `0.0.0.0/0` in MacVPN's editor with them (for example `10.20.30.0/24`) and keep the server's tunnel address.
+5. **DNS:** the file's `DNS =` is the gateway itself; MacVPN sets it while connected.
+6. **Keepalive:** if the file has no `PersistentKeepalive` line, add `PersistentKeepalive = 25` under `[Peer]`. It keeps the tunnel open through NAT routers and lets MacVPN notice a dead tunnel even while it is idle ([user guide, 5.5](user-guide.en.md#55-reconnect-automatically)).
+7. If the gateway's public address changes, put its DDNS name into `Endpoint` (`vpn.example.com:51820`).
+
+**OpenVPN** (UniFi Network 7.4 or later):
+
+1. **Settings → VPN → VPN Server → Create New → OpenVPN** (default port UDP 1194). Add a user (user name and password) and **Download** the configuration file; it can take a minute after the server is created.
+2. In MacVPN: **Import from File…** → the `.ovpn`, then fill in **Username** and **Password** and **Save**.
+3. Older UniFi versions exported `comp-lzo`; it imports, but newer UniFi servers no longer use compression. If such a connection stops working after a UniFi update, download a fresh file (or delete the `comp-lzo` line).
+4. Some guides show the file with `user nobody` and `group nogroup`. MacVPN lists them under **Risky settings** (reconnects may fail after OpenVPN drops root); delete the two lines, they are not needed.
+
+**L2TP/IPsec** (the legacy remote-user VPN of the USG / USG-Pro, also offered by newer gateways): **New → L2TP**. **Server**: the gateway's public address or DDNS name; **Account name** and **Password**: the VPN user (RADIUS user on a USG); **Pre-shared key (PSK)**: the server's pre-shared key. No certificate is needed. Keep **Send all traffic over VPN** on: UniFi's L2TP server pushes no routes, and Ubiquiti requires it for macOS clients. Ubiquiti recommends WireGuard instead.
+
+**Teleport (WiFiman) is not supported.** It is WireGuard inside, but the invitation links go through Ubiquiti's cloud and there is no published interface or exportable configuration, so a third-party app cannot use it. Use the WireGuard server above: it runs on the same gateways.
+
+### pfSense
+
+**OpenVPN:** install the **openvpn-client-export** package (**System → Package Manager**), then **VPN → OpenVPN → Client Export**.
+
+- Use **Inline Configurations → Most Clients** (the **OpenVPN Connect** and **Android** variants import too). The keys are in the file; the user name and password (if the server asks for them) go into **Username** / **Password**.
+- The **Archive** (zip) and **Config File Only** exports refer to files (`….p12`, `…-tls.key`): unpack the zip into one folder and import the `.ovpn` from there; MacVPN copies the files into the config. A password set on the PKCS#12 goes into **Private key password**.
+- Leave **Microsoft Certificate Storage** (`cryptoapicert`) and **PKCS#11** off: MacVPN refuses them (Windows only; a PKCS#11 library would load as root).
+- **Block Outside DNS** (`setenv opt block-outside-dns`), **verify-x509-name**, **lport 0** and **Legacy client** all import. A one-time code set up with `static-challenge` in **Advanced** is asked when you connect.
+
+**WireGuard:** pfSense's WireGuard package exports no client file: write it yourself (**New → WireGuard**) from the peer you added on pfSense:
+
+```
+[Interface]
+PrivateKey = <this Mac's private key; its public key goes into the pfSense peer>
+Address = 10.20.32.2/32, fd00:db8:20:32::2/128
+DNS = 10.20.30.1, corp.example.com
+
+[Peer]
+PublicKey = <the pfSense tunnel's public key>
+PresharedKey = <if the peer has one>
+AllowedIPs = 10.20.32.0/24, 10.20.30.0/24
+Endpoint = vpn.example.com:51820
+PersistentKeepalive = 25
+```
+
+Names in `DNS` are search domains. Several networks and IPv6 work in `Address` and `AllowedIPs`.
+
+**IPsec (mobile clients):** pfSense exports nothing; use **New → IKEv2** and fill in the template:
+
+- **EAP-MSCHAPv2** (Netgate's recipe): `auth = eap-mschapv2` and `eap_id = <user>` in `local`, `auth = pubkey` and `id = <the name in the server certificate>` in `remote`, and the CA certificate in strongSwan's `x509ca/` ([user guide, 3.3](user-guide.en.md#33-ikev2-strongswan)). Copy the Phase 1 / Phase 2 algorithms into `proposals` / `esp_proposals`; the DH group in `esp_proposals` is the Phase 2 PFS group, which the recipe turns on:
+
+  ```
+  connections {
+    office {
+      remote_addrs = vpn.example.com
+      vips = 0.0.0.0
+      proposals = aes256gcm16-prfsha256-modp4096, aes256-sha256-modp2048
+      local {
+        auth = eap-mschapv2
+        eap_id = alice
+      }
+      remote {
+        auth = pubkey
+        id = vpn.example.com
+      }
+      children {
+        office {
+          remote_ts = 10.20.30.0/24
+          esp_proposals = aes256gcm16-modp2048
+        }
+      }
+    }
+  }
+  ```
+- **EAP-TLS** (`auth = eap-tls`), **certificate** (`auth = pubkey`, `certs = <file>`) and **PSK** (`auth = psk` on both sides, the key into **Pre-shared key (PSK)**) work too.
+- **IKEv1 with XAuth and a PSK** (the "Cisco-style" mobile setup): **New → Cisco IPsec** with **Server**, **Account name**, **Password**, **Pre-shared key (PSK)** and **Group name** (the Phase 1 identifier).
+
+### OPNsense
+
+**OpenVPN:** **VPN → OpenVPN → Client Export**, export type **File Only** (one `.ovpn` with the keys inside; **Archive** works like pfSense's).
+
+- **Validate server subject** (`verify-x509-name "…" subject`), **Use random local port** (`lport 0`), **Do not cache passwords** (`auth-nocache`), **Static challenge (OTP)** (MacVPN asks for the code when you connect), `tls-crypt` and `tls-crypt-v2` all import.
+- Leave **Windows: Microsoft Certificate Storage** off (as on pfSense).
+
+**WireGuard:** **VPN → WireGuard → Peer generator** shows a ready client config: copy it into a `.conf` file and import it, or paste it into **New → WireGuard**. Add `PersistentKeepalive = 25` if it has none.
+
+**IPsec:** **VPN → IPsec → Connections**; write the same `swanctl.conf` as for pfSense. OPNsense's `default` proposals need no `proposals` line (or write `proposals = default`).
+
+### Sources
+
+- Ubiquiti Help Center: [UniFi Gateway – WireGuard VPN Server](https://help.ui.com/hc/en-us/articles/115005445768), [OpenVPN Server](https://help.ui.com/hc/en-us/articles/12600064355991), [L2TP VPN Server](https://help.ui.com/hc/en-us/articles/12594825307927), [Teleport VPN](https://help.ui.com/hc/en-us/articles/5246403561495), [Introduction to VPNs](https://help.ui.com/hc/en-us/articles/7951513517079), [WireGuard VPN Client](https://help.ui.com/hc/en-us/articles/16357883221015) and [OpenVPN Client](https://help.ui.com/hc/en-us/articles/12648654915863) (the file formats UniFi reads and writes).
+- UniFi OpenVPN server export, as published: [WunderTech: How to Set Up OpenVPN on UniFi Devices](https://www.wundertech.net/how-to-set-up-openvpn-on-unifi-devices/); UniFi client steps: [LazyAdmin: UniFi VPN Server](https://lazyadmin.nl/network/unifi-vpn-server/).
+- pfSense: [OpenVPN Client Export package](https://docs.netgate.com/pfsense/en/latest/packages/openvpn-client-export.html) and its source, `openvpn-client-export.inc` in [pfsense/FreeBSD-ports](https://github.com/pfsense/FreeBSD-ports/tree/devel/security/pfSense-pkg-openvpn-client-export); [WireGuard](https://docs.netgate.com/pfsense/en/latest/vpn/wireguard/index.html); [IKEv2 with EAP-MSCHAPv2](https://docs.netgate.com/pfsense/en/latest/recipes/ipsec-mobile-ikev2-eap-mschapv2.html) and [its Windows client](https://docs.netgate.com/pfsense/en/latest/recipes/ipsec-mobile-ikev2-client-windows.html).
+- OPNsense: the client exporter's source, `PlainOpenVPN.php` in [opnsense/core](https://github.com/opnsense/core/blob/master/src/opnsense/mvc/app/library/OPNsense/OpenVPN/PlainOpenVPN.php); [WireGuard road warrior](https://docs.opnsense.org/manual/how-tos/wireguard-client.html); [IPsec](https://docs.opnsense.org/manual/vpnet.html).

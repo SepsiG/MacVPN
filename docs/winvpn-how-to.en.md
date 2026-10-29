@@ -32,6 +32,7 @@ Short step-by-step instructions for WinVPN 2.0 on Windows 10 and 11. The [WinVPN
 24. [Test with the VPN lab (testers)](#24-test-with-the-vpn-lab-testers)
 25. [Choose the appearance and the connection notifications](#25-choose-the-appearance-and-the-connection-notifications)
 26. [Reconnect automatically after sleep](#26-reconnect-automatically-after-sleep)
+27. [Connect to a UniFi, pfSense or OPNsense VPN](#27-connect-to-a-unifi-pfsense-or-opnsense-vpn)
 
 ---
 
@@ -277,3 +278,22 @@ WinVPN tries up to 3 times and tells you the result (**… reconnected**, **… 
 **To turn it off for one connection:** **Connections** window → the connection → switch off **Reconnect Automatically** (system VPNs do not have it).
 
 Details: [user guide, 5.5](winvpn-user-guide.en.md#55-reconnect-automatically).
+
+## 27. Connect to a UniFi, pfSense or OPNsense VPN
+
+These gateways and firewalls make client files that WinVPN imports as they are. The console steps are the same as for MacVPN: [MacVPN How-to, 24](how-to.en.md#24-connect-to-a-unifi-pfsense-or-opnsense-vpn) (with the sources). What is different on Windows:
+
+**Ubiquiti UniFi (UniFi OS gateways)**
+
+- **WireGuard** (recommended): **Settings → VPN → VPN Server → WireGuard → Add Client → Download**, then **New (+) → Import from File…** → the `.conf`. The QR code is for phones; WinVPN cannot read it. `AllowedIPs` with `0.0.0.0/0` = all traffic; replace it with the office networks for a split tunnel. Add `PersistentKeepalive = 25` under `[Peer]` if the file has none, so WinVPN notices a dead tunnel even while it is idle.
+- **OpenVPN:** install **OpenVPN Community** in System Status first. Import the `.ovpn` UniFi downloads, fill in **Username** / **Password**. UniFi's file uses `cipher AES-256-CBC` (older ones `comp-lzo` too), so WinVPN runs it on the **TAP-Windows6** driver; it works, but only one TAP-Windows6 connection can be up at a time ([user guide, 7.5](winvpn-user-guide.en.md#75-openvpn-drivers-dco-and-tap-windows6)). Delete `user nobody` / `group nogroup` lines if a guide's file has them.
+- **L2TP/IPsec** (USG / USG-Pro remote-user VPN): **New → L2TP** with **Server**, **Account name**, **Password** and **Pre-shared key (PSK)**; WinVPN signs in with MS-CHAP v2, which Ubiquiti requires for Windows (turn on **Require Strong Authentication** in the UniFi L2TP server's advanced settings if it offers it). If the gateway is behind another router, Windows needs **Allow L2TP Behind NAT…** once (Ubiquiti's "modify the registry" step; an administrator confirms, then restart Windows). UniFi pushes no routes: keep **Send all traffic over VPN** on, or add routes yourself.
+- **Teleport (WiFiman) is not supported:** it goes through Ubiquiti's cloud and has no exportable configuration. Use the WireGuard server.
+
+**pfSense and OPNsense**
+
+- **OpenVPN:** pfSense **VPN → OpenVPN → Client Export → Inline Configurations → Most Clients**; OPNsense **VPN → OpenVPN → Client Export → File Only**. Both import with no error. Leave **Microsoft Certificate Storage** off: `cryptoapicert` is forbidden in WinVPN (the service runs as SYSTEM and would reach the computer's certificate store); the inline export puts the certificate into the file instead. The **Archive** export works when unpacked into one folder (the `.p12` password goes into **Private key password**).
+- **Faster driver:** pfSense's default **Fallback Data Encryption Algorithm** is AES-256-CBC, and OPNsense's exports carry the server's fallback cipher too: with a CBC fallback, or with compression, WinVPN uses TAP-Windows6. Set the fallback to **AES-256-GCM** (and compression off) on the server and export again, and WinVPN uses the faster DCO driver.
+- **WireGuard:** pfSense has no client export (write the `.conf` from the peer, see the MacVPN section); OPNsense's **VPN → WireGuard → Peer generator** shows one to copy. IPv6, several `AllowedIPs` and DNS search domains work.
+- **IPsec (mobile clients) — IKEv2 only, with EAP-MSCHAPv2 or a computer certificate.** Write the `swanctl.conf` as in the MacVPN section; WinVPN translates it. Windows uses one IKE and one ESP combination: the first of your `proposals` / `esp_proposals` it supports (Netgate's recipe works: AES-256-GCM with DH 16 is skipped, AES-256 / SHA-256 / DH 14 is used, ESP AES-256-GCM with PFS 14). Give the firewall's Phase 1 at least one of AES-256 / SHA-256 / DH 14 or AES-GCM / ECP-256, as Windows offers nothing else. `remote_addrs` must be the name in the server certificate, and the CA must be trusted (**Trust This CA in Windows…**).
+- **Not on Windows:** IKEv2 with a **pre-shared key** and **EAP-TLS** (the Windows IKEv2 client here signs in with EAP-MSCHAPv2 or the computer certificate), and the IKEv1 **XAuth "Cisco-style"** mobile setup (Windows has no Cisco IPsec client). Ask for EAP-MSCHAPv2 or a computer certificate, see [user guide, 3.3](winvpn-user-guide.en.md#33-ikev2-strongswan).

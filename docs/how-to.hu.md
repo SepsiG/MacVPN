@@ -29,6 +29,7 @@ Rövid, lépésenkénti leírások a MacVPN 2.0-hoz. A részletek a [felhasznál
 21. [Az aláírókulcs átvitele új Macre](#21-az-aláírókulcs-átvitele-új-macre)
 22. [A megjelenés és a kapcsolatértesítések beállítása](#22-a-megjelenés-és-a-kapcsolatértesítések-beállítása)
 23. [Automatikus újracsatlakozás alvás után](#23-automatikus-újracsatlakozás-alvás-után)
+24. [Csatlakozás UniFi, pfSense vagy OPNsense VPN-hez](#24-csatlakozás-unifi-pfsense-vagy-opnsense-vpn-hez)
 
 ---
 
@@ -390,3 +391,105 @@ A MacVPN legfeljebb háromszor próbálkozik, és megírja az eredményt (**…:
 **Kikapcsolás egy kapcsolatnál:** **Kapcsolatok** ablak → a kapcsolat → kapcsold ki az **Automatikus újracsatlakozás** kapcsolót (a rendszer VPN-eknek nincs ilyen).
 
 Részletek: [útmutató, 5.5](user-guide.hu.md#55-automatikus-újracsatlakozás).
+
+## 24. Csatlakozás UniFi, pfSense vagy OPNsense VPN-hez
+
+Ezek az átjárók és tűzfalak olyan klienskonfigot adnak, amelyet a MacVPN változtatás nélkül importál: hiba és tudomásulvétel nélkül. A tesztfájlok a `Tests/Fixtures/unifi`, `pfsense` és `opnsense` mappában vannak; az OpenVPN-részletek [a direktívaszabályokban](openvpn-directives.md#unifi-pfsense-and-opnsense). A [források](#források) a szakasz végén.
+
+### Ubiquiti UniFi (UniFi OS átjárók: UDM, UDR, UCG, UXG, Gateway Lite / Max, …)
+
+**WireGuard (a Ubiquiti ezt ajánlja számítógépre):**
+
+1. A UniFi Network appban: **Settings → VPN → VPN Server → Create New → WireGuard** (alapértelmezett port: UDP 51820). Ha az átjáró egy másik router mögött van, ezt a portot továbbítsd neki.
+2. **Add Client**, a neve legyen ez a Mac (eszközönként egy kliens), majd **Download**: letölti a konfigurációs fájlt. A mellette lévő QR-kód a telefonos WireGuard-apphoz való; a MacVPN nem olvassa be, a fájlban ugyanaz van.
+3. A MacVPN-ben: **Új (+) → Import fájlból…** → a `.conf`. Mást nem kell kitölteni.
+4. **Teljes vagy osztott alagút:** a fájl `AllowedIPs` sora dönt. Ha benne van a `0.0.0.0/0`, minden forgalom az átjárón megy; különben csak a felsorolt hálózatok. Ha csak az irodai hálózatokat akarod elérni, a MacVPN szerkesztőjében cseréld a `0.0.0.0/0`-t azokra (például `10.20.30.0/24`), a szerver alagútcímét hagyd meg.
+5. **DNS:** a fájl `DNS =` sora maga az átjáró; a MacVPN a kapcsolat idejére beállítja.
+6. **Keepalive:** ha a fájlban nincs `PersistentKeepalive` sor, írd a `[Peer]` alá: `PersistentKeepalive = 25`. Ez nyitva tartja az alagutat a NAT-os routereken át, és így a MacVPN tétlen alagútnál is észreveszi, ha az nem válaszol ([útmutató, 5.5](user-guide.hu.md#55-automatikus-újracsatlakozás)).
+7. Ha az átjáró nyilvános címe változik, az `Endpoint`-ba a DDNS-nevét írd (`vpn.example.com:51820`).
+
+**OpenVPN** (UniFi Network 7.4 vagy újabb):
+
+1. **Settings → VPN → VPN Server → Create New → OpenVPN** (alapértelmezett port: UDP 1194). Vegyél fel egy felhasználót (felhasználónév és jelszó), és töltsd le a konfigurációs fájlt (**Download**); a szerver létrehozása után ez egy percig is eltarthat.
+2. A MacVPN-ben: **Import fájlból…** → a `.ovpn`, majd töltsd ki a **Felhasználónév** és **Jelszó** mezőt, és **Mentés**.
+3. A régebbi UniFi-verziók `comp-lzo` sort is exportáltak; ez importálható, de az újabb UniFi-szerverek már nem tömörítenek. Ha egy ilyen kapcsolat egy UniFi-frissítés után nem működik, tölts le friss fájlt (vagy töröld a `comp-lzo` sort).
+4. Egyes leírásokban a fájlban `user nobody` és `group nogroup` is van. A MacVPN ezeket a **Kockázatos beállítások** között mutatja (ha az OpenVPN lemond a root jogról, az újracsatlakozás elakadhat); töröld a két sort, nincs rájuk szükség.
+
+**L2TP/IPsec** (a USG / USG-Pro régi távoli felhasználós VPN-je, az újabb átjárók is tudják): **Új → L2TP**. **Szerver**: az átjáró nyilvános címe vagy DDNS-neve; **Fióknév** és **Jelszó**: a VPN-felhasználó (USG-n a RADIUS-felhasználó); **Pre-shared key (PSK)**: a szerver előre megosztott kulcsa. Tanúsítvány nem kell. A **Minden forgalom a VPN-en keresztül** maradjon bekapcsolva: a UniFi L2TP-szervere nem küld útvonalakat, és a Ubiquiti macOS-en ezt kéri. A Ubiquiti helyette a WireGuardot ajánlja.
+
+**A Teleport (WiFiman) nem támogatott.** Belül WireGuard, de a meghívólinkek a Ubiquiti felhőjén mennek át, és nincs nyilvános interfésze vagy exportálható konfigurációja, így külső app nem tudja használni. Használd a fenti WireGuard-szervert: ugyanazokon az átjárókon fut.
+
+### pfSense
+
+**OpenVPN:** telepítsd az **openvpn-client-export** csomagot (**System → Package Manager**), majd **VPN → OpenVPN → Client Export**.
+
+- Az **Inline Configurations → Most Clients** exportot használd (az **OpenVPN Connect** és az **Android** változat is importálható). A kulcsok a fájlban vannak; a felhasználónév és a jelszó (ha a szerver kéri) a **Felhasználónév** / **Jelszó** mezőbe kerül.
+- Az **Archive** (zip) és a **Config File Only** export fájlokra hivatkozik (`….p12`, `…-tls.key`): bontsd ki a zipet egy mappába, és onnan importáld a `.ovpn`-t; a MacVPN a fájlokat a configba másolja. A PKCS#12 jelszava a **Privát kulcs jelszava** mezőbe kerül.
+- A **Microsoft Certificate Storage** (`cryptoapicert`) és a **PKCS#11** maradjon kikapcsolva: a MacVPN ezeket elutasítja (csak Windowson működne; a PKCS#11-könyvtár rootként töltődne be).
+- A **Block Outside DNS** (`setenv opt block-outside-dns`), a **verify-x509-name**, az **lport 0** és a **Legacy client** is importálható. Az **Advanced** mezőben `static-challenge` sorral beállított egyszer használatos kódot a MacVPN csatlakozáskor kéri.
+
+**WireGuard:** a pfSense WireGuard-csomagja nem exportál klienskonfigot: a pfSense-ben felvett peer adataiból magad írod meg (**Új → WireGuard**):
+
+```
+[Interface]
+PrivateKey = <ennek a Macnek a privát kulcsa; a nyilvános kulcsa kerül a pfSense peerbe>
+Address = 10.20.32.2/32, fd00:db8:20:32::2/128
+DNS = 10.20.30.1, corp.example.com
+
+[Peer]
+PublicKey = <a pfSense-alagút nyilvános kulcsa>
+PresharedKey = <ha a peernek van>
+AllowedIPs = 10.20.32.0/24, 10.20.30.0/24
+Endpoint = vpn.example.com:51820
+PersistentKeepalive = 25
+```
+
+A `DNS` sorban a nevek keresési tartományok. Az `Address` és az `AllowedIPs` több hálózatot és IPv6-ot is elfogad.
+
+**IPsec (mobil kliensek):** a pfSense nem exportál semmit; **Új → IKEv2**, és töltsd ki a sablont:
+
+- **EAP-MSCHAPv2** (a Netgate leírása szerint): a `local` részbe `auth = eap-mschapv2` és `eap_id = <felhasználó>`, a `remote` részbe `auth = pubkey` és `id = <a szervertanúsítványban lévő név>`, a CA-tanúsítvány a strongSwan `x509ca/` mappájába kerül ([útmutató, 3.3](user-guide.hu.md#33-ikev2-strongswan)). A Phase 1 / Phase 2 algoritmusait a `proposals` / `esp_proposals` sorba másold; az `esp_proposals` DH-csoportja a Phase 2 PFS-csoportja, amelyet a leírás bekapcsol:
+
+  ```
+  connections {
+    office {
+      remote_addrs = vpn.example.com
+      vips = 0.0.0.0
+      proposals = aes256gcm16-prfsha256-modp4096, aes256-sha256-modp2048
+      local {
+        auth = eap-mschapv2
+        eap_id = alice
+      }
+      remote {
+        auth = pubkey
+        id = vpn.example.com
+      }
+      children {
+        office {
+          remote_ts = 10.20.30.0/24
+          esp_proposals = aes256gcm16-modp2048
+        }
+      }
+    }
+  }
+  ```
+- Az **EAP-TLS** (`auth = eap-tls`), a **tanúsítványos** (`auth = pubkey`, `certs = <fájl>`) és a **PSK-s** belépés (`auth = psk` mindkét oldalon, a kulcs a **Pre-shared key (PSK)** mezőbe) is működik.
+- **IKEv1 XAuth-tal és PSK-val** (a „Cisco-stílusú” mobil beállítás): **Új → Cisco IPsec**, **Szerver**, **Fióknév**, **Jelszó**, **Pre-shared key (PSK)** és **Csoportnév (group name)** (a Phase 1 azonosítója).
+
+### OPNsense
+
+**OpenVPN:** **VPN → OpenVPN → Client Export**, exporttípus: **File Only** (egyetlen `.ovpn`, benne a kulcsokkal; az **Archive** úgy működik, mint a pfSense-é).
+
+- A **Validate server subject** (`verify-x509-name "…" subject`), a **Use random local port** (`lport 0`), a **Do not cache passwords** (`auth-nocache`), a **Static challenge (OTP)** (a MacVPN csatlakozáskor kéri a kódot), a `tls-crypt` és a `tls-crypt-v2` is importálható.
+- A **Windows: Microsoft Certificate Storage** maradjon kikapcsolva (mint a pfSense-nél).
+
+**WireGuard:** a **VPN → WireGuard → Peer generator** kész klienskonfigot mutat: másold egy `.conf` fájlba és importáld, vagy illeszd be az **Új → WireGuard** szerkesztőjébe. Ha nincs benne, írd hozzá: `PersistentKeepalive = 25`.
+
+**IPsec:** **VPN → IPsec → Connections**; ugyanazt a `swanctl.conf`-ot írd, mint a pfSense-hez. Az OPNsense `default` javaslataihoz nem kell `proposals` sor (vagy írd: `proposals = default`).
+
+### Források
+
+- Ubiquiti Help Center: [UniFi Gateway – WireGuard VPN Server](https://help.ui.com/hc/en-us/articles/115005445768), [OpenVPN Server](https://help.ui.com/hc/en-us/articles/12600064355991), [L2TP VPN Server](https://help.ui.com/hc/en-us/articles/12594825307927), [Teleport VPN](https://help.ui.com/hc/en-us/articles/5246403561495), [Introduction to VPNs](https://help.ui.com/hc/en-us/articles/7951513517079), [WireGuard VPN Client](https://help.ui.com/hc/en-us/articles/16357883221015) és [OpenVPN Client](https://help.ui.com/hc/en-us/articles/12648654915863) (a UniFi által olvasott és írt fájlformátumok).
+- A UniFi OpenVPN-szerver publikált exportja: [WunderTech: How to Set Up OpenVPN on UniFi Devices](https://www.wundertech.net/how-to-set-up-openvpn-on-unifi-devices/); a UniFi kliens lépései: [LazyAdmin: UniFi VPN Server](https://lazyadmin.nl/network/unifi-vpn-server/).
+- pfSense: [OpenVPN Client Export csomag](https://docs.netgate.com/pfsense/en/latest/packages/openvpn-client-export.html) és a forrása, `openvpn-client-export.inc` a [pfsense/FreeBSD-ports](https://github.com/pfsense/FreeBSD-ports/tree/devel/security/pfSense-pkg-openvpn-client-export) tárolóban; [WireGuard](https://docs.netgate.com/pfsense/en/latest/vpn/wireguard/index.html); [IKEv2 EAP-MSCHAPv2-vel](https://docs.netgate.com/pfsense/en/latest/recipes/ipsec-mobile-ikev2-eap-mschapv2.html) és [a windowsos kliense](https://docs.netgate.com/pfsense/en/latest/recipes/ipsec-mobile-ikev2-client-windows.html).
+- OPNsense: a kliensexportáló forrása, `PlainOpenVPN.php` az [opnsense/core](https://github.com/opnsense/core/blob/master/src/opnsense/mvc/app/library/OPNsense/OpenVPN/PlainOpenVPN.php) tárolóban; [WireGuard road warrior](https://docs.opnsense.org/manual/how-tos/wireguard-client.html); [IPsec](https://docs.opnsense.org/manual/vpnet.html).

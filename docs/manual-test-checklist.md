@@ -4,7 +4,7 @@ A kiadás utáni kézi ellenőrzések a MacVPN 2.0.0-hoz (macOS) és a WinVPN 2.
 
 Ami a kiadás előtt már automatikusan lefutott, azt itt nem kell megismételni: a CI (`.github/workflows/ci.yml`: `cargo test --workspace` macOS-en és Windowson, `scripts/test-root.sh`, `scripts/test-sign-release.sh`, `cd app/ui && npm test`, a `msi` és a `windows-admin` job), a kiadás előtti helyi ellenőrzések (`docs/RELEASING.md`, 2. lépés: a smoke teszt mindkét nyelven a Macen és Windowson, `scripts/check-windows.sh`, `node scripts/l10n-baseline.mjs --check`) és a kiadási workflow ellenőrzései (a csomag azonosítója, verziója, aláírása; a release gate-ek). Az ezekkel lefedett pontoknál „(automatikus: …)” áll; ezeket csak akkor futtasd kézzel, ha valami gyanús.
 
-Részek: a 2.0.0 új funkciói (mindkét termék), a VPN-labor, a MacVPN a laborral, a WinVPN (szolgáltatás és Homebrew-mentes motorok; natív VPN-ek; alapok), a MacVPN korábbi funkcióinak regressziója, végül a frissítés régebbi MacVPN-ről.
+Részek: a 2.0.0 új funkciói (mindkét termék), élő átjárók (UniFi, pfSense, OPNsense), a VPN-labor, a MacVPN a laborral, a WinVPN (szolgáltatás és Homebrew-mentes motorok; natív VPN-ek; alapok), a MacVPN korábbi funkcióinak regressziója, végül a frissítés régebbi MacVPN-ről.
 
 ## 2.0.0 – új funkciók (mindkét termék)
 
@@ -203,6 +203,42 @@ A Kapcsolatok ablak Napló fülének két új funkciója (a smoke teszt `scripts
 - [x] Az 1.5.0-ról a 2.0.0-ra frissítve a Rendszerállapot „Frissítés szükséges (8 → 9)” sort mutat; addig az OpenVPN-, WireGuard-, IKEv2- és SSTP-sorok „Nem használható: Jogosultság (root scriptek + sudoers) – Rendszerállapot”; **Engedélyezés** és egy admin jelszó után minden sor normál
 - [x] A frissítés után a **Kapcsolatértesítések** be van kapcsolva, a **Megjelenés** „Rendszer szerint”, minden kapcsolatnál az **Automatikus újracsatlakozás** be van kapcsolva; a széf, a kapcsolatok és a mappák változatlanok
 - [x] (automatikus: a kiadás előtti `node scripts/l10n-baseline.mjs --check`, `docs/RELEASING.md` 2. lépés) egyetlen régi macOS-szöveg sem változott
+
+## Élő átjárók: UniFi, pfSense, OPNsense (2026-10-29, macOS és Windows)
+
+Valódi átjárón, amelyhez van admin-hozzáférés (a lépések: `docs/how-to.hu.md` 24. és `docs/winvpn-how-to.hu.md` 27. szakasz; a formátumokat a `Tests/Fixtures/{unifi,pfsense,opnsense}/` fixture-ök és a `vendor_profiles` tesztek már lefedik, itt a valódi kapcsolat a kérdés). Ahol nincs „macOS:” vagy „Windows:” jelölés, mindkettőn ellenőrizd. A kliens egy másik hálózaton legyen (pl. telefonos hotspot), ne az átjáró LAN-ján. Átjáró, firmware / UniFi Network **verzió: ___**
+
+### UniFi (UniFi OS átjáró: UDM / UDR / UCG / UXG)
+
+- [ ] (u1) **WireGuard import**: **Settings → VPN → VPN Server → WireGuard → Add Client → Download** → **Import fájlból…** → hiba és **Kockázatos beállítások** nélkül importál, semmit nem kell kitölteni; a letöltött fájl sorait (kulcsok nélkül) jegyezd fel: van-e `PresharedKey`, `PersistentKeepalive`, milyen az `AllowedIPs` és a `DNS`
+- [ ] (u2) **WireGuard csatlakozás**: Csatlakozva; a UniFi LAN-ján egy gép (pl. az átjáró `http://<LAN-IP>/` oldala, vagy egy NAS) elérhető; a UniFi **Client Devices** / VPN-kliensek listájában a kliens látszik
+- [ ] (u3) **Teljes és osztott alagút**: `AllowedIPs` `0.0.0.0/0`-val → `curl https://ifconfig.me` az átjáró WAN-címét adja; a MacVPN/WinVPN szerkesztőjében csak a LAN-hálózat (és a szerver alagútcíme) → a LAN elérhető, az `ifconfig.me` a hotspot címét adja; az útvonalak (macOS `netstat -rn`, Windows `route print`) ennek megfelelők, bontás után az eredetiek
+- [ ] (u4) **DNS**: csatlakozva a `DNS =` (az átjáró) a használt DNS (macOS `scutil --dns`, Windows `Get-DnsClientServerAddress`); egy csak a UniFi-n feloldható név (pl. a kliensnevek vagy egy helyi DNS-rekord) feloldódik; bontás után az eredeti DNS
+- [ ] (u5) **Forgalmi sor**: a kártyán és a Kapcsolatok ablakban megjelenik a „↓ … ↑ …” sor, nagy letöltésnél (pl. egy NAS-ról) nő
+- [ ] (u6) **Halott alagút `PersistentKeepalive = 25`-tel**: csatlakozás, majd a UniFi-n a WireGuard-kliens törlése (vagy a szerver kikapcsolása) → kb. 3½–4 percen belül „…: nem válaszol”, újracsatlakozási próbák; a kliens visszaállítása (új fájl importja) után rendben
+- [ ] (u7) **Halott alagút `PersistentKeepalive` nélkül** (ha a UniFi fájljában nincs): tétlen alagút 15 percig „Csatlakozva” marad; a szerver kikapcsolása után forgalom a LAN felé → kb. 3–6 percen belül „…: nem válaszol”
+- [ ] (u8) **OpenVPN**: **VPN Server → OpenVPN**, felhasználó felvétele, **Download** → **Import fájlból…** → hiba és tudomásulvétel nélkül; **Felhasználónév** / **Jelszó** kitöltve → Csatlakozva, a LAN elérhető, DNS és forgalmi sor rendben. Rossz jelszóval hitelesítési hibát jelez (AUTH_FAILED). A fájl direktíváit (kulcsok nélkül) jegyezd fel, és vesd össze a `Tests/Fixtures/unifi/openvpn-server.ovpn`-nel; ha új direktíva van benne, fixture-frissítés kell
+- [ ] (u9) Windows **OpenVPN**: a napló szerint TAP-Windows6 illesztővel fut (a UniFi fájl `cipher AES-256-CBC`-je miatt); egy második TAP-os kapcsolat közben a várt hibát adja
+- [ ] (u10) **OpenVPN halott alagút**: a UniFi OpenVPN-szerverének kikapcsolása → „Újracsatlakozás…”, 2 perc után „…: nem válaszol”
+- [ ] (u11) **L2TP (USG / USG-Pro vagy újabb átjáró, ha van)**: **Új → L2TP** (Szerver, Fióknév, Jelszó, PSK, **Minden forgalom a VPN-en keresztül** be) → Csatlakozva, a LAN elérhető. Windows: ha az átjáró NAT mögött van, a 809-es hiba után **L2TP engedélyezése NAT mögött…** → újraindítás → Csatlakozva. (Nincs USG-nk: ha nem tesztelhető, „nem tesztelt” megjegyzéssel hagyd nyitva)
+- [ ] (u12) **Teleport**: a doksi szerint nem támogatott; a WiFiman-meghívó linkje a MacVPN/WinVPN-ben semmit nem importál (nem fájl), hibaüzenet sem kell
+
+### pfSense
+
+- [ ] (p1) **OpenVPN Client Export → Inline Configurations → Most Clients** (felhasználónév/jelszó + tanúsítvány, `tls-crypt` vagy `tls-auth`): import hiba és tudomásulvétel nélkül, Csatlakozva, LAN és DNS rendben; Windows: a napló szerint alapból TAP-Windows6 (CBC tartalék), a szerveren **Fallback Data Encryption Algorithm = AES-256-GCM** és új export után DCO
+- [ ] (p2) **Archive** export: kibontva egy mappába, a `.ovpn` importja → a `.p12` és a `-tls.key` beépül (a configban `<pkcs12>` és `<tls-auth>`), a `.p12` jelszava a **Privát kulcs jelszava** mezőbe → Csatlakozva
+- [ ] (p3) **Microsoft Certificate Storage** bekapcsolva exportálva: Windowson mentéskor piros hiba a `cryptoapicert` sorra, macOS-en a **Kockázatos beállítások** között; az inline export működik
+- [ ] (p4) **WireGuard**, kézzel írt `.conf` (PresharedKey, IPv6 `Address`, több `AllowedIPs`, `DNS` keresési tartománnyal): Csatlakozva; a keresési tartománnyal rövid név feloldódik; az IPv6 hálózat elérhető (ha van)
+- [ ] (p5) **IKEv2 EAP-MSCHAPv2** (Netgate-leírás, PFS 14): macOS strongSwan Csatlakozva; Windows: a szerkesztő alatti szürke sor „EAP-MSCHAPv2 · AES-256, SHA-256, DH group 14; ESP AES-256-GCM …”, Csatlakozva
+- [ ] (p6) macOS: **IKEv2 PSK** és **EAP-TLS** Csatlakozva; Windowson mindkettő szürke a dokumentált „Not supported on Windows: local auth = …” okkal
+- [ ] (p7) macOS: **IKEv1 XAuth + PSK** („Cisco-stílusú” mobil kliens) **Új → Cisco IPsec**-kel Csatlakozva (a profil jóváhagyása után)
+
+### OPNsense
+
+- [ ] (o1) **OpenVPN Client Export → File Only**, **Validate server subject**, **Use random local port**, **Static challenge (OTP)** bekapcsolva: import hiba nélkül; csatlakozáskor a kódkérő ablak jön, jó kóddal Csatlakozva, rosszal hitelesítési hiba
+- [ ] (o2) **tls-crypt-v2** szerver, TCP: import és Csatlakozva
+- [ ] (o3) **WireGuard → Peer generator** konfigja `.conf`-ként importálva (vagy beillesztve): Csatlakozva, DNS rendben, forgalmi sor nő
+- [ ] (o4) **IPsec → Connections**, EAP-MSCHAPv2, `default` javaslatok: macOS Csatlakozva; Windows Csatlakozva, ha a szerver elfogadja az AES-256 / SHA-256 / DH 14 ajánlatot (ha nem: a Windows hibája a naplóban az ajánlatokról szól, és a doksi szerinti `proposals` sor megoldja)
 
 ## A VPN-labor előkészítése
 

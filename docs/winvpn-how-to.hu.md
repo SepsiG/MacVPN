@@ -32,6 +32,7 @@ Rövid, lépésenkénti útmutatók a WinVPN 2.0-hoz, Windows 10-en és 11-en. A
 24. [Tesztelés a VPN-laborral (tesztelőknek)](#24-tesztelés-a-vpn-laborral-tesztelőknek)
 25. [A megjelenés és a kapcsolatértesítések beállítása](#25-a-megjelenés-és-a-kapcsolatértesítések-beállítása)
 26. [Automatikus újracsatlakozás alvás után](#26-automatikus-újracsatlakozás-alvás-után)
+27. [Csatlakozás UniFi, pfSense vagy OPNsense VPN-hez](#27-csatlakozás-unifi-pfsense-vagy-opnsense-vpn-hez)
 
 ---
 
@@ -277,3 +278,22 @@ A WinVPN legfeljebb háromszor próbálkozik, és megírja az eredményt (**…:
 **Kikapcsolás egy kapcsolatnál:** **Kapcsolatok** ablak → a kapcsolat → kapcsold ki az **Automatikus újracsatlakozás** kapcsolót (a rendszer VPN-eknek nincs ilyen).
 
 Részletek: [útmutató, 5.5](winvpn-user-guide.hu.md#55-automatikus-újracsatlakozás).
+
+## 27. Csatlakozás UniFi, pfSense vagy OPNsense VPN-hez
+
+Ezek az átjárók és tűzfalak olyan klienskonfigot adnak, amelyet a WinVPN változtatás nélkül importál. A konzolon a lépések ugyanazok, mint a MacVPN-nél: [MacVPN – Hogyan használd, 24.](how-to.hu.md#24-csatlakozás-unifi-pfsense-vagy-opnsense-vpn-hez) (a forrásokkal együtt). Ami Windowson más:
+
+**Ubiquiti UniFi (UniFi OS átjárók)**
+
+- **WireGuard** (ajánlott): **Settings → VPN → VPN Server → WireGuard → Add Client → Download**, majd **Új (+) → Import fájlból…** → a `.conf`. A QR-kód telefonra való; a WinVPN nem olvassa be. Ha az `AllowedIPs`-ben `0.0.0.0/0` van, minden forgalom a VPN-en megy; osztott alagúthoz cseréld az irodai hálózatokra. Ha a fájlban nincs `PersistentKeepalive`, írd a `[Peer]` alá: `PersistentKeepalive = 25`, így a WinVPN tétlen alagútnál is észreveszi, ha az nem válaszol.
+- **OpenVPN:** előbb telepítsd az **OpenVPN Community**-t a **Rendszerállapot** ablakban. Importáld a UniFi által letöltött `.ovpn`-t, töltsd ki a **Felhasználónév** / **Jelszó** mezőt. A UniFi fájlja `cipher AES-256-CBC` sort tartalmaz (a régebbiek `comp-lzo`-t is), ezért a WinVPN a **TAP-Windows6** illesztőprogrammal futtatja; működik, de egyszerre csak egy TAP-Windows6 kapcsolat lehet fenn ([útmutató, 7.5](winvpn-user-guide.hu.md#75-openvpn-illesztőprogramok-dco-és-tap-windows6)). Ha egy leírás fájljában `user nobody` / `group nogroup` sor van, töröld őket.
+- **L2TP/IPsec** (a USG / USG-Pro távoli felhasználós VPN-je): **Új → L2TP**, **Szerver**, **Fióknév**, **Jelszó** és **Pre-shared key (PSK)**; a WinVPN MS-CHAP v2-vel jelentkezik be, ahogy a Ubiquiti Windowsra kéri (ha a UniFi L2TP-szerver haladó beállításai között van **Require Strong Authentication**, kapcsold be). Ha az átjáró egy másik router mögött van, a Windowsnak egyszer kell az **L2TP engedélyezése NAT mögött…** (ez a Ubiquiti „módosítsd a registryt” lépése; rendszergazda hagyja jóvá, utána indítsd újra a Windowst). A UniFi nem küld útvonalakat: a **Minden forgalom a VPN-en keresztül** maradjon bekapcsolva, vagy vedd fel magad az útvonalakat.
+- **A Teleport (WiFiman) nem támogatott:** a Ubiquiti felhőjén megy át, és nincs exportálható konfigurációja. Használd a WireGuard-szervert.
+
+**pfSense és OPNsense**
+
+- **OpenVPN:** pfSense: **VPN → OpenVPN → Client Export → Inline Configurations → Most Clients**; OPNsense: **VPN → OpenVPN → Client Export → File Only**. Mindkettő hiba nélkül importálható. A **Microsoft Certificate Storage** maradjon kikapcsolva: a `cryptoapicert` a WinVPN-ben tiltott (a szolgáltatás SYSTEM-ként fut, és a számítógép tanúsítványtárát érné el); az inline export a tanúsítványt a fájlba teszi. Az **Archive** export is működik, ha egy mappába bontod ki (a `.p12` jelszava a **Privát kulcs jelszava** mezőbe kerül).
+- **Gyorsabb illesztőprogram:** a pfSense alapértelmezett **Fallback Data Encryption Algorithm** beállítása AES-256-CBC, és az OPNsense exportja is a szerver tartalék titkosítását viszi: CBC tartalékkal vagy tömörítéssel a WinVPN a TAP-Windows6-ot használja. Állítsd a szerveren a tartalékot **AES-256-GCM**-re (a tömörítést kapcsold ki), exportálj újra, és a WinVPN a gyorsabb DCO illesztőprogramot használja.
+- **WireGuard:** a pfSense nem exportál klienskonfigot (a peer adataiból írd meg a `.conf`-ot, lásd a MacVPN-szakaszt); az OPNsense **VPN → WireGuard → Peer generator** oldala mutat egyet, amelyet kimásolhatsz. Az IPv6, a több `AllowedIPs` és a DNS keresési tartományok is működnek.
+- **IPsec (mobil kliensek) – csak IKEv2, EAP-MSCHAPv2-vel vagy számítógép-tanúsítvánnyal.** A `swanctl.conf`-ot a MacVPN-szakasz szerint írd meg; a WinVPN lefordítja. A Windows egyetlen IKE- és ESP-kombinációt használ: a `proposals` / `esp_proposals` közül az elsőt, amelyet ismer (a Netgate leírása működik: az AES-256-GCM DH 16-tal kimarad, az AES-256 / SHA-256 / DH 14 lesz használva, ESP-re AES-256-GCM PFS 14-gyel). A tűzfal Phase 1 beállításában legyen legalább egy AES-256 / SHA-256 / DH 14 vagy AES-GCM / ECP-256 javaslat, mert a Windows mást nem kínál. A `remote_addrs` a szervertanúsítványban lévő név legyen, és a CA legyen megbízható (**A CA megbízhatóvá tétele a Windowsban…**).
+- **Windowson nem megy:** az IKEv2 **előre megosztott kulccsal (PSK)** és az **EAP-TLS** (a Windows IKEv2-kliense itt EAP-MSCHAPv2-vel vagy a számítógép tanúsítványával jelentkezik be), valamint az IKEv1 **XAuth-os „Cisco-stílusú”** mobil beállítás (a Windowsnak nincs Cisco IPsec kliense). Kérj EAP-MSCHAPv2-t vagy számítógép-tanúsítványt, lásd [útmutató, 3.3](winvpn-user-guide.hu.md#33-ikev2-strongswan).
