@@ -29,7 +29,7 @@ Everything this guide does not mention works as in MacVPN: the vault, folders an
 
 - **Ubuntu 26.04 or later**, on amd64 (Intel and AMD processors) or arm64. Other distributions based on them may work if they have glibc 2.39 or newer. LinVPN is tested on Ubuntu 26.04 with GNOME on Wayland; the arm64 package is built and checked, but not tested by hand.
 - **A tray host** (StatusNotifierItem): Ubuntu's own AppIndicator support (on by default), the **AppIndicator and KStatusNotifierItem Support** extension on other GNOME desktops, or KDE Plasma, which has one built in. The package depends on one of them. Without a tray host LinVPN has no icon.
-- **NetworkManager 1.52.2 or later** (Ubuntu 26.04 has 1.54), which LinVPN connects through, with its VPN plugins (see [1.3](#13-networkmanager-and-its-vpn-plugins)). WireGuard needs no plugin.
+- **NetworkManager 1.54.3 or later** (Ubuntu 26.04 has 1.54), which LinVPN connects through, with its VPN plugins (see [1.3](#13-networkmanager-and-its-vpn-plugins)). WireGuard needs no plugin.
 - **OpenVPN 2.7 or later** for OpenVPN connections to follow the server's `redirect-gateway` (see [3.1](#31-openvpn)). Ubuntu 26.04 has 2.7; with an older OpenVPN, LinVPN still connects, as a split tunnel unless set otherwise.
 - **An administrator** (a user who may use `sudo`) for the installation, for each update and for installing a missing VPN plugin. Connecting needs no administrator.
 

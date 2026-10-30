@@ -548,6 +548,9 @@ pub enum StepError {
     NotOpenVpn,
     /// The MSI could not be copied into the admin-only folder it is installed from.
     NotStaged,
+    /// The account the step runs as (an administrator's, after a standard user's UAC prompt) could not open the MSI
+    /// the app named.
+    NotReadable,
 }
 
 /// The elevated step's result, carried in its exit code.
@@ -584,6 +587,7 @@ impl StepResult {
             Some(StepError::NoMsiexec) => 3,
             Some(StepError::NotOpenVpn) => 4,
             Some(StepError::NotStaged) => 5,
+            Some(StepError::NotReadable) => 6,
         };
         STEP_BIT | msi | (interactive << 17) | (error << 20)
     }
@@ -610,6 +614,7 @@ impl StepResult {
             3 => Some(StepError::NoMsiexec),
             4 => Some(StepError::NotOpenVpn),
             5 => Some(StepError::NotStaged),
+            6 => Some(StepError::NotReadable),
             _ => return None,
         };
         Some(StepResult { msi, interactive, error })
@@ -641,6 +646,11 @@ pub fn add_drivers_in_settings() -> String {
 
 pub fn not_signed_by(signer: &str) -> String {
     l10n::tr("The OpenVPN installer is not signed by %@.", &[Arg::Str(signer)])
+}
+
+/// The elevated step (as the administrator who confirmed the UAC prompt) could not open the downloaded MSI.
+pub fn not_readable_elevated() -> String {
+    l10n::tr("The administrator account could not read the downloaded OpenVPN installer.", &[])
 }
 
 /// The MSI's database names another product, architecture or an older OpenVPN than `pinned`.
@@ -691,6 +701,7 @@ pub fn after_step(result: &StepResult) -> Result<Vec<String>, String> {
         return Err(match e {
             StepError::NotVerified => not_signed_by(pins::OPENVPN_SIGNER),
             StepError::NotOpenVpn => not_openvpn(pins::OPENVPN_VERSION),
+            StepError::NotReadable => not_readable_elevated(),
             StepError::Arguments | StepError::NoMsiexec | StepError::NotStaged => installer_not_started(),
         });
     }

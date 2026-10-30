@@ -29,7 +29,7 @@ Amiről ez az útmutató nem ír, az ugyanúgy működik, mint a MacVPN-ben: a s
 
 - **Ubuntu 26.04 vagy újabb**, amd64 (Intel és AMD processzor) vagy arm64 gépen. Más, ezekre épülő disztribúción is működhet, ha legalább 2.39-es glibc van rajta. A LinVPN-t Ubuntu 26.04-en, GNOME alatt, Waylanddel teszteljük; az arm64-es csomag elkészül és átmegy az ellenőrzéseken, de kézzel nem teszteljük.
 - **Ikontálca-kiszolgáló** (StatusNotifierItem): az Ubuntu saját AppIndicator-támogatása (alapból be van kapcsolva), más GNOME-os rendszeren az **AppIndicator and KStatusNotifierItem Support** bővítmény, vagy a KDE Plasma, amelybe be van építve. A csomag ezek egyikétől függ. Ilyen kiszolgáló nélkül a LinVPN-nek nincs ikonja.
-- **NetworkManager 1.52.2 vagy újabb** (az Ubuntu 26.04-en 1.54 van), amelyen keresztül a LinVPN csatlakozik, a VPN-bővítményeivel együtt (lásd [1.3](#13-a-networkmanager-és-a-vpn-bővítményei)). A WireGuardhoz nem kell bővítmény.
+- **NetworkManager 1.54.3 vagy újabb** (az Ubuntu 26.04-en 1.54 van), amelyen keresztül a LinVPN csatlakozik, a VPN-bővítményeivel együtt (lásd [1.3](#13-a-networkmanager-és-a-vpn-bővítményei)). A WireGuardhoz nem kell bővítmény.
 - **OpenVPN 2.7 vagy újabb** ahhoz, hogy az OpenVPN-kapcsolatok kövessék a szerver `redirect-gateway` beállítását (lásd [3.1](#31-openvpn)). Az Ubuntu 26.04-en 2.7 van; régebbi OpenVPN-nel a LinVPN is csatlakozik, de osztott alagúttal, hacsak másként nem állítod be.
 - **Rendszergazda** (olyan felhasználó, aki használhatja a `sudo`-t) a telepítéshez, minden frissítéshez és egy hiányzó VPN-bővítmény telepítéséhez. A csatlakozáshoz nem kell rendszergazda.
 

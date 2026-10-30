@@ -634,6 +634,7 @@ A WinVPN szolgáltatás rendszerjogokkal futtatja az OpenVPN-t, ezért a WinVPN 
 - **A(z) C:\ProgramData\WinVPN mappa jogosultságai nem biztonságosak. Egy rendszergazdának törölnie kell, majd újra kell indítania a WinVPN szolgáltatást.**: lásd [1.3](#13-a-winvpn-szolgáltatás).
 - **Az OpenVPN Communityt csak a Program Files mappába telepített WinVPN tudja telepíteni.**: fejlesztői buildet futtatsz; telepítsd a WinVPN-t az MSI-jével.
 - **Az OpenVPN telepítőjét nem sikerült letölteni: …** / **Az OpenVPN telepítője hibával leállt (…).**: a telepítés nem fejeződött be; semmi nem változott. Próbáld később, vagy telepítsd az OpenVPN Communityt magad az openvpn.net oldalról.
+- **A rendszergazdai fiók nem tudta olvasni a letöltött OpenVPN-telepítőt.**: a UAC-kérdést jóváhagyó fiók nem tudta megnyitni a WinVPN által neked letöltött telepítőt; semmi nem változott. Frissítsd a WinVPN-t, vagy telepítsd az OpenVPN Communityt magad az openvpn.net oldalról.
 - **Az OpenVPN interaktív szolgáltatását (Interactive Service) nem sikerült letiltani.**: az OpenVPN települt, de a második rendszergazdai kérdést elutasították; az OpenVPN így is működik.
 - **A WinVPN frissítése bontja az aktív VPN-kapcsolatokat.**: frissítés előtt jelenik meg (lásd [8.](#8-frissítés)).
 - **Ugyanarra a fájlra mutató `cert` és `key`** (kombinált PEM fájl: tanúsítvány és privát kulcs, akár titkosítva, Windows-sorvégekkel is): támogatott. A WinVPN csak a tanúsítványblokkokat teszi a `<cert>`, csak a kulcsot a `<key>` részbe, és csatlakozáskor bekéri a **Privát kulcs jelszava** mezőt.

@@ -308,22 +308,50 @@ fn install_msi(pick: &MsiPick) -> Result<StepResult, String> {
     }
     .map_err(|e| oi::download_failed(&e.to_string()))?;
     let msi = dir.join(name);
-    let _ = std::fs::remove_file(&msi);
-    if let Err(e) = std::fs::rename(&downloaded, &msi) {
-        let _ = std::fs::remove_file(&downloaded);
-        return Err(oi::download_failed(&e.to_string()));
-    }
-    let result = (|| {
-        let path = msi.to_str().ok_or_else(oi::installer_not_started)?.to_string();
-        let (_held, step) = match pick {
-            MsiPick::Pinned(_) => (open_verified(&msi, sha256)?, Step::Msi { path }),
-            MsiPick::Official(_) => (open_official(&msi)?, Step::OfficialMsi { path }),
-        };
+    let result = hand_over(&downloaded, &msi, pick, sha256).and_then(|(_held, step)| {
         let params = oi::step_parameters(&step).ok_or_else(oi::installer_not_started)?;
         run_step(&params)
-    })();
+    });
     let _ = std::fs::remove_file(&msi);
     result
+}
+
+/// The downloaded MSI moved to `msi` and made ready for the elevated step: readable by the account the step runs
+/// as ([`readable_by_the_elevated_step`]), then held deny-write and checked ([`open_verified`] / [`open_official`]).
+/// The held handle and the step that installs it.
+pub(crate) fn hand_over(downloaded: &Path, msi: &Path, pick: &MsiPick, sha256: &str) -> Result<(File, Step), String> {
+    let _ = std::fs::remove_file(msi);
+    if let Err(e) = std::fs::rename(downloaded, msi) {
+        let _ = std::fs::remove_file(downloaded);
+        return Err(oi::download_failed(&e.to_string()));
+    }
+    readable_by_the_elevated_step(msi).map_err(|e| oi::download_failed(&e.to_string()))?;
+    let path = msi.to_str().ok_or_else(oi::installer_not_started)?.to_string();
+    Ok(match pick {
+        MsiPick::Pinned(_) => (open_verified(msi, sha256)?, Step::Msi { path }),
+        MsiPick::Official(_) => (open_official(msi)?, Step::OfficialMsi { path }),
+    })
+}
+
+/// The elevated step reads the MSI from this user's downloads folder, but it need not run as this user: a standard
+/// user's UAC prompt asks for an administrator's credentials, and the step then runs as that administrator. The
+/// folder and what is downloaded into it are private (this user and SYSTEM only), so that account could not open
+/// the MSI at all (2.1.0: "not signed by OpenVPN Inc."). The MSI alone gets [`Protection::Shared`] (`BUILTIN\Users`,
+/// which every interactive account is a member of, may read it; only this user and SYSTEM may change it): it is
+/// OpenVPN's public installer, and nobody else can change it, so the elevated step's checks still decide.
+fn readable_by_the_elevated_step(msi: &Path) -> io::Result<()> {
+    let f = wfile::open(
+        msi,
+        wfile::Open {
+            read: false,
+            write: true,
+            append: false,
+            disposition: wfile::Disposition::OpenExisting,
+            protection: None,
+            no_follow: true,
+        },
+    )?;
+    wfile::set_protection(&f, Protection::Shared, false)
 }
 
 /// The downloads folder as the curl flavour's `temp_base` (where a finished download is moved).
@@ -476,7 +504,10 @@ fn step_result(
     let absent = !openvpn_registered();
     // Checked again here (the unelevated app's checks are not trusted), first on the file the app named, through a
     // deny-write handle: nothing that fails is copied.
-    let Ok(bytes) = read_source(&path, official, sha256) else { return failed(StepError::NotVerified) };
+    let bytes = match read_source(&path, official, sha256) {
+        Ok(bytes) => bytes,
+        Err(e) => return failed(e),
+    };
     // Then copied into a new folder only administrators can change, and the copy checked and installed: the path
     // the app named may be re-pointed (a junction) after the checks, the copy cannot (security review L-1).
     let Ok(staged) = staging().and_then(|s| stage(&path, &bytes, &s)) else { return failed(StepError::NotStaged) };
@@ -494,14 +525,23 @@ fn step_result(
 }
 
 /// The bytes of the MSI the app named, read through a deny-write handle, when they pass the checks that need no
-/// copy: the pinned MSI's SHA-256; an official MSI's name and size; and the signer.
-fn read_source(path: &Path, official: bool, sha256: &str) -> Result<Vec<u8>, String> {
-    let mut held = if official { open_official(path)? } else { open_verified(path, sha256)? };
-    held.rewind().map_err(|_| oi::installer_not_started())?;
+/// copy: the pinned MSI's SHA-256; an official MSI's name and size; and the signer. A file this account may not
+/// open (access denied) is [`StepError::NotReadable`], never a verdict on its signer: nothing was checked. Any
+/// other failure is [`StepError::NotVerified`].
+fn read_source(path: &Path, official: bool, sha256: &str) -> Result<Vec<u8>, StepError> {
+    // The open the checks below repeat, alone: whether this account may read the file at all.
+    if let Err(e) = std::fs::OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(path)
+        && e.kind() == io::ErrorKind::PermissionDenied
+    {
+        return Err(StepError::NotReadable);
+    }
+    let checked = if official { open_official(path) } else { open_verified(path, sha256) };
+    let mut held = checked.map_err(|_| StepError::NotVerified)?;
+    held.rewind().map_err(|_| StepError::NotVerified)?;
     let mut bytes = Vec::new();
-    (&held).take(MAX_MSI_BYTES + 1).read_to_end(&mut bytes).map_err(|_| oi::installer_not_started())?;
+    (&held).take(MAX_MSI_BYTES + 1).read_to_end(&mut bytes).map_err(|_| StepError::NotVerified)?;
     if bytes.len() as u64 > MAX_MSI_BYTES {
-        return Err(oi::installer_not_started());
+        return Err(StepError::NotVerified);
     }
     Ok(bytes)
 }

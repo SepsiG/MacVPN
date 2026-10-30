@@ -66,6 +66,22 @@ pub fn verify_openvpn_msi_for_tests(path: &std::path::Path) -> Result<(), String
     win::openvpn_install::verify_signer(path)
 }
 
+/// Tests only: the app's hand-over of a downloaded pinned MSI to the elevated step (moved from `downloaded` to
+/// `msi`, made readable by the step's account, held deny-write and checked): the held handle, or the failure.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn hand_over_openvpn_msi_for_tests(
+    downloaded: &std::path::Path,
+    msi: &std::path::Path,
+) -> Result<Box<dyn std::any::Any>, String> {
+    let arch = std::env::consts::ARCH;
+    let pinned = pure::openvpn_install::pinned_official(arch).ok_or("no pinned MSI")?;
+    let (_, sha256, _) = pure::openvpn_install::pinned_msi(arch).ok_or("no pinned MSI")?;
+    let pick = pure::openvpn_install::MsiPick::Pinned(pinned);
+    let (held, _) = win::openvpn_install::hand_over(downloaded, msi, &pick, sha256)?;
+    Ok(Box::new(held))
+}
+
 /// Tests only: [`openvpn_elevated_step`] copying the MSI into `<root>\installer\…` (a private folder of this user;
 /// production: `C:\ProgramData\WinVPN`, Administrators only) and calling `msiexec` with msiexec's parameters
 /// instead of running it (its exit code, or `None`: not started).
@@ -254,6 +270,15 @@ impl RasEngineForTests {
         })
     }
 
+    /// The app's `HelperClient` with this engine and the **installed** WinVPN Service (`\\.\pipe\WinVPN`, owned by
+    /// SYSTEM): the lab's end-to-end tests (`tests/lab_e2e.rs`), in the user's desktop session.
+    pub fn helper_with_installed_service(&self) -> Box<dyn macvpn_platform_api::HelperClient> {
+        Box::new(win::ras_engine::RasHelper {
+            service: win::service_client::ServiceClient::production(),
+            ras: self.0.clone(),
+        })
+    }
+
     pub fn phonebook(&self) -> std::path::PathBuf {
         self.0.phonebook_path().expect("the test engine is ready")
     }
@@ -343,6 +368,15 @@ fn assert_test_pipe(pipe: &str) {
 pub fn service_client_for_tests(pipe: &str) -> ServiceClientForTests {
     assert_test_pipe(pipe);
     ServiceClientForTests(win::service_client::ServiceClient::trusting_this_user(pipe))
+}
+
+/// Tests only: the production client of the **installed** WinVPN Service (`\\.\pipe\WinVPN`, owned by SYSTEM), as
+/// the app uses it: the lab's end-to-end tests (`tests/lab_e2e.rs`), in the user's desktop session (the service
+/// refuses network logons).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn installed_service_client_for_tests() -> ServiceClientForTests {
+    ServiceClientForTests(win::service_client::ServiceClient::production())
 }
 
 /// Tests only: the production client (it trusts only a SYSTEM-owned pipe) on a test pipe name.

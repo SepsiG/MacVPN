@@ -762,6 +762,7 @@ mod openvpn_install {
             Some(StepError::NoMsiexec),
             Some(StepError::NotOpenVpn),
             Some(StepError::NotStaged),
+            Some(StepError::NotReadable),
         ];
         for msi in [None, Some(0), Some(3010), Some(1602), Some(1603)] {
             for interactive in all_interactive {
@@ -776,7 +777,7 @@ mod openvpn_install {
         }
         // Not the step's: success, a crash, UAC's ERROR_CANCELLED, msiexec's own codes, stray bits.
         for code in
-            [0, 1, 1223, 1602, 3010, 0xC000_0005, 0x2000_0001, 0x2008_0000, 0x6000_0000, 0x2080_0000, 0x2060_0000]
+            [0, 1, 1223, 1602, 3010, 0xC000_0005, 0x2000_0001, 0x2008_0000, 0x6000_0000, 0x2080_0000, 0x2070_0000]
         {
             assert_eq!(StepResult::from_code(code), None, "{code:#x}");
         }
@@ -804,6 +805,11 @@ mod openvpn_install {
         assert_eq!(oi::after_step(&failed(StepError::NoMsiexec)), Err(oi::installer_not_started()));
         assert_eq!(oi::after_step(&failed(StepError::NotStaged)), Err(oi::installer_not_started()));
         assert_eq!(oi::after_step(&failed(StepError::NotOpenVpn)), Err(oi::not_openvpn(pins::OPENVPN_VERSION)));
+        // 2.1.0: a source the step's account could not open was reported as "not signed by OpenVPN Inc.".
+        assert_eq!(oi::after_step(&failed(StepError::NotReadable)), Err(oi::not_readable_elevated()));
+        assert_ne!(oi::not_readable_elevated(), oi::not_signed_by("OpenVPN Inc."));
+        let hu = l10n::with_language(AppLanguage::Hu, oi::not_readable_elevated);
+        assert_eq!(hu, "A rendszergazdai fiók nem tudta olvasni a letöltött OpenVPN-telepítőt.");
         let en = l10n::with_language(AppLanguage::En, || oi::not_openvpn("2.7.8"));
         assert_eq!(en, "The OpenVPN installer is not OpenVPN Community 2.7.8 or newer.");
         let hu = l10n::with_language(AppLanguage::Hu, || oi::not_openvpn("2.7.8"));

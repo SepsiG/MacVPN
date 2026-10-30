@@ -6,7 +6,7 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. **WinVPN** is the same app for Windows 10 and 11, built from this repository and released together with MacVPN. **LinVPN** is the same app for Debian and Ubuntu based Linux desktops, released together with them from 2.1.0. All three are written in Rust with a Tauri user interface. The current version is **2.1.0**, the first release with LinVPN.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. **WinVPN** is the same app for Windows 10 and 11, built from this repository and released together with MacVPN. **LinVPN** is the same app for Debian and Ubuntu based Linux desktops, released together with them from 2.1.0. All three are written in Rust with a Tauri user interface. The current version is **2.1.1**; LinVPN arrived in 2.1.0.
 
 ### What's new in 2.1
 - **LinVPN**, the first release for Linux (Ubuntu 26.04 or later; amd64 and arm64): every connection type through NetworkManager, system VPNs, the card panel in the top bar, logs, live traffic, dead-tunnel detection and reconnect, the control API and signed self-updates. See [LinVPN](#linvpn) and [Download and install](#download-and-install).
@@ -107,7 +107,7 @@ Step by step: How-to guides for [MacVPN](docs/how-to.en.md) and [WinVPN](docs/wi
 ### Requirements
 - **MacVPN:** macOS 14 or later, Apple silicon or Intel; an administrator account (for the one-time root helper install); [Homebrew](https://brew.sh) for OpenVPN, WireGuard, IKEv2 and SSTP. MacVPN installs the packages it needs (`openvpn`, `wireguard-tools`, `strongswan`, `sstp-client`, `bash`). L2TP and Cisco IPsec need nothing extra.
 - **WinVPN:** Windows 10 or 11, x64 or ARM64; an administrator for the installation and its updates. OpenVPN connections need OpenVPN Community 2.6.0 or later, which System Status installs.
-- **LinVPN:** Ubuntu 26.04 or later, amd64 or arm64 (glibc 2.43 or newer); NetworkManager 1.52.2 or later with its VPN plugins (recommended by the package; System Status installs a missing one); a tray host (Ubuntu's AppIndicator support, the AppIndicator extension on other GNOME desktops, or KDE Plasma); OpenVPN 2.7 or later for OpenVPN connections to follow the server's `redirect-gateway`; an administrator for the installation and its updates.
+- **LinVPN:** Ubuntu 26.04 or later, amd64 or arm64 (glibc 2.43 or newer); NetworkManager 1.54.3 or later with its VPN plugins (recommended by the package; System Status installs a missing one); a tray host (Ubuntu's AppIndicator support, the AppIndicator extension on other GNOME desktops, or KDE Plasma); OpenVPN 2.7 or later for OpenVPN connections to follow the server's `redirect-gateway`; an administrator for the installation and its updates.
 
 ### Documentation
 - How-to guide: [English](docs/how-to.en.md), [Hungarian](docs/how-to.hu.md)
@@ -116,7 +116,7 @@ Step by step: How-to guides for [MacVPN](docs/how-to.en.md) and [WinVPN](docs/wi
 - LinVPN user guide (Linux): [English](docs/linvpn-user-guide.en.md), [Hungarian](docs/linvpn-user-guide.hu.md)
 - [OpenVPN directive policy](docs/openvpn-directives.md)
 - Control API for other apps on the same Mac or PC: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
-- Release notes: [2.1.0](docs/release-notes/2.1.0.md), [2.0.7](docs/release-notes/2.0.7.md), [2.0.6](docs/release-notes/2.0.6.md), [2.0.5](docs/release-notes/2.0.5.md), [2.0.4](docs/release-notes/2.0.4.md), [2.0.3](docs/release-notes/2.0.3.md), [2.0.2](docs/release-notes/2.0.2.md), [2.0.1](docs/release-notes/2.0.1.md), [2.0.0](docs/release-notes/2.0.0.md); all releases on the [Releases](https://github.com/SepsiG/MacVPN/releases) page
+- Release notes: [2.1.1](docs/release-notes/2.1.1.md), [2.1.0](docs/release-notes/2.1.0.md), [2.0.7](docs/release-notes/2.0.7.md), [2.0.6](docs/release-notes/2.0.6.md), [2.0.5](docs/release-notes/2.0.5.md), [2.0.4](docs/release-notes/2.0.4.md), [2.0.3](docs/release-notes/2.0.3.md), [2.0.2](docs/release-notes/2.0.2.md), [2.0.1](docs/release-notes/2.0.1.md), [2.0.0](docs/release-notes/2.0.0.md); all releases on the [Releases](https://github.com/SepsiG/MacVPN/releases) page
 
 ### Companion app
 [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) manages RDP, SSH, web admin and MikroTik connections in one window on macOS, Windows and Linux. It pairs with MacVPN, WinVPN and LinVPN through the [control API](docs/control-api.md) and brings up the VPN a remote connection needs. The control API and the paired apps feature were built for it.
@@ -178,7 +178,7 @@ MIT – see [LICENSE](LICENSE). Third-party components (among them SQLCipher, BS
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. A **WinVPN** ugyanez az app Windows 10-re és 11-re, ugyanebből a repóból, a MacVPN-nel együtt kiadva. A **LinVPN** ugyanez az app Debian- és Ubuntu-alapú linuxos asztali rendszerekre, a 2.1.0-tól velük együtt kiadva. Mindhárom Rustban készült, Tauri felülettel. A jelenlegi verzió a **2.1.0**, az első kiadás a LinVPN-nel.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. A **WinVPN** ugyanez az app Windows 10-re és 11-re, ugyanebből a repóból, a MacVPN-nel együtt kiadva. A **LinVPN** ugyanez az app Debian- és Ubuntu-alapú linuxos asztali rendszerekre, a 2.1.0-tól velük együtt kiadva. Mindhárom Rustban készült, Tauri felülettel. A jelenlegi verzió a **2.1.1**; a LinVPN a 2.1.0-ban érkezett.
 
 ### Újdonságok a 2.1-ben
 - **LinVPN**, az első linuxos kiadás (Ubuntu 26.04 vagy újabb; amd64 és arm64): minden kapcsolattípus a NetworkManageren keresztül, rendszer VPN-ek, kártyás panel a felső sávban, napló, élő forgalom, a halott alagút felismerése és újracsatlakoztatása, vezérlő API és aláírt önfrissítés. Lásd [LinVPN](#linvpn-1) és [Letöltés és telepítés](#letöltés-és-telepítés).
@@ -279,7 +279,7 @@ Lépésről lépésre: Hogyan használd – [MacVPN](docs/how-to.hu.md) és [Win
 ### Követelmények
 - **MacVPN:** macOS 14 vagy újabb, Apple processzoros vagy Intel Mac; rendszergazdai fiók (a root segéd egyszeri telepítéséhez); [Homebrew](https://brew.sh) az OpenVPN, WireGuard, IKEv2 és SSTP kapcsolatokhoz. A szükséges csomagokat (`openvpn`, `wireguard-tools`, `strongswan`, `sstp-client`, `bash`) a MacVPN telepíti. Az L2TP-hez és a Cisco IPsec-hez nem kell semmi más.
 - **WinVPN:** Windows 10 vagy 11, x64 vagy ARM64; rendszergazda a telepítéshez és a frissítésekhez. Az OpenVPN-kapcsolatokhoz OpenVPN Community 2.6.0 vagy újabb kell, ezt a Rendszerállapot telepíti.
-- **LinVPN:** Ubuntu 26.04 vagy újabb, amd64 vagy arm64 (legalább 2.43-as glibc); NetworkManager 1.52.2 vagy újabb a VPN-bővítményeivel (a csomag ajánlja őket; a hiányzót a Rendszerállapot telepíti); ikontálca-kiszolgáló (az Ubuntu AppIndicator-támogatása, más GNOME-os rendszeren az AppIndicator-bővítmény, vagy a KDE Plasma); OpenVPN 2.7 vagy újabb ahhoz, hogy az OpenVPN-kapcsolatok kövessék a szerver `redirect-gateway` beállítását; rendszergazda a telepítéshez és a frissítésekhez.
+- **LinVPN:** Ubuntu 26.04 vagy újabb, amd64 vagy arm64 (legalább 2.43-as glibc); NetworkManager 1.54.3 vagy újabb a VPN-bővítményeivel (a csomag ajánlja őket; a hiányzót a Rendszerállapot telepíti); ikontálca-kiszolgáló (az Ubuntu AppIndicator-támogatása, más GNOME-os rendszeren az AppIndicator-bővítmény, vagy a KDE Plasma); OpenVPN 2.7 vagy újabb ahhoz, hogy az OpenVPN-kapcsolatok kövessék a szerver `redirect-gateway` beállítását; rendszergazda a telepítéshez és a frissítésekhez.
 
 ### Dokumentáció
 - Hogyan használd: [magyar](docs/how-to.hu.md), [angol](docs/how-to.en.md)
@@ -288,7 +288,7 @@ Lépésről lépésre: Hogyan használd – [MacVPN](docs/how-to.hu.md) és [Win
 - A LinVPN felhasználói útmutatója (Linux): [magyar](docs/linvpn-user-guide.hu.md), [angol](docs/linvpn-user-guide.en.md)
 - [OpenVPN direktíva-szabályok](docs/openvpn-directives.md) (angolul, magyar összefoglalóval)
 - Vezérlő API más appoknak ugyanazon a Macen vagy számítógépen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
-- Kiadási jegyzetek: [2.1.0](docs/release-notes/2.1.0.md#magyar), [2.0.7](docs/release-notes/2.0.7.md#magyar), [2.0.6](docs/release-notes/2.0.6.md#magyar), [2.0.5](docs/release-notes/2.0.5.md#magyar), [2.0.4](docs/release-notes/2.0.4.md#magyar), [2.0.3](docs/release-notes/2.0.3.md#magyar), [2.0.2](docs/release-notes/2.0.2.md#magyar), [2.0.1](docs/release-notes/2.0.1.md#magyar), [2.0.0](docs/release-notes/2.0.0.md#magyar); az összes kiadás a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon
+- Kiadási jegyzetek: [2.1.1](docs/release-notes/2.1.1.md#magyar), [2.1.0](docs/release-notes/2.1.0.md#magyar), [2.0.7](docs/release-notes/2.0.7.md#magyar), [2.0.6](docs/release-notes/2.0.6.md#magyar), [2.0.5](docs/release-notes/2.0.5.md#magyar), [2.0.4](docs/release-notes/2.0.4.md#magyar), [2.0.3](docs/release-notes/2.0.3.md#magyar), [2.0.2](docs/release-notes/2.0.2.md#magyar), [2.0.1](docs/release-notes/2.0.1.md#magyar), [2.0.0](docs/release-notes/2.0.0.md#magyar); az összes kiadás a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon
 
 ### Társalkalmazás
 A [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) egy ablakban kezeli az RDP-, SSH-, webes admin- és MikroTik-kapcsolatokat macOS-en, Windowson és Linuxon. A [vezérlő API-n](docs/control-api.hu.md) keresztül párosítható a MacVPN-nel, a WinVPN-nel és a LinVPN-nel, és felépíti a távoli kapcsolathoz szükséges VPN-t. A vezérlő API és a párosított appok funkció miatta készült.

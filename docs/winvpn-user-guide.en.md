@@ -634,6 +634,7 @@ The WinVPN Service runs OpenVPN with system rights, so WinVPN only allows known,
 - **The folder C:\ProgramData\WinVPN has unsafe permissions. An administrator must delete it, then restart the WinVPN Service.**: see [1.3](#13-the-winvpn-service).
 - **Only a WinVPN installed in Program Files can install OpenVPN Community.**: you run a development build; install WinVPN with its MSI.
 - **The OpenVPN installer could not be downloaded: …** / **The OpenVPN installer failed (…).**: the installation did not finish; nothing was changed. Try again later, or install OpenVPN Community from openvpn.net yourself.
+- **The administrator account could not read the downloaded OpenVPN installer.**: the account that confirmed the UAC prompt could not open the installer WinVPN downloaded for you; nothing was changed. Update WinVPN, or install OpenVPN Community from openvpn.net yourself.
 - **OpenVPN's Interactive Service could not be disabled.**: OpenVPN was installed, but the second administrator prompt was declined; OpenVPN works anyway.
 - **Updating WinVPN disconnects active VPN connections.**: shown before an update (see [8](#8-updates)).
 - **`cert` and `key` pointing to the same file** (a combined PEM file: certificate plus private key, possibly encrypted, also with Windows line ends): supported. WinVPN puts only the certificate blocks into `<cert>` and only the key into `<key>`, and asks for the **Private key password** when you connect.

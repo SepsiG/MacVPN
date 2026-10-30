@@ -6,6 +6,7 @@
 
 use macvpn_core::l10n::{self, AppLanguage};
 use macvpn_platform_win::pure::openvpn_install::{self as oi, Interactive, StepError, StepResult};
+use macvpn_winsys::file::Protection;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
@@ -242,4 +243,98 @@ fn the_elevated_step_refuses_an_official_msi_without_the_signer_or_its_name() {
         assert_eq!(step(&[oi::STEP_ARG, "msi-official", p]), refused(StepError::NotVerified), "{p}");
     }
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A folder only this user and SYSTEM can open (as the app's `%LOCALAPPDATA%\WinVPN\downloads`), removed on drop.
+fn private_temp(name: &str) -> Temp {
+    let dir = std::env::temp_dir().join(format!("WinVPN-test-{name}-{}", uuid::Uuid::new_v4()));
+    macvpn_winsys::file::create_dir(&dir, Some(Protection::Private)).unwrap();
+    Temp(dir)
+}
+
+/// (Whether the file is [`Protection::Shared`] exactly, whether only its owner and SYSTEM may open it.)
+fn protection_of(path: &Path) -> (bool, bool) {
+    let f = std::fs::File::open(path).unwrap();
+    (
+        macvpn_winsys::file::has_protection(&f, Protection::Shared, false).unwrap(),
+        macvpn_winsys::file::grants_only_owner_and_system(&f).unwrap(),
+    )
+}
+
+/// 2.1.0's "The OpenVPN installer is not signed by OpenVPN Inc." on a standard user's account: the UAC prompt asks
+/// for an administrator's credentials, the elevated step runs as that administrator, and the MSI the app left in
+/// its private downloads folder (this user and SYSTEM only) could not even be opened by it. The app now hands the
+/// MSI over readable by `BUILTIN\Users` (every interactive account), still changeable only by this user and
+/// SYSTEM: here before any check, so a refused file is shared too and removed by the caller.
+#[test]
+fn the_downloaded_msi_is_readable_by_the_account_the_elevated_step_runs_as() {
+    let t = private_temp("hand-over");
+    let downloaded = t.0.join("download.part");
+    std::fs::copy(GIT, &downloaded).unwrap();
+    // As downloaded: inherited from the private folder, so another account (the elevating administrator) is
+    // refused.
+    assert_eq!(protection_of(&downloaded), (false, true));
+    let msi = t.0.join(format!("OpenVPN-2.7.8-I001-{}.msi", arch()));
+    let refused = l10n::with_language(AppLanguage::En, || {
+        macvpn_platform_win::hand_over_openvpn_msi_for_tests(&downloaded, &msi).map(|_| ())
+    });
+    let mismatch =
+        l10n::with_language(AppLanguage::En, || macvpn_core::update::UpdateError::ChecksumMismatch.message());
+    assert_eq!(refused, Err(mismatch));
+    assert!(!downloaded.exists());
+    assert_eq!(protection_of(&msi), (true, false));
+}
+
+/// The step's own account may not open the file the app named (here: a file whose DACL leaves this standard user
+/// out, as the downloads folder left out the elevating administrator): its own error and text, never "not signed
+/// by OpenVPN Inc." (nothing was checked), and nothing reaches msiexec.
+#[test]
+fn a_source_the_elevated_step_may_not_open_is_not_called_unsigned() {
+    let t = Temp::new("unreadable");
+    let msi = t.0.join(format!("OpenVPN-2.7.8-I001-{}.msi", arch()));
+    std::fs::copy(GIT, &msi).unwrap();
+    let open = macvpn_winsys::file::Open {
+        read: false,
+        write: true,
+        append: false,
+        disposition: macvpn_winsys::file::Disposition::OpenExisting,
+        protection: None,
+        no_follow: true,
+    };
+    let f = macvpn_winsys::file::open(&msi, open).unwrap();
+    macvpn_winsys::file::set_protection(&f, Protection::Admins, false).unwrap();
+    drop(f);
+    if std::fs::File::open(&msi).is_ok() {
+        eprintln!("running as an administrator: the Administrators-only file is readable, nothing to check");
+        return;
+    }
+    let root = t.0.join("root");
+    let (r, calls) = staged_step(&[oi::STEP_ARG, "msi", msi.to_str().unwrap()], &root);
+    let r = r.unwrap();
+    assert_eq!(r.error, Some(StepError::NotReadable));
+    assert_ne!(oi::after_step(&r), Err(oi::not_signed_by("OpenVPN Inc.")));
+    assert!(calls.is_empty());
+    assert_eq!(left_in(&root), 0);
+}
+
+/// With OpenVPN's real pinned MSI (`WINVPN_TEST_OPENVPN_MSI`, see above): the app's whole hand-over passes, the MSI
+/// is readable by every interactive account, and the elevated step, with the app's deny-write handle still open,
+/// checks it again and hands its copy to msiexec (replaced).
+#[test]
+fn the_real_pinned_msi_is_handed_over_and_installed_from_its_copy() {
+    let Some(pinned) = std::env::var_os("WINVPN_TEST_OPENVPN_MSI") else {
+        eprintln!("WINVPN_TEST_OPENVPN_MSI not set: skipped");
+        return;
+    };
+    let t = private_temp("real-hand-over");
+    let downloaded = t.0.join("download.part");
+    std::fs::copy(&pinned, &downloaded).unwrap();
+    let msi = t.0.join(format!("OpenVPN-2.7.8-I001-{}.msi", arch()));
+    let held = macvpn_platform_win::hand_over_openvpn_msi_for_tests(&downloaded, &msi).unwrap();
+    assert_eq!(protection_of(&msi), (true, false));
+    let root = t.0.join("root");
+    let (r, calls) = staged_step(&[oi::STEP_ARG, "msi", msi.to_str().unwrap()], &root);
+    assert_eq!(r.unwrap().error, Some(StepError::NoMsiexec), "verified, then msiexec (replaced) did not start");
+    assert_eq!(calls.len(), 1);
+    drop(held);
 }

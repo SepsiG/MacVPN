@@ -1028,6 +1028,13 @@
         "windows"
       ]
     },
+    "Or Windows does not trust the server’s certificate: if the server uses its own CA, use Trust This CA in Windows… in the editor.": {
+      "hu": "Vagy a Windows nem bízik a szerver tanúsítványában: ha a szerver saját CA-t használ, a szerkesztőben használd A CA megbízhatóvá tétele a Windowsban… gombot.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
     "The server did not accept the computer certificate.": {
       "hu": "A szerver nem fogadta el a számítógép-tanúsítványt.",
       "scope": "platform",
@@ -2832,6 +2839,13 @@
     },
     "The OpenVPN installer is not signed by %@.": {
       "hu": "Az OpenVPN telepítőjét nem a(z) %@ írta alá.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
+    "The administrator account could not read the downloaded OpenVPN installer.": {
+      "hu": "A rendszergazdai fiók nem tudta olvasni a letöltött OpenVPN-telepítőt.",
       "scope": "core",
       "only": [
         "windows"

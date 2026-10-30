@@ -181,7 +181,16 @@ pub fn explain(code: u32, context: &ErrorContext) -> RasError {
     let text = match code {
         AUTHENTICATION_FAILURE => l10n::tr("Authentication failed (wrong user name or password)", &[]),
         IKE_AUTH_FAIL => match context.auth {
-            Auth::EapMsChapV2 => l10n::tr("Authentication failed (EAP)", &[]),
+            // Windows answers 13801 also when it does not trust the server's certificate (before any EAP): both
+            // causes are named; the last line stays the sign-in failure, so the credentials are asked once more.
+            Auth::EapMsChapV2 => format!(
+                "{}\n{}",
+                l10n::tr(
+                    "Or Windows does not trust the server’s certificate: if the server uses its own CA, use Trust This CA in Windows… in the editor.",
+                    &[]
+                ),
+                l10n::tr("Authentication failed (EAP)", &[])
+            ),
             Auth::MachineCertificate => l10n::tr("The server did not accept the computer certificate.", &[]),
             Auth::Ikev2Psk | Auth::MsChapV2 { .. } => l10n::tr("Authentication failed", &[]),
         },

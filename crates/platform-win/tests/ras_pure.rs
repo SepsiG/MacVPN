@@ -128,7 +128,9 @@ fn errors_map_to_texts() {
     en(|| {
         let text = |code: u32, ctx: &ErrorContext| ras_errors::explain(code, ctx).text;
         assert_eq!(text(691, &l2tp()), "Authentication failed (wrong user name or password)");
-        assert_eq!(text(13801, &ikev2(Auth::EapMsChapV2)), "Authentication failed (EAP)");
+        let eap = text(13801, &ikev2(Auth::EapMsChapV2));
+        assert!(eap.starts_with("Or Windows does not trust the server’s certificate"), "{eap}");
+        assert!(macvpn_core::credentials::is_sign_in_failure(&eap), "still asks for the credentials once more");
         assert_eq!(text(13801, &ikev2(Auth::Ikev2Psk)), "Authentication failed");
         assert_eq!(
             text(13801, &ikev2(Auth::MachineCertificate)),
