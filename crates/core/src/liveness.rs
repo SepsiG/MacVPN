@@ -10,6 +10,8 @@
 //! openvpn up\n                                            OpenVPN connected (or not known to be reconnecting)
 //! openvpn reconnecting <since>\n                          OpenVPN's own restart (`RECONNECTING` after it was
 //!                                                         connected) since this Unix time
+//! counters <rx> <tx> <keepalive>\n                        Linux (LinVPN), in-process only: the tunnel interface's
+//!                                                         rx / tx bytes and the keepalive seconds (0: off)
 //! ```
 //!
 //! Numbers are ASCII decimal without sign or leading zero (but `0`), at most 20 digits, fitting a `u64`. Anything
@@ -46,6 +48,14 @@ pub enum Liveness {
     OpenVpn {
         reconnecting_since: Option<u64>,
     },
+    /// Linux (LinVPN): the tunnel interface's counters; WireGuard's last handshake is not readable without root
+    /// (spike L0-3). In-process only: the root layer and the service never send it. `keepalive`: the
+    /// `PersistentKeepalive` seconds (0: off).
+    Counters {
+        rx: u64,
+        tx: u64,
+        keepalive: u16,
+    },
 }
 
 fn number(s: &str) -> Option<u64> {
@@ -76,6 +86,7 @@ impl Liveness {
             }
             Liveness::OpenVpn { reconnecting_since: None } => "openvpn up\n".into(),
             Liveness::OpenVpn { reconnecting_since: Some(t) } => format!("openvpn reconnecting {t}\n"),
+            Liveness::Counters { rx, tx, keepalive } => format!("counters {rx} {tx} {keepalive}\n"),
         }
     }
 
@@ -93,6 +104,11 @@ impl Liveness {
             ["openvpn", "reconnecting", t] if lines.next().is_none() => {
                 Some(Liveness::OpenVpn { reconnecting_since: Some(number(t)?) })
             }
+            ["counters", rx, tx, k] if lines.next().is_none() => Some(Liveness::Counters {
+                rx: number(rx)?,
+                tx: number(tx)?,
+                keepalive: u16::try_from(number(k)?).ok()?,
+            }),
             ["wireguard", n] => {
                 let n = usize::try_from(number(n)?).ok().filter(|n| *n <= MAX_PEERS)?;
                 let mut peers = Vec::with_capacity(n);

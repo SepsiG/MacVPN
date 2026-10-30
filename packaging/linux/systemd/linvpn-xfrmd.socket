@@ -1,0 +1,12 @@
+[Unit]
+Description=LinVPN IKEv2 traffic counter socket
+
+[Socket]
+ListenStream=/run/linvpn-xfrmd.sock
+SocketMode=0666
+Accept=yes
+MaxConnectionsPerSource=4
+MaxConnections=16
+
+[Install]
+WantedBy=sockets.target

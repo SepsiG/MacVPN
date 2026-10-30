@@ -11,6 +11,7 @@
 
 pub mod control;
 pub mod curl;
+pub mod dates;
 #[cfg(debug_assertions)]
 pub mod debug;
 pub mod error;
@@ -40,9 +41,9 @@ pub use native_vpn::{
 };
 pub use network::{Gateway, NetworkProbe, NetworkSnapshot, NoNetworkProbe};
 pub use prefs::{FilePreferences, MemoryPreferences, PreferenceStore};
-pub use product::{MACVPN, Product, WINVPN};
+pub use product::{LINVPN, MACVPN, Product, WINVPN};
 pub use setup::{
-    BootstrapTexts, EngineReport, EngineRow, MissingEngine, OutdatedPackage, PackageIndexUpdate, SetupReport,
+    BootstrapTexts, EngineReport, EngineRow, MissingEngine, NmReport, OutdatedPackage, PackageIndexUpdate, SetupReport,
     SystemSetup,
 };
 pub use system::{DownloadMark, Shell, SystemInfo, SystemVpnWatch};

@@ -36,6 +36,27 @@ test('the L2TP form saves without a profile step on Windows and keeps the macOS 
   }
 });
 
+test('the L2TP form\'s save note on Linux is its own variant, not the Windows text (LinVPN L-b)', async () => {
+  const { translate } = await import('../l10n-core.ts');
+  const table = JSON.parse(readFileSync(new URL('../../../../../crates/core/l10n/strings.json', import.meta.url), 'utf8')).strings;
+  const linux = { os: 'linux' as const, product: 'LinVPN' };
+  const note = (language: 'en' | 'hu', os: typeof linux | { os: 'windows'; product: string }) =>
+    nativeSaveNote(windows, (key) => translate(table, language, os, key, []));
+  assert.equal(
+    note('en', linux),
+    "Saving stores this connection's settings in LinVPN at once; there is nothing to approve. LinVPN creates its NetworkManager connection only when connecting, and passes the password then.",
+  );
+  assert.equal(
+    note('hu', linux),
+    'Mentéskor a LinVPN azonnal eltárolja a kapcsolat beállításait, nincs mit jóváhagyni. A NetworkManager-kapcsolatot csak csatlakozáskor hozza létre, és a jelszót is akkor adja át.',
+  );
+  // Windows keeps its text (the product name replaced as before).
+  assert.equal(
+    note('en', { os: 'windows', product: 'WinVPN' }),
+    'Saving writes the Windows VPN entry of this connection at once; there is nothing to approve. The password is not in it: WinVPN passes it when connecting.',
+  );
+});
+
 test('the error banner names the administrator step', () => {
   assert.equal(adminActionLabel('allow-l2tp-behind-nat', tr), '<Allow L2TP Behind NAT…>');
   assert.equal(adminActionLabel('trust-ca-in-windows', tr), '<Trust This CA in Windows…>');

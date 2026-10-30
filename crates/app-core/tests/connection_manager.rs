@@ -199,6 +199,67 @@ fn drop_detection() {
     assert_eq!(events_of(&events), [dropped(&uuid_string(&c.id), "Iroda")]);
 }
 
+/// LinVPN (audit C1): stopped outside the app (GNOME's menu, `nmcli connection down`; the log's last own line is
+/// `NetworkManager: disconnected by the user`): off as after a disconnect in the app, no drop event (no notice,
+/// no reconnect), and the user-disconnect listeners hear it (the planner and the control API's leases).
+#[test]
+fn a_stop_outside_the_app_is_off_without_a_drop() {
+    let f = Fixture::new(HU);
+    let c = Connection::new("Iroda", VPNKind::Openvpn);
+    f.store.save(&c, Some("remote x\n")).unwrap();
+    let log = f.dir.path().join("iroda.log");
+    std::fs::write(&log, "2026-10-30 10:00:00 Connected, IPv4 198.51.100.7\n").unwrap();
+    f.helper.set_log(&c.id, &log);
+    let m = f.manager();
+    let events = record_events(&m);
+    let stops = Arc::new(Mutex::new(Vec::new()));
+    let sink = stops.clone();
+    m.add_user_disconnect_listener(move |key| sink.lock().unwrap().push(key.to_string()));
+    let key = uuid_string(&c.id);
+    f.helper.respond("status", Ok(&connected_json(&c)));
+    m.refresh();
+    std::fs::write(
+        &log,
+        "2026-10-30 10:00:00 Connected, IPv4 198.51.100.7\n2026-10-30 10:05:00 NetworkManager: disconnected by the user\n2026-10-30 10:05:00 [openvpn] SIGTERM[hard,] received, process exiting\n",
+    )
+    .unwrap();
+    f.helper.respond("status", Ok("[]"));
+    m.refresh();
+    assert_eq!(m.state(&key), ConnectionState::Disconnected);
+    assert!(events_of(&events).is_empty(), "{:?}", events_of(&events));
+    assert_eq!(*stops.lock().unwrap(), vec![key.clone()]);
+    // Any other end is a drop as before.
+    std::fs::write(
+        &log,
+        "2026-10-30 11:00:00 Connected, IPv4 198.51.100.7\n2026-10-30 11:05:00 NetworkManager: disconnected\n",
+    )
+    .unwrap();
+    f.helper.respond("status", Ok(&connected_json(&c)));
+    m.refresh();
+    f.helper.respond("status", Ok("[]"));
+    m.refresh();
+    assert_eq!(events_of(&events), [dropped(&key, "Iroda")]);
+    assert_eq!(stops.lock().unwrap().len(), 1);
+}
+
+#[test]
+fn a_managed_native_stop_outside_the_app_is_off_without_a_drop() {
+    let f = Fixture::new(HU);
+    let (m, c) = native_manager(&f);
+    let log = f.dir.path().join("l2tp.log");
+    std::fs::write(&log, "2026-10-30 10:05:00 NetworkManager: disconnected by the user\n").unwrap();
+    f.native.set_log_file(&c.id, &log);
+    let events = record_events(&m);
+    let key = uuid_string(&c.id);
+    f.native.set_list(Ok(list("Connected")));
+    m.refresh();
+    assert!(m.state(&key).is_connected());
+    f.native.set_list(Ok(list("Disconnected")));
+    m.refresh();
+    assert_eq!(m.state(&key), ConnectionState::Disconnected);
+    assert!(events_of(&events).is_empty());
+}
+
 #[test]
 fn connect_passes_secrets_and_disconnect_clears_failure() {
     let f = Fixture::new(HU);

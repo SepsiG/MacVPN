@@ -266,9 +266,9 @@ fn names_a_macos_term(text: &str) -> bool {
     MACOS_TERMS.iter().any(|term| contains_term(text, term))
 }
 
-/// Every text that names a macOS facility is classified (platform-neutral refactor, Task 6): `only` (the OSes
-/// whose code paths show it) or a `windows` variant. `only` and `variants` never name the same OS, and a variant
-/// has both languages.
+/// Every text that names a macOS facility is classified (platform-neutral refactor, Task 6): for Windows and for
+/// Linux, either `only` leaves that OS out or the entry has that OS's variant. `only` and `variants` never name the
+/// same OS, and a variant has both languages.
 #[test]
 fn macos_terms_are_classified() {
     let json: serde_json::Value = serde_json::from_str(l10n::STRINGS_JSON).unwrap();
@@ -295,12 +295,17 @@ fn macos_terms_are_classified() {
         }
         if names_a_macos_term(key) || names_a_macos_term(hu) {
             matched += 1;
-            if only.is_empty() && !variants.is_some_and(|v| v.contains_key("windows")) {
-                unclassified.push(key.clone());
+            let shown = |os: &str| only.is_empty() || only.contains(&os);
+            let has = |os: &str| variants.is_some_and(|v| v.contains_key(os));
+            if shown("windows") && !has("windows") {
+                unclassified.push(format!("windows: {key}"));
+            }
+            if shown("linux") && !has("linux") {
+                unclassified.push(format!("linux: {key}"));
             }
         }
     }
-    assert!(unclassified.is_empty(), "macOS terms without `only` or a `windows` variant: {unclassified:#?}");
+    assert!(unclassified.is_empty(), "macOS terms without `only` or a variant: {unclassified:#?}");
     assert!(matched >= 60, "only {matched} texts name a macOS term");
 }
 
@@ -326,4 +331,69 @@ fn no_macos_term_reaches_windows() {
         }
     }
     assert!(offenders.is_empty(), "macOS terms in Windows texts:\n{}", offenders.join("\n"));
+}
+
+/// What LinVPN shows: every text resolved for Linux, in both languages, names no macOS facility.
+#[test]
+fn no_macos_term_reaches_linux() {
+    use macvpn_core::TargetOs;
+    use macvpn_core::l10n::{AppLanguage, TextPlatform};
+    let linux = TextPlatform { os: TargetOs::Linux, product: "LinVPN" };
+    let mut offenders = Vec::new();
+    for entry in l10n::table() {
+        if !entry.shown_on(TargetOs::Linux) {
+            continue;
+        }
+        for language in [AppLanguage::En, AppLanguage::Hu] {
+            let text = l10n::tr_for(linux, language, &entry.key, &[]);
+            for term in MACOS_TERMS {
+                if contains_term(&text, term) {
+                    offenders.push(format!("{term}: {text}"));
+                }
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "macOS terms in Linux texts:\n{}", offenders.join("\n"));
+}
+
+/// Windows facilities never reach a Linux text either (a variant copied from Windows by mistake). Literal text,
+/// matched from a word start, so a Hungarian form takes its suffixes (`Hitelesítőadat-kezelőjében`, `tálcán`).
+const WINDOWS_TERMS: &[&str] = &[
+    "Credential Manager",
+    "Hitelesítőadat-kezelő",
+    "File Explorer",
+    "Fájlkezelő",
+    "notification area",
+    "értesítési terület",
+    "taskbar",
+    "tálca",
+    "this PC",
+    "Settings → Apps",
+    "Gépház",
+    "UAC",
+    "WinVPN Service",
+];
+
+#[test]
+fn no_windows_term_reaches_linux() {
+    use macvpn_core::TargetOs;
+    use macvpn_core::l10n::{AppLanguage, TextPlatform};
+    let linux = TextPlatform { os: TargetOs::Linux, product: "LinVPN" };
+    let compiled: Vec<(&str, Regex)> =
+        WINDOWS_TERMS.iter().map(|term| (*term, Regex::new(&format!(r"\b{}", regex::escape(term))).unwrap())).collect();
+    let mut offenders = Vec::new();
+    for entry in l10n::table() {
+        if !entry.shown_on(TargetOs::Linux) {
+            continue;
+        }
+        for language in [AppLanguage::En, AppLanguage::Hu] {
+            let text = l10n::tr_for(linux, language, &entry.key, &[]);
+            for (term, re) in &compiled {
+                if re.is_match(&text) {
+                    offenders.push(format!("{term}: {text}"));
+                }
+            }
+        }
+    }
+    assert!(offenders.is_empty(), "Windows terms in Linux texts:\n{}", offenders.join("\n"));
 }

@@ -48,6 +48,8 @@ jobs:
         run: scripts/test-win-remote.sh
       - name: Windows smoke script (print mode, no SSH)
         run: scripts/test-win-smoke.sh
+      - name: Linux smoke script (print mode, no SSH)
+        run: scripts/test-lin-smoke.sh
       # The VPN test lab without Docker (WinVPN 2c, Task 4): the generated PKI, keys and client profiles through
       # MacVPN's import and validators. Needs OpenSSL 3 (the image's Homebrew openssl@3; without it the step only
       # warns); the compose checks skip themselves without `docker compose` (the macOS runner has no Docker).
@@ -60,6 +62,14 @@ jobs:
           fi
       - name: CI's OpenVPN install script (dry run from the pins, no network)
         run: scripts/ci-install-openvpn.sh --dry-run
+      - name: Linux VM script (print mode, no SSH)
+        run: scripts/test-lin-remote.sh
+      - name: Linux package script (control file, syntax, staged files, maintainer scripts)
+        run: scripts/test-build-deb.sh
+      - name: LinVPN's NM dispatcher script (class-based route; fake ip and logger)
+        run: scripts/test-linvpn-route.sh
+      - name: LinVPN's NM OpenVPN service build script (print mode, the pin, the patch; no build)
+        run: scripts/test-build-nm-linvpn-openvpn.sh
       - name: No unbraced $VAR right before non-ASCII text (breaks under UTF-8 locales)
         run: |
           if perl -ne 'print "$ARGV:$.: $_" if /\$[A-Za-z_][A-Za-z0-9_]*[\x80-\xff]/; close ARGV if eof' scripts/*.sh | grep .; then
@@ -325,3 +335,101 @@ jobs:
         run: npm ci --no-audit --no-fund
       - name: npm test (language rule, format, l10n coverage of the UI)
         run: npm test
+  # LinVPN on Linux (GitHub's Ubuntu 24.04 x64 runner): clippy over the whole workspace, the Linux test set and the
+  # ignored-test rule. Tauri's Linux prerequisites from apt; dbus for the private session bus of the tests.
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Build dependencies (Tauri's Linux prerequisites; dbus for the private session bus of the tests)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev dbus
+      - name: Rust toolchain (Linux x64)
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -c clippy,rustfmt -t x86_64-unknown-linux-gnu
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+      # Rust build cache: see job rust (checks only, never release artifacts; saved only on main and develop).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: linux-x64-check
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      # Every test binary, under one private session bus (the D-Bus tests serve their own fakes on it; nothing touches
+      # a desktop). The `desktop:` tests stay ignored (scripts/ignored-everywhere.txt; they run at the VM's desktop).
+      - name: cargo test (the Linux test set, the app included)
+        run: CI=1 dbus-run-session -- cargo test --locked -p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-linux -p macvpn-unixsys -p macvpn-helper -p macvpn-control-client -p macvpn-app --lib --tests --no-fail-fast
+      # The same package set on Linux (scripts/check-ignored.sh picks it by OS).
+      - name: Ignored tests are the same on every OS
+        run: scripts/check-ignored.sh
+  # LinVPN's .deb on both architectures, natively (ubuntu-24.04 and ubuntu-24.04-arm; no cross build: WebKitGTK and
+  # GTK would need an arm64 sysroot), with every release gate of scripts/build-deb.sh. Unsigned (the .sig is the
+  # maintainer's, offline); the artifacts are for testing only, the release builds its own in release.yml.
+  deb:
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.8.2"
+          # No automatic cache: release builds must not restore a cache written elsewhere.
+          package-manager-cache: false
+      # LinVPN's NM OpenVPN service (scripts/build-nm-linvpn-openvpn.sh, upstream's autotools build) needs libnm, GLib,
+      # pkg-config and gettext. The runner's libnm (NM 1.46 on 24.04) is older than the target's; the service uses only
+      # libnm >= 1.10 symbols, and dpkg-shlibdeps records the minimum it really needs.
+      - name: Build dependencies (Tauri's Linux prerequisites; dpkg-dev and desktop-file-utils for the package gates; the NM service's)
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev dpkg-dev desktop-file-utils \
+            pkg-config gettext libnm-dev libglib2.0-dev
+      - name: LinVPN's NM OpenVPN service build script (print mode)
+        run: scripts/test-build-nm-linvpn-openvpn.sh
+      - name: Rust toolchain
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -t "$TARGET"
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+      # Rust build cache: see job rust (checks only, never release artifacts; saved only on main and develop).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          shared-key: linux-${{ matrix.arch }}-release
+          save-if: ${{ github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop') }}
+          cache-bin: "false"
+      - name: .deb with the release gates
+        run: scripts/build-deb.sh
+      - name: SHA-256
+        run: cat dist/linux/linvpn_*.deb.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: linvpn-deb-${{ matrix.arch }}
+          path: |
+            dist/linux/linvpn_*.deb
+            dist/linux/linvpn_*.deb.sha256
+          if-no-files-found: error
+          retention-days: 7

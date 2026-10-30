@@ -123,6 +123,7 @@ impl<'a> SetupChecker<'a> {
             outdated_packages: Vec::new(),
             ras: None,
             ras_unsupported_kinds: Vec::new(),
+            nm: None,
         }
     }
 

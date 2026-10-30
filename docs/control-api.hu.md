@@ -2,7 +2,7 @@
 
 [English version](control-api.md)
 
-Ez az útmutató fejlesztőknek szól, akik azt szeretnék, hogy egy másik program ugyanazon a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait. A legtöbb felhasználónak nincs rá szüksége; minden mást a [felhasználói útmutató](user-guide.hu.md) ír le. A windowsos változat, a WinVPN ugyanezt az API-t egy névvel ellátott csövön (named pipe) kínálja: lásd [11.](#11-windows-winvpn)
+Ez az útmutató fejlesztőknek szól, akik azt szeretnék, hogy egy másik program ugyanazon a Macen fel- és lekapcsolhassa a MacVPN kapcsolatait. A legtöbb felhasználónak nincs rá szüksége; minden mást a [felhasználói útmutató](user-guide.hu.md) ír le. A windowsos változat, a WinVPN ugyanezt az API-t egy névvel ellátott csövön (named pipe) kínálja: lásd [11.](#11-windows-winvpn) A linuxos változat, a LinVPN Unix socketen kínálja: lásd [12.](#12-linux-linvpn)
 
 Az API a [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) társalkalmazáshoz készült, amely RDP-, SSH-, webes admin- és MikroTik-kapcsolatokat kezel, és mindegyikhez felépíti a szükséges VPN-t. Működő példa egy párosított appra.
 
@@ -19,6 +19,7 @@ Az API a [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) társalkalma
 9. [Hogyan illeszd be egy Rust appba](#9-hogyan-illeszd-be-egy-rust-appba)
 10. [Hibaelhárítás](#10-hibaelhárítás)
 11. [Windows (WinVPN)](#11-windows-winvpn)
+12. [Linux (LinVPN)](#12-linux-linvpn)
 
 ---
 
@@ -567,3 +568,15 @@ A `hold` akkor ér véget, amikor a szabványos bemenete véget ér (Ctrl+Z, Ent
 - **Hozzáférés megtagadva csatlakozáskor:** másik felhasználóként vagy hálózati bejelentkezésből (SSH, távoli parancssor, szolgáltatásfiók) csatlakozol. A klienst a felhasználó saját asztali munkamenetében futtasd.
 - **`PermissionDenied`, mielőtt bármi elment volna:** a csövet egy másik felhasználó folyamata szolgálja ki (egy névfoglaló lefoglalta a nevet). Jelentkezz ki, majd be; jelezd a gép rendszergazdájának.
 - **`unauthorized` újrafordítás után:** mint macOS-en, a párosítás a futtatható fájl útvonalához kötődik (a `target\debug` és a `target\release` különbözik).
+
+---
+
+## 12. Linux (LinVPN)
+
+A LinVPN pontosan ezt a protokollt beszéli, Unix socketen, mint a MacVPN (a 3–10. fejezet változatlanul érvényes: ugyanazok a kérések, események, hibakódok, foglalási szabályok és a példakliens). A bekapcsolás és a párosítás a 2. és 3. fejezet szerint működik, a LinVPN Kapcsolatok ablakában → **Párosított appok** ([LinVPN felhasználói útmutató, 5.3](linvpn-user-guide.hu.md#53-párosított-appok-vezérlő-api)).
+
+- **A socket:** `$XDG_RUNTIME_DIR/linvpn/control/linvpn.sock` (általában `/run/user/<uid>/linvpn/control/linvpn.sock`). A példakliens `default_socket_path()` függvénye Linuxon ezt adja vissza. A `control/` mappa `0700`, a socket `0600` jogosultságú; a LinVPN nem indítja el a szolgáltatást, ha a `$XDG_RUNTIME_DIR` nem a felhasználó privát mappája. Amíg a **Más appok vezérelhetik a VPN-eket** ki van kapcsolva, a socket nem létezik.
+- **Azonosítás:** a LinVPN a kliens felhasználóját és folyamatát a socketből olvassa ki (`SO_PEERCRED`), a futtatható fájl útvonalát a `/proc/<pid>/exe`-ből; a párosítás ehhez az útvonalhoz kötődik, mint macOS-en.
+- **`kind`:** ugyanazok az értékek; a `system` a felhasználó saját NetworkManager VPN-jeinek egyike (a GNOME hálózati beállításai).
+- **A hibakódok** ugyanazok. Linuxon a `setup_required` azt jelenti, hogy a kapcsolat típusához szükséges NetworkManager VPN-bővítmény nincs telepítve (a LinVPN Rendszerállapot ablaka mutatja), a `failed` a kapcsolat okával pedig azt, hogy a Linux nem tudja futtatni a kapcsolatot („Linuxon nem támogatott: …”).
+- **A token:** a felhasználó kulcstartójában tárold (Secret Service, például a `libsecret` segítségével), saját elemként; sosem sima fájlban, naplóban vagy parancssorban.

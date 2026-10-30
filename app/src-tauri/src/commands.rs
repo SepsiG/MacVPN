@@ -73,6 +73,19 @@ pub fn validate_menu_height(height: f64) -> Result<f64, String> {
     if height.is_finite() && (40.0..=900.0).contains(&height) { Ok(height) } else { Err("invalid height".into()) }
 }
 
+/// The card's rectangle in the overlay (CSS pixels: left, top, width, height): inside a 16384 px square, a size of
+/// at least 1 px.
+pub fn validate_menu_card(left: f64, top: f64, width: f64, height: f64) -> Result<(f64, f64, f64, f64), String> {
+    const MAX: f64 = 16384.0;
+    let inside = |v: f64| v.is_finite() && (0.0..=MAX).contains(&v);
+    let sized = |v: f64| inside(v) && v >= 1.0;
+    if inside(left) && inside(top) && sized(width) && sized(height) {
+        Ok((left, top, width, height))
+    } else {
+        Err("invalid card".into())
+    }
+}
+
 fn item(state: &AppState, id: &str) -> Result<ConnectionItem, String> {
     validate_key(id)?;
     state.manager.item(id).ok_or_else(|| "unknown connection".to_string())
@@ -349,6 +362,15 @@ pub async fn set_menu_height(app: AppHandle, height: f64) -> Result<(), String> 
     crate::tray::resize_shown_menu(&window, height)
 }
 
+/// The card panel's overlay (Linux): where the page drew the card, so that only the card takes clicks. Nothing
+/// where the popover is a window of its own (macOS, Windows).
+#[tauri::command]
+pub async fn set_menu_card(app: AppHandle, left: f64, top: f64, width: f64, height: f64) -> Result<(), String> {
+    let card = validate_menu_card(left, top, width, height)?;
+    let window = app.get_webview_window(MENU_WINDOW).ok_or("no menu window")?;
+    crate::tray::set_menu_card(&window, card)
+}
+
 /// `choice` absent: the menu's Quit – `ask` when the menu shows the active-connections question, `unsaved` when
 /// the Connections window asks first, otherwise the app quits. With the answer to the active-connections
 /// question: carried out, then quit (or `cancelled`).
@@ -576,7 +598,15 @@ mod tests {
         assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "macos", "productName": "MacVPN"}));
         let view = PlatformView::of(&macvpn_platform_api::WINVPN);
         assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "windows", "productName": "WinVPN"}));
-        let own = if cfg!(windows) { &macvpn_platform_api::WINVPN } else { &macvpn_platform_api::MACVPN };
+        let view = PlatformView::of(&macvpn_platform_api::LINVPN);
+        assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "linux", "productName": "LinVPN"}));
+        let own = if cfg!(windows) {
+            &macvpn_platform_api::WINVPN
+        } else if cfg!(target_os = "linux") {
+            &macvpn_platform_api::LINVPN
+        } else {
+            &macvpn_platform_api::MACVPN
+        };
         assert_eq!(PlatformView::of(crate::platform::get().product()), PlatformView::of(own));
     }
 
@@ -839,5 +869,19 @@ mod tests {
         assert!(validate_menu_height(f64::INFINITY).is_err());
         assert!(validate_menu_height(10.0).is_err());
         assert!(validate_menu_height(5000.0).is_err());
+    }
+
+    #[test]
+    fn menu_card_bounds() {
+        assert_eq!(validate_menu_card(875.5, 8.0, 330.0, 412.25), Ok((875.5, 8.0, 330.0, 412.25)));
+        assert_eq!(validate_menu_card(0.0, 0.0, 1.0, 1.0), Ok((0.0, 0.0, 1.0, 1.0)));
+        for bad in [f64::NAN, f64::INFINITY, -1.0, 20000.0] {
+            assert!(validate_menu_card(bad, 8.0, 330.0, 400.0).is_err(), "left {bad}");
+            assert!(validate_menu_card(875.0, bad, 330.0, 400.0).is_err(), "top {bad}");
+            assert!(validate_menu_card(875.0, 8.0, bad, 400.0).is_err(), "width {bad}");
+            assert!(validate_menu_card(875.0, 8.0, 330.0, bad).is_err(), "height {bad}");
+        }
+        assert!(validate_menu_card(875.0, 8.0, 0.0, 400.0).is_err(), "an empty card");
+        assert!(validate_menu_card(875.0, 8.0, 330.0, 0.5).is_err(), "an empty card");
     }
 }

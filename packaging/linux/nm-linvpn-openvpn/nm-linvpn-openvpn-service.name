@@ -1,0 +1,6 @@
+[VPN Connection]
+name=linvpn-openvpn
+service=org.freedesktop.NetworkManager.linvpn-openvpn
+program=/usr/lib/linvpn/nm-openvpn-service
+supports-multiple-connections=true
+supports-safe-private-file-access=true

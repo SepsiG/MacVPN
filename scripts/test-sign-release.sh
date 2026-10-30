@@ -39,8 +39,8 @@ fi
 WF=".github/workflows/release.yml"
 check "release.yml: attest-build-provenance SHA-ra rögzítve" \
   grep -Eq '^ +uses: actions/attest-build-provenance@[0-9a-f]{40} # v[0-9]+\.[0-9]+\.[0-9]+$' "$WF"
-check "release.yml: a DMG és az MSI is attesztált" bash -c \
-  "grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/MacVPN-\*\.dmg$' && grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/WinVPN-\*\.msi$'"
+check "release.yml: a DMG, az MSI és a .deb is attesztált" bash -c \
+  "grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/MacVPN-\*\.dmg$' && grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/WinVPN-\*\.msi$' && grep -A3 'uses: actions/attest-build-provenance@' '$WF' | grep -q 'dist/linvpn_\*\.deb$'"
 check "release.yml: id-token és attestations írás csak a release jobban" bash -c \
   "[ \"\$(grep -c 'id-token: write' '$WF')\" = 1 ] && [ \"\$(grep -c 'attestations: write' '$WF')\" = 1 ] && sed -n '/^  release:/,\$p' '$WF' | grep -q 'id-token: write'"
 check "sign-release.sh: gh attestation verify a repóra, a workflow-ra, a tagre és a commitra" bash -c \
@@ -116,6 +116,27 @@ else
   ok "az msi aláírása a MacVPN-üzenetre nem érvényes"
 fi
 
+# LinVPN: a .deb aláírása a LinVPN-üzenetre (a fájlnévvel együtt), és csak a saját architektúrájára érvényes.
+head -c 100000 /dev/urandom >"$T/linvpn.deb"
+DHASH="$(shasum -a 256 "$T/linvpn.deb" | awk '{print $1}')"
+if OUT="$("$SCRIPT" --dry-run --deb "$T/linvpn.deb" --arch amd64 --backup-key "$T/throwaway.pem" v9.8.7 </dev/null 2>&1)"; then
+  ok "deb dry-run lefut"
+else
+  nok "deb dry-run lefut"; echo "$OUT"
+fi
+check "deb: kiírja a hash-t és az asset nevét" grep -q "as linvpn_9.8.7_amd64.deb): $DHASH" <<<"$OUT"
+DSIG="$(sed -n 's/^signature: //p' <<<"$OUT")"
+printf 'linvpn-update-v1\nlinvpn_9.8.7_amd64.deb\n9.8.7\n%s\n' "$DHASH" >"$T/dmessage"
+printf %s "$DSIG" | base64 -d >"$T/dsig.bin"
+check "a deb aláírása a LinVPN-üzenetre érvényes" \
+  "$OPENSSL" pkeyutl -verify -pubin -inkey "$T/throwaway.pub.pem" -rawin -in "$T/dmessage" -sigfile "$T/dsig.bin" -out /dev/null
+printf 'linvpn-update-v1\nlinvpn_9.8.7_arm64.deb\n9.8.7\n%s\n' "$DHASH" >"$T/dmessage2"
+if "$OPENSSL" pkeyutl -verify -pubin -inkey "$T/throwaway.pub.pem" -rawin -in "$T/dmessage2" -sigfile "$T/dsig.bin" >/dev/null 2>&1; then
+  nok "az amd64 aláírás az arm64 fájlra nem érvényes"
+else
+  ok "az amd64 aláírás az arm64 fájlra nem érvényes"
+fi
+
 # Hibás használat.
 expect_fail() { local desc="$1"; shift; if "$@" </dev/null >/dev/null 2>&1; then nok "$desc"; else ok "$desc"; fi; }
 expect_fail "rossz tag (v nélkül)" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --backup-key "$T/throwaway.pem" 9.8.7
@@ -129,6 +150,10 @@ expect_fail "--msi rossz arch" "$SCRIPT" --dry-run --msi "$T/winvpn.msi" --arch 
 expect_fail "--dmg és --msi együtt" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --msi "$T/winvpn.msi" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
 expect_fail "--dmg --arch-csal" "$SCRIPT" --dry-run --dmg "$T/MacVPN-9.8.7.dmg" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
 expect_fail "--msi dry-run nélkül" "$SCRIPT" --msi "$T/winvpn.msi" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--deb --arch nélkül" "$SCRIPT" --dry-run --deb "$T/linvpn.deb" --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--deb rossz arch (x64)" "$SCRIPT" --dry-run --deb "$T/linvpn.deb" --arch x64 --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--deb és --msi együtt" "$SCRIPT" --dry-run --deb "$T/linvpn.deb" --msi "$T/winvpn.msi" --arch arm64 --backup-key "$T/throwaway.pem" v9.8.7
+expect_fail "--deb dry-run nélkül" "$SCRIPT" --deb "$T/linvpn.deb" --arch amd64 --backup-key "$T/throwaway.pem" v9.8.7
 expect_fail "ismeretlen opció" "$SCRIPT" --force v9.8.7
 
 echo "# $PASS ok, $FAIL hiba"

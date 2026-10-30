@@ -6,7 +6,14 @@
 
 ## English
 
-MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. **WinVPN** is the same app for Windows 10 and 11, built from this repository and released together with MacVPN. Both are written in Rust with a Tauri user interface. The current version is **2.0.0**, the first full release of both: MacVPN on macOS and WinVPN on Windows.
+MacVPN is a menu bar app for macOS that manages OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec and Cisco IPsec connections in one place. **WinVPN** is the same app for Windows 10 and 11, built from this repository and released together with MacVPN. **LinVPN** is the same app for Debian and Ubuntu based Linux desktops, released together with them from 2.1.0. All three are written in Rust with a Tauri user interface. The current version is **2.1.0**, the first release with LinVPN.
+
+### What's new in 2.1
+- **LinVPN**, the first release for Linux (Ubuntu 24.04 or later, Debian 13; amd64 and arm64): every connection type through NetworkManager, system VPNs, the card panel in the top bar, logs, live traffic, dead-tunnel detection and reconnect, the control API and signed self-updates. See [LinVPN](#linvpn) and [Download and install](#download-and-install).
+- **All apps:** **Download and Install** always installs the newest release, not the one found at the last check.
+- MacVPN's root layer stays 12: no **Authorize** after updating from 2.0.7.
+
+Full list: the [2.1.0 release notes](docs/release-notes/2.1.0.md).
 
 ### What's new in 2.0
 
@@ -70,7 +77,7 @@ Details: the "What's new" chapters of the [user guide](docs/user-guide.en.md) an
 - **Also:** connection notifications, Light and Dark appearance, Launch at Login, signed in-app updates, and an English and Hungarian interface.
 
 ### Download and install
-Both installers are on the [Releases](https://github.com/SepsiG/MacVPN/releases) page.
+All installers are on the [Releases](https://github.com/SepsiG/MacVPN/releases) page.
 
 **MacVPN (macOS)**
 1. Download `MacVPN-x.y.z.dmg`.
@@ -88,22 +95,31 @@ Both installers are on the [Releases](https://github.com/SepsiG/MacVPN/releases)
 
 **Updating WinVPN:** WinVPN offers new versions itself (an administrator confirms the installation), or install the new MSI over the old one. It updates the 1.5.0 preview in place and keeps your data, which is in `%LOCALAPPDATA%\WinVPN`. See [Upgrading from the 1.5 preview](docs/winvpn-user-guide.en.md#81-upgrading-from-the-15-preview).
 
-Step by step: How-to guides for [MacVPN](docs/how-to.en.md) and [WinVPN](docs/winvpn-how-to.en.md).
+**LinVPN (Linux)**
+1. Download `linvpn_x.y.z_amd64.deb` (Intel and AMD) or `linvpn_x.y.z_arm64.deb` (ARM) and its `.sha256` file.
+2. Check it and install it as an administrator: `sha256sum -c linvpn_x.y.z_amd64.deb.sha256`, then `sudo apt-get install ./linvpn_x.y.z_amd64.deb` (keep the `./`). apt also installs NetworkManager's OpenVPN plugin and OpenVPN and, by default, the recommended NetworkManager VPN plugins (L2TP, strongSwan, vpnc, SSTP).
+3. Start **LinVPN** from the app grid; its icon is in the top bar. A missing VPN plugin is installed from System Status.
+
+**Updating LinVPN:** LinVPN offers new versions itself (an administrator's password confirms the installation), or install the new `.deb` the same way; a running LinVPN restarts into it. Your data is in `~/.local/share/LinVPN` and `~/.config/LinVPN`. See [Updates in the LinVPN user guide](docs/linvpn-user-guide.en.md#8-updates).
+
+Step by step: How-to guides for [MacVPN](docs/how-to.en.md) and [WinVPN](docs/winvpn-how-to.en.md); for LinVPN, the [LinVPN user guide](docs/linvpn-user-guide.en.md).
 
 ### Requirements
 - **MacVPN:** macOS 14 or later, Apple silicon or Intel; an administrator account (for the one-time root helper install); [Homebrew](https://brew.sh) for OpenVPN, WireGuard, IKEv2 and SSTP. MacVPN installs the packages it needs (`openvpn`, `wireguard-tools`, `strongswan`, `sstp-client`, `bash`). L2TP and Cisco IPsec need nothing extra.
 - **WinVPN:** Windows 10 or 11, x64 or ARM64; an administrator for the installation and its updates. OpenVPN connections need OpenVPN Community 2.6.0 or later, which System Status installs.
+- **LinVPN:** Ubuntu 24.04 or later, or Debian 13 (glibc 2.39 or newer), amd64 or arm64; NetworkManager 1.36 or later with its VPN plugins (recommended by the package; System Status installs a missing one); a tray host (Ubuntu's AppIndicator support, the AppIndicator extension on other GNOME desktops, or KDE Plasma); OpenVPN 2.7 or later for OpenVPN connections to follow the server's `redirect-gateway`; an administrator for the installation and its updates.
 
 ### Documentation
 - How-to guide: [English](docs/how-to.en.md), [Hungarian](docs/how-to.hu.md)
 - User guide: [English](docs/user-guide.en.md), [Hungarian](docs/user-guide.hu.md) (the menu's **Help** opens it)
 - WinVPN user guide (Windows): [English](docs/winvpn-user-guide.en.md), [Hungarian](docs/winvpn-user-guide.hu.md); WinVPN How-to: [English](docs/winvpn-how-to.en.md), [Hungarian](docs/winvpn-how-to.hu.md)
+- LinVPN user guide (Linux): [English](docs/linvpn-user-guide.en.md), [Hungarian](docs/linvpn-user-guide.hu.md)
 - [OpenVPN directive policy](docs/openvpn-directives.md)
 - Control API for other apps on the same Mac or PC: [English](docs/control-api.md), [Hungarian](docs/control-api.hu.md), with an [example client](examples/macvpn-control-client/)
-- Release notes: [2.0.7](docs/release-notes/2.0.7.md), [2.0.6](docs/release-notes/2.0.6.md), [2.0.5](docs/release-notes/2.0.5.md), [2.0.4](docs/release-notes/2.0.4.md), [2.0.3](docs/release-notes/2.0.3.md), [2.0.2](docs/release-notes/2.0.2.md), [2.0.1](docs/release-notes/2.0.1.md), [2.0.0](docs/release-notes/2.0.0.md); all releases on the [Releases](https://github.com/SepsiG/MacVPN/releases) page
+- Release notes: [2.1.0](docs/release-notes/2.1.0.md), [2.0.7](docs/release-notes/2.0.7.md), [2.0.6](docs/release-notes/2.0.6.md), [2.0.5](docs/release-notes/2.0.5.md), [2.0.4](docs/release-notes/2.0.4.md), [2.0.3](docs/release-notes/2.0.3.md), [2.0.2](docs/release-notes/2.0.2.md), [2.0.1](docs/release-notes/2.0.1.md), [2.0.0](docs/release-notes/2.0.0.md); all releases on the [Releases](https://github.com/SepsiG/MacVPN/releases) page
 
 ### Companion app
-[RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) manages RDP, SSH, web admin and MikroTik connections in one window on macOS, Windows and Linux. It pairs with MacVPN and WinVPN through the [control API](docs/control-api.md) and brings up the VPN a remote connection needs. The control API and the paired apps feature were built for it.
+[RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) manages RDP, SSH, web admin and MikroTik connections in one window on macOS, Windows and Linux. It pairs with MacVPN, WinVPN and LinVPN through the [control API](docs/control-api.md) and brings up the VPN a remote connection needs. The control API and the paired apps feature were built for it.
 
 ### Security note
 Root operations are performed by a single binary, `/usr/local/libexec/macvpn/mvpn`, through a sudoers rule. The Homebrew directory is writable by the user, so this setup does not protect against malware running inside your own user account. For SSTP, the password is handed to `sstpc` on its command line (it masks it right away). The vault protects your data at rest; a full backup is as sensitive as the vault, so keep the file and its password apart. A team catalog is signed and encrypted, but everyone with the team key can read it, and whoever holds the admin key decides what your team connects to: see the [team catalog security model](docs/user-guide.en.md#1611-security-model). Details: [Security notes in the user guide](docs/user-guide.en.md#10-security-notes).
@@ -113,14 +129,18 @@ On Windows, the WinVPN Service runs as the system (LocalSystem) only from the ad
 ### WinVPN
 WinVPN is the same app for Windows 10 and 11 (x64 and ARM64), built from this repository and released together with MacVPN from 2.0.0. Its icon is in the notification area. It connects OpenVPN and WireGuard through the **WinVPN Service** that its MSI installs (OpenVPN Community is installed from System Status; wireguard-nt is bundled), and **L2TP/IPsec, IKEv2 and SSTP** through Windows' own VPN client from the user's account; the user's own Windows VPNs appear as system VPNs. Everything else matches MacVPN: the vault (its auto-unlock key in Windows Credential Manager), the notification-area popover and windows, MFA and credential prompts, debug mode and the live log, import, export, backup, file and HTTPS team catalogs, the control API over a named pipe, and signed self-updates. **Cisco IPsec** connections are kept but cannot connect on Windows (**Make an L2TP/IPsec Copy**), and IKEv2 with a pre-shared key is not supported by Windows. Its data is in `%LOCALAPPDATA%\WinVPN`; the WinVPN Service keeps the OpenVPN and WireGuard logs in `C:\ProgramData\WinVPN`. Guide: [WinVPN user guide](docs/winvpn-user-guide.en.md) ([magyarul](docs/winvpn-user-guide.hu.md)).
 
+### LinVPN
+LinVPN is the same app for Debian and Ubuntu based Linux desktops (amd64 and arm64), released together with MacVPN and WinVPN from 2.1.0. It installs from its `.deb` (`sudo apt-get install ./linvpn_<version>_amd64.deb`), sits in the top bar (a single click opens a menu with **Open LinVPN**; a double or middle click opens the panel), keeps the vault's auto-unlock key in the login keyring, and has the vault, import, export, backup, team catalogs, the control API over a Unix socket and signed self-updates (installed through the system's administrator prompt). It connects every type MacVPN has (OpenVPN, WireGuard, IKEv2, L2TP/IPsec, Cisco IPsec, SSTP) **through NetworkManager**, as the desktop user without an administrator, with one-time codes through its own NetworkManager secret agent, lists your own NetworkManager VPNs as system VPNs, and ships its own build of NetworkManager's OpenVPN service so that a `redirect-gateway` pushed by the server is honoured (OpenVPN 2.7+; each OpenVPN connection also has a "Send all traffic over VPN" setting: Server decides, Always or Never). Missing NetworkManager VPN plugins are installed from System Status through PackageKit, and the Log tab shows each connection's system log lines through the small read-only `linvpn-logd` service. Its data is in `~/.local/share/LinVPN` and `~/.config/LinVPN`. Guide: [LinVPN user guide](docs/linvpn-user-guide.en.md) ([magyarul](docs/linvpn-user-guide.hu.md)).
+
 ### Development
-MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript). The workspace is split into shared logic and a thin platform layer per operating system; the same code ships as MacVPN on macOS and as WinVPN on Windows (a Linux version may follow). Start with [`docs/architecture.md`](docs/architecture.md): the crates, the `cfg` and `unsafe` rules, the per-OS texts and how a platform plugs in.
+MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript). The workspace is split into shared logic and a thin platform layer per operating system; the same code ships as MacVPN on macOS, as WinVPN on Windows and as LinVPN on Linux. Start with [`docs/architecture.md`](docs/architecture.md): the crates, the `cfg` and `unsafe` rules, the per-OS texts and how a platform plugs in.
 
 **Toolchain.** `rust-toolchain.toml` pins the exact Rust version (currently 1.99.1) with clippy, rustfmt, both macOS targets and both Windows targets (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`, for the compile check). `rustup` uses it automatically inside the repository; if it is not installed yet, run `rustup toolchain install` there. CI and the release workflow use Node.js 26.8.2 (`app/ui/package.json` needs at least 22.12).
 
 **Build.**
 - `scripts/build-dmg.sh` builds the universal `dist/MacVPN.app` and `dist/MacVPN-x.y.z.dmg`: the UI, the app, and the `mvpn` root binary, all signed ad-hoc with the hardened runtime.
 - `scripts/build-msi.sh` (in Git Bash on Windows) builds `WinVPN-x.y.z-x64.msi` and `WinVPN-x.y.z-arm64.msi`: the app, the WinVPN Service and wireguard-nt. See [The WinVPN MSIs](docs/architecture.md#the-winvpn-msis).
+- `scripts/build-deb.sh` (on Linux) builds `linvpn_x.y.z_<arch>.deb` for the machine's architecture: the app, its root update step, `linvpn-logd` and LinVPN's NetworkManager OpenVPN service (`scripts/build-nm-linvpn-openvpn.sh`, with its GPL source). From the Mac it runs on the Linux test VM through `scripts/lin-remote.sh`. See [LinVPN on Linux](docs/architecture.md#linvpn-on-linux).
 - Development run without touching real data: `cargo build -p macvpn-app --features custom-protocol` (after `npm run build` in `app/ui`), then `MACVPN_SANDBOX_HOME="$PWD/target/sandbox-home" target/debug/macvpn-app`. See [`app/README.md`](app/README.md).
 
 **Tests.**
@@ -140,7 +160,8 @@ MacVPN is a Cargo workspace with a Tauri 2 user interface (Svelte + TypeScript).
 - `crates/core`: platform-independent logic (models, the vault behind the `vault` feature, validators, import/export, MFA, update checks, ranking), the safe file operations (`fsx`, its only OS-specific module) and the EN/HU text table `crates/core/l10n/strings.json`
 - `crates/platform-api`: the traits every platform implements, the shared types and the product identity (`Product`)
 - `crates/platform-mac`: the macOS platform (Keychain for the vault key, native VPN, login item, dialogs, installers, updater); `crates/platform-win`: the Windows platform (Credential Manager for the vault key, notification-area icon, file dialogs, toasts, launch at login, the control pipe, the WinVPN Service's client, the native VPNs through the Windows VPN client, OpenVPN Community and wireguard-nt installs, the updater); `crates/winsys`: the Win32 calls core and platform-win share (SIDs, ACLs, file identity, randomness, named pipes)
-- `crates/helper`: on macOS the root binary `mvpn` (`/usr/local/libexec/macvpn/mvpn`, root layer version in `crates/helper/VERSION`), on Windows the WinVPN Service (`WinVPNService.exe`): shared protocol logic in `src/shared`, the backends in `src/macos` and `src/windows`
+- `crates/platform-linux`: the Linux platform (LinVPN: the Secret Service for the vault key, the tray icon and the panel, notifications, the desktop portal, launch at login, the control socket, the `.deb` updater, and the VPNs through NetworkManager: the NM client, the secret agent, system VPNs, PackageKit installs); `crates/unixsys`: the Unix calls macOS and Linux share (the control socket, randomness)
+- `crates/helper`: on macOS the root binary `mvpn` (`/usr/local/libexec/macvpn/mvpn`, root layer version in `crates/helper/VERSION`), on Windows the WinVPN Service (`WinVPNService.exe`), on Linux LinVPN's root update step (`linvpn-install-update`) and its journal reader `linvpn-logd` (not root): shared protocol logic in `src/shared`, the backends in `src/macos`, `src/windows` and `src/linux`
 - `crates/app-core`: the app logic without a UI
 - `app/src-tauri`: the Tauri app (its `src/platform` module picks the platform crate); `app/ui`: its web UI
 - `scripts/`: build, test, signing and icon scripts; `Tests/Fixtures`: OpenVPN, MikroTik, UniFi, pfSense and OPNsense fixtures
@@ -157,7 +178,14 @@ MIT – see [LICENSE](LICENSE). Third-party components (among them SQLCipher, BS
 
 ## Magyar
 
-A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. A **WinVPN** ugyanez az app Windows 10-re és 11-re, ugyanebből a repóból, a MacVPN-nel együtt kiadva. Mindkettő Rustban készült, Tauri felülettel. A jelenlegi verzió a **2.0.0**, mindkettő első teljes kiadása: a MacVPN macOS-en és a WinVPN Windowson.
+A MacVPN egy menüsor-alkalmazás macOS-re, amely egy helyen kezeli az OpenVPN, WireGuard, IKEv2 (strongSwan), SSTP, L2TP/IPsec és Cisco IPsec kapcsolatokat. A **WinVPN** ugyanez az app Windows 10-re és 11-re, ugyanebből a repóból, a MacVPN-nel együtt kiadva. A **LinVPN** ugyanez az app Debian- és Ubuntu-alapú linuxos asztali rendszerekre, a 2.1.0-tól velük együtt kiadva. Mindhárom Rustban készült, Tauri felülettel. A jelenlegi verzió a **2.1.0**, az első kiadás a LinVPN-nel.
+
+### Újdonságok a 2.1-ben
+- **LinVPN**, az első linuxos kiadás (Ubuntu 24.04 vagy újabb, Debian 13; amd64 és arm64): minden kapcsolattípus a NetworkManageren keresztül, rendszer VPN-ek, kártyás panel a felső sávban, napló, élő forgalom, a halott alagút felismerése és újracsatlakoztatása, vezérlő API és aláírt önfrissítés. Lásd [LinVPN](#linvpn-1) és [Letöltés és telepítés](#letöltés-és-telepítés).
+- **Mindhárom app:** a **Letöltés és telepítés** mindig a legújabb kiadást telepíti, nem a legutóbbi kereséskor találtat.
+- A MacVPN root-rétege marad 12: a 2.0.7-ről frissítve nem kell **Engedélyezés**.
+
+A teljes lista: a [2.1.0 kiadási jegyzete](docs/release-notes/2.1.0.md#magyar).
 
 ### Újdonságok a 2.0-ban
 
@@ -221,7 +249,7 @@ Részletek: az [útmutató](docs/user-guide.hu.md) „Újdonságok” fejezetei 
 - **Továbbá:** kapcsolatértesítések, világos és sötét megjelenés, indítás bejelentkezéskor, aláírt frissítés az appon belül, magyar és angol felület.
 
 ### Letöltés és telepítés
-Mindkét telepítő a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon van.
+Mindegyik telepítő a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon van.
 
 **MacVPN (macOS)**
 1. Töltsd le a `MacVPN-x.y.z.dmg` fájlt.
@@ -239,22 +267,31 @@ Mindkét telepítő a [Releases](https://github.com/SepsiG/MacVPN/releases) olda
 
 **A WinVPN frissítése:** a WinVPN maga kínálja fel az új verziókat (a telepítést egy rendszergazda erősíti meg), vagy telepítsd az új MSI-t a régi fölé. Az 1.5.0-s előzetest helyben frissíti, és megtartja az adataidat, amelyek a `%LOCALAPPDATA%\WinVPN` mappában vannak. Lásd [Frissítés az 1.5-ös előzetesről](docs/winvpn-user-guide.hu.md#81-frissítés-az-15-ös-előzetesről).
 
-Lépésről lépésre: Hogyan használd – [MacVPN](docs/how-to.hu.md) és [WinVPN](docs/winvpn-how-to.hu.md).
+**LinVPN (Linux)**
+1. Töltsd le a `linvpn_x.y.z_amd64.deb` (Intel és AMD) vagy a `linvpn_x.y.z_arm64.deb` (ARM) csomagot és a `.sha256` fájlját.
+2. Ellenőrizd, és telepítsd rendszergazdaként: `sha256sum -c linvpn_x.y.z_amd64.deb.sha256`, majd `sudo apt-get install ./linvpn_x.y.z_amd64.deb` (a `./` fontos). Az apt a NetworkManager OpenVPN-bővítményét és az OpenVPN-t is telepíti, alapértelmezés szerint pedig az ajánlott NetworkManager VPN-bővítményeket is (L2TP, strongSwan, vpnc, SSTP).
+3. Indítsd a **LinVPN**-t az alkalmazások közül; az ikonja a felső sávban van. A hiányzó VPN-bővítményt a Rendszerállapotból telepítheted.
+
+**A LinVPN frissítése:** a LinVPN maga kínálja fel az új verziókat (a telepítést rendszergazdai jelszó erősíti meg), vagy telepítsd az új `.deb`-et ugyanígy; a futó LinVPN újraindul vele. Az adataid a `~/.local/share/LinVPN` és a `~/.config/LinVPN` mappában vannak. Lásd [Frissítés a LinVPN felhasználói útmutatójában](docs/linvpn-user-guide.hu.md#8-frissítés).
+
+Lépésről lépésre: Hogyan használd – [MacVPN](docs/how-to.hu.md) és [WinVPN](docs/winvpn-how-to.hu.md); a LinVPN-hez a [LinVPN felhasználói útmutatója](docs/linvpn-user-guide.hu.md).
 
 ### Követelmények
 - **MacVPN:** macOS 14 vagy újabb, Apple processzoros vagy Intel Mac; rendszergazdai fiók (a root segéd egyszeri telepítéséhez); [Homebrew](https://brew.sh) az OpenVPN, WireGuard, IKEv2 és SSTP kapcsolatokhoz. A szükséges csomagokat (`openvpn`, `wireguard-tools`, `strongswan`, `sstp-client`, `bash`) a MacVPN telepíti. Az L2TP-hez és a Cisco IPsec-hez nem kell semmi más.
 - **WinVPN:** Windows 10 vagy 11, x64 vagy ARM64; rendszergazda a telepítéshez és a frissítésekhez. Az OpenVPN-kapcsolatokhoz OpenVPN Community 2.6.0 vagy újabb kell, ezt a Rendszerállapot telepíti.
+- **LinVPN:** Ubuntu 24.04 vagy újabb, illetve Debian 13 (legalább 2.39-es glibc), amd64 vagy arm64; NetworkManager 1.36 vagy újabb a VPN-bővítményeivel (a csomag ajánlja őket; a hiányzót a Rendszerállapot telepíti); ikontálca-kiszolgáló (az Ubuntu AppIndicator-támogatása, más GNOME-os rendszeren az AppIndicator-bővítmény, vagy a KDE Plasma); OpenVPN 2.7 vagy újabb ahhoz, hogy az OpenVPN-kapcsolatok kövessék a szerver `redirect-gateway` beállítását; rendszergazda a telepítéshez és a frissítésekhez.
 
 ### Dokumentáció
 - Hogyan használd: [magyar](docs/how-to.hu.md), [angol](docs/how-to.en.md)
 - Felhasználói útmutató: [magyar](docs/user-guide.hu.md), [angol](docs/user-guide.en.md) (a menü **Súgó** pontja ezt nyitja meg)
 - A WinVPN felhasználói útmutatója (Windows): [magyar](docs/winvpn-user-guide.hu.md), [angol](docs/winvpn-user-guide.en.md); WinVPN – Hogyan csináld: [magyar](docs/winvpn-how-to.hu.md), [angol](docs/winvpn-how-to.en.md)
+- A LinVPN felhasználói útmutatója (Linux): [magyar](docs/linvpn-user-guide.hu.md), [angol](docs/linvpn-user-guide.en.md)
 - [OpenVPN direktíva-szabályok](docs/openvpn-directives.md) (angolul, magyar összefoglalóval)
 - Vezérlő API más appoknak ugyanazon a Macen vagy számítógépen: [magyar](docs/control-api.hu.md), [angol](docs/control-api.md), [példaklienssel](examples/macvpn-control-client/) (angolul)
-- Kiadási jegyzetek: [2.0.7](docs/release-notes/2.0.7.md#magyar), [2.0.6](docs/release-notes/2.0.6.md#magyar), [2.0.5](docs/release-notes/2.0.5.md#magyar), [2.0.4](docs/release-notes/2.0.4.md#magyar), [2.0.3](docs/release-notes/2.0.3.md#magyar), [2.0.2](docs/release-notes/2.0.2.md#magyar), [2.0.1](docs/release-notes/2.0.1.md#magyar), [2.0.0](docs/release-notes/2.0.0.md#magyar); az összes kiadás a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon
+- Kiadási jegyzetek: [2.1.0](docs/release-notes/2.1.0.md#magyar), [2.0.7](docs/release-notes/2.0.7.md#magyar), [2.0.6](docs/release-notes/2.0.6.md#magyar), [2.0.5](docs/release-notes/2.0.5.md#magyar), [2.0.4](docs/release-notes/2.0.4.md#magyar), [2.0.3](docs/release-notes/2.0.3.md#magyar), [2.0.2](docs/release-notes/2.0.2.md#magyar), [2.0.1](docs/release-notes/2.0.1.md#magyar), [2.0.0](docs/release-notes/2.0.0.md#magyar); az összes kiadás a [Releases](https://github.com/SepsiG/MacVPN/releases) oldalon
 
 ### Társalkalmazás
-A [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) egy ablakban kezeli az RDP-, SSH-, webes admin- és MikroTik-kapcsolatokat macOS-en, Windowson és Linuxon. A [vezérlő API-n](docs/control-api.hu.md) keresztül párosítható a MacVPN-nel és a WinVPN-nel, és felépíti a távoli kapcsolathoz szükséges VPN-t. A vezérlő API és a párosított appok funkció miatta készült.
+A [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop) egy ablakban kezeli az RDP-, SSH-, webes admin- és MikroTik-kapcsolatokat macOS-en, Windowson és Linuxon. A [vezérlő API-n](docs/control-api.hu.md) keresztül párosítható a MacVPN-nel, a WinVPN-nel és a LinVPN-nel, és felépíti a távoli kapcsolathoz szükséges VPN-t. A vezérlő API és a párosított appok funkció miatta készült.
 
 ### Biztonsági megjegyzés
 A root műveleteket egyetlen bináris, a `/usr/local/libexec/macvpn/mvpn` végzi egy sudoers szabályon keresztül. A Homebrew könyvtára a felhasználó által írható, ezért a megoldás nem véd a felhasználói fiókon belül futó kártevő ellen. SSTP-nél a jelszó az `sstpc` parancssorában adódik át (az azonnal kicsillagozza). A széf a tárolt adatokat védi; a teljes biztonsági mentés ugyanolyan érzékeny, mint a széf, ezért a fájlt és a jelszavát tartsd külön. A csapatkatalógus alá van írva és titkosítva van, de akinél megvan a csapatkulcs, elolvashatja, és aki az aláírókulcsot birtokolja, az dönti el, mihez csatlakozik a csapatod: lásd [a csapatkatalógusok biztonsági modelljét](docs/user-guide.hu.md#1611-biztonsági-modell). Részletek: [Biztonsági megjegyzések az útmutatóban](docs/user-guide.hu.md#10-biztonsági-megjegyzések).
@@ -264,14 +301,18 @@ Windowson a WinVPN szolgáltatás a rendszer nevében (LocalSystem) fut, csak a 
 ### WinVPN
 A WinVPN ugyanez az app Windows 10-re és 11-re (x64 és ARM64), ugyanebből a repóból, a 2.0.0-tól a MacVPN-nel együtt kiadva. Az ikonja az értesítési területen van. Az OpenVPN- és WireGuard-kapcsolatokat az MSI által telepített **WinVPN szolgáltatáson** keresztül építi fel (az OpenVPN Communityt a Rendszerállapot telepíti, a wireguard-nt a csomag része), az **L2TP/IPsec, IKEv2 és SSTP** kapcsolatokat pedig a Windows saját VPN-kliensével, a felhasználó fiókjából; a felhasználó saját Windows VPN-jei rendszer VPN-ként jelennek meg. Minden más olyan, mint a MacVPN-ben: a széf (az automatikus feloldás kulcsa a Windows Hitelesítőadat-kezelőjében), a popover és az ablakok az értesítési területen, MFA és hitelesítőadat-bekérés, debug mód és élő napló, import, export, mentés, fájl- és HTTPS-alapú csapatkatalógusok, a vezérlő API névvel ellátott csövön, és aláírt önfrissítés. A **Cisco IPsec** kapcsolatok megmaradnak, de Windowson nem csatlakoznak (**L2TP/IPsec másolat készítése**), a PSK-s IKEv2-t pedig a Windows nem támogatja. Az adatai a `%LOCALAPPDATA%\WinVPN` mappában vannak; az OpenVPN- és WireGuard-naplókat a WinVPN szolgáltatás a `C:\ProgramData\WinVPN` mappában tartja. Útmutató: [WinVPN felhasználói útmutató](docs/winvpn-user-guide.hu.md) ([angolul](docs/winvpn-user-guide.en.md)).
 
+### LinVPN
+A LinVPN ugyanez az app Debian- és Ubuntu-alapú linuxos asztali rendszerekre (amd64 és arm64), a 2.1.0-tól a MacVPN-nel és a WinVPN-nel együtt kiadva. A `.deb` csomagjából telepíthető (`sudo apt-get install ./linvpn_<verzió>_amd64.deb`), a felső sávban fut (egy kattintásra menü nyílik a **LinVPN megnyitása** ponttal, dupla vagy középső kattintásra a panel), a széf automatikus feloldásának kulcsát a bejelentkezési kulcstartóban tartja, és tudja a széfet, az importot, az exportot, a mentést, a csapatkatalógusokat, a vezérlő API-t Unix socketen, és az aláírt önfrissítést (a rendszer rendszergazdai jelszókérésével). A MacVPN minden kapcsolattípusát (OpenVPN, WireGuard, IKEv2, L2TP/IPsec, Cisco IPsec, SSTP) **a NetworkManageren keresztül** csatlakoztatja, asztali felhasználóként, rendszergazda nélkül; az egyszer használatos kódokat a saját NetworkManager-titokügynökén át adja át, a saját NetworkManager VPN-jeidet rendszer VPN-ként listázza, és a NetworkManager OpenVPN-szolgáltatásának saját buildjével érkezik, hogy a szerver által küldött `redirect-gateway` érvényesüljön (OpenVPN 2.7-től; minden OpenVPN-kapcsolatnak van „Minden forgalom a VPN-en keresztül” beállítása is: A szerver dönt, Mindig vagy Soha). A hiányzó NetworkManager VPN-bővítményeket a Rendszerállapotból, a PackageKit segítségével telepíti, a Napló fül pedig a kis, csak olvasó `linvpn-logd` szolgáltatáson át mutatja a kapcsolatok rendszernaplósorait. Az adatai a `~/.local/share/LinVPN` és a `~/.config/LinVPN` mappában vannak. Útmutató: [LinVPN felhasználói útmutató](docs/linvpn-user-guide.hu.md) ([angolul](docs/linvpn-user-guide.en.md)).
+
 ### Fejlesztés
-A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). A workspace közös logikára és operációs rendszerenként egy vékony platformrétegre oszlik; ugyanez a kód macOS-en MacVPN, Windowson WinVPN néven fut (később Linux-változat is jöhet). Kezdd a [`docs/architecture.md`](docs/architecture.md) leírással (angolul): a crate-ek, a `cfg` és az `unsafe` szabályai, az operációs rendszerenkénti szövegek, és hogyan csatlakozik egy új platform.
+A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). A workspace közös logikára és operációs rendszerenként egy vékony platformrétegre oszlik; ugyanez a kód macOS-en MacVPN, Windowson WinVPN, Linuxon pedig LinVPN néven fut. Kezdd a [`docs/architecture.md`](docs/architecture.md) leírással (angolul): a crate-ek, a `cfg` és az `unsafe` szabályai, az operációs rendszerenkénti szövegek, és hogyan csatlakozik egy új platform.
 
 **Eszközök.** A `rust-toolchain.toml` rögzíti a pontos Rust verziót (jelenleg 1.99.1) a clippyvel, a rustfmt-vel, mindkét macOS és mindkét Windows targettel (`x86_64-pc-windows-msvc`, `aarch64-pc-windows-msvc`, a fordítási ellenőrzéshez). A repón belül a `rustup` automatikusan ezt használja; ha még nincs telepítve, futtasd ott: `rustup toolchain install`. A CI és a kiadási workflow Node.js 26.8.2-t használ (az `app/ui/package.json` legalább 22.12-t kér).
 
 **Build.**
 - `scripts/build-dmg.sh`: a universal `dist/MacVPN.app` és `dist/MacVPN-x.y.z.dmg`: a felület, az app és a `mvpn` root bináris, mind ad-hoc aláírva, hardened runtime-mal.
 - `scripts/build-msi.sh` (a Windowson futó Git Bashben): a `WinVPN-x.y.z-x64.msi` és a `WinVPN-x.y.z-arm64.msi`: az app, a WinVPN szolgáltatás és a wireguard-nt. Lásd [The WinVPN MSIs](docs/architecture.md#the-winvpn-msis) (angolul).
+- `scripts/build-deb.sh` (Linuxon): a gép architektúrájához való `linvpn_x.y.z_<arch>.deb`: az app, a root frissítési lépése, a `linvpn-logd` és a LinVPN NetworkManager OpenVPN-szolgáltatása (`scripts/build-nm-linvpn-openvpn.sh`, a GPL-es forrásával). A Macről a `scripts/lin-remote.sh` futtatja a linuxos teszt-VM-en. Lásd [LinVPN on Linux](docs/architecture.md#linvpn-on-linux) (angolul).
 - Fejlesztői futtatás a valódi adatok érintése nélkül: `cargo build -p macvpn-app --features custom-protocol` (az `app/ui`-ban futtatott `npm run build` után), majd `MACVPN_SANDBOX_HOME="$PWD/target/sandbox-home" target/debug/macvpn-app`. Lásd [`app/README.md`](app/README.md) (angolul).
 
 **Tesztek.**
@@ -291,7 +332,8 @@ A MacVPN egy Cargo workspace, Tauri 2 felülettel (Svelte + TypeScript). A works
 - `crates/core`: platformfüggetlen logika (modellek, a `vault` feature mögötti széf, validátorok, import/export, MFA, frissítés-ellenőrzés, rangsor), a biztonságos fájlműveletek (`fsx`, az egyetlen operációsrendszer-függő modulja) és az EN/HU szövegtábla, a `crates/core/l10n/strings.json`
 - `crates/platform-api`: a trait-ek, amelyeket minden platform megvalósít, a közös típusok és a termékazonosság (`Product`)
 - `crates/platform-mac`: a macOS-platform (Keychain a széfkulcsnak, natív VPN, bejelentkezési elem, párbeszédablakok, telepítők, frissítő); `crates/platform-win`: a Windows-platform (a Hitelesítőadat-kezelő a széfkulcsnak, ikon az értesítési területen, fájlpárbeszédek, értesítések, indítás bejelentkezéskor, a vezérlő cső, a WinVPN szolgáltatás kliense, a natív VPN-ek a Windows VPN-kliensén át, az OpenVPN Community és a wireguard-nt telepítése, a frissítő); `crates/winsys`: a core és a platform-win közös Win32-hívásai (SID-ek, ACL-ek, fájlazonosítás, véletlenszámok, named pipe-ok)
-- `crates/helper`: macOS-en az `mvpn` root bináris (`/usr/local/libexec/macvpn/mvpn`, a root réteg verziója a `crates/helper/VERSION`-ben), Windowson a WinVPN szolgáltatás (`WinVPNService.exe`): a közös protokollogika az `src/shared`, a backendek az `src/macos` és az `src/windows` alatt
+- `crates/platform-linux`: a Linux-platform (LinVPN: a Secret Service a széfkulcsnak, az ikon a felső sávban és a panel, értesítések, az asztali portál, indítás bejelentkezéskor, a vezérlő socket, a `.deb` frissítője, és a VPN-ek a NetworkManageren át: az NM-kliens, a titokügynök, a rendszer VPN-ek, a PackageKit-telepítések); `crates/unixsys`: a macOS és a Linux közös Unix-hívásai (a vezérlő socket, véletlenszámok)
+- `crates/helper`: macOS-en az `mvpn` root bináris (`/usr/local/libexec/macvpn/mvpn`, a root réteg verziója a `crates/helper/VERSION`-ben), Windowson a WinVPN szolgáltatás (`WinVPNService.exe`), Linuxon a LinVPN root frissítési lépése (`linvpn-install-update`) és a rendszernapló-olvasója, a `linvpn-logd` (nem root): a közös protokollogika az `src/shared`, a backendek az `src/macos`, az `src/windows` és az `src/linux` alatt
 - `crates/app-core`: az app logikája felület nélkül
 - `app/src-tauri`: a Tauri app (az `src/platform` modulja választja ki a platform crate-et); `app/ui`: a webes felülete
 - `scripts/`: build-, teszt-, aláíró és ikon scriptek; `Tests/Fixtures`: OpenVPN, MikroTik, UniFi, pfSense és OPNsense tesztadatok

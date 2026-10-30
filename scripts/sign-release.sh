@@ -4,12 +4,13 @@
 #   scripts/sign-release.sh vX.Y.Z                      sign the CI-built draft release and publish it
 #   scripts/sign-release.sh --backup-key FILE vX.Y.Z    sign with the backup PEM instead of the Keychain key
 #   scripts/sign-release.sh --republish-sig vX.Y.Z      replace the .sig of an already published release
-#   scripts/sign-release.sh --dry-run (--dmg FILE | --msi FILE --arch x64|arm64) [--backup-key FILE] vX.Y.Z
-#                                                       sign a local file and verify it; no network, no GitHub
+#   scripts/sign-release.sh --dry-run (--dmg FILE | --msi FILE --arch x64|arm64 | --deb FILE --arch amd64|arm64)
+#                               [--backup-key FILE] vX.Y.Z   sign a local file and verify it; no network, no GitHub
 #   scripts/sign-release.sh --print-public-keys         print the public keys embedded in the app
 #
 # CI (release.yml) only creates a *draft* release with MacVPN-X.Y.Z.dmg (and, when WinVPN is released,
-# WinVPN-X.Y.Z-x64.msi and WinVPN-X.Y.Z-arm64.msi), each with its .sha256 and a build provenance attestation
+# WinVPN-X.Y.Z-x64.msi and WinVPN-X.Y.Z-arm64.msi; when LinVPN is released, linvpn_X.Y.Z_amd64.deb and
+# linvpn_X.Y.Z_arm64.deb), each with its .sha256 and a build provenance attestation
 # (actions/attest-build-provenance); it never holds the signing key. This script downloads them, checks each SHA-256
 # locally, verifies each asset's build provenance with `gh attestation verify` (made by this repository's
 # .github/workflows/release.yml, for this tag and its commit, on a GitHub-hosted runner) and refuses to sign an
@@ -17,6 +18,7 @@
 # message:
 #   MacVPN-X.Y.Z.dmg           "macvpn-update-v1\n" + X.Y.Z + "\n" + sha256hex + "\n"
 #   WinVPN-X.Y.Z-<arch>.msi    "winvpn-update-v1\n" + asset name + "\n" + X.Y.Z + "\n" + sha256hex + "\n"
+#   linvpn_X.Y.Z_<arch>.deb    "linvpn-update-v1\n" + asset name + "\n" + X.Y.Z + "\n" + sha256hex + "\n"
 # with Ed25519 (OpenSSL 3, pkeyutl -rawin), verifies each signature against the public keys embedded in the app
 # (parsed from the Rust core, crates/core/src/update.rs, UpdateSignature::PRIMARY_/BACKUP_PUBLIC_KEY_BASE64; the same
 # keys as in every app since 0.2.2), uploads the .sig files and publishes the release.
@@ -34,6 +36,7 @@ KEYCHAIN_SERVICE="MacVPN release signing"
 KEYCHAIN_ACCOUNT="primary"
 SIG_DOMAIN="macvpn-update-v1"
 WIN_SIG_DOMAIN="winvpn-update-v1"
+LIN_SIG_DOMAIN="linvpn-update-v1"
 # DER prefix of an Ed25519 SubjectPublicKeyInfo; followed by the raw 32-byte key.
 ED25519_SPKI_PREFIX='\x30\x2a\x30\x05\x06\x03\x2b\x65\x70\x03\x21\x00'
 
@@ -48,6 +51,7 @@ REPUBLISH=0
 BACKUP_KEY=""
 DRY_DMG=""
 DRY_MSI=""
+DRY_DEB=""
 DRY_ARCH=""
 PRINT_KEYS=0
 TAG=""
@@ -58,7 +62,8 @@ while [ $# -gt 0 ]; do
     --backup-key) [ $# -ge 2 ] || die "--backup-key needs a file"; BACKUP_KEY="$2"; shift ;;
     --dmg) [ $# -ge 2 ] || die "--dmg needs a file"; DRY_DMG="$2"; shift ;;
     --msi) [ $# -ge 2 ] || die "--msi needs a file"; DRY_MSI="$2"; shift ;;
-    --arch) [ $# -ge 2 ] || die "--arch needs x64 or arm64"; DRY_ARCH="$2"; shift ;;
+    --deb) [ $# -ge 2 ] || die "--deb needs a file"; DRY_DEB="$2"; shift ;;
+    --arch) [ $# -ge 2 ] || die "--arch needs x64, amd64 or arm64"; DRY_ARCH="$2"; shift ;;
     --print-public-keys) PRINT_KEYS=1 ;;
     -h|--help) usage 0 ;;
     -*) die "unknown option: $1" ;;
@@ -90,11 +95,14 @@ fi
 VERSION="${TAG#v}"
 DMG_NAME="MacVPN-$VERSION.dmg"
 MSI_NAMES=("WinVPN-$VERSION-x64.msi" "WinVPN-$VERSION-arm64.msi")
+DEB_NAMES=("linvpn_${VERSION}_amd64.deb" "linvpn_${VERSION}_arm64.deb")
 if [ "$DRY_RUN" = 1 ]; then
   [ "$REPUBLISH" = 0 ] || die "--republish-sig cannot be combined with --dry-run"
+  CHOSEN=0
+  for f in "$DRY_DMG" "$DRY_MSI" "$DRY_DEB"; do [ -z "$f" ] || CHOSEN=$((CHOSEN + 1)); done
+  [ "$CHOSEN" = 1 ] || die "--dry-run needs exactly one of --dmg FILE, --msi FILE --arch ARCH, --deb FILE --arch ARCH"
   if [ -n "$DRY_DMG" ]; then
-    [ -z "$DRY_MSI" ] || die "--dmg and --msi cannot be combined"
-    [ -z "$DRY_ARCH" ] || die "--arch is only for --msi"
+    [ -z "$DRY_ARCH" ] || die "--arch is only for --msi and --deb"
     [ -f "$DRY_DMG" ] || die "not a file: $DRY_DMG"
     DRY_FILE="$DRY_DMG"; DRY_ASSET="$DMG_NAME"
   elif [ -n "$DRY_MSI" ]; then
@@ -102,10 +110,12 @@ if [ "$DRY_RUN" = 1 ]; then
     [[ "$DRY_ARCH" =~ ^(x64|arm64)$ ]] || die "--msi needs --arch x64 or --arch arm64"
     DRY_FILE="$DRY_MSI"; DRY_ASSET="WinVPN-$VERSION-$DRY_ARCH.msi"
   else
-    die "--dry-run needs --dmg FILE or --msi FILE --arch ARCH"
+    [ -f "$DRY_DEB" ] || die "not a file: $DRY_DEB"
+    [[ "$DRY_ARCH" =~ ^(amd64|arm64)$ ]] || die "--deb needs --arch amd64 or --arch arm64"
+    DRY_FILE="$DRY_DEB"; DRY_ASSET="linvpn_${VERSION}_${DRY_ARCH}.deb"
   fi
 else
-  [ -z "$DRY_DMG$DRY_MSI$DRY_ARCH" ] || die "--dmg, --msi and --arch are only for --dry-run"
+  [ -z "$DRY_DMG$DRY_MSI$DRY_DEB$DRY_ARCH" ] || die "--dmg, --msi, --deb and --arch are only for --dry-run"
 fi
 if [ -n "$BACKUP_KEY" ]; then
   [ -f "$BACKUP_KEY" ] && [ -r "$BACKUP_KEY" ] || die "cannot read the key file: $BACKUP_KEY"
@@ -178,6 +188,7 @@ write_message() {
   case "$1" in
     "$DMG_NAME") printf '%s\n%s\n%s\n' "$SIG_DOMAIN" "$VERSION" "$2" ;;
     "WinVPN-$VERSION-x64.msi"|"WinVPN-$VERSION-arm64.msi") printf '%s\n%s\n%s\n%s\n' "$WIN_SIG_DOMAIN" "$1" "$VERSION" "$2" ;;
+    "linvpn_${VERSION}_amd64.deb"|"linvpn_${VERSION}_arm64.deb") printf '%s\n%s\n%s\n%s\n' "$LIN_SIG_DOMAIN" "$1" "$VERSION" "$2" ;;
     *) die "no signature domain for the asset $1" ;;
   esac >"$WORK/message"
 }
@@ -280,6 +291,15 @@ case "$MSI_COUNT" in
   0) ;;
   2) ASSETS+=("${MSI_NAMES[@]}") ;;
   *) die "the release has only one of ${MSI_NAMES[*]}: both or neither" ;;
+esac
+DEB_COUNT=0
+for name in "${DEB_NAMES[@]}"; do
+  if [ -n "$(asset_field "$name" url)" ]; then DEB_COUNT=$((DEB_COUNT + 1)); fi
+done
+case "$DEB_COUNT" in
+  0) ;;
+  2) ASSETS+=("${DEB_NAMES[@]}") ;;
+  *) die "the release has only one of ${DEB_NAMES[*]}: both or neither" ;;
 esac
 
 # Parallel arrays, not `declare -A`: the maintainer runs this with macOS' /bin/bash 3.2.

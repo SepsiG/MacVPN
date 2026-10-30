@@ -54,9 +54,23 @@ pub struct MockHelper {
     once: Mutex<HashMap<String, std::collections::VecDeque<Result<String, String>>>>,
     delays: Mutex<HashMap<String, Duration>>,
     calls: Mutex<Vec<Call>>,
+    /// The connections' log files (`HelperClient::log_path`); empty: none (as the default helper).
+    logs: Mutex<HashMap<Uuid, std::path::PathBuf>>,
+    /// The running tunnels whose log wants the secrets (`HelperClient::wants_log_secrets`).
+    wants_log: Mutex<std::collections::HashSet<Uuid>>,
 }
 
 impl MockHelper {
+    /// `id`'s running tunnel was adopted without its secrets.
+    pub fn want_log_secrets(&self, id: &Uuid) {
+        self.wants_log.lock().unwrap().insert(*id);
+    }
+
+    /// `id`'s log is the file at `path`.
+    pub fn set_log(&self, id: &Uuid, path: &std::path::Path) {
+        self.logs.lock().unwrap().insert(*id, path.to_path_buf());
+    }
+
     pub fn respond(&self, line: &str, result: Result<&str, &str>) {
         self.responses.lock().unwrap().insert(line.to_string(), result.map(str::to_string).map_err(str::to_string));
     }
@@ -162,6 +176,20 @@ impl HelperClient for MockHelper {
         self.run(respond_line(id), Some(payload)).map(|_| ())
     }
 
+    fn log_path(&self, id: &Uuid) -> Option<std::path::PathBuf> {
+        self.logs.lock().unwrap().get(id).cloned()
+    }
+
+    fn wants_log_secrets(&self, id: &Uuid) -> bool {
+        self.wants_log.lock().unwrap().contains(id)
+    }
+
+    /// Recorded as `log-secrets <id>` with the password as its stdin.
+    fn set_log_secrets(&self, id: &Uuid, secrets: &Secrets) {
+        self.wants_log.lock().unwrap().remove(id);
+        let _ = self.run(format!("log-secrets {}", uuid_string(id)), secrets.password.clone());
+    }
+
     /// Recorded as `clear-log <id>` with the note as its stdin.
     fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
         self.run(format!("clear-log {}", uuid_string(id)), Some(note.to_string())).map(|_| ())
@@ -189,6 +217,8 @@ pub struct MockNative {
     managed: Mutex<HashMap<Uuid, String>>,
     /// The connections whose log the platform keeps itself (WinVPN's RAS log); empty: none (macOS).
     own_logs: Mutex<HashMap<Uuid, Vec<String>>>,
+    /// The managed native connections' log files (`NativeController::log_source`); empty: none (macOS).
+    log_files: Mutex<HashMap<Uuid, std::path::PathBuf>>,
 }
 
 impl Default for MockNative {
@@ -203,6 +233,7 @@ impl Default for MockNative {
             start_error: Mutex::new(None),
             managed: Mutex::new(HashMap::new()),
             own_logs: Mutex::new(HashMap::new()),
+            log_files: Mutex::new(HashMap::new()),
         }
     }
 }
@@ -235,6 +266,11 @@ impl MockNative {
     /// The platform keeps `connection`'s log itself (its clears are recorded).
     pub fn set_own_log(&self, connection: &Uuid) {
         self.own_logs.lock().unwrap().insert(*connection, Vec::new());
+    }
+
+    /// `connection`'s log is the file at `path` (`log_source`).
+    pub fn set_log_file(&self, connection: &Uuid, path: &std::path::Path) {
+        self.log_files.lock().unwrap().insert(*connection, path.to_path_buf());
     }
 
     /// The notes of the clears of `connection`'s own log.
@@ -287,6 +323,11 @@ impl NativeController for MockNative {
 
     fn managed_service_id(&self, connection: &Uuid) -> Option<String> {
         self.managed.lock().unwrap().get(connection).cloned()
+    }
+
+    fn log_source(&self, connection: &Uuid) -> Option<Box<dyn macvpn_core::log::LogSource>> {
+        let path = self.log_files.lock().unwrap().get(connection).cloned()?;
+        Some(Box::new(macvpn_core::log::FileLogSource { path }))
     }
 
     fn clear_log(&self, connection: &Uuid, note: &str) -> Result<bool, String> {

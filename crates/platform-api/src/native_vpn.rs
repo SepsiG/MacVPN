@@ -1,5 +1,6 @@
 //! The VPNs the operating system manages and their native profiles.
 
+use macvpn_core::client_cert::Form as ClientCertForm;
 use macvpn_core::log::LogSource;
 use macvpn_core::models::{Connection, ConnectionState, Secrets, parse_uuid};
 use macvpn_core::native::NativeKind;
@@ -137,6 +138,28 @@ pub trait NativeSupport: Send + Sync {
     /// are the editor's draft, so the notes follow the typing; never a secret). Default: nothing (macOS).
     fn editor_notes(&self, _connection: &Connection, _config: &[u8]) -> PlatformNotes {
         PlatformNotes::default()
+    }
+
+    /// [`Self::unsupported_reason`] of an IKEv2 connection with the form of the client certificate imported in the
+    /// app (the vault's `ClientCert`, client credential audit G4; `None`: none imported). Never its content.
+    /// Default: the answer without it (a platform that does not load imported certificates itself).
+    fn unsupported_reason_with_cert(
+        &self,
+        connection: &Connection,
+        config: &[u8],
+        _client_cert: Option<ClientCertForm>,
+    ) -> Option<String> {
+        self.unsupported_reason(connection, config)
+    }
+
+    /// [`Self::editor_notes`] with the imported client certificate's form, as [`Self::unsupported_reason_with_cert`].
+    fn editor_notes_with_cert(
+        &self,
+        connection: &Connection,
+        config: &[u8],
+        _client_cert: Option<ClientCertForm>,
+    ) -> PlatformNotes {
+        self.editor_notes(connection, config)
     }
 
     /// The system VPN editor's note under a stored PSK (WinVPN: Windows keeps it for that VPN too, as it has no

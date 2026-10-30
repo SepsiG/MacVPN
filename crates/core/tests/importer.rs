@@ -652,7 +652,11 @@ fn routeros_exports_import_unchanged() {
         let text = mikrotik(name);
         let prepared = importer::prepare(name, &text, &env.dir).unwrap();
         assert_eq!(prepared.issues, [], "{name}");
-        assert_eq!(prepared.risky, [], "{name}");
+        // On Linux NetworkManager ignores the wiki profile's `connect-retry` and `ping-timer-rem` (RISKY there).
+        let linux = macvpn_core::TargetOs::host() == macvpn_core::TargetOs::Linux;
+        let ignored: &[&str] =
+            if linux && name == "routeros-wiki-extras.ovpn" { &["connect-retry", "ping-timer-rem"] } else { &[] };
+        assert_eq!(prepared.risky.iter().map(|f| f.directive.as_str()).collect::<Vec<_>>(), ignored, "{name}");
         assert_eq!(prepared.config, text, "{name}");
     }
     assert!(importer::contains_encrypted_key(&mikrotik("routeros-v7-export-udp.ovpn")));
@@ -704,8 +708,9 @@ fn make_router_files(env: &Env, legacy_key: bool) {
         "1",
     ]));
     if legacy_key {
-        // OpenSSL 3 (Windows) writes PKCS#8 unless told otherwise; macOS' LibreSSL writes the legacy form anyway.
-        let traditional: &[&str] = if cfg!(windows) { &["-traditional"] } else { &[] };
+        // OpenSSL 3 (Windows, Linux) writes PKCS#8 unless told otherwise; macOS' LibreSSL has no `-traditional`
+        // and writes the legacy form anyway.
+        let traditional: &[&str] = if cfg!(not(target_os = "macos")) { &["-traditional"] } else { &[] };
         let args = ["rsa", "-in", "plain.key", "-aes256", "-passout", "pass:exportpass", "-out", "client.key"];
         assert!(env.openssl(&[&args[..], traditional].concat()));
     } else {

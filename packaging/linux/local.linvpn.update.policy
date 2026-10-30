@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1/policyconfig.dtd">
+<!-- LinVPN's update step (LinVPN plan, Task 20): pkexec may run only this binary under this action, always after an
+     administrator's password; the step itself re-checks the package's signature, name, architecture and version. -->
+<policyconfig>
+  <vendor>LinVPN</vendor>
+  <vendor_url>https://github.com/SepsiG/MacVPN</vendor_url>
+  <action id="local.linvpn.update">
+    <description>Install a LinVPN update</description>
+    <description xml:lang="hu">LinVPN-frissítés telepítése</description>
+    <message>LinVPN wants to install its update.</message>
+    <message xml:lang="hu">A LinVPN telepíteni szeretné a frissítését.</message>
+    <icon_name>linvpn</icon_name>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/libexec/linvpn/linvpn-install-update</annotate>
+  </action>
+</policyconfig>

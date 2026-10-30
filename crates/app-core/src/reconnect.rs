@@ -496,6 +496,11 @@ impl Planner {
     /// per [`DEAD_STABLE`]).
     pub fn dropped(&mut self, key: &str, name: &str, now: Date, kind: FailureKind) {
         self.offline.remove(key);
+        // Stopped outside the app (LinVPN: GNOME's menu, `nmcli connection down`): the user's stop.
+        if kind == FailureKind::StoppedByUser {
+            self.user_disconnected(key);
+            return;
+        }
         if self.user_off.contains(key)
             || self.leased.contains(key)
             || !kind.worth_retrying()
@@ -550,6 +555,11 @@ impl Planner {
     pub fn failed(&mut self, key: &str, now: Date, kind: FailureKind) -> Vec<Action> {
         let Some(c) = self.candidates.get_mut(key).filter(|c| c.attempting) else { return Vec::new() };
         c.attempting = false;
+        // Our attempt cancelled outside the app (LinVPN: GNOME's menu): the user's stop, no notice.
+        if kind == FailureKind::StoppedByUser {
+            self.user_disconnected(key);
+            return Vec::new();
+        }
         if kind.worth_retrying() && c.attempts <= RETRY_DELAYS.len() {
             c.next = Some(now.adding(RETRY_DELAYS[c.attempts - 1]));
             return Vec::new();

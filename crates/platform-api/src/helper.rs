@@ -52,6 +52,14 @@ pub trait HelperClient: Send + Sync {
     fn traffic(&self, _tunnel: &crate::traffic::HelperTunnel<'_>) -> Option<crate::traffic::TrafficReading> {
         None
     }
+    /// Whether the running tunnel's log needs the connection's secrets to mask them (LinVPN: a tunnel an earlier
+    /// process left running, adopted without them). Default: never.
+    fn wants_log_secrets(&self, _id: &Uuid) -> bool {
+        false
+    }
+    /// The connection's secrets for [`Self::wants_log_secrets`] (read from the unlocked vault), used only to mask
+    /// its log lines. Default: ignored.
+    fn set_log_secrets(&self, _id: &Uuid, _secrets: &Secrets) {}
 }
 
 /// The management bridge's UI state file (`/var/run/macvpn-ui/<id>.json`), read safely.

@@ -91,18 +91,23 @@ pub fn notice(state: &AppState, notice: &Notice) {
 }
 
 /// A failure or a drop (`ConnectionEvent`), with the reason from the log. A disconnect the user started emits no
-/// event, so it posts nothing.
+/// event, so it posts nothing; neither does one the user stopped outside the app (LinVPN: GNOME's menu).
 pub fn event(state: &AppState, event: &ConnectionEvent) {
     if !switch_on(state) {
         return;
     }
+    let (ConnectionEvent::Dropped { connection_id, .. } | ConnectionEvent::Failed { connection_id, .. }) = event;
+    let kind = classify(state, connection_id);
+    if kind == FailureKind::StoppedByUser {
+        return;
+    }
     let notice = match event {
         ConnectionEvent::Dropped { connection_id, name } => {
-            let reason = connection_notices::reason_text(classify(state, connection_id), None);
+            let reason = connection_notices::reason_text(kind, None);
             Notice::Dropped { key: connection_id.clone(), name: name.clone(), reason }
         }
         ConnectionEvent::Failed { connection_id, name, reason } => {
-            let reason = connection_notices::reason_text(classify(state, connection_id), Some(reason));
+            let reason = connection_notices::reason_text(kind, Some(reason));
             Notice::Failed { key: connection_id.clone(), name: name.clone(), reason }
         }
     };
@@ -126,6 +131,15 @@ pub fn state_changed(state: &AppState, key: &str, new: &ConnectionState) {
 pub fn catalog(state: &AppState, content: &NotificationContent) {
     if state.notifications_enabled() {
         post(content);
+    }
+}
+
+/// The platform's "updated" text once after an update's relaunch (LinVPN: "LinVPN was updated to X.Y.Z."). A
+/// click opens the app like any other notice.
+pub fn updated(state: &AppState, text: String) {
+    if state.notifications_enabled() {
+        let id = uuid_string(&uuid::Uuid::new_v4());
+        post(&NotificationContent { id, title: text, body: String::new(), user_info: ("update", String::new()) });
     }
 }
 

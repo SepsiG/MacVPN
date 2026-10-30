@@ -1,0 +1,114 @@
+#!/bin/sh
+# LinVPN: the class-based route of an SSTP or L2TP split tunnel (docs/architecture.md, "The class-based PPP route").
+#
+# NetworkManager's dispatcher runs this as root for every event: $1 the interface, $2 the action, the rest in the
+# environment, which NetworkManager itself builds from the activated connection. It acts only on `vpn-up` of a
+# connection LinVPN marked for it (`user.data` `linvpn.classful=1`, which NM passes as
+# CONNECTION_USER_LINVPN__CLASSFUL=1) whose tunnel is a pppN interface, and adds the route of the class of the VPN
+# address (A: /8, B: /16, C: /24, as Windows does without the remote default gateway, and macOS' PPP) through that
+# interface with NetworkManager's VPN route metric. The route goes away with the interface. Anything unexpected is a
+# no-op with one log line (tag linvpn-route); it always exits 0. No eval, every value validated before use.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+LC_ALL=C
+export LC_ALL
+SYS_NET=/sys/class/net
+# NetworkManager's default VPN route metric (NM_VPN_ROUTE_METRIC_DEFAULT).
+METRIC=50
+
+log() {
+  logger -t linvpn-route -- "$1" >/dev/null 2>&1 || :
+}
+
+# An unsigned decimal octet: 1-3 digits, no leading zero, at most 255.
+octet() {
+  case $1 in
+    '' | *[!0-9]* | 0?* | ????*) return 1 ;;
+  esac
+  [ "$1" -le 255 ]
+}
+
+# "a.b.c.d" (nothing else) → O1..O4.
+split_ipv4() {
+  case $1 in
+    *[!0-9.]* | .* | *. | *..*) return 1 ;;
+  esac
+  old_ifs=$IFS
+  IFS=.
+  set -f
+  # shellcheck disable=SC2086  # the split is the point; globbing is off and only digits and dots are left
+  set -- $1
+  set +f
+  IFS=$old_ifs
+  [ $# -eq 4 ] || return 1
+  octet "$1" && octet "$2" && octet "$3" && octet "$4" || return 1
+  O1=$1 O2=$2 O3=$3 O4=$4
+}
+
+to_int() { # a.b.c.d (valid)
+  split_ipv4 "$1" || return 1
+  INT=$(( ((O1 * 256 + O2) * 256 + O3) * 256 + O4 ))
+}
+
+main() {
+  [ "${2-}" = vpn-up ] || return 0
+  [ "${CONNECTION_USER_LINVPN__CLASSFUL-}" = 1 ] || return 0
+
+  iface=${VPN_IP_IFACE-}
+  case $iface in
+    ppp[0-9] | ppp[0-9][0-9] | ppp[0-9][0-9][0-9] | ppp[0-9][0-9][0-9][0-9]) ;;
+    *) log "not a PPP interface, no route"; return 0 ;;
+  esac
+  [ -d "$SYS_NET/$iface" ] || { log "$iface does not exist, no route"; return 0; }
+
+  # "a.b.c.d/prefix gateway"
+  address=${VPN_IP4_ADDRESS_0-}
+  address=${address%%/*}
+  split_ipv4 "$address" || { log "$iface: no valid IPv4 address, no route"; return 0; }
+  if [ "$O1" -ge 1 ] && [ "$O1" -le 126 ]; then
+    net="$O1.0.0.0" len=8
+  elif [ "$O1" -ge 128 ] && [ "$O1" -le 191 ]; then
+    net="$O1.$O2.0.0" len=16
+  elif [ "$O1" -ge 192 ] && [ "$O1" -le 223 ]; then
+    net="$O1.$O2.$O3.0" len=24
+  else
+    log "$iface: $address has no address class, no route"
+    return 0
+  fi
+  to_int "$net" || return 0
+  net_int=$INT
+  span=$(( 1 << (32 - len) ))
+
+  # A route to exactly this network through another interface (the local network, another VPN) stays: ours would
+  # take it over by metric.
+  existing=$(ip -4 route show table main exact "$net/$len" 2>/dev/null) || existing=
+  if [ -n "$existing" ]; then
+    case " $existing " in
+      *" dev $iface "*) ;;
+      *) log "$iface: $net/$len is already routed elsewhere, no route"; return 0 ;;
+    esac
+  fi
+  # The default gateway must stay reachable outside the tunnel.
+  defaults=$(ip -4 route show table main default 2>/dev/null) || defaults=
+  set -f
+  # shellcheck disable=SC2086  # word splitting of ip's output, globbing off
+  set -- $defaults
+  set +f
+  while [ $# -gt 1 ]; do
+    if [ "$1" = via ] && to_int "$2" && [ "$INT" -ge "$net_int" ] && [ "$INT" -lt $(( net_int + span )) ]; then
+      log "$iface: the default gateway $2 is in $net/$len, no route"
+      return 0
+    fi
+    shift
+  done
+
+  if ip -4 route replace "$net/$len" dev "$iface" metric "$METRIC" >/dev/null 2>&1; then
+    log "$iface: added $net/$len (the class of $address)"
+  else
+    log "$iface: could not add $net/$len"
+  fi
+  return 0
+}
+
+main "$@"
+exit 0

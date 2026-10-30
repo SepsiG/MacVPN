@@ -113,6 +113,11 @@ export class EditorSession {
     this.#adopt(await api.editorImportClientCert(this.id));
   }
 
+  /// LinVPN: the password of the PKCS#12 file just chosen (`null`: Cancel); the backend converts it to PEM.
+  async convertClientCert(password: string | null): Promise<void> {
+    this.#adopt(await api.editorConvertClientCert(this.id, password));
+  }
+
   /// "Remove" of the imported client certificate (from the vault at once).
   async removeClientCert(): Promise<void> {
     await this.flush();

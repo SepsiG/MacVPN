@@ -10,7 +10,7 @@
 #   scripts/win-remote.sh fetch REMOTE_PATH LOCAL_DIR   copy a build product back (relative to the checkout)
 #
 # Environment: WINVPN_SSH (ssh destination user@host, required), WINVPN_REMOTE_DIR (default "winvpn-work",
-# relative to the remote home). The remote account is a standard user: nothing here needs administrator rights.
+# one folder name in the remote home). The remote account is a standard user: nothing here needs administrator rights.
 # Commands run with CI=1 (as the CI windows job), except `msi`: an SSH session cannot reach the Windows Installer
 # service, so it runs build-msi.sh with WINVPN_WIX_NO_ICE=1, which build-msi.sh refuses whenever CI is set (CI
 # validates the MSI). WINVPN_REMOTE_PRINT=1 prints the remote commands instead of running them (scripts/test-win-remote.sh).
@@ -19,10 +19,12 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 SSH_DEST="${WINVPN_SSH:-}"
-SSH_OPTS=(-o BatchMode=yes -o IdentitiesOnly=yes -o LogLevel=ERROR -i "$HOME/.ssh/winvpn_dev"
+# No forwarding whatever ~/.ssh/config says: the VM runs unreviewed builds, which must never reach this Mac's agent.
+SSH_OPTS=(-o BatchMode=yes -o IdentitiesOnly=yes -o LogLevel=ERROR -o ForwardAgent=no -o ForwardX11=no
+  -o ClearAllForwardings=yes -i "$HOME/.ssh/winvpn_dev"
   -o UserKnownHostsFile="$HOME/.ssh/winvpn_known_hosts")
 GIT_BASH='"C:\Program Files\Git\bin\bash.exe"'
-REMOTE_DIR="${WINVPN_REMOTE_DIR:-winvpn-work}"
+REMOTE_DIR="${WINVPN_REMOTE_DIR-winvpn-work}"
 # Refs are shared by every worktree of the repository: one ref per run, so parallel runs never clobber each other.
 REF="refs/winvpn/sync-$$"
 
@@ -30,7 +32,9 @@ die() { echo "error: $*" >&2; exit 1; }
 
 [ $# -ge 1 ] || { sed -n '4,10p' "$0" | sed 's/^# \{0,1\}//'; exit 1; }
 [ -n "$SSH_DEST" ] || die "set WINVPN_SSH=user@host of the Windows test machine"
-[[ "$REMOTE_DIR" =~ ^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+)*$ ]] || die "WINVPN_REMOTE_DIR: letters, digits, . _ - and /"
+# One folder name directly in the remote home: never empty, absolute, nested, `.`, `..` or hidden (`git clean -fdx`
+# runs in it, so `.` would wipe the home and `.ssh` the harness's own key).
+[[ "$REMOTE_DIR" =~ ^[A-Za-z0-9_-][A-Za-z0-9._-]*$ ]] || die "WINVPN_REMOTE_DIR: one folder name (letters, digits, . _ -; not starting with .)"
 
 # The CI windows job's packages plus the ones phase 2 adds; a package whose crate does not exist yet is left out.
 PACKAGES=()

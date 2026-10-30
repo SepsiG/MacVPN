@@ -18,7 +18,7 @@ General rules that apply to every tier: the directive name must be `[A-Za-z0-9-]
 - Ticking the checkbox stores **exactly the current set** of risky directive names when you save. If you later add another risky directive (or a different unknown one), the box is unticked again and saving or connecting is blocked until you acknowledge the new set.
 - Connecting with an unacknowledged risky directive fails with *Risky settings are not acknowledged: … Open the connection in MacVPN → Connections and tick the checkbox under Risky settings.*
 - The app passes the names to the root layer: `mvpn up openvpn <id> --accept-risky group,user --lang en`. `mvpn` checks the value against `^[a-z0-9-]+(,[a-z0-9-]+)*$` and hands it unchanged to its validator (`mvpn validate openvpn <file> --accept-risky …`). Only RISKY names can be accepted; a FORBIDDEN name in the list has no effect. Without the flag, risky directives fail validation as root too. `--lang` stays the last argument, so an older root layer still parses it.
-- Arguments of RISKY (and unknown) directives must not contain a leading `-`, `..`, a leading `~`, `file:`, a backslash or shell metacharacters (`` ` $ ; | & < > ``), and `/` only in an IP/CIDR value. In addition, `mvpn` starts `openvpn` inside the root-owned run directory, so relative paths in options processed before daemonizing resolve there (after daemonizing OpenVPN does `chdir("/")`). A `/` is accepted only in a value that parses as an IPv4/IPv6 CIDR (`10.0.0.0/24`, `fd00::/64`), so `./123`, `a/1` or `dead.beef/42` are rejected. RISKY directives are not allowed inside `<connection>`. On Windows a `:` is refused too, except in an IPv6 address or prefix (`2001:db8::1`, `fd00::/64`): `C:name` names a file relative to drive C's current folder (as SYSTEM, `C:\name`) and `name:stream` an alternate data stream.
+- Arguments of RISKY (and unknown) directives must not contain a leading `-`, `..`, a leading `~`, `file:`, a backslash or shell metacharacters (`` ` $ ; | & < > ``), and `/` only in an IP/CIDR value. In addition, `mvpn` starts `openvpn` inside the root-owned run directory, so relative paths in options processed before daemonizing resolve there (after daemonizing OpenVPN does `chdir("/")`). A `/` is accepted only in a value that parses as an IPv4/IPv6 CIDR (`10.0.0.0/24`, `fd00::/64`), so `./123`, `a/1` or `dead.beef/42` are rejected. RISKY directives are not allowed inside `<connection>` (the names of the [Linux tier](#linux-linvpn) that NetworkManager ignores keep their SAFE rules instead). On Windows a `:` is refused too, except in an IPv6 address or prefix (`2001:db8::1`, `fd00::/64`): `C:name` names a file relative to drive C's current folder (as SYSTEM, `C:\name`) and `name:stream` an alternate data stream.
 - Unknown names that look like a hook, a file or a control channel are FORBIDDEN instead of RISKY: names starting with `management`, `pkcs11`, `plugin`, `script`, or ending in `-verify`, `-up`, `-down`, `-connect`, `-disconnect`, `-script`, `-dir`, `-file`, `-persist`, `-path`, `-exec`, `-cmd`.
 
 ## SAFE
@@ -63,20 +63,58 @@ General rules that apply to every tier: the directive name must be `[A-Za-z0-9-]
 
 ### The platform tier per OS
 
-The directives that belong to one operating system's OpenVPN are a separate table, the platform tier (`platform_reasons(os)` in the validator, consulted after the RISKY table above). The validator uses the tier of the OS it was built for (`TargetOs::host()`), never a setting. MacVPN ships the macOS column, unchanged since 1.4. The Linux column is a draft for the Linux phase; only its mechanism is tested now. Windows has its own, stricter rules ([below](#windows-winvpn)).
+The directives that belong to one operating system's OpenVPN are a separate table, the platform tier (`platform_reasons(os)` in the validator, consulted after the RISKY table above and before the SAFE table). The validator uses the tier of the OS it was built for (`TargetOs::host()`), never a setting. MacVPN ships the macOS column, unchanged since 1.4. LinVPN's Linux tier is [below](#linux-linvpn). Windows has its own, stricter rules ([below](#windows-winvpn)).
 
-| Directive | macOS | Linux (draft) |
+| Directive | macOS | Linux (LinVPN) |
 |---|---|---|
-| `win-sys` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
-| `service` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
-| `cryptoapicert` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
-| `allow-nonadmin` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
-| `setcon` | RISKY: Not supported on macOS (Windows or Linux only) | not in the platform tier (an unknown directive; revisited in the Linux phase) |
-| `msg-channel` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
-| `rdns-internal` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
-| `dhcp-internal` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on macOS (Windows or Linux only) |
+| `win-sys` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
+| `service` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
+| `cryptoapicert` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
+| `allow-nonadmin` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
+| `setcon` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Not supported on Linux (an SELinux context for the OpenVPN daemon; NetworkManager's OpenVPN service cannot pass it) |
+| `msg-channel` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
+| `rdns-internal` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
+| `dhcp-internal` | RISKY: Not supported on macOS (Windows or Linux only) | RISKY: Ignored by NetworkManager on Linux |
 
 The reason is the text the Risky settings panel shows.
+
+### Linux (LinVPN)
+
+LinVPN does not start `openvpn` itself: NetworkManager's OpenVPN service does (LinVPN's build of it, as the `nm-openvpn` user in a chroot). The service builds OpenVPN's command line from its own `vpn.data` keys only, and LinVPN's `nm_plan` writes those keys from the configuration (spike L0-1, `docs/superpowers/spikes/2026-10-29-linvpn-nm-openvpn.md`). So on Linux a directive falls into one of four groups. FORBIDDEN and the RISKY table above are the same as on macOS.
+
+**SAFE, expressed:** everything NetworkManager has a key for or `nm_plan` re-expresses (`remote`, `proto`, the certificates and keys, the ciphers, `remote-cert-tls`, `verify-x509-name`, `tun-mtu`, `keepalive`, compression, the proxies, `route`, `route-ipv6`, `route-metric`, `redirect-gateway`, `route-nopull`, `pull-filter`, `dhcp-option`, `dns`, `auth-user-pass`, `static-challenge`, …).
+
+**SAFE, nothing to do:** what the service already does itself or what has no effect on Linux, so no acknowledgement is asked for: `nobind`, `lport 0`, `persist-key`, `persist-tun`, `auth-nocache`, `auth-retry`, `resolv-retry`, `explicit-exit-notify`, `topology`, `route-delay`, `verb`, `mute` and the other logging options, `setenv`, `ignore-unknown-option`, and the Windows-only options (`block-outside-dns`, `register-dns`, `dhcp-option WINS`/`NBT`/…, `ip-win32`, `route-method`, `windows-driver`, `tap-sleep`, …). `user`, `group` and `script-security 0`/`1` keep their tier (the service drops privileges itself and sets `--script-security 2` for its own `--up` helper).
+
+**RISKY, "Ignored by NetworkManager on Linux":** the service has no key for these, so they have no effect. The validator still checks their arguments as SAFE ones (a file or a bad value is an error, and a `<connection>` block may hold the ones OpenVPN allows there), then lists them in the Risky settings panel with this reason; acknowledging them means accepting that they are dropped.
+
+| Group | Directives |
+|---|---|
+| MTU and buffers | `link-mtu` and its alias `udp-mtu`, `tun-mtu-extra`, `tun-mtu-max`, `max-packet-size`, `mtu-test`, `sndbuf`, `rcvbuf`, `txqueuelen`, `fast-io`, `tcp-queue-limit`, `shaper` |
+| Sockets | `tcp-nodelay`, `socket-flags`, `mark`, `bind`, `bind-dev`, `local`, `lport` (not `lport 0`), `passtos`, `multihome`, `proto-force`, `persist-local-ip`, `persist-remote-ip`, `preresolve` and its old name `ip-remote-hint` |
+| Timers and retries | `connect-retry`, `connect-retry-max` (LinVPN's own reconnect planner replaces them), `ping-timer-rem`, `inactive`, `session-timeout`, `up-delay`, `hand-window`, `tran-window`, `tls-timeout`, `reneg-bytes`, `reneg-pkts`, `replay-window` |
+| Process | `nice`, `mlock`, `remap-usr1`, `tls-exit` |
+| TLS and peer-check details (OpenVPN's default applies) | `tls-groups`, `ecdh-curve`, `tls-ciphersuites`, `tls-cert-profile`, `x509-track`, `x509-username-field`, `prng`, `keying-material-exporter`, `force-tls-key-material-export`, `use-prediction-resistance`, `auth-token`, `auth-token-user`, `comp-noadapt` |
+| Proxy details | `http-proxy-option`, `http-proxy-timeout` |
+| Routing details NetworkManager cannot express | `route-gateway`, `route-ipv6-gateway`, `route-table`, `ifconfig-ipv6`, `block-ipv6` |
+| The other OSes' OpenVPN | `win-sys`, `service`, `cryptoapicert`, `allow-nonadmin`, `msg-channel`, `rdns-internal`, `dhcp-internal` (and `setcon`: *Not supported on Linux*, above) |
+
+**Arguments NetworkManager drops.** A few arguments of SAFE directives have no NetworkManager equivalent: `redirect-gateway … block-local` (routed as a plain full tunnel), `dns server n dnssec|transport|sni`, and a `route` NetworkManager cannot express (a host name instead of an address, an unusable mask). The tiers cannot see arguments, so the editor's platform notes list these once as "Ignored by NetworkManager on Linux: …"; the directive names above are never repeated there.
+
+**Refused on Linux.** These are not a tier: the configuration stays valid (it is shared with macOS and Windows through backups, exports and team catalogs), but LinVPN cannot start it. `nm_plan::openvpn` returns the reason, the connection's row is greyed with it, the editor shows it, and connecting is refused. Dropping any of them would quietly weaken the server check or send traffic past the tunnel.
+
+| Configuration | Reason shown |
+|---|---|
+| `peer-fingerprint`, `verify-hash` | Not supported on Linux: %@ (NetworkManager cannot check the server this way; use a CA) |
+| `remote-cert-ku`, `remote-cert-eku` | Not supported on Linux: %@ (NetworkManager cannot pass this server check) |
+| `route … net_gateway` or `route … remote_host` | Not supported on Linux: a route outside the tunnel (%@) |
+| a `<connection>` block with anything but `remote`, `proto`, `port` and `nobind` | Not supported on Linux: a <connection> block with settings other than remote, proto, port and nobind |
+| a `pull-filter` line the service cannot pass | Not supported on Linux: pull-filter %@ |
+| `compress stub`, `stub-v2`, `migrate` | Not supported on Linux: compress %@ |
+
+`%@` is the directive or the argument in question.
+
+**"Send all traffic over VPN"** (LinVPN's OpenVPN editor: **Server decides**, **Always**, **Never (split tunnel)**) is not a tier either: it writes ordinary SAFE lines into the configuration, `redirect-gateway def1` for **Always** and `pull-filter ignore "redirect-gateway"` for **Never**, so every OpenVPN reads it the same way. **Server decides** writes neither; LinVPN's NetworkManager OpenVPN service then follows the server's pushed `redirect-gateway` (OpenVPN 2.7 or later).
 
 ### Windows (WinVPN)
 
@@ -191,7 +229,7 @@ A MacVPN és a WinVPN az OpenVPN config minden direktíváját három szintbe so
 - **RISKY (kockázatos):** nem lépi át a root jogosultsági határt, de a kapcsolat vagy a rendszer viselkedését befolyásolja (pl. `user`, `group`, `route-noexec`, `ifconfig-noexec`, szerveroldali és Windows-only opciók), és **minden ismeretlen direktíva**. A szerkesztő sárga **Kockázatos beállítások** paneljén soronként rövid indoklással jelenik meg; mentéshez és csatlakozáshoz be kell jelölni: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. A tudomásulvétel név szerinti, és pontosan a mentéskori halmazra szól: egy új kockázatos direktíva új tudomásulvételt kér. A root oldalon `--accept-risky` adja át.
 - **FORBIDDEN (tiltott):** soha, tudomásulvétellel sem: script hookok, kódbetöltés (`plugin`, `pkcs11-*` a `pkcs11-id`-vel együtt), `config`, `cd`, `chroot` (a MacVPN hookjai és jelszófájljai utána nem érhetők el), napló és vezérlés (`log`, `syslog`, `echo`, `management*`, …), root fájl-hozzáférés, `[inline]` nélküli fájlhivatkozás (köztük `askpass <fájl>`), tiltólistás `setenv`.
 
-**Platformszint:** az egy-egy operációs rendszerhez tartozó direktívák (`win-sys`, `service`, `cryptoapicert`, …) külön táblában vannak (`platform_reasons(os)`), és a validátor mindig annak az OS-nek a tábláját használja, amelyre fordították. A MacVPN a macOS-oszlopot használja, az 1.4 óta változatlanul; a Linux-oszlop vázlat. Windowson a WinVPN Service SYSTEM-ként futtatja az OpenVPN-t, ezért ott a `win-sys`, `service`, `msg-channel`, `allow-nonadmin`, `rdns-internal`, `dhcp-internal`, `windows-driver` és `cryptoapicert` tiltott, tudomásulvétellel sem engedhető; a meghajtót (DCO vagy TAP-Windows6; az OpenVPN 2.7-ben nincs Wintun) a szolgáltatás választja kapcsolatonként (lásd a fenti táblázatokat).
+**Platformszint:** az egy-egy operációs rendszerhez tartozó direktívák (`win-sys`, `service`, `cryptoapicert`, …) külön táblában vannak (`platform_reasons(os)`), és a validátor mindig annak az OS-nek a tábláját használja, amelyre fordították. A MacVPN a macOS-oszlopot használja, az 1.4 óta változatlanul; a LinVPN Linux-táblája (az L0-1 spike javaslata alapján, az L-b fázisban véglegesítve): amit a NetworkManager OpenVPN-szolgáltatása nem tud átadni (hangolás, puffer, időzítők, TLS-részletek, a többi OS direktívái), az KOCKÁZATOS „Linuxon a NetworkManager figyelmen kívül hagyja” indokkal (az argumentumokat SAFE-ként ellenőrzi); amit a szolgáltatás magától is megtesz (`nobind`, `persist-*`, …) vagy Linuxon hatástalan (a csak Windowsos direktívák), az SAFE marad, így nem kell tudomásul venni. A `peer-fingerprint`, `verify-hash`, `remote-cert-ku`/`-eku`, a tunnelt megkerülő `route` és a hasonlók nem tiltottak, de Linuxon a kapcsolat nem indítható (az `nm_plan` indoka). A LinVPN OpenVPN-szerkesztőjének „Minden forgalom a VPN-en keresztül” beállítása közönséges SAFE sorokat ír a configba: „Mindig” esetén `redirect-gateway def1`, „Soha” esetén `pull-filter ignore "redirect-gateway"`; „A szerver dönt” egyiket sem, ilyenkor a LinVPN NetworkManager OpenVPN-szolgáltatása a szerver által küldött `redirect-gateway`-t követi (OpenVPN 2.7-től). Windowson a WinVPN Service SYSTEM-ként futtatja az OpenVPN-t, ezért ott a `win-sys`, `service`, `msg-channel`, `allow-nonadmin`, `rdns-internal`, `dhcp-internal`, `windows-driver` és `cryptoapicert` tiltott, tudomásulvétellel sem engedhető; a meghajtót (DCO vagy TAP-Windows6; az OpenVPN 2.7-ben nincs Wintun) a szolgáltatás választja kapcsolatonként (lásd a fenti táblázatokat).
 
 **OpenVPN 2.7:** a telepített 2.7.8 `--help` mind a 234 opciója kifejezetten besorolt (rögzített lista: `Tests/Fixtures/openvpn/`); a `dns` minden formája SAFE, a `dns-updown` tiltott. A `script-security 0|1` SAFE (a MacVPN `--script-security 2`-je felülírja), a 2/3 tiltott.
 

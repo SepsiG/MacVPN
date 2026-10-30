@@ -2,7 +2,8 @@
 //! is never dead), OpenVPN by its own restart.
 
 use macvpn_app_core::liveness::{
-    Health, Monitor, OPENVPN_RECONNECT_LIMIT, POLL, REJECT_AFTER_TIME, REKEY_ATTEMPT_TIME, STALE_AFTER,
+    COUNTER_SILENCE, Health, Monitor, OPENVPN_RECONNECT_LIMIT, POLL, REJECT_AFTER_TIME, REKEY_ATTEMPT_TIME,
+    STALE_AFTER, SWITCH_SILENCE,
 };
 use macvpn_core::liveness::{Liveness, WgPeer};
 
@@ -177,4 +178,44 @@ fn forget_and_retain_drop_the_watch() {
     m.retain(&["x"]);
     assert_eq!(m.observe("k", T0 + 100.0, &r), Health::Reconnecting);
     assert_eq!(m.observe("j", T0 + 100.0, &r), Health::Reconnecting);
+}
+
+fn c(rx: u64, tx: u64) -> Liveness {
+    Liveness::Counters { rx, tx, keepalive: 0 }
+}
+
+#[test]
+fn sending_without_receiving_for_the_silence_is_dead() {
+    let mut m = Monitor::default();
+    assert_eq!(m.observe("k", 0.0, &c(100, 100)), Health::Alive { proven: false });
+    assert_eq!(m.observe("k", 30.0, &c(100, 400)), Health::Alive { proven: false }, "grew: the clock starts");
+    assert_eq!(m.observe("k", 30.0 + COUNTER_SILENCE - 1.0, &c(100, 900)), Health::Alive { proven: false });
+    assert_eq!(m.observe("k", 30.0 + COUNTER_SILENCE, &c(100, 950)), Health::Dead);
+}
+
+#[test]
+fn any_received_byte_resets_and_proves_life() {
+    let mut m = Monitor::default();
+    m.observe("k", 0.0, &c(100, 100));
+    m.observe("k", 30.0, &c(100, 400));
+    assert_eq!(m.observe("k", 150.0, &c(160, 500)), Health::Alive { proven: true });
+    assert_eq!(m.observe("k", 30.0 + COUNTER_SILENCE + 10.0, &c(160, 600)), Health::Alive { proven: false });
+}
+
+#[test]
+fn an_idle_tunnel_is_never_dead() {
+    let mut m = Monitor::default();
+    for t in 0..20 {
+        assert_ne!(m.observe("k", f64::from(t) * 30.0, &c(5, 5)), Health::Dead);
+    }
+}
+
+#[test]
+fn after_a_switch_silence_beyond_the_keepalives_is_dead_sooner() {
+    let mut m = Monitor::default();
+    m.switched("k", 0.0);
+    let k = |rx, tx| Liveness::Counters { rx, tx, keepalive: 10 };
+    m.observe("k", 5.0, &k(0, 0));
+    m.observe("k", 15.0, &k(0, 2000));
+    assert_eq!(m.observe("k", 15.0 + SWITCH_SILENCE, &k(0, 2100)), Health::Dead);
 }

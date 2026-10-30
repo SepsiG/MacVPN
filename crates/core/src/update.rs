@@ -501,6 +501,9 @@ pub enum SignatureDomain {
     /// `WinVPN-<version>-x64.msi` or `WinVPN-<version>-arm64.msi`, so a signature binds the product, the
     /// architecture and the version as well as the bytes.
     WinVpnV1,
+    /// LinVPN: `linvpn-update-v1\n<asset>\n<version>\n<sha256>\n`; the asset is the file name
+    /// `linvpn_<version>_amd64.deb` or `linvpn_<version>_arm64.deb` (Debian's architecture names).
+    LinVpnV1,
 }
 
 /// The releases' offline Ed25519 signature.
@@ -510,9 +513,10 @@ pub enum SignatureDomain {
 /// valid with one of the embedded public keys, so a compromised GitHub account (or CI) cannot publish an update.
 ///
 /// The signed message, byte for byte, by [`SignatureDomain`]: MacVPN `"macvpn-update-v1\n" + version + "\n" +
-/// lower-case sha256 hex + "\n"`; WinVPN `"winvpn-update-v1\n" + asset + "\n" + version + "\n" + sha256 + "\n"`.
-/// The version is without `v` (e.g. `0.2.2`). Plain Ed25519 (OpenSSL 3: `pkeyutl -sign -rawin`). The `.sig` is one
-/// line: the 64-byte signature in base64, with a trailing newline.
+/// lower-case sha256 hex + "\n"`; WinVPN `"winvpn-update-v1\n" + asset + "\n" + version + "\n" + sha256 + "\n"`;
+/// LinVPN `"linvpn-update-v1\n" + asset + "\n" + version + "\n" + sha256 + "\n"`. The version is without `v`
+/// (e.g. `0.2.2`). Plain Ed25519 (OpenSSL 3: `pkeyutl -sign -rawin`). The `.sig` is one line: the 64-byte signature
+/// in base64, with a trailing newline.
 pub struct UpdateSignature;
 
 impl UpdateSignature {
@@ -524,6 +528,7 @@ impl UpdateSignature {
     pub const MAX_SIGNATURE_FILE_SIZE: usize = 1024;
     pub const DOMAIN: &'static str = "macvpn-update-v1";
     pub const WINVPN_DOMAIN: &'static str = "winvpn-update-v1";
+    pub const LINVPN_DOMAIN: &'static str = "linvpn-update-v1";
 
     /// The embedded, trusted keys (primary, backup), raw 32 bytes each.
     pub fn trusted_keys() -> Vec<[u8; 32]> {
@@ -540,7 +545,8 @@ impl UpdateSignature {
     }
 
     /// The signed message of `domain`. MacVPN ignores `asset` (its message has none); WinVPN requires exactly
-    /// `WinVPN-<version>-x64.msi` or `WinVPN-<version>-arm64.msi`. `None`: not a message any signature may cover.
+    /// `WinVPN-<version>-x64.msi` or `WinVPN-<version>-arm64.msi`; LinVPN requires exactly `linvpn_<version>_amd64.deb`
+    /// or `linvpn_<version>_arm64.deb`. `None`: not a message any signature may cover.
     pub fn message_for(domain: SignatureDomain, asset: &str, version: &str, sha256_hex: &str) -> Option<Vec<u8>> {
         if !crate::validators::matches(version, "^[0-9]{1,9}\\.[0-9]{1,9}\\.[0-9]{1,9}$")
             || sha256_hex.len() != 64
@@ -556,6 +562,13 @@ impl UpdateSignature {
                     return None;
                 }
                 Some(format!("{}\n{asset}\n{version}\n{sha256_hex}\n", Self::WINVPN_DOMAIN).into_bytes())
+            }
+            SignatureDomain::LinVpnV1 => {
+                let allowed = [format!("linvpn_{version}_amd64.deb"), format!("linvpn_{version}_arm64.deb")];
+                if !allowed.iter().any(|a| a == asset) {
+                    return None;
+                }
+                Some(format!("{}\n{asset}\n{version}\n{sha256_hex}\n", Self::LINVPN_DOMAIN).into_bytes())
             }
         }
     }

@@ -98,11 +98,16 @@ pub async fn update_dismiss_notice(state: Shared<'_>) -> Result<(), String> {
 }
 
 /// The launch housekeeping (bundle only, the Swift `launchHousekeeping`): the leftovers of an interrupted swap
-/// next to the bundle, then the previous update's failure, shown once (2 s after launch) in the Update window.
+/// next to the bundle, then the previous update's failure, shown once (2 s after launch) in the Update window, or
+/// its success as a notification where the platform has the text (LinVPN).
 pub fn launch_housekeeping(app: &AppHandle, state: &AppState) {
     let Some(bundle) = &state.env.bundle else { return };
     let noticed = state.updates.noticed_helper_run();
-    let (_, notice) = crate::platform::get().updater().launch_housekeeping(bundle, &state.env.home, noticed.as_deref());
+    let updater = crate::platform::get().updater();
+    let (_, notice) = updater.launch_housekeeping(bundle, &state.env.home, noticed.as_deref());
+    if let Some(text) = updater.take_updated_notice() {
+        crate::notifications::updated(state, text);
+    }
     if state.updates.show_previous_update_notice(notice) {
         let app = app.clone();
         std::thread::spawn(move || {

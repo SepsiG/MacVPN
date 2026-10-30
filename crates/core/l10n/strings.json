@@ -208,6 +208,10 @@
         "windows": {
           "en": "A .mobileconfig profile cannot be imported into WinVPN. Create the connection with New → L2TP, or restore a backup that has it.",
           "hu": "A .mobileconfig profil nem importálható a WinVPN-be. Hozd létre a kapcsolatot az Új → L2TP menüponttal, vagy állíts vissza egy mentést, amelyben benne van."
+        },
+        "linux": {
+          "en": "A .mobileconfig profile cannot be imported into LinVPN. Create the connection with New, or restore a backup that has it.",
+          "hu": "A .mobileconfig profil nem importálható a LinVPN-be. Hozd létre a kapcsolatot az Új menüből, vagy állíts vissza egy mentést, amelyben benne van."
         }
       }
     },
@@ -403,11 +407,26 @@
         "windows"
       ]
     },
+    "Connected (IPv4 address not known yet)": {
+      "hu": "Csatlakozva (az IPv4-cím még nem ismert)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "IPv4 address: %@": {
+      "hu": "IPv4-cím: %@",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
     "Connected, IPv4 %@": {
       "hu": "Csatlakozva, IPv4: %@",
       "scope": "platform",
       "only": [
-        "windows"
+        "windows",
+        "linux"
       ]
     },
     "Connecting to %@…": {
@@ -510,7 +529,13 @@
       "scope": "app",
       "only": [
         "macos"
-      ]
+      ],
+      "variants": {
+        "linux": {
+          "en": "No client certificate imported. LinVPN uses the certificates in its strongSwan folder (~/.local/share/LinVPN/swanctl).",
+          "hu": "Nincs importált klienstanúsítvány. A LinVPN a saját strongSwan-mappájában (~/.local/share/LinVPN/swanctl) lévő tanúsítványokat használja."
+        }
+      }
     },
     "Not set": {
       "hu": "Nincs megadva",
@@ -971,7 +996,8 @@
       "hu": "A szerver címe nem tartalmazhat vezérlőkaraktert",
       "scope": "platform",
       "only": [
-        "windows"
+        "windows",
+        "linux"
       ]
     },
     "The server accepted none of the IPsec proposals WinVPN offered (%@).": {
@@ -1256,6 +1282,10 @@
         "windows": {
           "en": "A missing component shows in System Status, as usual.",
           "hu": "A hiányzó összetevő a szokásos módon a Rendszerállapotban látszik."
+        },
+        "linux": {
+          "en": "A missing component shows in System Status, as usual.",
+          "hu": "A hiányzó összetevő a szokásos módon a Rendszerállapotban látszik."
         }
       }
     },
@@ -1342,6 +1372,10 @@
         "windows": {
           "en": "Admin keys and publications the backup does not have stay on this PC.",
           "hu": "Azok az aláírókulcsok és közzétételek, amelyek nincsenek a mentésben, ezen a számítógépen maradnak."
+        },
+        "linux": {
+          "en": "Admin keys and publications the backup does not have stay on this computer.",
+          "hu": "Azok az aláírókulcsok és közzétételek, amelyek nincsenek a mentésben, ezen a számítógépen maradnak."
         }
       }
     },
@@ -1414,6 +1448,10 @@
       "variants": {
         "windows": {
           "en": "An app on this PC asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.",
+          "hu": "Egy app ezen a számítógépen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne."
+        },
+        "linux": {
+          "en": "An app on this computer asks to bring the connections you choose up and down. Allow it only if you started this app and you trust it.",
           "hu": "Egy app ezen a számítógépen azt kéri, hogy fel- és lekapcsolhassa az általad választott kapcsolatokat. Csak akkor engedélyezd, ha te indítottad el, és megbízol benne."
         }
       }
@@ -1582,6 +1620,10 @@
       "variants": {
         "windows": {
           "en": "Backup: %@ · This PC: %@",
+          "hu": "Mentés: %@ · Ez a számítógép: %@"
+        },
+        "linux": {
+          "en": "Backup: %@ · This computer: %@",
           "hu": "Mentés: %@ · Ez a számítógép: %@"
         }
       }
@@ -1818,6 +1860,10 @@
         "windows": {
           "en": "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new PC.",
           "hu": "Válassz egy .macvpnadminkey fájlt, és add meg a jelszavát. A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, nem a kulcsfájlban: új számítógépen előbb állíts vissza egy teljes biztonsági mentést."
+        },
+        "linux": {
+          "en": "Choose a .macvpnadminkey file and enter its password. Your publications (each catalog’s id, version and team key) are in the vault, not in the key file: restore a full backup first on a new computer.",
+          "hu": "Válassz egy .macvpnadminkey fájlt, és add meg a jelszavát. A közzétételeid (minden katalógus azonosítója, verziója és csapatkulcsa) a széfben vannak, nem a kulcsfájlban: új számítógépen előbb állíts vissza egy teljes biztonsági mentést."
         }
       }
     },
@@ -1831,6 +1877,10 @@
       "variants": {
         "windows": {
           "en": "Choose a backup made with Back Up Everything. You set a new master password for this PC next.",
+          "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Utána új mesterjelszót adsz meg ehhez a számítógéphez."
+        },
+        "linux": {
+          "en": "Choose a backup made with Back Up Everything. You set a new master password for this computer next.",
           "hu": "Válassz egy Teljes biztonsági mentéssel készült fájlt. Utána új mesterjelszót adsz meg ehhez a számítógéphez."
         }
       }
@@ -1854,6 +1904,10 @@
         "windows": {
           "en": "Choose the file at the path the members’ PCs use, for example on the mapped network drive.",
           "hu": "A fájlt azon az útvonalon válaszd ki, amelyet a tagok számítógépei használnak, például a csatlakoztatott hálózati meghajtón."
+        },
+        "linux": {
+          "en": "Choose the file at the path the members’ computers use, for example on the mounted share.",
+          "hu": "A fájlt azon az útvonalon válaszd ki, amelyet a tagok számítógépei használnak, például a csatolt megosztáson."
         }
       }
     },
@@ -2319,6 +2373,10 @@
         "windows": {
           "en": "Enter the master password. Its key is then kept in the Windows Credential Manager, and MacVPN opens without asking.",
           "hu": "Add meg a mesterjelszót. A széf kulcsa ezután a Windows Hitelesítőadat-kezelőjében marad, és a MacVPN kérdés nélkül megnyílik."
+        },
+        "linux": {
+          "en": "Enter the master password. Its key is then kept in your login keyring, and LinVPN opens without asking.",
+          "hu": "Add meg a mesterjelszót. A széf kulcsa ezután a bejelentkezési kulcstartódban marad, és a LinVPN kérdés nélkül megnyílik."
         }
       }
     },
@@ -2396,6 +2454,10 @@
       "variants": {
         "windows": {
           "en": "Export it to a password-protected file and remove it from this PC: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.",
+          "hu": "Exportáld jelszóval védett fájlba, és töröld erről a számítógépről: a fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol."
+        },
+        "linux": {
+          "en": "Export it to a password-protected file and remove it from this computer: keep the file offline, for example on a USB stick in a safe, and its password somewhere else.",
           "hu": "Exportáld jelszóval védett fájlba, és töröld erről a számítógépről: a fájlt offline tartsd (például egy széfben lévő USB-kulcson), a jelszavát máshol."
         }
       }
@@ -2576,6 +2638,10 @@
       "variants": {
         "windows": {
           "en": "If the admin key may have leaked: generate a new admin key on a PC you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.",
+          "hu": "Ha az aláírókulcs kiszivároghatott: hozz létre új adminisztrátori aláírókulcsot egy megbízható számítógépen, tedd közzé a kapcsolatokat új katalógusként, töröld a régi katalógusfájlt a szerverről vagy a megosztásról, és küldd el minden tagnak az új feliratkozási kódot és ujjlenyomatot megbízható csatornán. A régi katalógus csapattitkait is változtasd meg."
+        },
+        "linux": {
+          "en": "If the admin key may have leaked: generate a new admin key on a computer you trust, publish the connections as a new catalog, remove the old catalog file from the server or share, and send every member the new subscription string and fingerprint through a trusted channel. Change the team secrets of the old catalog too.",
           "hu": "Ha az aláírókulcs kiszivároghatott: hozz létre új adminisztrátori aláírókulcsot egy megbízható számítógépen, tedd közzé a kapcsolatokat új katalógusként, töröld a régi katalógusfájlt a szerverről vagy a megosztásról, és küldd el minden tagnak az új feliratkozási kódot és ujjlenyomatot megbízható csatornán. A régi katalógus csapattitkait is változtasd meg."
         }
       }
@@ -2939,6 +3005,10 @@
         "windows": {
           "en": "Its %lld connections and folders are removed from this PC, and paired apps lose access to them.",
           "hu": "A(z) %lld kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzájuk a hozzáférést."
+        },
+        "linux": {
+          "en": "Its %lld connections and folders are removed from this computer, and paired apps lose access to them.",
+          "hu": "A(z) %lld kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzájuk a hozzáférést."
         }
       }
     },
@@ -2948,6 +3018,10 @@
       "variants": {
         "windows": {
           "en": "Its connection and folders are removed from this PC, and paired apps lose access to it.",
+          "hu": "A kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzá a hozzáférést."
+        },
+        "linux": {
+          "en": "Its connection and folders are removed from this computer, and paired apps lose access to it.",
           "hu": "A kapcsolata és a mappái törlődnek erről a számítógépről, és a párosított appok elveszítik hozzá a hozzáférést."
         }
       }
@@ -2962,6 +3036,10 @@
       "variants": {
         "windows": {
           "en": "Keep the file and its password apart. To restore it, choose Restore from Backup… in the settings, or in the first-run window on a new PC.",
+          "hu": "A fájlt és a jelszavát tartsd külön. A visszaállításhoz válaszd a Visszaállítás biztonsági mentésből… pontot a beállításokban, vagy új számítógépen az első indításkori ablakban."
+        },
+        "linux": {
+          "en": "Keep the file and its password apart. To restore it, choose Restore from Backup… in the settings, or in the first-run window on a new computer.",
           "hu": "A fájlt és a jelszavát tartsd külön. A visszaállításhoz válaszd a Visszaállítás biztonsági mentésből… pontot a beállításokban, vagy új számítógépen az első indításkori ablakban."
         }
       }
@@ -2997,6 +3075,10 @@
         "windows": {
           "en": "WinVPN wrote the Windows VPN entries of the L2TP connections. IKEv2 and SSTP get theirs when they first connect.",
           "hu": "A WinVPN megírta az L2TP kapcsolatok Windows VPN-bejegyzéseit. Az IKEv2 és SSTP kapcsolatok az első csatlakozáskor kapják meg a sajátjukat."
+        },
+        "linux": {
+          "en": "L2TP and Cisco IPsec connections need NetworkManager’s VPN plugins. System Status shows a missing one.",
+          "hu": "Az L2TP és Cisco IPsec kapcsolatokhoz a NetworkManager VPN-bővítményei kellenek. Ha valamelyik hiányzik, a Rendszerállapot jelzi."
         }
       }
     },
@@ -3037,6 +3119,13 @@
       "scope": "core",
       "only": [
         "macos"
+      ]
+    },
+    "Launch at login is available when LinVPN is installed from its package.": {
+      "hu": "Az automatikus indítás akkor érhető el, ha a LinVPN a csomagjából van telepítve.",
+      "scope": "platform",
+      "only": [
+        "linux"
       ]
     },
     "Lime": {
@@ -3098,6 +3187,10 @@
         "windows": {
           "en": "MacVPN could not be removed from the startup apps. You can remove it in Settings → Apps → Startup.",
           "hu": "A MacVPN-t nem sikerült eltávolítani az indítási alkalmazások közül. A Gépház → Alkalmazások → Indítás alatt távolíthatod el."
+        },
+        "linux": {
+          "en": "LinVPN’s launch at login could not be turned off. Delete ~/.config/autostart/linvpn.desktop yourself.",
+          "hu": "Nem sikerült kikapcsolni a LinVPN automatikus indítását bejelentkezéskor. Töröld kézzel a ~/.config/autostart/linvpn.desktop fájlt."
         }
       }
     },
@@ -3150,6 +3243,10 @@
         "windows": {
           "en": "WinVPN connects OpenVPN and WireGuard through the WinVPN Service. OpenVPN Community is installed here when you need it.",
           "hu": "A WinVPN az OpenVPN- és a WireGuard-kapcsolatokat a WinVPN szolgáltatáson keresztül építi fel. Az OpenVPN Communityt itt telepítheted, ha szükséged van rá."
+        },
+        "linux": {
+          "en": "LinVPN connects through NetworkManager and its VPN plugins (OpenVPN, L2TP, strongSwan, vpnc, SSTP). You can install the missing ones here.",
+          "hu": "A LinVPN a NetworkManageren és a VPN-bővítményein keresztül kapcsolódik (OpenVPN, L2TP, strongSwan, vpnc, SSTP). A hiányzókat innen telepítheted."
         }
       }
     },
@@ -3176,6 +3273,10 @@
         "windows": {
           "en": "Makes this PC accept incoming VPN connections (listens on the network with system rights)",
           "hu": "Ez a számítógép bejövő VPN-kapcsolatokat fogadna (rendszerjogosultsággal figyel a hálózaton)"
+        },
+        "linux": {
+          "en": "Makes this computer accept incoming VPN connections (listens on the network as root)",
+          "hu": "Ez a számítógép bejövő VPN-kapcsolatokat fogadna (rootként figyel a hálózaton)"
         }
       }
     },
@@ -3475,9 +3576,14 @@
       "hu": "macOS-en nem támogatott (csak Windows vagy Linux)",
       "scope": "core",
       "only": [
-        "macos",
-        "linux"
-      ]
+        "macos"
+      ],
+      "variants": {
+        "linux": {
+          "en": "Not supported on Linux (Windows only)",
+          "hu": "Linuxon nem támogatott (csak Windows)"
+        }
+      }
     },
     "Nothing can be moved into a team catalog.": {
       "hu": "Csapatkatalógusba semmi nem helyezhető át.",
@@ -3517,6 +3623,10 @@
       "variants": {
         "windows": {
           "en": "On this PC",
+          "hu": "Ezen a számítógépen"
+        },
+        "linux": {
+          "en": "On this computer",
           "hu": "Ezen a számítógépen"
         }
       }
@@ -3571,8 +3681,19 @@
         "windows": {
           "en": "Open Startup Apps Settings…",
           "hu": "Indítási alkalmazások beállításai…"
+        },
+        "linux": {
+          "en": "Open Launch at Login Settings…",
+          "hu": "Automatikus indítás beállításai…"
         }
       }
+    },
+    "Open LinVPN": {
+      "hu": "LinVPN megnyitása",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
     },
     "Open MacVPN for details": {
       "hu": "Részletek a MacVPN-ben",
@@ -3640,6 +3761,10 @@
         "windows": {
           "en": "Alt-click a switch: debug mode",
           "hu": "Alt+kattintás a kapcsolón: debug mód"
+        },
+        "linux": {
+          "en": "Alt-click a switch: debug mode",
+          "hu": "Alt+kattintás a kapcsolón: debug mód"
         }
       }
     },
@@ -3702,6 +3827,10 @@
         "windows": {
           "en": "Password (optional, if not saved in Windows)",
           "hu": "Jelszó (nem kötelező, ha nincs elmentve a Windowsban)"
+        },
+        "linux": {
+          "en": "Password (optional, if not saved in NetworkManager)",
+          "hu": "Jelszó (nem kötelező, ha nincs elmentve a NetworkManagerben)"
         }
       }
     },
@@ -3790,6 +3919,10 @@
         "windows": {
           "en": "Programs on this PC that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.",
           "hu": "Az ezen a számítógépen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak."
+        },
+        "linux": {
+          "en": "Programs on this computer that you pair can list the connections you allow, and bring them up and down. They never see configurations or passwords.",
+          "hu": "Az ezen a számítógépen párosított programok listázhatják az általad engedélyezett kapcsolatokat, és fel- és lekapcsolhatják őket. Konfigurációt és jelszót sosem látnak."
         }
       }
     },
@@ -3864,6 +3997,10 @@
         "windows": {
           "en": "Publishing needs an admin key. Generate one, or import the key file of the PC you published from.",
           "hu": "A közzétételhez adminisztrátori aláírókulcs kell. Hozz létre egyet, vagy importáld annak a számítógépnek a kulcsfájlját, amelyről eddig közzétettél."
+        },
+        "linux": {
+          "en": "Publishing needs an admin key. Generate one, or import the key file of the computer you published from.",
+          "hu": "A közzétételhez adminisztrátori aláírókulcs kell. Hozz létre egyet, vagy importáld annak a számítógépnek a kulcsfájlját, amelyről eddig közzétettél."
         }
       }
     },
@@ -3874,6 +4011,13 @@
     "Purple": {
       "hu": "Lila",
       "scope": "app"
+    },
+    "Quit LinVPN": {
+      "hu": "Kilépés a LinVPN-ből",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
     },
     "Quit MacVPN": {
       "hu": "Kilépés",
@@ -3941,6 +4085,10 @@
       "variants": {
         "windows": {
           "en": "Remove the backup key from this PC after export",
+          "hu": "A tartalék kulcs törlése erről a számítógépről az export után"
+        },
+        "linux": {
+          "en": "Remove the backup key from this computer after export",
           "hu": "A tartalék kulcs törlése erről a számítógépről az export után"
         }
       }
@@ -4501,6 +4649,10 @@
         "windows": {
           "en": "The admin key file could not be read back. The key was kept on this PC.",
           "hu": "Az adminkulcs-fájlt nem sikerült visszaolvasni. A kulcs ezen a számítógépen maradt."
+        },
+        "linux": {
+          "en": "The admin key file could not be read back. The key was kept on this computer.",
+          "hu": "Az adminkulcs-fájlt nem sikerült visszaolvasni. A kulcs ezen a számítógépen maradt."
         }
       }
     },
@@ -4546,6 +4698,10 @@
         "windows": {
           "en": "The backup key becomes the admin key, and the old admin key is deleted from this PC. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.",
           "hu": "A tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a számítógépről. Utána tedd közzé minden katalógus új verzióját: azok a tagok, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást, a többieknek az új ujjlenyomattal újra fel kell iratkozniuk."
+        },
+        "linux": {
+          "en": "The backup key becomes the admin key, and the old admin key is deleted from this computer. Then publish a new version of each catalog: members that refreshed since the backup key was created follow automatically, the others must subscribe again with the new fingerprint.",
+          "hu": "A tartalék kulcs lesz az aláírókulcs, a régi aláírókulcs törlődik erről a számítógépről. Utána tedd közzé minden katalógus új verzióját: azok a tagok, akik a tartalék kulcs létrehozása óta frissítettek, automatikusan követik a váltást, a többieknek az új ujjlenyomattal újra fel kell iratkozniuk."
         }
       }
     },
@@ -4563,6 +4719,10 @@
       "variants": {
         "windows": {
           "en": "The backup key was saved as %@ and removed from this PC. Keep the file offline and its password somewhere else.",
+          "hu": "A tartalék kulcs mentve: %@, és törlődött erről a számítógépről. A fájlt offline tartsd, a jelszavát máshol."
+        },
+        "linux": {
+          "en": "The backup key was saved as %@ and removed from this computer. Keep the file offline and its password somewhere else.",
           "hu": "A tartalék kulcs mentve: %@, és törlődött erről a számítógépről. A fájlt offline tartsd, a jelszavát máshol."
         }
       }
@@ -4593,6 +4753,10 @@
       "variants": {
         "windows": {
           "en": "The backup’s preferences are not applied by themselves. Tick the ones to use on this PC.",
+          "hu": "A mentés beállításai maguktól nem lépnek életbe. Jelöld be azokat, amelyeket ezen a számítógépen használnál."
+        },
+        "linux": {
+          "en": "The backup’s preferences are not applied by themselves. Tick the ones to use on this computer.",
           "hu": "A mentés beállításai maguktól nem lépnek életbe. Jelöld be azokat, amelyeket ezen a számítógépen használnál."
         }
       }
@@ -5190,6 +5354,10 @@
         "windows": {
           "en": "The vault key is kept in the Windows Credential Manager, so MacVPN opens without asking. Turn it off to type the master password at every launch.",
           "hu": "A széf kulcsa a Windows Hitelesítőadat-kezelőjében marad, így a MacVPN kérdés nélkül megnyílik. Kapcsold ki, ha minden indításkor a mesterjelszót szeretnéd megadni."
+        },
+        "linux": {
+          "en": "The vault key is kept in your login keyring, so LinVPN opens without asking. Turn it off to type the master password at every launch.",
+          "hu": "A széf kulcsa a bejelentkezési kulcstartódban marad, így a LinVPN kérdés nélkül megnyílik. Kapcsold ki, ha minden indításkor a mesterjelszót szeretnéd megadni."
         }
       }
     },
@@ -5215,6 +5383,10 @@
       "variants": {
         "windows": {
           "en": "There is no backup admin key on this PC.",
+          "hu": "Ezen a számítógépen nincs tartalék adminkulcs."
+        },
+        "linux": {
+          "en": "There is no backup admin key on this computer.",
           "hu": "Ezen a számítógépen nincs tartalék adminkulcs."
         }
       }
@@ -5262,6 +5434,10 @@
         "windows": {
           "en": "This VPN was removed from Windows",
           "hu": "Ezt a VPN-t eltávolították a Windowsból"
+        },
+        "linux": {
+          "en": "This VPN was removed from NetworkManager",
+          "hu": "Ezt a VPN-t eltávolították a NetworkManagerből"
         }
       }
     },
@@ -5296,6 +5472,10 @@
         "windows": {
           "en": "This connection can only be connected and disconnected here. Its settings are in Settings or in its own app.",
           "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Gépházban vagy a saját alkalmazásában vannak."
+        },
+        "linux": {
+          "en": "This connection can only be connected and disconnected here. Its settings are in Settings → Network or in its own app.",
+          "hu": "Ezt a kapcsolatot csak indítani és bontani lehet innen. A beállításai a Beállítások → Hálózat alatt vagy a saját alkalmazásában vannak."
         }
       }
     },
@@ -5333,6 +5513,10 @@
         "windows": {
           "en": "This file is opened from its own panel in MacVPN, not from File Explorer.",
           "hu": "Ezt a fájlt a MacVPN saját paneljén kell megnyitni, nem a Fájlkezelőből."
+        },
+        "linux": {
+          "en": "This file is opened from its own panel in LinVPN, not from Files.",
+          "hu": "Ezt a fájlt a LinVPN saját paneljén kell megnyitni, nem a Fájlok alkalmazásból."
         }
       }
     },
@@ -5368,7 +5552,8 @@
       "hu": "Ehhez a kiadáshoz nincs telepítő erre a számítógépre.",
       "scope": "core",
       "only": [
-        "windows"
+        "windows",
+        "linux"
       ]
     },
     "This team catalog no longer exists.": {
@@ -5393,6 +5578,10 @@
       "variants": {
         "windows": {
           "en": "Tick it only if you use paired apps on this PC. They pair again after a restore.",
+          "hu": "Csak akkor jelöld be, ha ezen a számítógépen párosított appokat használsz. Visszaállítás után újra párosodnak."
+        },
+        "linux": {
+          "en": "Tick it only if you use paired apps on this computer. They pair again after a restore.",
           "hu": "Csak akkor jelöld be, ha ezen a számítógépen párosított appokat használsz. Visszaállítás után újra párosodnak."
         }
       }
@@ -5455,6 +5644,13 @@
     "Turn on automatic unlock": {
       "hu": "Az automatikus feloldás bekapcsolása",
       "scope": "app"
+    },
+    "Turned off by another app.": {
+      "hu": "Egy másik alkalmazás kikapcsolta.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
     },
     "Turned off in Settings → Apps → Startup.": {
       "hu": "Kikapcsolva: Gépház → Alkalmazások → Indítás.",
@@ -5946,6 +6142,10 @@
         "windows": {
           "en": "Now uninstall MacVPN in Settings → Apps → Installed apps (opened for you): the MacVPN Service and the program files go with it.",
           "hu": "Most távolítsd el a MacVPN-t a Gépház → Alkalmazások → Telepített alkalmazások alatt (megnyitva): a MacVPN szolgáltatás és a programfájlok vele mennek."
+        },
+        "linux": {
+          "en": "Now remove the linvpn package with your package manager, as an administrator (apt remove linvpn). NetworkManager and its VPN plugins were kept.",
+          "hu": "Most távolítsd el a linvpn csomagot a csomagkezelővel, rendszergazdaként (apt remove linvpn). A NetworkManager és a VPN-bővítményei megmaradtak."
         }
       }
     },
@@ -5967,6 +6167,10 @@
         "windows": {
           "en": "If this connection was added to Windows, remove it yourself in Settings → Network & internet → VPN.",
           "hu": "Ha ez a kapcsolat bekerült a Windows VPN-kapcsolatai közé, a Gépház → Hálózat és internet → VPN alatt neked kell eltávolítanod."
+        },
+        "linux": {
+          "en": "If this connection was added to NetworkManager, remove it yourself in Settings → Network → VPN.",
+          "hu": "Ha ez a kapcsolat bekerült a NetworkManager kapcsolatai közé, a Beállítások → Hálózat → VPN alatt neked kell eltávolítanod."
         }
       }
     },
@@ -6416,6 +6620,10 @@
         "windows": {
           "en": "AppData\\Local\\MacVPN with the vault, and in Credential Manager the vault key (local.winvpn.vault)",
           "hu": "AppData\\Local\\MacVPN a széffel, és a Hitelesítőadat-kezelőben a széf kulcsa (local.winvpn.vault)"
+        },
+        "linux": {
+          "en": "~/.local/share/LinVPN with the vault, and in the login keyring the vault key",
+          "hu": "~/.local/share/LinVPN a széffel, és a bejelentkezési kulcstartóban a széf kulcsa"
         }
       }
     },
@@ -6714,7 +6922,8 @@
       "hu": "A config nem UTF-8 szöveg",
       "scope": "core",
       "only": [
-        "windows"
+        "windows",
+        "linux"
       ]
     },
     "Windows always checks the SSTP server's certificate. Choose System CA or Custom CA file.": {
@@ -6778,7 +6987,13 @@
       "scope": "app",
       "only": [
         "windows"
-      ]
+      ],
+      "variants": {
+        "linux": {
+          "en": "Saving stores this connection's settings in LinVPN at once; there is nothing to approve. LinVPN creates its NetworkManager connection only when connecting, and passes the password then.",
+          "hu": "Mentéskor a LinVPN azonnal eltárolja a kapcsolat beállításait, nincs mit jóváhagyni. A NetworkManager-kapcsolatot csak csatlakozáskor hozza létre, és a jelszót is akkor adja át."
+        }
+      }
     },
     "Subject: %@": {
       "hu": "Tulajdonos: %@",
@@ -6823,6 +7038,601 @@
     "Now: %@ down, %@ up": {
       "hu": "Most: le %@, fel %@",
       "scope": "app"
+    },
+    "Connecting comes in a later version of LinVPN.": {
+      "hu": "A kapcsolódás a LinVPN egy későbbi verziójában érkezik.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Another LinVPN (or a LinVPN test) is already registered with NetworkManager for this user. Quit it and try again.": {
+      "hu": "Ehhez a felhasználóhoz már egy másik LinVPN (vagy LinVPN-teszt) regisztrált a NetworkManagernél. Lépj ki belőle, és próbáld újra.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Another user's NetworkManager connection uses this connection's ID. Ask them to remove it, or remove this connection and add it again.": {
+      "hu": "Egy másik felhasználó NetworkManager-kapcsolata ennek a kapcsolatnak az azonosítóját használja. Kérd meg, hogy távolítsa el, vagy töröld ezt a kapcsolatot, és add hozzá újra.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Connecting comes in a later version of LinVPN: its engines arrive with NetworkManager support. You can already create, import, edit, export and back up connections.": {
+      "hu": "A kapcsolódás a LinVPN egy későbbi verziójában érkezik: a motorjai a NetworkManager-támogatással jönnek. Kapcsolatokat már most is létrehozhatsz, importálhatsz, szerkeszthetsz, exportálhatsz és menthetsz.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "To remove LinVPN, run “apt remove linvpn” as an administrator.": {
+      "hu": "A LinVPN eltávolításához futtasd rendszergazdaként: „apt remove linvpn”.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Open": {
+      "hu": "Megnyitás",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux": {
+      "hu": "Linuxon nem támogatott",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN was updated to %@.": {
+      "hu": "A LinVPN frissült erre a verzióra: %@.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The update was not installed: apt reported an error (code %lld).": {
+      "hu": "A frissítés nem települt: az apt hibát jelzett (kód: %lld).",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The update was not installed: its signature or package did not pass the checks (code %lld).": {
+      "hu": "A frissítés nem települt: az aláírása vagy a csomagja nem ment át az ellenőrzésen (kód: %lld).",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: Table = %@ (NetworkManager uses its own routing table)": {
+      "hu": "Linuxon nem támogatott: Table = %@ (a NetworkManager a saját útválasztási táblázatát használja)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Ignored on Linux: DNS = %@ (the connection has no Address of that IP version)": {
+      "hu": "Linuxon figyelmen kívül hagyva: DNS = %@ (a kapcsolatnak nincs ilyen IP-verziójú Address értéke)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux: NetworkManager's WireGuard (interface %@)": {
+      "hu": "Linuxon: a NetworkManager WireGuard-ja (interfész: %@)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Ignored by NetworkManager on Linux": {
+      "hu": "Linuxon a NetworkManager figyelmen kívül hagyja",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: %@ (NetworkManager cannot check the server this way; use a CA)": {
+      "hu": "Linuxon nem támogatott: %@ (a NetworkManager így nem tudja ellenőrizni a szervert; használj CA-t)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: %@ (NetworkManager cannot pass this server check)": {
+      "hu": "Linuxon nem támogatott: %@ (a NetworkManager nem tudja átadni ezt a szerverellenőrzést)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: a route outside the tunnel (%@)": {
+      "hu": "Linuxon nem támogatott: alagúton kívüli útvonal (%@)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: a <connection> block with settings other than remote, proto, port and nobind": {
+      "hu": "Linuxon nem támogatott: <connection> blokk a remote, proto, port és nobind beállításokon kívül mással is",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: pull-filter %@": {
+      "hu": "Linuxon nem támogatott: pull-filter %@",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: compress %@": {
+      "hu": "Linuxon nem támogatott: compress %@",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Ignored by NetworkManager on Linux: %@": {
+      "hu": "Linuxon a NetworkManager figyelmen kívül hagyja: %@",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "OpenVPN 2.7 or later is needed to follow the server's redirect-gateway; this connection uses a split tunnel unless set to Always.": {
+      "hu": "A szerver redirect-gateway beállításának követéséhez OpenVPN 2.7 vagy újabb kell; ez a kapcsolat osztott alagutat használ, hacsak nincs „Mindig” értékre állítva.",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux: NetworkManager with LinVPN's OpenVPN service · the server decides about all traffic": {
+      "hu": "Linuxon: NetworkManager a LinVPN OpenVPN-szolgáltatásával · a teljes forgalomról a szerver dönt",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux: NetworkManager with LinVPN's OpenVPN service · all traffic over the VPN": {
+      "hu": "Linuxon: NetworkManager a LinVPN OpenVPN-szolgáltatásával · minden forgalom a VPN-en át",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux: NetworkManager with LinVPN's OpenVPN service · only the VPN's networks": {
+      "hu": "Linuxon: NetworkManager a LinVPN OpenVPN-szolgáltatásával · csak a VPN hálózatai",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux: NetworkManager L2TP/IPsec (MS-CHAPv2)": {
+      "hu": "Linuxon: NetworkManager L2TP/IPsec (MS-CHAPv2)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux: NetworkManager vpnc (Cisco IPsec)": {
+      "hu": "Linuxon: NetworkManager vpnc (Cisco IPsec)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: %@": {
+      "hu": "Linuxon nem támogatott: %@",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux by the installed network-manager-strongswan: %@ (a split tunnel needs a newer version)": {
+      "hu": "A telepített network-manager-strongswan Linuxon nem támogatja: %@ (az osztott alagúthoz újabb verzió kell)",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux the server address is required: set remote_addrs to the server's name or address.": {
+      "hu": "Linuxon kötelező a szerver címe: a remote_addrs értéke a szerver neve vagy címe legyen.",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: more than one remote address": {
+      "hu": "Linuxon nem támogatott: egynél több távoli cím",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Not supported on Linux: more than one authentication round": {
+      "hu": "Linuxon nem támogatott: egynél több hitelesítési kör",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN's strongSwan credential folder is not available": {
+      "hu": "A LinVPN strongSwan-hitelesítőadat-mappája nem érhető el",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux a client certificate is needed: import it with Import Client Certificate…, or set certs to its file in LinVPN's strongSwan folder (x509).": {
+      "hu": "Linuxon kliens-tanúsítvány kell: importáld a Klienstanúsítvány importálása… gombbal, vagy a certs értéke a fájlja legyen a LinVPN strongSwan-mappájában (x509).",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "On Linux strongSwan's NetworkManager plugin cannot open a PKCS#12 file: import the client certificate and its private key as PEM files.": {
+      "hu": "Linuxon a strongSwan NetworkManager-bővítménye nem tud PKCS#12 fájlt megnyitni: a klienstanúsítványt és a privát kulcsát PEM-fájlokként importáld.",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "No CA certificate is named and LinVPN's strongSwan folder (x509ca) does not hold exactly one: the system's CA certificates check the server.": {
+      "hu": "Nincs megnevezett CA-tanúsítvány, és a LinVPN strongSwan-mappájában (x509ca) nem pontosan egy van: a szervert a rendszer CA-tanúsítványai ellenőrzik.",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "Without verification the server's certificate is not checked.": {
+      "hu": "Ellenőrzés nélkül a LinVPN nem vizsgálja a szerver tanúsítványát.",
+      "scope": "core",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager": {
+      "hu": "NetworkManager",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager L2TP plugin": {
+      "hu": "NetworkManager L2TP-bővítmény",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager strongSwan plugin": {
+      "hu": "NetworkManager strongSwan-bővítmény",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager vpnc plugin": {
+      "hu": "NetworkManager vpnc-bővítmény",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager SSTP plugin": {
+      "hu": "NetworkManager SSTP-bővítmény",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN OpenVPN service": {
+      "hu": "LinVPN OpenVPN-szolgáltatás",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "WireGuard (NetworkManager)": {
+      "hu": "WireGuard (NetworkManager)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN may not change this computer's network settings without asking for a password. Log in at the desktop and try again.": {
+      "hu": "A LinVPN jelszókérés nélkül nem módosíthatja a számítógép hálózati beállításait. Jelentkezz be az asztali munkamenetbe, és próbáld újra.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager is not running.": {
+      "hu": "A NetworkManager nem fut.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Installed": {
+      "hu": "Telepítve",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Built into NetworkManager": {
+      "hu": "A NetworkManager része",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager 1.36 or later is needed.": {
+      "hu": "NetworkManager 1.36 vagy újabb szükséges.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "OpenVPN %@ · follows the server's redirect-gateway": {
+      "hu": "OpenVPN %@ · követi a szerver redirect-gateway beállítását",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "OpenVPN %@ · split tunnel unless set to Always (needs 2.7 to follow the server)": {
+      "hu": "OpenVPN %@ · osztott alagút, hacsak nem „Mindig” a beállítás (a szerver követéséhez 2.7 kell)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN's OpenVPN service is missing: reinstall LinVPN.": {
+      "hu": "A LinVPN OpenVPN-szolgáltatása hiányzik: telepítse újra a LinVPN-t.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "EAP needs %@": {
+      "hu": "Az EAP-hoz szükséges: %@",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "%@ is not a package LinVPN installs.": {
+      "hu": "A(z) %@ nem olyan csomag, amelyet a LinVPN telepít.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "%@ was not found in the system's package sources.": {
+      "hu": "A(z) %@ nem található a rendszer csomagforrásaiban.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The installation was not authorized.": {
+      "hu": "A telepítés nem kapott engedélyt.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The installation was cancelled.": {
+      "hu": "A telepítés megszakadt.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "PackageKit did not finish the installation within %@ minutes. Try again later, or install the packages with the system's software tool.": {
+      "hu": "A PackageKit %@ perc alatt nem fejezte be a telepítést. Próbáld újra később, vagy telepítsd a csomagokat a rendszer szoftverkezelőjével.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The installation failed: %@": {
+      "hu": "A telepítés sikertelen: %@",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "PackageKit is not available: %@": {
+      "hu": "A PackageKit nem érhető el: %@",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Installing %@…": {
+      "hu": "%@ telepítése…",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Some plugin lines were withheld: another VPN was active at the same time.": {
+      "hu": "A bővítmény néhány sora nem jelenik meg: ugyanekkor egy másik VPN is aktív volt.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The system log is not available (linvpn-logd is not installed).": {
+      "hu": "A rendszernapló nem érhető el (a linvpn-logd nincs telepítve).",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Connecting with NetworkManager (%@)": {
+      "hu": "Kapcsolódás a NetworkManagerrel (%@)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Reconnecting (NetworkManager)": {
+      "hu": "Újrakapcsolódás (NetworkManager)",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN needs the user's runtime directory ($XDG_RUNTIME_DIR) to connect.": {
+      "hu": "A kapcsolódáshoz a LinVPN-nek szüksége van a felhasználó futásidejű könyvtárára ($XDG_RUNTIME_DIR).",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "IKEv2 on Linux needs a pre-shared key of at least 20 characters: strongSwan's NetworkManager plugin refuses a shorter one.": {
+      "hu": "Linuxon az IKEv2-höz legalább 20 karakteres előre megosztott kulcs (PSK) kell: a strongSwan NetworkManager-bővítménye a rövidebbet elutasítja.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN could not write the connection's certificate files: %@": {
+      "hu": "A LinVPN nem tudta kiírni a kapcsolat tanúsítványfájljait: %@",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "No code is being asked for.": {
+      "hu": "Jelenleg nincs kódkérés.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "This kind of connection is not started this way on Linux.": {
+      "hu": "Linuxon ez a kapcsolattípus nem így indul.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "NetworkManager has no VPN with this ID that this user may use.": {
+      "hu": "A NetworkManagerben nincs ilyen azonosítójú VPN, amelyet ez a felhasználó használhat.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "This connection's settings are missing on this computer. Open it and save it again.": {
+      "hu": "A kapcsolat beállításai hiányoznak erről a számítógépről. Nyisd meg, és mentsd újra.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN could not save the connection's settings: %@": {
+      "hu": "A LinVPN nem tudta menteni a kapcsolat beállításait: %@",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Server decides": {
+      "hu": "A szerver dönt",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "Always": {
+      "hu": "Mindig",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "Never (split tunnel)": {
+      "hu": "Soha (osztott alagút)",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "The server's redirect-gateway decides.": {
+      "hu": "A szerver redirect-gateway beállítása dönt.",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "All traffic goes through the VPN (redirect-gateway def1).": {
+      "hu": "Minden forgalom a VPN-en keresztül megy (redirect-gateway def1).",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "Only the VPN's own networks go through it; a redirect-gateway from the server is ignored.": {
+      "hu": "Csak a VPN saját hálózatai mennek rajta keresztül; a szervertől érkező redirect-gateway figyelmen kívül marad.",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "This system's OpenVPN is older than 2.7: “Server decides” keeps a split tunnel unless the profile says otherwise.": {
+      "hu": "Ennek a rendszernek az OpenVPN-je 2.7-nél régebbi: „A szerver dönt” osztott alagutat tart, hacsak a profil mást nem mond.",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "Reading a PKCS#12 file needs the openssl package: install openssl, then try again.": {
+      "hu": "A PKCS#12 fájl olvasásához az openssl csomag kell: telepítsd az openssl-t, majd próbáld újra.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "The PKCS#12 password is wrong.": {
+      "hu": "A PKCS#12 fájl jelszava hibás.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "openssl could not read the PKCS#12 file.": {
+      "hu": "Az openssl nem tudta beolvasni a PKCS#12 fájlt.",
+      "scope": "platform",
+      "only": [
+        "linux"
+      ]
+    },
+    "Password of the PKCS#12 file": {
+      "hu": "A PKCS#12 fájl jelszava",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
+    },
+    "LinVPN converts the file into a certificate and a key. The key keeps this password: it is filled in as the Private key password, and saved when you save the connection.": {
+      "hu": "A LinVPN a fájlt tanúsítvánnyá és kulccsá alakítja. A kulcs megtartja ezt a jelszót: a Privát kulcs jelszava mezőbe kerül, és a kapcsolat mentésekor tárolódik.",
+      "scope": "app",
+      "only": [
+        "linux"
+      ]
     }
   },
   "version": 1

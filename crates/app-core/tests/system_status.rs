@@ -538,3 +538,65 @@ fn the_windows_vpn_client_row_is_shown_with_or_without_the_service() {
     assert_eq!(json["ras"]["ok"], false);
     assert_eq!(json["ras"]["detail"], "The Windows service SstpSvc is disabled.");
 }
+
+/// LinVPN (L-b Task 12): the NetworkManager row and one row per kind replace the Homebrew, tools and root rows; a
+/// row with "install" carries its packages and enables the button; absent from the JSON on macOS and Windows.
+#[test]
+fn networkmanager_rows_replace_the_rows_and_stay_out_of_the_json_elsewhere() {
+    use macvpn_platform_api::setup::{EngineRow, NmReport};
+    let facts = SetupFacts::default();
+    let brew = BrewRun { output: "Installing…\n".into(), running: false, finished: 0 };
+    let plain = SetupView::build(Some(&facts), &brew, &SetupOps::default(), "Notice.".into());
+    assert!(!serde_json::to_string(&plain).unwrap().contains("\"nm\""), "absent when None");
+    assert_eq!(plain.clone().with_nm(None), plain, "no report: unchanged");
+    let row = |ok: bool, detail: &str, action: Option<&'static str>| EngineRow {
+        ok,
+        usable: ok,
+        detail: detail.into(),
+        action,
+    };
+    let report = NmReport {
+        networkmanager: row(true, "NetworkManager 1.54.3", None),
+        kinds: vec![
+            (VPNKind::Wireguard, row(true, "Built in", None), String::new()),
+            (VPNKind::Sstp, row(false, "Not installed", Some("install")), "network-manager-sstp".into()),
+        ],
+        openvpn_push_visible: false,
+    };
+    let view = plain.clone().with_nm(Some(&report));
+    assert!(view.homebrew.is_none() && view.tools.is_none() && view.root.is_none() && view.upgrade_notice.is_none());
+    assert_eq!(view.tools_action, None);
+    assert_eq!(view.brew_output, "Installing…\n");
+    assert!(view.can_install_tools);
+    let nm = view.nm.as_ref().unwrap();
+    assert_eq!(nm.networkmanager, CheckRow { ok: true, detail: "NetworkManager 1.54.3".into() });
+    assert_eq!(nm.kinds.len(), 2);
+    assert_eq!(nm.kinds[1].kind, "sstp");
+    assert_eq!(nm.kinds[1].row, CheckRow { ok: false, detail: "Not installed".into() });
+    assert_eq!(nm.kinds[1].packages, "network-manager-sstp");
+    assert_eq!(nm.kinds[1].action, Some("install"));
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["nm"]["networkmanager"]["ok"], true);
+    assert_eq!(json["nm"]["kinds"][0]["kind"], "wireguard");
+    assert!(json["nm"]["kinds"][0].get("action").is_none(), "no action: absent");
+    assert_eq!(json["nm"]["kinds"][1]["action"], "install");
+    assert_eq!(json["nm"]["kinds"][1]["packages"], "network-manager-sstp");
+    assert!(json["nm"]["kinds"][0].get("pushVisible").is_none(), "only OpenVPN's row has it");
+    // OpenVPN's row says whether NetworkManager sees the server's redirect-gateway (absent when not).
+    let openvpn = NmReport {
+        kinds: vec![(VPNKind::Openvpn, row(true, "OpenVPN 2.7.0", None), "network-manager-openvpn".into())],
+        openvpn_push_visible: true,
+        ..report.clone()
+    };
+    let json = serde_json::to_value(plain.clone().with_nm(Some(&openvpn))).unwrap();
+    assert_eq!(json["nm"]["kinds"][0]["pushVisible"], true);
+    let old = NmReport { openvpn_push_visible: false, ..openvpn.clone() };
+    let json = serde_json::to_value(plain.clone().with_nm(Some(&old))).unwrap();
+    assert!(json["nm"]["kinds"][0].get("pushVisible").is_none());
+    // Nothing to install: no button; while an install runs the button is disabled.
+    let ready = NmReport { kinds: vec![report.kinds[0].clone()], ..report.clone() };
+    assert!(!plain.clone().with_nm(Some(&ready)).can_install_tools);
+    let running = BrewRun { running: true, ..brew };
+    let view = SetupView::build(Some(&facts), &running, &SetupOps::default(), String::new()).with_nm(Some(&report));
+    assert!(!view.can_install_tools && view.brew_running);
+}

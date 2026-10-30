@@ -24,6 +24,7 @@
     onnotice,
     onselect = () => {},
     traffic = null,
+    openvpnPushVisible = true,
   }: {
     row: Row;
     /// The live traffic while connected (none: not known).
@@ -33,6 +34,8 @@
     onnotice: (n: Notice) => void;
     /// Selects another connection (the personal copy of a team catalog connection).
     onselect?: (id: string) => void;
+    /// LinVPN: NetworkManager sees the server's redirect-gateway (the OpenVPN editor's routing help text).
+    openvpnPushVisible?: boolean;
   } = $props();
 
   const id = untrack(() => row.id);
@@ -157,7 +160,7 @@
   </div>
   <div class="panes">
     <div class="pane" class:hidden={tab !== 'settings'} aria-hidden={tab !== 'settings'}>
-      <EditorHost {id} {kind} active={tab === 'settings'} epoch={manage.editorsEpoch} />
+      <EditorHost {id} {kind} active={tab === 'settings'} epoch={manage.editorsEpoch} {openvpnPushVisible} />
     </div>
     <div class="pane" class:hidden={tab !== 'log'} aria-hidden={tab !== 'log'}>
       <LogPanel {id} name={row.name} {filters} {onnotice} />

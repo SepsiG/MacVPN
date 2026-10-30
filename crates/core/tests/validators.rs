@@ -331,7 +331,11 @@ X
 fn openvpn_accepts_realistic_profiles() {
     hu();
     assert_eq!(ovpn_all(ACCESS_SERVER), []);
-    assert_eq!(ovpn_all(PROVIDER), []);
+    // `ping-timer-rem` is ignored by NetworkManager on Linux (RISKY there: `openvpn_tiers.rs`).
+    let linux = macvpn_core::TargetOs::host() == macvpn_core::TargetOs::Linux;
+    let ack: std::collections::HashSet<String> =
+        if linux { ["ping-timer-rem".to_string()].into() } else { Default::default() };
+    assert_eq!(OpenVPNValidator.validate_full(PROVIDER, &ack).all_issues(), []);
 }
 
 #[test]

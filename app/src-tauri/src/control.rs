@@ -786,6 +786,7 @@ mod tests {
             outdated_packages: Vec::new(),
             ras: None,
             ras_unsupported_kinds: Vec::new(),
+            nm: None,
         };
         let managed = |kind| ConnectionItem::Managed(Connection::new("C", kind));
         let openvpn = managed(VPNKind::Openvpn);
@@ -969,10 +970,17 @@ mod tests {
         let root = PathBuf::from(format!("/tmp/mvfk-{}", &Uuid::new_v4().simple().to_string()[..8]));
         let store = paired(&[A, B]);
         let control = ControlApp::new(&root, store.clone(), root.join("vault"));
+        // Linux binds in the runtime directory, which the test's sandbox platform does not have
+        // (`MACVPN_SANDBOX_HOME` unset): the sandbox's transport over the test's own directory instead.
+        #[cfg(target_os = "linux")]
+        let transport: Arc<dyn macvpn_platform_api::ControlTransport> =
+            Arc::new(macvpn_platform_linux::LinTransport::sandbox(root.join("run")));
+        #[cfg(not(target_os = "linux"))]
+        let transport = crate::platform::get().control_transport();
         let server = ControlServer::start(
             ControlOptions::with_registry(control.control_dir().to_path_buf(), store.clone()),
             Arc::new(IdleHost),
-            crate::platform::get().control_transport(),
+            transport,
         )
         .unwrap();
         control.set_server_for_test(server);
@@ -1108,6 +1116,7 @@ mod tests {
             outdated_packages: Vec::new(),
             ras: None,
             ras_unsupported_kinds: Vec::new(),
+            nm: None,
         }
     }
 

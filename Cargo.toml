@@ -1,9 +1,9 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/platform-api", "crates/platform-mac", "crates/platform-win", "crates/winsys", "crates/helper", "crates/app-core", "app/src-tauri", "examples/macvpn-control-client"]
+members = ["crates/core", "crates/platform-api", "crates/platform-mac", "crates/platform-win", "crates/winsys", "crates/unixsys", "crates/platform-linux", "crates/helper", "crates/app-core", "app/src-tauri", "examples/macvpn-control-client"]
 
 [workspace.package]
-version = "2.0.7"
+version = "2.1.0"
 edition = "2024"
 license = "MIT"
 publish = false

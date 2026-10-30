@@ -1,0 +1,30 @@
+{
+  "productName": "LinVPN",
+  "mainBinaryName": "linvpn",
+  "identifier": "local.linvpn",
+  "app": {
+    "windows": [
+      {
+        "label": "menu",
+        "create": false,
+        "title": "LinVPN",
+        "url": "index.html",
+        "width": 330,
+        "height": 360,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "decorations": false,
+        "visible": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visibleOnAllWorkspaces": true,
+        "acceptFirstMouse": true,
+        "shadow": true,
+        "focus": true,
+        "transparent": true
+      }
+    ]
+  },
+  "bundle": { "active": false, "copyright": "LinVPN" }
+}

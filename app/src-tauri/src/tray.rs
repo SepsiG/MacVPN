@@ -1,4 +1,6 @@
-//! The menu bar (macOS) or notification-area (Windows) icon and the popover window anchored to it.
+//! The menu bar (macOS) or notification-area (Windows) icon and the popover window anchored to it; on Linux the
+//! platform's own tray icon (a StatusNotifierItem) and the popover as the card panel's overlay
+//! ([`platform::menu_is_overlay`]).
 //!
 //! The icons are template images (black + alpha, the system tints them), rendered from the same SF Symbols as the
 //! Swift app's `menuBarSymbol` by `scripts/make-tray-icons.swift`; where the system has no template images
@@ -183,8 +185,12 @@ pub fn resize_menu(window: &impl MenuWindow, height: f64, placement: Placement) 
     Ok(())
 }
 
-/// [`resize_menu`] with the placement [`show_menu`] chose last.
+/// [`resize_menu`] with the placement [`show_menu`] chose last. The overlay (Linux) keeps its size (the work area):
+/// the page reports the card instead ([`set_menu_card`]).
 pub fn resize_shown_menu(window: &impl MenuWindow, height: f64) -> Result<(), String> {
+    if platform::menu_is_overlay() {
+        return Ok(());
+    }
     resize_menu(window, height, menu_placement())
 }
 
@@ -240,13 +246,22 @@ pub fn create_menu_window(app: &AppHandle) -> tauri::Result<()> {
     // Borderless (`decorations: false`): rounded like a system popover, through the public AppKit API (no
     // private API, no transparent webview).
     shape_menu(&window);
+    // Linux: the card panel's overlay.
+    platform::prepare_menu_window(&window);
     Ok(())
 }
 
 pub fn create(app: &AppHandle) -> tauri::Result<()> {
+    let name = platform::get().product().name;
+    // The platform's own tray icon (Linux): Tauri's is not built.
+    if let Some(icon) = image(TrayIcon::Idle)
+        && platform::create_own_tray(app, icon.rgba(), icon.width(), icon.height(), name)
+    {
+        return Ok(());
+    }
     let mut builder = TrayIconBuilder::with_id(TRAY_ID)
         .icon_as_template(is_template())
-        .tooltip(platform::get().product().name)
+        .tooltip(name)
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| handle_event(tray.app_handle(), event));
     if let Some(icon) = image(TrayIcon::Idle) {
@@ -256,18 +271,22 @@ pub fn create(app: &AppHandle) -> tauri::Result<()> {
     Ok(())
 }
 
-/// The icon shown last ([`set_icon`]); [`redraw_icon`] draws it again. Held while the icon is set, so a redraw never
-/// puts back an older icon.
-static SHOWN_ICON: Mutex<TrayIcon> = Mutex::new(TrayIcon::Idle);
+/// The icon shown last and its tooltip ([`set_icon`]; `None`: the product name); [`redraw_icon`] draws it again.
+/// Held while the icon is set, so a redraw never puts back an older icon.
+static SHOWN_ICON: Mutex<(TrayIcon, Option<String>)> = Mutex::new((TrayIcon::Idle, None));
 
 /// The icon and its tooltip (the state in the current language: [`TrayIcon::tooltip`]; the product name alone when
 /// idle or failed). The publisher calls it again when either changes (a language switch changes the tooltip only).
 pub fn set_icon(app: &AppHandle, icon: TrayIcon, tooltip: Option<&str>) {
     let mut shown = SHOWN_ICON.lock().unwrap_or_else(PoisonError::into_inner);
-    *shown = icon;
+    *shown = (icon, tooltip.map(str::to_string));
+    let tip = tooltip.unwrap_or(platform::get().product().name);
+    if set_own_icon(icon, tip) {
+        return;
+    }
     apply_icon(app, icon);
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
-        let _ = tray.set_tooltip(Some(tooltip.unwrap_or(platform::get().product().name)));
+        let _ = tray.set_tooltip(Some(tip));
     }
 }
 
@@ -275,7 +294,16 @@ pub fn set_icon(app: &AppHandle, icon: TrayIcon, tooltip: Option<&str>) {
 /// `AppLifecycle::observe_appearance`).
 pub fn redraw_icon(app: &AppHandle) {
     let shown = SHOWN_ICON.lock().unwrap_or_else(PoisonError::into_inner);
-    apply_icon(app, *shown);
+    let (icon, tooltip) = &*shown;
+    if set_own_icon(*icon, tooltip.as_deref().unwrap_or(platform::get().product().name)) {
+        return;
+    }
+    apply_icon(app, *icon);
+}
+
+/// The platform's own tray icon (Linux), when there is one.
+fn set_own_icon(icon: TrayIcon, tooltip: &str) -> bool {
+    image(icon).is_some_and(|img| platform::set_own_tray_icon(img.rgba(), img.width(), img.height(), tooltip))
 }
 
 fn apply_icon(app: &AppHandle, icon: TrayIcon) {
@@ -308,6 +336,12 @@ fn handle_event(app: &AppHandle, event: TrayIconEvent) {
 const BLUR_CLICK_WINDOW: Duration = Duration::from_millis(300);
 
 fn toggle_menu(app: &AppHandle) {
+    toggle_menu_activated(app, None);
+}
+
+/// [`toggle_menu`] from the platform's own tray (Linux: a double or middle click), with the activation token its host
+/// sent for the focus.
+pub(crate) fn toggle_menu_activated(app: &AppHandle, activation_token: Option<String>) {
     let Some(window) = app.get_webview_window(MENU_WINDOW) else { return };
     if window.is_visible().unwrap_or(false) {
         hide_menu(app);
@@ -319,7 +353,7 @@ fn toggle_menu(app: &AppHandle) {
             return;
         }
     }
-    show_menu(app);
+    show_menu_activated(app, activation_token);
 }
 
 /// Where the popover goes (physical pixels): centred on the icon and kept 8 px inside the monitor horizontally;
@@ -357,14 +391,28 @@ pub fn placement(icon_y: f64, monitor: Option<(PhysicalPosition<i32>, PhysicalSi
 /// Shows the popover at the tray icon ([`popover_position`]) and refreshes the state at once (the Swift menu's
 /// `.task { refresh() }`).
 pub fn show_menu(app: &AppHandle) {
+    show_menu_activated(app, None);
+}
+
+/// [`show_menu`] with the activation token of the platform's own tray (Linux), if it sent one. As the overlay
+/// (Linux), the popover is not positioned: it covers the work area and the page draws the card at its top-right.
+pub(crate) fn show_menu_activated(app: &AppHandle, activation_token: Option<String>) {
     let Some(window) = app.get_webview_window(MENU_WINDOW) else { return };
     let state = app.try_state::<Arc<AppState>>();
     let anchor = state.as_ref().and_then(|s| *s.tray_anchor.lock().unwrap_or_else(PoisonError::into_inner));
-    if let (Some((position, size)), Ok(window_size)) = (anchor, window.outer_size()) {
+    if platform::present_menu_overlay(&window, activation_token.as_deref()) {
+        MENU_ABOVE.store(false, Ordering::SeqCst);
+    } else if let (Some((position, size)), Ok(window_size)) = (anchor, window.outer_size()) {
         let monitor = app.monitor_from_point(position.x, position.y).ok().flatten().map(|m| (*m.position(), *m.size()));
         let (x, y) =
             popover_position((position, size), (f64::from(window_size.width), f64::from(window_size.height)), monitor);
         MENU_ABOVE.store(placement(position.y, monitor) == Placement::Above, Ordering::SeqCst);
+        let _ = window.set_position(PhysicalPosition::new(x, y));
+    } else if let (Ok(window_size), Some(area)) = (window.outer_size(), current_work_area(app))
+        && let Some((x, y)) = platform::corner_position(area, (window_size.width, window_size.height))
+    {
+        // No icon position (Linux outside the overlay): the work area's top-right corner.
+        MENU_ABOVE.store(false, Ordering::SeqCst);
         let _ = window.set_position(PhysicalPosition::new(x, y));
     }
     let _ = window.show();
@@ -378,6 +426,27 @@ pub fn show_menu(app: &AppHandle) {
         crate::system::recheck_if_incomplete(state.inner());
         state.publisher.mark();
     }
+}
+
+/// The work area of the monitor under the pointer (or the primary one), physical pixels: (x, y, width, height).
+fn current_work_area(app: &AppHandle) -> Option<(i32, i32, u32, u32)> {
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten())?;
+    let area = monitor.work_area();
+    Some((area.position.x, area.position.y, area.size.width, area.size.height))
+}
+
+/// The card's rectangle as the overlay's page laid it out (CSS pixels: left, top, width, height): only the card
+/// takes clicks (Linux). Nothing where the popover is no overlay.
+pub fn set_menu_card(window: &WebviewWindow, card: (f64, f64, f64, f64)) -> Result<(), String> {
+    if !platform::menu_is_overlay() {
+        return Ok(());
+    }
+    let target = window.clone();
+    window.run_on_main_thread(move || platform::set_menu_card(&target, card)).map_err(|e| e.to_string())
 }
 
 /// The popover lost the focus: it hides (like a menu).
@@ -491,8 +560,14 @@ mod tests {
         }
     }
 
-    /// macOS: the system popovers' radius; Windows 11: the system's rounded corners.
-    const RADIUS: f64 = if cfg!(windows) { 8.0 } else { 12.0 };
+    /// macOS: the system popovers' radius; Windows 11: the system's rounded corners; Linux: square (L-a).
+    const RADIUS: f64 = if cfg!(windows) {
+        8.0
+    } else if cfg!(target_os = "linux") {
+        0.0
+    } else {
+        12.0
+    };
 
     #[test]
     fn the_corner_radius_is_a_popovers() {

@@ -35,6 +35,12 @@ macvpn-platform-mac = { path = "../../crates/platform-mac" }
 [target.'cfg(windows)'.dependencies]
 macvpn-platform-win = { path = "../../crates/platform-win" }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+macvpn-platform-linux = { path = "../../crates/platform-linux" }
+# The popover's GtkWindow (the card panel's overlay: input region, activation token, maximize), the version Tauri
+# brings (no new crate in Cargo.lock).
+gtk = "=0.18.2"
+
 [dev-dependencies]
 serde_json = "1.0.154"
 

@@ -1,6 +1,7 @@
 //! The VPN test lab's client profiles (`scripts/vpn-lab/profiles.sh`) are what MacVPN and WinVPN import: each one
-//! is detected as the right kind, passes the import and the validator of its kind for macOS and for Windows without
-//! an issue or a risky finding, and the SSTP files are in the app's own (canonical) form.
+//! is detected as the right kind, passes the import and the validator of its kind for macOS, Windows and Linux
+//! (LinVPN's `client/linux`) without an issue or a risky finding, and the SSTP files are in the app's own
+//! (canonical) form.
 //!
 //! Runs only when `MVPN_LAB_CLIENT_DIR` names a generated `client` folder (`scripts/test-vpn-lab.sh` generates one
 //! with throwaway values and sets it); without it the test returns at once.
@@ -22,6 +23,7 @@ fn os_of(folder: &str) -> TargetOs {
     match folder {
         "macos" => TargetOs::MacOs,
         "windows" => TargetOs::Windows,
+        "linux" => TargetOs::Linux,
         _ => unreachable!(),
     }
 }
@@ -40,24 +42,26 @@ fn expected(folder: &str) -> Vec<(&'static str, VPNKind)> {
         ("sstp-system-ca.sstp", VPNKind::Sstp),
         ("sstp-no-verification.sstp", VPNKind::Sstp),
     ];
-    if folder == "macos" {
-        v.push(("wireguard-macos.conf", VPNKind::Wireguard));
-    } else {
-        v.push(("wireguard-windows.conf", VPNKind::Wireguard));
-        v.push(("openvpn-tap-l2.ovpn", VPNKind::Openvpn));
+    match folder {
+        "macos" => v.push(("wireguard-macos.conf", VPNKind::Wireguard)),
+        "linux" => v.push(("wireguard-linux.conf", VPNKind::Wireguard)),
+        _ => {
+            v.push(("wireguard-windows.conf", VPNKind::Wireguard));
+            v.push(("openvpn-tap-l2.ovpn", VPNKind::Openvpn));
+        }
     }
     v
 }
 
 #[test]
-fn every_lab_profile_imports_and_validates_on_macos_and_windows() {
+fn every_lab_profile_imports_and_validates_on_macos_windows_and_linux() {
     let Some(dir) = std::env::var_os("MVPN_LAB_CLIENT_DIR") else {
         eprintln!("MVPN_LAB_CLIENT_DIR is not set: nothing to check (scripts/test-vpn-lab.sh sets it)");
         return;
     };
     lang(AppLanguage::En);
     let root = Path::new(&dir);
-    for folder in ["macos", "windows"] {
+    for folder in ["macos", "windows", "linux"] {
         let os = os_of(folder);
         let base = root.join(folder);
         let expected = expected(folder);
@@ -66,7 +70,7 @@ fn every_lab_profile_imports_and_validates_on_macos_and_windows() {
             .filter_map(|e| e.ok())
             .filter(|e| e.path().is_file())
             .map(|e| e.file_name().to_string_lossy().into_owned())
-            .filter(|n| !n.ends_with(".txt") && !n.ends_with(".pem") && !n.ends_with(".cer") && !n.ends_with(".p12"))
+            .filter(|n| ![".txt", ".pem", ".cer", ".p12", ".pub"].iter().any(|ext| n.ends_with(ext)))
             .collect();
         let wanted: HashSet<String> = expected.iter().map(|(n, _)| n.to_string()).collect();
         assert_eq!(present, wanted, "{folder}: the profile set");
@@ -120,7 +124,7 @@ fn the_ikev2_profiles_name_their_connection_and_child() {
     let Some(dir) = std::env::var_os("MVPN_LAB_CLIENT_DIR") else {
         return;
     };
-    for folder in ["macos", "windows"] {
+    for folder in ["macos", "windows", "linux"] {
         for (name, conn) in [
             ("ikev2-eap.swanctl.conf", "lab-eap"),
             ("ikev2-psk.swanctl.conf", "lab-psk"),
@@ -144,7 +148,9 @@ fn the_lab_wireguard_profiles_keep_alive_for_dead_tunnel_detection() {
         eprintln!("MVPN_LAB_CLIENT_DIR is not set: nothing to check (scripts/test-vpn-lab.sh sets it)");
         return;
     };
-    for (folder, name) in [("macos", "wireguard-macos.conf"), ("windows", "wireguard-windows.conf")] {
+    for (folder, name) in
+        [("macos", "wireguard-macos.conf"), ("windows", "wireguard-windows.conf"), ("linux", "wireguard-linux.conf")]
+    {
         let path = Path::new(&dir).join(folder).join(name);
         let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
         let keepalive = text

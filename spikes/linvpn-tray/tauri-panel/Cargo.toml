@@ -1,0 +1,17 @@
+[package]
+name = "linvpn-tray-spike"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "LinVPN L0-2 throwaway spike: tray click -> card panel near the top-right corner"
+
+# Standalone: not a member of the repo workspace.
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2.7.3", features = [] }
+
+[dependencies]
+tauri = { version = "2.12.4", features = ["tray-icon", "image-png"] }
+ksni = { version = "0.3.7", features = ["blocking"] }
+gtk = "0.18"

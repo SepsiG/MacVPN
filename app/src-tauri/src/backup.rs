@@ -528,7 +528,13 @@ mod tests {
         assert_eq!(date.len(), 10, "{date}");
         assert!(date.starts_with("2026-"), "{date}");
         let name = default_file_name(crate::platform::get().product().name, &date);
-        let own = if cfg!(windows) { "WinVPN-backup-2026-" } else { "MacVPN-backup-2026-" };
+        let own = if cfg!(windows) {
+            "WinVPN-backup-2026-"
+        } else if cfg!(target_os = "linux") {
+            "LinVPN-backup-2026-"
+        } else {
+            "MacVPN-backup-2026-"
+        };
         assert!(name.starts_with(own) && name.ends_with(".macvpnbackup"), "{name}");
         assert_eq!(
             display_name(std::path::Path::new("/Users/x/Desktop/MacVPN-backup.macvpnbackup")),

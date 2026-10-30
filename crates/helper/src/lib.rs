@@ -1,8 +1,10 @@
 //! The MacVPN helper (the root layer, binary `mvpn`): the shared protocol logic ([`shared`]: the command line,
 //! the framed stdin, masking, the `respond` answer, the status JSON, the validation dispatch and the
 //! management-bridge state machine) and one backend per operating system ([`macos`]: everything that runs today;
-//! [`windows`]: phase 1 refuses). `src/main.rs` picks the backend.
+//! [`windows`]: phase 1 refuses; [`linux`]: only LinVPN's root update step `linvpn-install-update`).
+//! `src/main.rs` picks the backend.
 
+pub mod linux;
 pub mod macos;
 pub mod shared;
 pub mod windows;

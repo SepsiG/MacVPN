@@ -15,6 +15,20 @@
 //                                                   wireguard-nt's prebuilt-binaries licence (wireguard.dll ships in the
 //                                                   MSI; scripts/notices/wireguard-nt-LICENSE.txt, the LICENSE.txt of
 //                                                   the zip pinned in scripts/pins/wireguard-nt.txt)
+//   --os linux                                      THIRD-PARTY-NOTICES.linux.txt instead (LinVPN's .deb installs it as
+//                                                   /usr/share/doc/linvpn/THIRD-PARTY-NOTICES.txt): the app and the
+//                                                   helper crate's binaries (linvpn-install-update, linvpn-logd), the
+//                                                   two Linux targets, OpenSSL's licence too (the vendored OpenSSL 3
+//                                                   under SQLCipher is linked into linvpn), LinVPN's NetworkManager
+//                                                   OpenVPN service (GPL-2.0-or-later, its source in the .deb), no
+//                                                   wireguard-nt
+//
+// Each OS's list leaves out only the crates that just the other OSes' builds bring in (`cargo tree` per target). It is
+// not filtered further by per-target features: `cargo metadata` unifies features across targets, so a list may name a
+// crate that only another OS's features pull in (the Windows list names tracing-attributes, which zbus' tracing brings
+// on Linux). Listing a notice too many is harmless; `cargo tree` alone is no better list (it also shows what proc
+// macros use on the build host, such as swift-rs for Windows), and filtering by it would rewrite the shipped MacVPN and
+// WinVPN files.
 //
 // Needs the crate sources (`cargo fetch --locked`) and app/ui/node_modules (`npm ci`).
 import { execFileSync } from 'node:child_process';
@@ -26,9 +40,10 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const UI = join(ROOT, 'app', 'ui');
 const MACOS_TARGETS = ['aarch64-apple-darwin', 'x86_64-apple-darwin'];
 const WINDOWS_TARGETS = ['x86_64-pc-windows-msvc', 'aarch64-pc-windows-msvc'];
+const LINUX_TARGETS = ['x86_64-unknown-linux-gnu', 'aarch64-unknown-linux-gnu'];
 
 function usage(message) {
-  console.error(`${message} (usage: third-party-notices.mjs [--os macos|windows] [--check])`);
+  console.error(`${message} (usage: third-party-notices.mjs [--os macos|windows|linux] [--check])`);
   process.exit(2);
 }
 let OS = 'macos';
@@ -36,18 +51,22 @@ let CHECK = false;
 for (let args = process.argv.slice(2); args.length > 0; args = args.slice(1)) {
   if (args[0] === '--check') CHECK = true;
   else if (args[0] === '--os') {
-    if (args[1] !== 'macos' && args[1] !== 'windows') usage('--os needs macos or windows');
+    if (!['macos', 'windows', 'linux'].includes(args[1])) usage('--os needs macos, windows or linux');
     OS = args[1];
     args = args.slice(1);
   } else usage(`unknown option: ${args[0]}`);
 }
 const WINDOWS = OS === 'windows';
-const PRODUCT = WINDOWS ? 'WinVPN' : 'MacVPN';
-const OUT_NAME = WINDOWS ? 'THIRD-PARTY-NOTICES.windows.txt' : 'THIRD-PARTY-NOTICES.txt';
+const LINUX = OS === 'linux';
+// SQLCipher's crypto provider is the vendored OpenSSL 3 on Windows and Linux (CommonCrypto on macOS).
+const VENDORED_OPENSSL = WINDOWS || LINUX;
+const PRODUCT = WINDOWS ? 'WinVPN' : LINUX ? 'LinVPN' : 'MacVPN';
+const OUT_NAME = WINDOWS ? 'THIRD-PARTY-NOTICES.windows.txt' : LINUX ? 'THIRD-PARTY-NOTICES.linux.txt' : 'THIRD-PARTY-NOTICES.txt';
 const OUT = join(ROOT, OUT_NAME);
 const ROOT_PACKAGES = ['macvpn-app', 'macvpn-helper'];
-const TARGETS = WINDOWS ? WINDOWS_TARGETS : MACOS_TARGETS;
-const OTHER_TARGETS = WINDOWS ? MACOS_TARGETS : WINDOWS_TARGETS;
+const TARGETS = WINDOWS ? WINDOWS_TARGETS : LINUX ? LINUX_TARGETS : MACOS_TARGETS;
+// macOS and Windows keep their earlier comparison (each against the other), so their files stay as shipped.
+const OTHER_TARGETS = WINDOWS ? MACOS_TARGETS : LINUX ? [...MACOS_TARGETS, ...WINDOWS_TARGETS] : WINDOWS_TARGETS;
 const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-._].*)?$/i;
 const RULE = '='.repeat(100);
 
@@ -82,9 +101,9 @@ function treeCrates(target) {
   return set;
 }
 
-/// The crates that only a Windows build links (`openssl-sys`, which SQLCipher uses on Windows only). `cargo metadata
-/// --filter-platform` unifies features across all targets, so its macOS walk below would list them; they are taken
-/// out by name and version.
+/// The crates that only another OS's build links (`openssl-sys`, which SQLCipher uses on Windows and Linux only).
+/// `cargo metadata --filter-platform` unifies features across all targets, so the walk below would list them; they are
+/// taken out by name and version.
 function otherTargetsOnly() {
   const macos = new Set(TARGETS.flatMap((t) => [...treeCrates(t)]));
   return new Set(OTHER_TARGETS.flatMap((t) => [...treeCrates(t)]).filter((c) => !macos.has(c)));
@@ -109,9 +128,11 @@ function crates() {
     while (queue.length > 0) {
       const node = nodes.get(queue.shift());
       for (const dep of node?.deps ?? []) {
-        // A build dependency is a tool, not linked; except openssl-src on Windows, whose OpenSSL sources it builds
-        // into a static library that ends up in WinVPN.exe.
-        const linked = dep.dep_kinds.some((k) => k.kind === null || (WINDOWS && k.kind === 'build' && dep.name === 'openssl_src'));
+        // A build dependency is a tool, not linked; except openssl-src on Windows and Linux, whose OpenSSL sources it
+        // builds into a static library that ends up in WinVPN.exe and linvpn.
+        const linked = dep.dep_kinds.some(
+          (k) => k.kind === null || (VENDORED_OPENSSL && k.kind === 'build' && dep.name === 'openssl_src'),
+        );
         if (!linked) continue;
         if (seen.has(dep.pkg)) continue;
         seen.add(dep.pkg);
@@ -203,13 +224,13 @@ function sqlcipherNotice(rust) {
   return registryFile(rust, 'libsqlite3-sys', 'sqlcipher/LICENSE', 'SQLCipher');
 }
 
-/// Windows only: SQLCipher's crypto provider there is OpenSSL 3, built from openssl-src and linked statically.
+/// Windows and Linux: SQLCipher's crypto provider there is OpenSSL 3, built from openssl-src and linked statically.
 function opensslNotice(rust) {
   const src = rust.find((c) => c.name === 'openssl-src');
   const version = src?.version.split('+')[1] ?? 'unknown';
   return [
     RULE,
-    `OpenSSL ${version} (vendored through openssl-src, SQLCipher's crypto provider, linked into WinVPN.exe)`,
+    `OpenSSL ${version} (vendored through openssl-src, SQLCipher's crypto provider, linked into ${LINUX ? 'linvpn' : 'WinVPN.exe'})`,
     RULE,
     '',
     registryFile(rust, 'openssl-src', 'openssl/LICENSE.txt', 'OpenSSL'),
@@ -227,6 +248,36 @@ function wireguardNtNotice() {
     RULE,
     '',
     normalize(readFileSync(join(ROOT, 'scripts', 'notices', 'wireguard-nt-LICENSE.txt'), 'utf8')),
+  ];
+}
+
+/// Linux only: LinVPN's NetworkManager OpenVPN service, upstream NetworkManager-openvpn with LinVPN's patch, built by
+/// scripts/build-nm-linvpn-openvpn.sh and shipped in the .deb with its source (GPL-2.0-or-later).
+function nmOpenvpnNotice() {
+  const pin = readFileSync(join(ROOT, 'scripts', 'pins', 'nm-openvpn.sha256'), 'utf8').trim();
+  const tarball = pin.split(/\s+/)[1] ?? '';
+  const version = /^NetworkManager-openvpn-([0-9.]+)\.tar\.xz$/.exec(tarball)?.[1];
+  if (!version) throw new Error('scripts/pins/nm-openvpn.sha256: no NetworkManager-openvpn tarball');
+  return [
+    RULE,
+    `NetworkManager-openvpn ${version} (LinVPN's NetworkManager OpenVPN service, /usr/lib/linvpn/nm-openvpn-service*)`,
+    RULE,
+    '',
+    `LinVPN ships its own build of NetworkManager-openvpn ${version}`,
+    '(https://gitlab.gnome.org/GNOME/NetworkManager-openvpn) with linvpn-nm-openvpn.patch: the programs',
+    '/usr/lib/linvpn/nm-openvpn-service and /usr/lib/linvpn/nm-openvpn-service-openvpn-helper, which NetworkManager',
+    'starts, and the D-Bus policy /usr/share/dbus-1/system.d/nm-linvpn-openvpn-service.conf. They are separate',
+    'programs from LinVPN and are licensed under the GNU General Public License, version 2 or (at your option) any',
+    'later version (GPL-2.0-or-later); so is the patch.',
+    '',
+    'Copyright (C) 2005 - 2010 Tim Niemueller',
+    'Copyright (C) 2005 - 2010 Dan Williams',
+    'Copyright (C) 2005 - 2018 Red Hat, Inc.',
+    '',
+    'The corresponding source is in /usr/share/linvpn/source/: the unmodified upstream tarball',
+    `${tarball}, linvpn-nm-openvpn.patch and a README with the build command. The full text`,
+    'of the GNU General Public License version 2 is in /usr/share/common-licenses/GPL-2.',
+    '',
   ];
 }
 
@@ -251,9 +302,17 @@ function render() {
     'SQLCipher is based on SQLite. The SQLite source code is in the public domain: its authors disclaim copyright',
     'to it (https://sqlite.org/copyright.html).',
     '',
-    ...(WINDOWS ? opensslNotice(rust) : []),
+    ...(VENDORED_OPENSSL ? opensslNotice(rust) : []),
     ...(WINDOWS ? wireguardNtNotice() : []),
-    section(WINDOWS ? 'Rust crates (the WinVPN app and the WinVPN Service)' : 'Rust crates (the MacVPN app and the mvpn helper)', rust),
+    ...(LINUX ? nmOpenvpnNotice() : []),
+    section(
+      WINDOWS
+        ? 'Rust crates (the WinVPN app and the WinVPN Service)'
+        : LINUX
+          ? 'Rust crates (the LinVPN app, its update step and its log reader)'
+          : 'Rust crates (the MacVPN app and the mvpn helper)',
+      rust,
+    ),
     section('JavaScript packages (the app’s web view)', js),
   ].join('\n');
 }
@@ -262,7 +321,7 @@ const text = render();
 if (CHECK) {
   const current = existsSync(OUT) ? readFileSync(OUT, 'utf8') : '';
   if (current !== text) {
-    const option = WINDOWS ? ' --os windows' : '';
+    const option = OS === 'macos' ? '' : ` --os ${OS}`;
     console.error(`${OUT_NAME} is not up to date: run node scripts/third-party-notices.mjs${option}`);
     process.exit(1);
   }

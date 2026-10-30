@@ -1,12 +1,12 @@
 //! `control_socket::bind` sets the process-global umask to 077 for the bind only and restores it. One test
 //! only, in its own binary (process), so no parallel test changes the umask meanwhile.
-#![cfg(target_os = "macos")]
+#![cfg(unix)]
 #![allow(unsafe_code)]
 
 mod common;
 
 use common::short_scratch;
-use macvpn_platform_mac::control_socket::bind;
+use macvpn_unixsys::control_socket::bind;
 
 /// The current umask (set and put back; nothing else in this process runs concurrently).
 fn current_umask() -> libc::mode_t {

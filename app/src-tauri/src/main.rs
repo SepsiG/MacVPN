@@ -28,6 +28,7 @@ mod manage;
 mod navigation;
 mod notifications;
 mod open_files;
+mod openvpn_routing;
 mod pairing;
 mod platform;
 mod prompts;
@@ -175,10 +176,13 @@ fn build_state(
     // The editors' notes on how the platform runs the settings, and its administrator steps (WinVPN 2c; none on
     // macOS).
     connections.set_native_platform(platform.native_support(), platform.admin_steps());
-    // IKEv2 client certificates imported in the app (G4): macOS' root layer 12 stages them; Windows signs with a
-    // computer certificate from its own store.
+    // IKEv2 client certificates imported in the app (G4): macOS' root layer 12 stages them, LinVPN writes them as
+    // runtime files for NetworkManager (PEM only); Windows signs with a computer certificate from its own store.
     connections.set_client_cert_import(platform::imports_client_certificates());
-    // The IKEv2 editor's certificates from the swanctl folder (macOS: Homebrew's; none on Windows).
+    if let Some(converter) = platform::pkcs12_converter() {
+        connections.set_pkcs12_converter(converter);
+    }
+    // The IKEv2 editor's certificates from the swanctl folder (macOS: Homebrew's; LinVPN's own; none on Windows).
     if let Some(folder) = platform::swanctl_folder() {
         connections.set_swanctl_folder(folder);
     }
@@ -354,7 +358,8 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
         LaunchStep::CheckSetup => {
             state.refresh_login_item();
             let complete = system::check(state).is_complete();
-            if !complete {
+            // Not in a process started again after a crash (Linux' supervisor): no window opens by itself.
+            if !complete && platform::restart_reason().is_none() {
                 // As the Swift app: the System Status window opens at launch when something is missing.
                 let _ = commands::open(app, "setup");
             }
@@ -551,6 +556,11 @@ fn main() {
     if let Some(code) = platform::test_install_mode() {
         std::process::exit(code);
     }
+    // Linux: the installed LinVPN's supervisor, which starts the app as its own child process and starts it again
+    // after an abnormal end (a lost Wayland connection ends a GTK app with exit code 1).
+    if let Some(code) = platform::supervise() {
+        std::process::exit(code);
+    }
     if let Err(e) = platform::supported() {
         eprintln!("{e}");
         std::process::exit(1);
@@ -616,6 +626,7 @@ fn main() {
             commands::open_window,
             commands::close_window,
             commands::set_menu_height,
+            commands::set_menu_card,
             commands::quit,
             commands::check_for_updates,
             commands::set_update_option,
@@ -635,8 +646,11 @@ fn main() {
             manage::editor_choose_ca,
             manage::editor_wireguard_generate,
             manage::editor_wireguard_copy,
+            openvpn_routing::openvpn_routing_read,
+            openvpn_routing::openvpn_routing_write,
             manage::editor_import_client_cert,
             manage::editor_remove_client_cert,
+            manage::editor_convert_client_cert,
             manage::create_connection,
             manage::import_files,
             manage::answer_question,
@@ -832,11 +846,15 @@ fn main() {
             tray::create_menu_window(&handle)?;
             tray::create(&handle)?;
             // A taskbar theme switch (Windows) redraws the tray icon in the new tint, off the window procedure;
-            // macOS's template image needs nothing (never called there).
+            // macOS's template image needs nothing (never called there). Linux: the system's light/dark choice
+            // changed (the portal), applied again while the setting is System (`set_theme` goes to the main thread).
             let redraw = handle.clone();
             lifecycle.observe_appearance(Box::new(move || {
                 let app = redraw.clone();
-                std::thread::spawn(move || tray::redraw_icon(&app));
+                std::thread::spawn(move || {
+                    appearance::system_changed(&app);
+                    tray::redraw_icon(&app);
+                });
             }));
             connect_hooks(&handle, &state);
             // Files opened from Finder (`RunEvent::Opened`) wait for the launch's vault decision.

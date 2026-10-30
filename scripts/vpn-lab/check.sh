@@ -53,7 +53,7 @@ pools() { in_c ipsec swanctl --list-pools | grep -E '^(ikev2|cisco) '; }
 check "strongSwan: pools ikev2 and cisco" count 2 pools
 check "xl2tpd runs" in_c ipsec pgrep -x xl2tpd
 check "OpenVPN: two servers (tun 1194, tap 1195)" count 2 in_c openvpn pgrep -x openvpn
-check "WireGuard: wg0 with 3 peers" count 3 in_c wireguard wg show wg0 peers
+check "WireGuard: wg0 with 4 peers" count 4 in_c wireguard wg show wg0 peers
 check "accel-ppp (SSTP) runs" in_c sstp pgrep -x accel-pppd
 check "test page answers (from the ipsec container)" in_c ipsec wget -qO- -T 5 http://10.99.0.10/cgi-bin/index.cgi
 check "lab DNS answers whoami.lab.test" bash -c "docker exec $COMPOSE_PROJECT-ipsec-1 nslookup -type=a whoami.lab.test 10.99.0.53 | grep -q 10.99.0.10"

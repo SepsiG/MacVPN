@@ -1,8 +1,9 @@
 //! Client profiles of the firewalls and gateways people commonly run their VPN server on: Ubiquiti UniFi (the
 //! WireGuard and OpenVPN servers of UniFi OS gateways), pfSense (OpenVPN Client Export package) and OPNsense
-//! (OpenVPN client export). Each one imports cleanly and passes its kind's validator for macOS and for Windows
+//! (OpenVPN client export). Each one imports cleanly and passes its kind's validator for macOS, Windows and Linux
 //! without an issue or a risky finding; what the policy refuses on purpose is pinned too. The IPsec files are the
-//! `swanctl.conf` a user writes for these firewalls' mobile IPsec (they export no client file).
+//! `swanctl.conf` a user writes for these firewalls' mobile IPsec (they export no client file). On Linux the
+//! WireGuard and IKEv2 files also go through LinVPN's NetworkManager plan (`nm_plan`), with what Linux refuses.
 //!
 //! Fixtures: `Tests/Fixtures/{unifi,pfsense,opnsense}/` (fake keys and certificates, documentation addresses).
 //! Formats and sources: `docs/how-to.en.md` ("UniFi, pfSense and OPNsense") and `docs/openvpn-directives.md`.
@@ -13,7 +14,8 @@ use common::{TempDir, lang, repo_root};
 use macvpn_core::TargetOs;
 use macvpn_core::importer;
 use macvpn_core::l10n::AppLanguage;
-use macvpn_core::models::VPNKind;
+use macvpn_core::models::{Connection, SecretField, VPNKind};
+use macvpn_core::nm_plan::{self, Caps, Input, NmPlan, NmValue, SecretKey, SecretValue};
 use macvpn_core::ras::policy::{DhGroup, EspCipher, EspIntegrity, IkeCipher, IkeIntegrity};
 use macvpn_core::ras::{self, Auth, DefaultRoute};
 use macvpn_core::validators::{
@@ -22,7 +24,7 @@ use macvpn_core::validators::{
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-const BOTH: [TargetOs; 2] = [TargetOs::MacOs, TargetOs::Windows];
+const EVERY_OS: [TargetOs; 3] = [TargetOs::MacOs, TargetOs::Windows, TargetOs::Linux];
 
 fn fixtures() -> PathBuf {
     repo_root().join("Tests/Fixtures")
@@ -47,7 +49,7 @@ const PROFILES: &[(&str, VPNKind)] = &[
     ("opnsense/wireguard.conf", VPNKind::Wireguard),
 ];
 
-/// The import (detection, inlining, validation for this OS) and the validator for macOS and for Windows.
+/// The import (detection, inlining, validation for this OS) and the validator for macOS, Windows and Linux.
 fn assert_imports_cleanly(what: &str, name: &str, text: &str, base: &Path, kind: VPNKind) -> importer::PreparedImport {
     assert_eq!(importer::detect_kind(name, text), Some(kind), "{what}: detected kind");
     let prepared = importer::prepare(name, text, base).unwrap_or_else(|e| panic!("{what}: import: {e}"));
@@ -55,7 +57,7 @@ fn assert_imports_cleanly(what: &str, name: &str, text: &str, base: &Path, kind:
     assert!(prepared.issues.is_empty(), "{what}: import issues {:?}", prepared.issues);
     assert!(prepared.risky.is_empty(), "{what}: import risky {:?}", prepared.risky);
     assert!(!prepared.has_encrypted_key, "{what}: no encrypted key");
-    for os in BOTH {
+    for os in EVERY_OS {
         match kind {
             VPNKind::Openvpn => {
                 let v = OpenVPNValidator.validate_full_for(os, &prepared.config, &HashSet::new());
@@ -73,7 +75,7 @@ fn assert_imports_cleanly(what: &str, name: &str, text: &str, base: &Path, kind:
 }
 
 #[test]
-fn every_vendor_profile_imports_cleanly_on_macos_and_windows() {
+fn every_vendor_profile_imports_cleanly_on_every_os() {
     lang(AppLanguage::En);
     for (path, kind) in PROFILES {
         let full = fixtures().join(path);
@@ -154,7 +156,7 @@ fn certificate_store_and_token_exports_are_refused() {
     let mac = OpenVPNValidator.validate_full_for(TargetOs::MacOs, &cryptoapi, &HashSet::new());
     assert_eq!(mac.risky_names(), ["cryptoapicert".to_string()]);
 
-    for os in BOTH {
+    for os in EVERY_OS {
         let token = with("pkcs11-providers '/usr/lib/opensc-pkcs11.so'\npkcs11-id 'alice'");
         let v = OpenVPNValidator.validate_full_for(os, &token, &HashSet::new());
         assert_eq!(v.issues.iter().map(|i| i.line).collect::<Vec<_>>(), [1, 2], "{os:?}: {:?}", v.issues);
@@ -167,7 +169,7 @@ fn certificate_store_and_token_exports_are_refused() {
 fn privilege_drop_lines_from_guides_stay_risky() {
     lang(AppLanguage::En);
     let text = format!("{}user nobody\ngroup nogroup\n", read(&fixtures().join("unifi/openvpn-server.ovpn")));
-    for os in BOTH {
+    for os in EVERY_OS {
         let v = OpenVPNValidator.validate_full_for(os, &text, &HashSet::new());
         assert!(v.issues.is_empty(), "{os:?}: {:?}", v.issues);
         assert_eq!(v.risky_names(), ["group".to_string(), "user".to_string()], "{os:?}");
@@ -257,4 +259,92 @@ fn psk_and_eap_tls_are_not_supported_on_windows() {
     let e = plan("pfsense/ikev2-eap-tls.swanctl.conf").unwrap_err();
     assert!(!e.invalid_config, "{e:?}");
     assert!(e.reasons.iter().any(|r| r.contains("eap-tls")), "{e:?}");
+}
+
+// --- Linux (LinVPN's NetworkManager plan) ----------------------------------------------------------------------
+
+/// LinVPN's strongSwan credential folder as the app passes it (one CA file in `x509ca`).
+fn linux_caps(with_folder: bool) -> Caps {
+    Caps {
+        swanctl_dir: with_folder.then(|| PathBuf::from("/home/u/.local/share/LinVPN/swanctl")),
+        swanctl_ca_files: if with_folder { vec!["firewall-ca.pem".into()] } else { Vec::new() },
+        strongswan_remote_ts: true,
+        ..Caps::default()
+    }
+}
+
+fn linux_plan(path: &str, kind: VPNKind, caps: &Caps) -> Result<NmPlan, nm_plan::Unsupported> {
+    lang(AppLanguage::En);
+    let text = read(&fixtures().join(path));
+    let c = Connection::new("Firewall", kind);
+    nm_plan::plan(&Input {
+        connection: &c,
+        config: text.as_bytes(),
+        user: "linvpn-dev",
+        uid: 1001,
+        runtime_dir: Path::new("/run/user/1001/linvpn/nm/x"),
+        caps,
+        client_cert: nm_plan::ImportedCert::None,
+    })
+}
+
+fn vpn_data(p: &NmPlan) -> std::collections::BTreeMap<String, String> {
+    let NmValue::StrDict(d) = &p.settings["vpn"]["data"] else { panic!("no vpn.data") };
+    d.clone()
+}
+
+fn the_secret(p: &NmPlan) -> SecretField {
+    match p.secrets.as_slice() {
+        [item] if item.key == SecretKey::Plain("password".into()) => match item.value {
+            SecretValue::Field(f) => f,
+            _ => panic!("a literal secret"),
+        },
+        other => panic!("{} secrets", other.len()),
+    }
+}
+
+/// Every WireGuard file becomes NM's own `wireguard` connection (no plugin), its private key a secret of the agent.
+#[test]
+fn vendor_wireguard_profiles_plan_on_linux() {
+    for (path, kind) in PROFILES.iter().filter(|(_, k)| *k == VPNKind::Wireguard) {
+        let p = linux_plan(path, *kind, &Caps::default()).unwrap_or_else(|e| panic!("{path}: {e:?}"));
+        assert_eq!(p.service_type, None, "{path}");
+        assert_eq!(p.settings["connection"]["type"], NmValue::Str("wireguard".into()), "{path}");
+        assert!(p.secrets.iter().any(|s| s.setting == "wireguard"), "{path}: the private key goes to the agent");
+    }
+}
+
+/// The firewalls' mobile IKEv2 on Linux (charon-nm): EAP-MSCHAPv2 runs; pfSense's EAP-TLS is refused (charon-nm
+/// takes a user certificate only with `auth = pubkey`); OPNsense's certificate profile needs its certificate in
+/// LinVPN's strongSwan folder; the PSK profile plans, its PSK (at least 20 characters for charon-nm, checked at
+/// connect) asked from the vault.
+#[test]
+fn firewall_ikev2_configs_on_linux() {
+    for path in ["pfsense/ikev2-eap-mschapv2.swanctl.conf", "opnsense/ikev2-eap-mschapv2.swanctl.conf"] {
+        let p = linux_plan(path, VPNKind::Strongswan, &linux_caps(true)).unwrap_or_else(|e| panic!("{path}: {e:?}"));
+        let d = vpn_data(&p);
+        assert_eq!((d["method"].as_str(), d["user"].as_str()), ("eap", "alice"), "{path}");
+        assert_eq!(d["certificate"], "/home/u/.local/share/LinVPN/swanctl/x509ca/firewall-ca.pem", "{path}");
+        assert_eq!(the_secret(&p), SecretField::Password, "{path}");
+    }
+
+    let e = linux_plan("pfsense/ikev2-eap-tls.swanctl.conf", VPNKind::Strongswan, &linux_caps(true)).unwrap_err();
+    assert!(!e.invalid_config, "{e:?}");
+    assert_eq!(e.reasons, ["Not supported on Linux: local auth = eap-tls".to_string()]);
+
+    let cert = "opnsense/ikev2-cert.swanctl.conf";
+    let p = linux_plan(cert, VPNKind::Strongswan, &linux_caps(true)).unwrap();
+    let d = vpn_data(&p);
+    assert_eq!(d["method"], "key");
+    assert_eq!(d["usercert"], "/home/u/.local/share/LinVPN/swanctl/x509/alice.crt");
+    assert_eq!(d["userkey"], "/home/u/.local/share/LinVPN/swanctl/private/alice.key");
+    assert_eq!(the_secret(&p), SecretField::KeyPassword);
+    let e = linux_plan(cert, VPNKind::Strongswan, &linux_caps(false)).unwrap_err();
+    assert!(!e.invalid_config && !e.reasons.is_empty(), "{e:?}");
+
+    let p = linux_plan("pfsense/ikev2-psk.swanctl.conf", VPNKind::Strongswan, &linux_caps(true)).unwrap();
+    let d = vpn_data(&p);
+    assert_eq!(d["method"], "psk");
+    assert!(!d.contains_key("certificate"), "a PSK on both sides: no server certificate");
+    assert_eq!(the_secret(&p), SecretField::Psk);
 }

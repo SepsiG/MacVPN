@@ -7,8 +7,8 @@ use common::*;
 use macvpn_core::l10n::{self, AppLanguage};
 use macvpn_core::target_os::TargetOs;
 use macvpn_core::validators::openvpn::{
-    self, FORBIDDEN, FORBIDDEN_WINDOWS, REASON_LISTENS, REASON_PLATFORM, REASON_PLATFORM_WINDOWS, REASON_UNKNOWN,
-    RISKY_REASONS, platform_reasons,
+    self, FORBIDDEN, FORBIDDEN_WINDOWS, REASON_IGNORED_LINUX, REASON_LISTENS, REASON_PLATFORM, REASON_PLATFORM_LINUX,
+    REASON_PLATFORM_WINDOWS, REASON_UNKNOWN, RISKY_REASONS, platform_reasons,
 };
 use macvpn_core::validators::{OpenVPNTier, OpenVPNValidation, OpenVPNValidator, RiskyFinding};
 use std::collections::HashSet;
@@ -29,6 +29,23 @@ fn check_for(os: TargetOs, body: &str, ack: &[&str]) -> OpenVPNValidation {
 
 fn tier(d: &str) -> OpenVPNTier {
     OpenVPNValidator::tier(d)
+}
+
+/// The host's issues apart from the Linux tier's acknowledgements: the argument rules are the same on every OS,
+/// and on Linux the names NetworkManager ignores are RISKY (`linux_*` tests below), so a Linux host acknowledges
+/// them here. On macOS and Windows this is `ovpn_all`.
+fn ovpn_args(text: &str) -> Vec<macvpn_core::models::ValidationIssue> {
+    let ack: HashSet<String> = if TargetOs::host() == TargetOs::Linux {
+        platform_reasons(TargetOs::Linux).keys().map(|d| d.to_string()).collect()
+    } else {
+        HashSet::new()
+    };
+    OpenVPNValidator.validate_full(text, &ack).all_issues()
+}
+
+/// The names the host's Linux tier reports in `text` (empty on macOS and Windows).
+fn linux_ignored_on_host(names: &[&str]) -> Vec<String> {
+    if TargetOs::host() == TargetOs::Linux { names.iter().map(|d| d.to_string()).collect() } else { vec![] }
 }
 
 fn docs() -> String {
@@ -58,7 +75,7 @@ fn has_explicit_tier(name: &str) -> bool {
 fn user_examples_import_without_friction() {
     en();
     assert_eq!(ovpn_all(&format!("{BASE}setenv CONFIG_VERSION \"2.0.4\"\n")), []);
-    assert_eq!(ovpn_all(&format!("{BASE}remap-usr1 SIGTERM\nremap-usr1 SIGHUP\n")), []);
+    assert_eq!(ovpn_args(&format!("{BASE}remap-usr1 SIGTERM\nremap-usr1 SIGHUP\n")), []);
     let r = check("user nobody\ngroup nogroup\nuser\ngroup", &[]);
     assert_eq!(r.issues, []);
     assert_eq!(r.unacknowledged, ["group", "user"]);
@@ -149,8 +166,12 @@ fn every_reason_is_translated() {
         reasons.extend(platform_reasons(os).values());
     }
     reasons.insert(REASON_UNKNOWN);
+    // L-b's new texts are in the task's fragment until the wave's wiring task merges it into `strings.json`.
+    let fragment: serde_json::Value = std::fs::read_to_string(repo_root().join("crates/core/l10n/lb/6.json"))
+        .map_or(serde_json::Value::Null, |t| serde_json::from_str(&t).unwrap());
     for key in reasons {
-        assert!(l10n::hungarian(key).is_some(), "{key}");
+        let in_fragment = fragment["strings"][key]["hu"].is_string();
+        assert!(l10n::hungarian(key).is_some() || in_fragment, "{key}");
     }
 }
 
@@ -429,7 +450,7 @@ fn expanded_safe_directives() {
         "keying-material-exporter EXPORTER-x 32",
     ];
     for line in lines_ok {
-        assert_eq!(ovpn_all(&format!("{BASE}{line}\n")), [], "{line}");
+        assert_eq!(ovpn_args(&format!("{BASE}{line}\n")), [], "{line}");
     }
 }
 
@@ -449,14 +470,20 @@ fn tier_realistic_provider_profiles() {
     let proton_style = "client\ndev tun\nproto udp\nremote a.protonvpn.net 80\nremote a.protonvpn.net 51820\nserver-poll-timeout 20\nremote-random\nresolv-retry infinite\nnobind\ncipher AES-256-GCM\nsetenv CLIENT_CERT 0\ntun-mtu 1500\nmssfix 0\npersist-key\npersist-tun\nreneg-sec 0\nremote-cert-tls server\nauth-user-pass\nscript-security 2";
     let pia_style = "client\ndev tun\nproto udp\nremote x.privacy.network 1198\nresolv-retry infinite\nnobind\npersist-key\npersist-tun\ncipher aes-128-cbc\nauth sha1\ntls-client\nremote-cert-tls server\nauth-user-pass\ncompress\nverb 1\nreneg-sec 0\ndisable-occ\nuser nobody\ngroup nogroup\nsetenv CONFIG_VERSION \"2.0.4\"\nremap-usr1 SIGTERM";
     let access_server = "setenv FORWARD_COMPATIBLE 1\nclient\nserver-poll-timeout 4\nnobind\nremote vpn.example.com 1194 udp\nremote vpn.example.com 443 tcp\ndev tun\ndev-type tun\nremote-cert-tls server\ntls-version-min 1.2\nreneg-sec 604800\ntun-mtu 1420\nverb 3\npush-peer-info\nsetenv UV_ID abc123\nsetenv UV_PLAT_REL 2.0\nstatic-challenge \"Enter Authenticator Code\" 1\nauth-user-pass\n<ca>\nX\n</ca>\n<tls-crypt-v2>\nX\n</tls-crypt-v2>";
-    assert_eq!(ovpn_all(nord_style), []);
+    let nord = OpenVPNValidator.validate_full(nord_style, &HashSet::new());
+    assert_eq!(nord.issues, []);
+    assert_eq!(nord.unacknowledged, linux_ignored_on_host(&["fast-io", "ping-timer-rem", "tun-mtu-extra"]));
+    assert_eq!(ovpn_args(nord_style), []);
     assert_eq!(ovpn_all(access_server), []);
     // The ProtonVPN profile's `script-security 2` line stays forbidden (MacVPN sets it itself).
     assert_eq!(lines(&ovpn_all(proton_style)), [19]);
     let pia = OpenVPNValidator.validate_full(pia_style, &HashSet::new());
     assert_eq!(pia.issues, []);
-    assert_eq!(pia.unacknowledged, ["group", "user"]);
-    assert_eq!(OpenVPNValidator.validate_full(pia_style, &set(&["user", "group"])).all_issues(), []);
+    let mut want = vec!["group".to_string()];
+    want.extend(linux_ignored_on_host(&["remap-usr1"]));
+    want.push("user".to_string());
+    assert_eq!(pia.unacknowledged, want);
+    assert_eq!(OpenVPNValidator.validate_full(pia_style, &set(&["user", "group", "remap-usr1"])).all_issues(), []);
 }
 
 // MARK: SecurityReviewTests (M1, L1–L4, L6)
@@ -494,11 +521,18 @@ fn every_option_name_in_the_source_is_classified_and_documented() {
 #[test]
 fn source_aliases_are_classified_like_their_target() {
     en();
-    assert_eq!(tier("udp-mtu"), OpenVPNTier::Safe);
-    assert_eq!(tier("ip-remote-hint"), OpenVPNTier::Safe);
-    assert_eq!(sr_check("udp-mtu 1500", &[]).all_issues(), []);
-    assert_eq!(sr_check("ip-remote-hint 1.2.3.4", &[]).all_issues(), []);
-    assert_eq!(sr_check("preresolve skip-remote", &[]).all_issues(), []);
+    for os in TargetOs::ALL {
+        let t = |d| OpenVPNValidator::tier_for(os, d);
+        assert_eq!(t("udp-mtu"), t("link-mtu"), "{os:?}");
+        assert_eq!(t("ip-remote-hint"), t("preresolve"), "{os:?}");
+        assert_eq!(platform_reasons(os).get("udp-mtu"), platform_reasons(os).get("link-mtu"), "{os:?}");
+        assert_eq!(platform_reasons(os).get("ip-remote-hint"), platform_reasons(os).get("preresolve"), "{os:?}");
+    }
+    assert_eq!(OpenVPNValidator::tier_for(TargetOs::MacOs, "udp-mtu"), OpenVPNTier::Safe);
+    assert_eq!(OpenVPNValidator::tier_for(TargetOs::MacOs, "ip-remote-hint"), OpenVPNTier::Safe);
+    assert_eq!(ovpn_args(&format!("{SR_BASE}udp-mtu 1500\n")), []);
+    assert_eq!(ovpn_args(&format!("{SR_BASE}ip-remote-hint 1.2.3.4\n")), []);
+    assert_eq!(ovpn_args(&format!("{SR_BASE}preresolve skip-remote\n")), []);
 }
 
 #[test]
@@ -566,7 +600,7 @@ fn every_openvpn_278_option_is_classified_and_documented() {
 
 #[track_caller]
 fn ok27(line: &str) {
-    assert_eq!(ovpn_all(&format!("client\nremote a 1194\n{line}\n")), [], "{line}");
+    assert_eq!(ovpn_args(&format!("client\nremote a 1194\n{line}\n")), [], "{line}");
 }
 
 #[track_caller]
@@ -701,8 +735,11 @@ fn routeros_exports_are_safe_without_acknowledgement() {
         let text = fixture(&format!("mikrotik/{name}"));
         let result = OpenVPNValidator.validate_full(&text, &HashSet::new());
         assert_eq!(result.issues, [], "{name}");
-        assert_eq!(result.risky, [], "{name}");
-        assert_eq!(ovpn_all(&text), [], "{name}");
+        // On Linux the wiki profile's `connect-retry` and `ping-timer-rem` are ignored by NetworkManager.
+        let ignored: &[&str] =
+            if name == "routeros-wiki-extras.ovpn" { &["connect-retry", "ping-timer-rem"] } else { &[] };
+        assert_eq!(result.risky_names(), linux_ignored_on_host(ignored), "{name}");
+        assert_eq!(ovpn_args(&text), [], "{name}");
     }
 }
 
@@ -888,16 +925,28 @@ fn the_macos_and_linux_tiers_are_unchanged_by_the_windows_one() {
 fn linux_platform_tier() {
     en();
     let l = TargetOs::Linux;
-    assert!(!platform_reasons(l).contains_key("setcon"));
-    let mut mac: Vec<&str> = platform_reasons(TargetOs::MacOs).keys().copied().filter(|d| *d != "setcon").collect();
-    let mut linux: Vec<&str> = platform_reasons(l).keys().copied().collect();
-    mac.sort_unstable();
-    linux.sort_unstable();
-    assert_eq!(linux, mac);
-    assert!(platform_reasons(l).values().all(|r| *r == REASON_PLATFORM));
-    // Not in the platform tier: an unknown directive on Linux.
-    assert_eq!(check_for(l, "setcon x", &[]).risky[0].reason_key, REASON_UNKNOWN);
+    // L0-1's proposal (L-b Task 6): the names NetworkManager drops are RISKY with their own reason; `setcon` (SELinux)
+    // keeps Linux's own refusal; the macOS text never reaches Linux.
+    assert_eq!(platform_reasons(l)["setcon"], REASON_PLATFORM_LINUX);
+    assert!(platform_reasons(l).iter().filter(|(d, _)| **d != "setcon").all(|(_, r)| *r == REASON_IGNORED_LINUX));
+    for d in platform_reasons(TargetOs::MacOs).keys() {
+        assert!(platform_reasons(l).contains_key(d), "{d}");
+    }
+    // Refused as RISKY with that reason; never with the macOS or the Windows text.
+    let r = check_for(l, "setcon x", &[]);
+    assert_eq!(r.risky[0].reason_key, REASON_PLATFORM_LINUX);
+    assert_eq!(r.unacknowledged, ["setcon"]);
+    assert_eq!(REASON_PLATFORM_LINUX, "Not supported on Linux");
+    assert_eq!(REASON_IGNORED_LINUX, "Ignored by NetworkManager on Linux");
     assert_eq!(OpenVPNValidator::tier_for(l, "cryptoapicert"), OpenVPNTier::Risky);
+    assert_eq!(check_for(l, "cryptoapicert x", &[]).risky[0].reason_key, REASON_IGNORED_LINUX);
+    // Not a SAFE name on Linux any more, and no other table's name.
+    let safe = OpenVPNValidator::allowed_for(l);
+    for d in platform_reasons(l).keys() {
+        assert!(!safe.contains(d), "{d}");
+        assert!(!RISKY_REASONS.contains_key(d), "{d}");
+        assert!(!FORBIDDEN.contains(d), "{d}");
+    }
 }
 
 #[test]
@@ -1049,5 +1098,224 @@ fn windows_setenv_takes_only_the_allowlisted_names() {
     // A bare prefix is not an allowed name.
     for bare in ["setenv UV_ x", "setenv IV_", "setenv UV x"] {
         assert_eq!(lines(&check_for(w, bare, &[]).issues), [4], "{bare}");
+    }
+}
+
+// MARK: The Linux tier (L-b Task 6, spike L0-1)
+
+#[test]
+fn linux_ignores_tuning_options_with_its_own_reason() {
+    use macvpn_core::validators::openvpn::{REASON_IGNORED_LINUX, platform_reasons};
+    let linux = platform_reasons(TargetOs::Linux);
+    for d in [
+        "sndbuf",
+        "rcvbuf",
+        "txqueuelen",
+        "fast-io",
+        "mark",
+        "bind-dev",
+        "connect-retry",
+        "tls-groups",
+        "route-table",
+        "block-ipv6",
+        "route-gateway",
+    ] {
+        assert_eq!(linux.get(d), Some(&REASON_IGNORED_LINUX), "{d}");
+        assert_eq!(OpenVPNValidator::tier_for(TargetOs::Linux, d), OpenVPNTier::Risky, "{d}");
+    }
+    assert!(linux.values().all(|r| *r != macvpn_core::validators::openvpn::REASON_PLATFORM), "no macOS text on Linux");
+    assert_eq!(linux.get("setcon"), Some(&macvpn_core::validators::openvpn::REASON_PLATFORM_LINUX));
+}
+
+#[test]
+fn linux_keeps_safe_what_nm_or_nm_plan_expresses() {
+    for d in [
+        "remote",
+        "proto",
+        "ca",
+        "tls-crypt-v2",
+        "data-ciphers",
+        "ncp-ciphers",
+        "route",
+        "route-ipv6",
+        "route-nopull",
+        "pull-filter",
+        "redirect-gateway",
+        "dhcp-option",
+        "auth-user-pass",
+        "static-challenge",
+        "peer-fingerprint",
+        "compress",
+    ] {
+        assert_eq!(OpenVPNValidator::tier_for(TargetOs::Linux, d), OpenVPNTier::Safe, "{d}");
+    }
+}
+
+#[test]
+fn macos_and_windows_tiers_are_unchanged() {
+    // The pinned lists of the existing tests still pass; this one checks the two tables' sizes too.
+    use macvpn_core::validators::openvpn::platform_reasons;
+    assert_eq!(platform_reasons(TargetOs::MacOs).len(), 8);
+    assert_eq!(platform_reasons(TargetOs::Windows).len(), 1);
+}
+
+/// The whole Linux table, pinned: L0-1's "RISKY, ignored by NetworkManager" rows (the names `ARGUMENT_SPECS` knows),
+/// the other OSes' names, and `setcon`.
+#[test]
+fn linux_platform_table_is_l0_1s_list() {
+    let mut names: Vec<&str> = platform_reasons(TargetOs::Linux).keys().copied().collect();
+    names.sort_unstable();
+    let expected = [
+        "allow-nonadmin",
+        "auth-token",
+        "auth-token-user",
+        "bind",
+        "bind-dev",
+        "block-ipv6",
+        "comp-noadapt",
+        "connect-retry",
+        "connect-retry-max",
+        "cryptoapicert",
+        "dhcp-internal",
+        "ecdh-curve",
+        "fast-io",
+        "force-tls-key-material-export",
+        "hand-window",
+        "http-proxy-option",
+        "http-proxy-timeout",
+        "ifconfig-ipv6",
+        "inactive",
+        "ip-remote-hint",
+        "keying-material-exporter",
+        "link-mtu",
+        "local",
+        "lport",
+        "mark",
+        "max-packet-size",
+        "mlock",
+        "msg-channel",
+        "mtu-test",
+        "multihome",
+        "nice",
+        "passtos",
+        "persist-local-ip",
+        "persist-remote-ip",
+        "ping-timer-rem",
+        "preresolve",
+        "prng",
+        "proto-force",
+        "rcvbuf",
+        "rdns-internal",
+        "remap-usr1",
+        "reneg-bytes",
+        "reneg-pkts",
+        "replay-window",
+        "route-gateway",
+        "route-ipv6-gateway",
+        "route-table",
+        "service",
+        "session-timeout",
+        "setcon",
+        "shaper",
+        "sndbuf",
+        "socket-flags",
+        "tcp-nodelay",
+        "tcp-queue-limit",
+        "tls-cert-profile",
+        "tls-ciphersuites",
+        "tls-exit",
+        "tls-groups",
+        "tls-timeout",
+        "tran-window",
+        "tun-mtu-extra",
+        "tun-mtu-max",
+        "txqueuelen",
+        "udp-mtu",
+        "up-delay",
+        "use-prediction-resistance",
+        "win-sys",
+        "x509-track",
+        "x509-username-field",
+    ];
+    assert_eq!(names, expected);
+}
+
+/// What NetworkManager does itself or what has no effect on Linux stays SAFE: everyday profiles (the VPN lab's,
+/// pfSense's, OPNsense's) need no acknowledgement for it.
+#[test]
+fn linux_needs_no_acknowledgement_for_what_nm_does_anyway() {
+    en();
+    let l = TargetOs::Linux;
+    for line in [
+        "nobind",
+        "persist-key",
+        "persist-tun",
+        "auth-nocache",
+        "auth-retry nointeract",
+        "resolv-retry infinite",
+        "explicit-exit-notify 1",
+        "remote-cert-tls server",
+        "auth-user-pass",
+        "static-challenge \"Code\" 1",
+        "data-ciphers AES-256-GCM:CHACHA20-POLY1305",
+        "verb 3",
+        "mute 20",
+        "topology subnet",
+        "block-outside-dns",
+        "register-dns",
+        "dhcp-option WINS 10.0.0.2",
+        "windows-driver wintun",
+        "user nobody", // RISKY on every OS (its own reason), unchanged
+        "lport 0",
+    ] {
+        let r = check_for(l, line, &[]);
+        assert_eq!(r.issues, [], "{line}");
+        let want: Vec<String> = if line.starts_with("user ") { vec!["user".into()] } else { vec![] };
+        assert_eq!(r.risky_names(), want, "{line}");
+    }
+    // `lport 0` asks for NetworkManager's own `--nobind`; any other local port is ignored.
+    assert_eq!(check_for(l, "lport 1194", &[]).risky_names(), ["lport"]);
+    // In a <connection> block too.
+    let r = check_for(l, "<connection>\nremote b 1\nlport 0\n</connection>", &[]);
+    assert_eq!((r.issues.len(), r.risky.len()), (0, 0));
+}
+
+/// An ignored name keeps its SAFE argument checks on Linux (a file, a bad number or a hook is still an error), is
+/// reported with its own reason (an acknowledgement makes it pass), and may stand where OpenVPN allows it (a `<connection>` block,
+/// `setenv opt`).
+#[test]
+fn linux_ignored_names_keep_their_argument_checks() {
+    en();
+    let l = TargetOs::Linux;
+    let r = check_for(l, "sndbuf 0\nconnect-retry 2 30\nremap-usr1 SIGHUP", &[]);
+    assert_eq!(r.issues, []);
+    assert_eq!(r.risky_names(), ["connect-retry", "remap-usr1", "sndbuf"]);
+    assert!(r.risky.iter().all(|f| f.reason_key == REASON_IGNORED_LINUX));
+    assert_eq!(r.risky[0].reason(), "Ignored by NetworkManager on Linux");
+    assert_eq!(r.unacknowledged, ["connect-retry", "remap-usr1", "sndbuf"]);
+    let acked =
+        check_for(l, "sndbuf 0\nconnect-retry 2 30\nremap-usr1 SIGHUP", &["sndbuf", "connect-retry", "remap-usr1"]);
+    assert_eq!(acked.all_issues(), []);
+    // The SAFE argument rules still apply (a RISKY name alone would only need harmless arguments).
+    for bad in ["sndbuf x", "remap-usr1 SIGKILL", "connect-retry a", "bind-dev /etc/x", "local a b c d"] {
+        let r = check_for(l, bad, &[bad.split(' ').next().unwrap()]);
+        assert_eq!(lines(&r.issues), [4], "{bad}");
+        assert_eq!(r.risky, [], "{bad}");
+    }
+    // A <connection> block may hold it (as on macOS); it is reported there too.
+    let r = check_for(l, "<connection>\nremote b 1\nconnect-retry 5\nlink-mtu 1400\n</connection>", &[]);
+    assert_eq!(r.issues, []);
+    assert_eq!(r.risky_names(), ["connect-retry", "link-mtu"]);
+    // Not one OpenVPN refuses there.
+    let r = check_for(l, "<connection>\nremote b 1\nsndbuf 0\n</connection>", &["sndbuf"]);
+    assert_eq!(r.issues.len(), 1);
+    // Through `setenv opt` as at the top level.
+    let r = check_for(l, "setenv opt tls-groups X25519", &[]);
+    assert_eq!(r.issues, []);
+    assert_eq!(r.risky_names(), ["tls-groups"]);
+    // macOS and Windows: the same lines are SAFE.
+    for os in [TargetOs::MacOs, TargetOs::Windows] {
+        let r = check_for(os, "sndbuf 0\nconnect-retry 2 30\nremap-usr1 SIGHUP\nsetenv opt tls-groups X25519", &[]);
+        assert_eq!((r.issues.len(), r.risky.len()), (0, 0), "{os:?}");
     }
 }

@@ -1,12 +1,12 @@
 //! The control API socket: the private directory, the bind rules (stale socket, single instance, modes), the
 //! peer identity and the random source.
-#![cfg(target_os = "macos")]
+#![cfg(unix)]
 #![allow(unsafe_code)]
 
 mod common;
 
 use common::{Scratch, chmod, mode, short_scratch};
-use macvpn_platform_mac::control_socket::{
+use macvpn_unixsys::control_socket::{
     self, LOCK_NAME, SOCKET_NAME, bind, is_already_closed, peer, prepare_dir, random_32, same_user,
 };
 use std::io::ErrorKind;
@@ -274,4 +274,31 @@ fn concurrent_binds_yield_exactly_one_listener() {
     }
     let _client = UnixStream::connect(dir.join(SOCKET_NAME)).unwrap();
     winners[0].accept().unwrap();
+}
+
+#[test]
+fn bind_at_uses_the_given_names() {
+    let scratch = short_scratch();
+    let dir = scratch.join("bind-at");
+    let bound = macvpn_unixsys::control_socket::bind_at(&dir, "linvpn.sock", "linvpn.lock").unwrap();
+    assert!(dir.join("linvpn.sock").exists());
+    assert!(dir.join("linvpn.lock").exists());
+    assert!(!dir.join("macvpn.sock").exists());
+    // A second bind in the same place is refused while the first holds the lock.
+    let again = macvpn_unixsys::control_socket::bind_at(&dir, "linvpn.sock", "linvpn.lock");
+    assert_eq!(again.err().map(|e| e.kind()), Some(std::io::ErrorKind::AddrInUse));
+    drop(bound);
+}
+
+/// Linux: the peer of a socket this process connected to itself is this process: its uid, its pid and its
+/// executable (the test binary).
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_peer_is_this_process() {
+    use std::os::unix::net::UnixStream;
+    let (a, _b) = UnixStream::pair().unwrap();
+    let peer = macvpn_unixsys::control_socket::peer(&a).unwrap();
+    assert_eq!(peer.pid, std::process::id() as i32);
+    assert!(macvpn_unixsys::control_socket::same_user(peer.uid));
+    assert_eq!(peer.executable.unwrap(), std::env::current_exe().unwrap());
 }

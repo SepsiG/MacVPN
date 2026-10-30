@@ -1,0 +1,13 @@
+#!/bin/sh
+# LinVPN: stops the log reader's and the IKEv2 traffic counter reader's sockets before their files go, and drops the
+# installed version's record.
+set -e
+if [ "$1" = "remove" ] && [ -d /run/systemd/system ]; then
+    systemctl disable --now linvpn-logd.socket >/dev/null 2>&1 || true
+    systemctl disable --now linvpn-xfrmd.socket >/dev/null 2>&1 || true
+fi
+if [ "$1" = "remove" ]; then
+    rm -f /run/linvpn/package-version /run/linvpn/package-version.tmp 2>/dev/null || true
+    rmdir /run/linvpn 2>/dev/null || true
+fi
+exit 0

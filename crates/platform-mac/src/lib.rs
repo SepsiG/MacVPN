@@ -3,7 +3,7 @@
 //! installer / uninstaller, the update installer, Homebrew, the process runner, the `mvpn` client and the setup
 //! check, the system VPN change watcher, and the physical network probe and change watcher (auto-reconnect). The core's locale hooks (collation, preferred languages) are installed by [`install_core_hooks`].
 //!
-//! `unsafe` code is confined to the small FFI modules `sys`, `control_socket`, `cf`, `keychain_ffi`, `sc_ffi`, `sc_watch`, `net_watch`,
+//! `unsafe` code is confined to the small FFI modules `sys`, `cf`, `keychain_ffi`, `sc_ffi`, `sc_watch`, `net_watch`,
 //! `preferences`, `smappservice_ffi`, `dialogs`, `notifications`, `app_hooks`, `window_fit` and `window_shape`, each with an audit note and a `SAFETY` comment
 //! per block.
 //!

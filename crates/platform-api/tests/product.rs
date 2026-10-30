@@ -3,7 +3,7 @@
 use macvpn_core::TargetOs;
 use macvpn_core::l10n::TextPlatform;
 use macvpn_core::update::SignatureDomain;
-use macvpn_platform_api::{MACVPN, WINVPN};
+use macvpn_platform_api::{LINVPN, MACVPN, WINVPN};
 use std::path::{Path, PathBuf};
 
 #[test]
@@ -67,4 +67,39 @@ fn text_platform() {
 fn each_product_has_its_signature_domain() {
     assert_eq!(MACVPN.signature_domain, SignatureDomain::MacVpnV1);
     assert_eq!(WINVPN.signature_domain, SignatureDomain::WinVpnV1);
+}
+
+#[test]
+fn linvpn_has_one_package_per_architecture() {
+    assert_eq!(LINVPN.update_asset("2.1.0", "x86_64").as_deref(), Some("linvpn_2.1.0_amd64.deb"));
+    assert_eq!(LINVPN.update_asset("2.1.0", "aarch64").as_deref(), Some("linvpn_2.1.0_arm64.deb"));
+    assert_eq!(LINVPN.update_asset("2.1.0", "riscv64"), None);
+}
+
+#[test]
+fn linvpn_identity() {
+    assert_eq!(LINVPN.name, "LinVPN");
+    assert_eq!(LINVPN.os, TargetOs::Linux);
+    assert_eq!(LINVPN.app_id, "local.linvpn");
+    assert_eq!(LINVPN.repo, "SepsiG/MacVPN");
+    assert_eq!(LINVPN.user_guide_stem, "linvpn-user-guide");
+    assert_eq!(LINVPN.signature_domain, SignatureDomain::LinVpnV1);
+    assert_eq!(LINVPN.text_platform(), TextPlatform { os: TargetOs::Linux, product: "LinVPN" });
+    assert_eq!(LINVPN.data_dir(Path::new("/home/x/.local/share")), PathBuf::from("/home/x/.local/share/LinVPN"));
+}
+
+/// The asset `update_asset` names is exactly one the signature domain accepts.
+#[test]
+fn every_update_asset_has_a_signed_message() {
+    use macvpn_core::update::UpdateSignature;
+    let digest = "a".repeat(64);
+    for product in [&MACVPN, &WINVPN, &LINVPN] {
+        for arch in ["x86_64", "aarch64"] {
+            let asset = product.update_asset("2.1.0", arch).unwrap();
+            assert!(
+                UpdateSignature::message_for(product.signature_domain, &asset, "2.1.0", &digest).is_some(),
+                "{asset}"
+            );
+        }
+    }
 }

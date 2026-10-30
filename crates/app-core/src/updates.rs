@@ -10,7 +10,7 @@ use crate::app::{
 };
 use crate::deps::Clock;
 use macvpn_core::l10n::{self, Arg};
-use macvpn_core::update::Release;
+use macvpn_core::update::{Offer, Release, UpdateChecker};
 use serde::Serialize;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -194,7 +194,7 @@ impl UpdateController {
         &self,
         run: impl FnOnce(&Release, &dyn Fn(String)) -> Result<InstallOutcome, String>,
     ) -> InstallOutcome {
-        let release = {
+        let offered = {
             let mut state = self.lock();
             let Some(release) = state.offers.available.clone() else { return InstallOutcome::NotStarted };
             if state.install_stage.is_some() {
@@ -205,6 +205,7 @@ impl UpdateController {
             release
         };
         self.changed();
+        let release = self.newest_offer().unwrap_or(offered);
         let stage = |message: String| {
             self.lock().install_stage = Some(message);
             self.changed();
@@ -227,6 +228,24 @@ impl UpdateController {
         };
         self.changed();
         outcome
+    }
+
+    /// Right before an install: GitHub's latest release again, so the update goes straight to the newest one (a
+    /// release published since the last check replaces the offered one; every release holds all earlier changes).
+    /// Only a release that can be offered now replaces it; a failed check, or a newer release still waiting for its
+    /// signature or its 24 hours, keeps the offered one.
+    fn newest_offer(&self) -> Option<Release> {
+        let source = self.source.as_ref()?;
+        let latest = self.releases.latest_release(source.repo_id, &source.repo).ok()?;
+        let now = self.clock.now();
+        let delayed = self.preferences().delay_updates;
+        if UpdateChecker::offer(&latest, &self.current_version, delayed, now) != Offer::Offer {
+            return None;
+        }
+        self.prefs.set_date(LAST_CHECK_KEY, now);
+        self.lock().offers.available = Some(latest.clone());
+        self.changed();
+        Some(latest)
     }
 
     /// The previous update's outcome found at launch (`(run, message)` from the helper's log): remembered as

@@ -21,6 +21,7 @@
   import { backupApi } from './vault/backupApi';
   import { isTeamRoot } from './catalog/status';
   import { browserDeps, pollTraffic, type TrafficMap } from './traffic';
+  import { OVERLAY_CLASS, cardRect } from './overlay';
 
   let vm = $state<ViewModel | null>(null);
   let now = $state(Date.now());
@@ -79,19 +80,24 @@
       (t) => (traffic = t),
       browserDeps(api.traffic),
     );
-    // The popover window follows the content's height; many connections scroll inside the list instead.
+    // The popover window follows the content's height; many connections scroll inside the list instead. In Linux's
+    // overlay the card stays at the top-right of a window that is resized itself (maximized when shown).
     const observer = new ResizeObserver(measure);
     if (root) observer.observe(root);
+    if (overlay) window.addEventListener('resize', measure);
     return () => {
       clearInterval(timer);
       stopTraffic();
       observer.disconnect();
+      window.removeEventListener('resize', measure);
       for (const u of unlisten) u.then((f) => f());
     };
   });
 
   /// The backend accepts 40…900 points; the list gets what the screen leaves (at least a few cards).
   const MAX_HEIGHT = 900;
+  /// Linux: the window is the card panel's overlay; the page reports the card, not a window height.
+  const overlay = document.documentElement.classList.contains(OVERLAY_CLASS);
 
   function measure() {
     if (!root) return;
@@ -102,6 +108,11 @@
       const next = Math.max(150, Math.floor(limit - others));
       if (next !== listMax) listMax = next;
       scrollable = list.scrollHeight > list.clientHeight + 1;
+    }
+    if (overlay) {
+      const card = cardRect(root.getBoundingClientRect());
+      api.setMenuCard(card.left, card.top, card.width, card.height).catch(console.error);
+      return;
     }
     api.setMenuHeight(Math.max(40, Math.min(MAX_HEIGHT, Math.ceil(total)))).catch(console.error);
   }
@@ -398,6 +409,19 @@
     flex-direction: column;
     gap: var(--space-3);
     padding: var(--space-4);
+  }
+  /* LinVPN's card panel (Linux, `overlay.ts`): the card at the overlay's top-right, 8 px below the top bar, as wide
+     as the popover window elsewhere; rounded like GNOME's own menus (the overlay is transparent, so the corners
+     are drawn here, not by the window). */
+  :global(html.overlay) main {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 330px;
+    box-sizing: border-box;
+    background: var(--background);
+    border-radius: var(--radius-panel);
+    box-shadow: var(--shadow-popover);
   }
 
   /* The connections. */

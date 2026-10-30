@@ -487,6 +487,18 @@ Names in `DNS` are search domains. Several networks and IPv6 work in `Address` a
 
 **IPsec:** **VPN → IPsec → Connections**; write the same `swanctl.conf` as for pfSense. OPNsense's `default` proposals need no `proposals` line (or write `proposals = default`).
 
+### On Linux (LinVPN)
+
+The same files import into LinVPN without an error or a risky setting, and the steps above are the same; LinVPN runs them through NetworkManager ([LinVPN user guide, 3](linvpn-user-guide.en.md#3-adding-connections-by-type)). The differences:
+
+- **OpenVPN:** a pfSense **Archive** export whose PKCS#12 has no password connects without asking for one; with a password, it goes into **Private key password** as on a Mac.
+- **WireGuard:** UniFi, pfSense and OPNsense files become NetworkManager's own WireGuard connections; nothing else to install.
+- **IKEv2 EAP-MSCHAPv2** (pfSense, OPNsense) works; the CA certificate goes into LinVPN's strongSwan folder `~/.local/share/LinVPN/swanctl/x509ca/` instead of strongSwan's `x509ca/` ([LinVPN user guide, 3.3](linvpn-user-guide.en.md#33-ikev2-strongswan)).
+- **IKEv2 EAP-TLS** (pfSense, `auth = eap-tls`) is not supported on Linux: the connection shows **Not supported on Linux: local auth = eap-tls**. Use a certificate profile (`auth = pubkey`, `certs = <file>`) instead.
+- **IKEv2 certificate** (OPNsense's `auth = pubkey`): either delete the `certs` line and import the certificate with **Import Client Certificate…**, or keep `certs = <file>` and put the certificate and its key into LinVPN's strongSwan folder (`x509/<file>` and `private/<file stem>.key`); see the [LinVPN user guide, 3.3](linvpn-user-guide.en.md#33-ikev2-strongswan). Without either, the connection says what is missing.
+- **IKEv2 PSK:** the pre-shared key must be **at least 20 characters** on Linux (strongSwan's NetworkManager plugin refuses a shorter one; LinVPN says so before connecting). Make the key on the firewall long enough.
+- **IKEv1 with XAuth (Cisco IPsec)** and **L2TP/IPsec** work as on a Mac (**New → Cisco IPsec**, **New → L2TP**).
+
 ### Sources
 
 - Ubiquiti Help Center: [UniFi Gateway – WireGuard VPN Server](https://help.ui.com/hc/en-us/articles/115005445768), [OpenVPN Server](https://help.ui.com/hc/en-us/articles/12600064355991), [L2TP VPN Server](https://help.ui.com/hc/en-us/articles/12594825307927), [Teleport VPN](https://help.ui.com/hc/en-us/articles/5246403561495), [Introduction to VPNs](https://help.ui.com/hc/en-us/articles/7951513517079), [WireGuard VPN Client](https://help.ui.com/hc/en-us/articles/16357883221015) and [OpenVPN Client](https://help.ui.com/hc/en-us/articles/12648654915863) (the file formats UniFi reads and writes).

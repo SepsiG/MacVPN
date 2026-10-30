@@ -1,0 +1,12 @@
+[Unit]
+Description=LinVPN log reader socket
+
+[Socket]
+ListenStream=/run/linvpn-logd.sock
+SocketMode=0666
+Accept=yes
+MaxConnectionsPerSource=4
+MaxConnections=16
+
+[Install]
+WantedBy=sockets.target

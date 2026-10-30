@@ -20,6 +20,7 @@
   import TeamCatalogs from '../catalog/TeamCatalogs.svelte';
   import SystemDetail from './SystemDetail.svelte';
   import { removedRow, shownRow } from './live';
+  import { pushVisible } from './openvpnRouting';
   import type { Row } from '../api';
   import { browserDeps, pollTraffic, type TrafficMap } from '../traffic';
 
@@ -203,7 +204,7 @@
       </CatalogGate>
     {:else if row && row.managed && row.kind}
       {#key row.id}
-        <Detail {row} traffic={traffic[row.id] ?? null} manage={vm!.manage} filters={vm!.manage.logFilters} onnotice={showNotice} onselect={(id) => select(id).catch(console.error)} />
+        <Detail {row} traffic={traffic[row.id] ?? null} manage={vm!.manage} filters={vm!.manage.logFilters} openvpnPushVisible={pushVisible(vm!.setup.nm)} onnotice={showNotice} onselect={(id) => select(id).catch(console.error)} />
       {/key}
     {:else if row}
       {#key row.id}

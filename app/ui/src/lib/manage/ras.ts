@@ -17,7 +17,7 @@ export function nativeSavedText(platform: EditorPlatformView | undefined, tr: Tr
   return platform?.noInstallStep ? tr('Saved') : tr('Profile opened, approve it in System Settings.');
 }
 
-/// The L2TP / Cisco form's note on what saving does.
+/// The L2TP / Cisco form's note on what saving does (LinVPN: the Windows text's Linux variant, its plan record).
 export function nativeSaveNote(platform: EditorPlatformView | undefined, tr: Tr): string {
   return platform?.noInstallStep
     ? tr('Saving writes the Windows VPN entry of this connection at once; there is nothing to approve. The password is not in it: MacVPN passes it when connecting.')

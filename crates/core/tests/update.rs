@@ -691,6 +691,63 @@ fn winvpn_signature_is_bound_to_version_and_hash() {
     ));
 }
 
+const AMD64: &str = "linvpn_0.2.2_amd64.deb";
+const DEB_ARM64: &str = "linvpn_0.2.2_arm64.deb";
+
+#[test]
+fn linvpn_message_names_the_asset() {
+    assert_eq!(
+        UpdateSignature::message_for(SignatureDomain::LinVpnV1, AMD64, "0.2.2", DIGEST),
+        Some(format!("linvpn-update-v1\n{AMD64}\n0.2.2\n{DIGEST}\n").into_bytes())
+    );
+    assert_eq!(
+        UpdateSignature::message_for(SignatureDomain::LinVpnV1, DEB_ARM64, "0.2.2", DIGEST),
+        Some(format!("linvpn-update-v1\n{DEB_ARM64}\n0.2.2\n{DIGEST}\n").into_bytes())
+    );
+}
+
+#[test]
+fn linvpn_message_refuses_any_other_asset_name() {
+    for asset in [
+        "",
+        "MacVPN-0.2.2.dmg",
+        X64,
+        "linvpn_0.2.3_amd64.deb",
+        "linvpn_0.2.2_i386.deb",
+        "LinVPN_0.2.2_amd64.deb",
+        "linvpn-0.2.2-amd64.deb",
+        "linvpn_0.2.2_amd64.deb\n",
+        "linvpn_0.2.2_amd64.DEB",
+        "../linvpn_0.2.2_amd64.deb",
+    ] {
+        assert_eq!(UpdateSignature::message_for(SignatureDomain::LinVpnV1, asset, "0.2.2", DIGEST), None, "{asset:?}");
+    }
+    assert_eq!(UpdateSignature::message_for(SignatureDomain::LinVpnV1, AMD64, "0.2", DIGEST), None);
+    assert_eq!(UpdateSignature::message_for(SignatureDomain::LinVpnV1, AMD64, "0.2.2", &DIGEST[..63]), None);
+}
+
+#[test]
+fn no_product_accepts_another_products_signature() {
+    let lin = sign_for(&key(1), SignatureDomain::LinVpnV1, AMD64, "0.2.2", DIGEST);
+    assert!(UpdateSignature::verify_for(SignatureDomain::LinVpnV1, AMD64, "0.2.2", DIGEST, &lin, &keys()));
+    assert!(!UpdateSignature::verify("0.2.2", DIGEST, &lin, &keys()));
+    assert!(!UpdateSignature::verify_for(SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST, &lin, &keys()));
+    let win = sign_for(&key(1), SignatureDomain::WinVpnV1, X64, "0.2.2", DIGEST);
+    let mac = sign(&key(1), "0.2.2", DIGEST);
+    for sig in [&win, &mac] {
+        assert!(!UpdateSignature::verify_for(SignatureDomain::LinVpnV1, AMD64, "0.2.2", DIGEST, sig, &keys()));
+    }
+}
+
+#[test]
+fn linvpn_rejects_the_amd64_signature_for_the_arm64_asset() {
+    let sig = sign_for(&key(2), SignatureDomain::LinVpnV1, AMD64, "0.2.2", DIGEST);
+    assert!(UpdateSignature::verify_for(SignatureDomain::LinVpnV1, AMD64, "0.2.2", DIGEST, &sig, &keys()));
+    assert!(!UpdateSignature::verify_for(SignatureDomain::LinVpnV1, DEB_ARM64, "0.2.2", DIGEST, &sig, &keys()));
+    let other = format!("{}0", &DIGEST[..63]);
+    assert!(!UpdateSignature::verify_for(SignatureDomain::LinVpnV1, AMD64, "0.2.2", &other, &sig, &keys()));
+}
+
 /// Signatures of released MacVPN versions (public release assets `MacVPN-<v>.dmg.sig`, the hash from
 /// `MacVPN-<v>.dmg.sha256`), made with the maintainer's real key: they still verify with the embedded keys exactly
 /// as the updaters in the field check them, and never in WinVPN's domain.
@@ -719,6 +776,13 @@ fn released_macvpn_signatures_still_verify() {
             let msi = format!("WinVPN-{version}-{arch}.msi");
             assert!(
                 !UpdateSignature::verify_trusted_for(SignatureDomain::WinVpnV1, &msi, version, digest, sig),
+                "{version} {arch}"
+            );
+        }
+        for arch in ["amd64", "arm64"] {
+            let deb = format!("linvpn_{version}_{arch}.deb");
+            assert!(
+                !UpdateSignature::verify_trusted_for(SignatureDomain::LinVpnV1, &deb, version, digest, sig),
                 "{version} {arch}"
             );
         }
@@ -963,6 +1027,43 @@ fn sign_release_dry_run_msi_matches_app() {
     assert!(!UpdateSignature::verify_for(win, "WinVPN-0.2.2-arm64.msi", "0.2.2", &local, &sig, &[public]));
     assert!(!UpdateSignature::verify("0.2.2", &local, &sig, &[public]));
     assert!(!UpdateSignature::verify_trusted_for(win, "WinVPN-0.2.2-x64.msi", "0.2.2", &local, &sig));
+}
+
+/// `scripts/sign-release.sh --dry-run --deb FILE --arch arm64` with a throwaway key: the signature verifies in
+/// LinVPN's domain for the arm64 package only.
+#[cfg(unix)]
+#[test]
+fn sign_release_dry_run_deb_matches_app() {
+    let Some(openssl) = openssl3() else {
+        eprintln!("skipped: OpenSSL 3 not installed");
+        return;
+    };
+    let tmp = TempDir::new();
+    std::fs::create_dir_all(tmp.path()).unwrap();
+    let (pem, public) = openssl_key(openssl, tmp.path());
+    let deb = tmp.path().join("built.deb");
+    std::fs::write(&deb, (0..7000u32).map(|i| (i % 239) as u8).collect::<Vec<_>>()).unwrap();
+    let out = Command::new("/bin/bash")
+        .arg(repo_root().join("scripts/sign-release.sh"))
+        .args(["--dry-run", "--deb"])
+        .arg(&deb)
+        .args(["--arch", "arm64", "--backup-key"])
+        .arg(&pem)
+        .arg("v0.2.2")
+        .env("HTTPS_PROXY", "http://127.0.0.1:9")
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(out.status.success(), "{stdout}");
+    let line = stdout.lines().find(|l| l.starts_with("signature: ")).unwrap();
+    let sig = format!("{}\n", &line["signature: ".len()..]);
+    let local = sha256_of_file(&deb).unwrap();
+    let lin = SignatureDomain::LinVpnV1;
+    assert!(UpdateSignature::verify_for(lin, "linvpn_0.2.2_arm64.deb", "0.2.2", &local, &sig, &[public]));
+    assert!(!UpdateSignature::verify_for(lin, "linvpn_0.2.2_amd64.deb", "0.2.2", &local, &sig, &[public]));
+    assert!(!UpdateSignature::verify("0.2.2", &local, &sig, &[public]));
 }
 
 /// The script reads the embedded keys from this crate's source (`UpdateSignature`): it gets the same as the app.

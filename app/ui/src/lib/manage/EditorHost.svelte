@@ -10,7 +10,13 @@
   import { i18n } from '../l10n.svelte';
   import { isPrimaryShortcut } from '../keys';
 
-  let { id, kind, active, epoch }: { id: string; kind: Kind; active: boolean; epoch: number } = $props();
+  let {
+    id,
+    kind,
+    active,
+    epoch,
+    openvpnPushVisible = true,
+  }: { id: string; kind: Kind; active: boolean; epoch: number; openvpnPushVisible?: boolean } = $props();
 
   const session = untrack(() => new EditorSession(id));
 
@@ -55,6 +61,6 @@
   {:else if session.fields.type === 'sstp'}
     <SstpForm {session} />
   {:else if session.fields.type === 'text'}
-    <TextEditor {session} {kind} />
+    <TextEditor {session} {kind} {openvpnPushVisible} />
   {/if}
 {/if}

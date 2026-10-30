@@ -4,7 +4,7 @@ A kiadás utáni kézi ellenőrzések a MacVPN 2.0.0-hoz (macOS) és a WinVPN 2.
 
 Ami a kiadás előtt már automatikusan lefutott, azt itt nem kell megismételni: a CI (`.github/workflows/ci.yml`: `cargo test --workspace` macOS-en és Windowson, `scripts/test-root.sh`, `scripts/test-sign-release.sh`, `cd app/ui && npm test`, a `msi` és a `windows-admin` job), a kiadás előtti helyi ellenőrzések (`docs/RELEASING.md`, 2. lépés: a smoke teszt mindkét nyelven a Macen és Windowson, `scripts/check-windows.sh`, `node scripts/l10n-baseline.mjs --check`) és a kiadási workflow ellenőrzései (a csomag azonosítója, verziója, aláírása; a release gate-ek). Az ezekkel lefedett pontoknál „(automatikus: …)” áll; ezeket csak akkor futtasd kézzel, ha valami gyanús.
 
-Részek: a 2.0.0 új funkciói (mindkét termék), élő átjárók (UniFi, pfSense, OPNsense), a VPN-labor, a MacVPN a laborral, a WinVPN (szolgáltatás és Homebrew-mentes motorok; natív VPN-ek; alapok), a MacVPN korábbi funkcióinak regressziója, végül a frissítés régebbi MacVPN-ről.
+Részek: a 2.0.0 új funkciói (mindkét termék), élő átjárók (UniFi, pfSense, OPNsense), a VPN-labor, a MacVPN a laborral, a WinVPN (szolgáltatás és Homebrew-mentes motorok; natív VPN-ek; alapok), a LinVPN előzetes változata (Linux, L-a: alapok; L-b: VPN-ek a NetworkManageren át), a MacVPN korábbi funkcióinak regressziója, végül a frissítés régebbi MacVPN-ről.
 
 ## 2.0.0 – új funkciók (mindkét termék)
 
@@ -631,6 +631,192 @@ Előfeltétel: a kiadott `WinVPN-2.0.0-x64.msi` (és az `-arm64.msi`). Kell egy 
 
 ### Nyelv
 - [ ] Mindez magyarul és angolul (a Windows megjelenítési nyelvének átállításával): a WinVPN-szövegek Windows-szavakat használnak (Hitelesítőadat-kezelő, Fájlkezelő, Gépház, értesítési terület), sehol nincs „Mac”, „Finder”, „Keychain” vagy „menüsor”
+
+## LinVPN (Linux, L-a)
+
+A LinVPN előzetes változatának alapjai (a terv: `docs/superpowers/plans/2026-10-29-linvpn-l0-la.md`, az útmutató: `docs/linvpn-user-guide.hu.md`): minden a VPN-ek nélkül, amelyekkel a következő rész („LinVPN (Linux, L-b)”) foglalkozik. Az L-b óta változott pontoknál zárójelben az L-b szerinti elvárás áll. A tesztgép az Ubuntu 26.04-es VM (GNOME, Wayland), a felhasználó a nem rendszergazda `linvpn-dev`, **asztali bejelentkezéssel** (nem SSH-n; a parancsokat a VM saját termináljában futtasd). Ami root jogot kér (`apt`, a polkit jelszava), az a karbantartóé. A smoke teszt (`scripts/lin-smoke.sh en` és `hu`) a felületet már ellenőrizte; itt a valódi asztal viselkedése a kérdés. A VM címét ne írd a jegyzetekbe. A csomag **verziója: ___**, az architektúra (`dpkg --print-architecture`): ___
+
+### Telepítés (CP-deb install)
+- [ ] `sha256sum -c linvpn_<verzió>_amd64.deb.sha256` → `OK`; `sudo apt install ./linvpn_<verzió>_amd64.deb` → a függőségekkel együtt települ, hiba és figyelmeztetés nélkül
+- [ ] `dpkg-deb --field linvpn_<verzió>_amd64.deb Package Version Architecture` → `linvpn`, a verzió, `amd64`; `dpkg-deb --ctrl-tarfile linvpn_<verzió>_amd64.deb | tar -t` → csak `./`, `./control`, `./md5sums` (nincs `preinst`, `postinst`, `prerm`, `postrm`) (L-b óta a `./postinst` és a `./prerm` is, lásd az L-b részt)
+- [ ] `dpkg -L linvpn` → `/usr/bin/linvpn`, `/usr/libexec/linvpn/linvpn-install-update`, `/usr/share/applications/linvpn.desktop`, `/usr/share/mime/packages/linvpn.xml`, `/usr/share/polkit-1/actions/local.linvpn.update.policy`, az ikonok a `hicolor` alatt, `/usr/share/doc/linvpn/copyright` és `THIRD-PARTY-NOTICES.txt`; mind `root:root` (L-b óta a `linvpn-logd`, a `linvpn-xfrmd`, a LinVPN OpenVPN-szolgáltatása és a forrása is, lásd az L-b részt)
+- [x] A LinVPN megjelenik az alkalmazások között az ikonjával; elindítva a dokkban is a LinVPN ikonja látszik
+
+### Az ikon és a panel
+- [ ] Az ikon a felső sáv jobb oldalán látszik (fehér); a panel Waylanden nyílik (`echo $XDG_SESSION_TYPE` → `wayland`), a felső sáv alatt, a képernyő jobb felső sarkában (jobbról és a sáv alól 8 px-re), annak a monitornak a sarkában, amelyiken az egérmutató van
+- [x] Bal kattintás az ikonon → egy pillanatnyi szünet után menü: **LinVPN megnyitása**, **Kilépés a LinVPN-ből**; a **LinVPN megnyitása** megnyitja a panelt; jobb kattintás → ugyanez a menü
+- [x] Dupla kattintás az ikonon → a panel azonnal megnyílik; újabb dupla kattintás → bezárul; középső kattintás → ugyanígy
+- [x] Kattintás a panelen kívül (az asztalra vagy egy másik ablakba) → a panel bezárul, és a kattintás a mögötte lévő ablakot éri; másik ablakra váltás (Alt+Tab) → a panel bezárul
+- [ ] A panel kártyái, csempéi és a **Beállítások** csoport ugyanúgy működnek, mint a MacVPN menüjében; a **Súgó** a `docs/linvpn-user-guide.hu.md`-t nyitja meg a GitHubon (angol nyelven az `.en.md`-t)
+- [ ] **Kilépés a LinVPN-ből** a menüben → a LinVPN kilép, az ikon eltűnik
+
+### Széf és kulcstartó
+- [x] Első indítás → **Széf beállítása**; a széf létrejön (`ls -l ~/.local/share/LinVPN` → `vault.db`, `vault.keys`, a mappa `drwx------`)
+- [x] Kilépés, újraindítás → a széf jelszó nélkül nyílik; a **Jelszavak és kulcsok** alkalmazásban a bejelentkezési kulcstartóban ott a **LinVPN vault key** bejegyzés
+- [ ] Zárolt kulcstartó (a **Jelszavak és kulcsok** alkalmazásban a **Bejelentkezés** kulcstartó zárolása, majd a LinVPN újraindítása) → a GNOME saját feloldó ablaka kéri a kulcstartó jelszavát; megadva a széf megnyílik; **Mégse** → a LinVPN a mesterjelszót kéri
+- [ ] **Automatikus feloldás** ki → a bejegyzés eltűnik a kulcstartóból, a következő indításkor a mesterjelszót kéri; be → újra ott van
+
+### Értesítések
+- [ ] Egy katalógusfrissítés értesítése **LinVPN** néven, az ikonjával jelenik meg; a Beállítások → Értesítések listájában ott a **LinVPN**
+- [ ] Kattintás az értesítésre futó LinVPN mellett → a hozzá tartozó ablak előjön
+- [ ] Egyetlen értesítésben sincs jelszó, kulcs, token vagy config-tartalom
+
+### Megjelenés
+- [ ] **Beállítások → Megjelenés → Sötét**, majd **Világos** → a panel és minden nyitott ablak azonnal vált
+- [x] **Rendszer szerint**: a GNOME Beállítások → Megjelenés stílusát (Világos / Sötét) futás közben váltva a LinVPN követi
+
+### Indítás bejelentkezéskor
+- [ ] **Indítás bejelentkezéskor** be → létrejön a `~/.config/autostart/linvpn.desktop` (`Exec=/usr/bin/linvpn`); ki- és visszajelentkezés után a LinVPN fut; ki → a fájl eltűnik
+- [ ] Bekapcsolt állapotban a GNOME Finomhangolások **Indítási alkalmazások** oldalán kikapcsolva (vagy `X-GNOME-Autostart-enabled=false` a fájlban) → a kapcsoló kikapcsolva, alatta: **Egy másik alkalmazás kikapcsolta.**; a LinVPN-ben bekapcsolva újra be van kapcsolva
+
+### Fájlok és második indítás
+- [x] Dupla kattintás egy `.ovpn` fájlra a Fájlokban → a LinVPN (ha nem fut, elindul) megnyitja a Kapcsolatok ablakot és importálja; `.macvpncatalog` → a csapatkatalógus párbeszédablaka; `.sstp` → import
+- [ ] Böngészővel letöltött `.ovpn` (`getfattr -n user.xdg.origin.url <fájl>` → van érték) → **Importálod a letöltött fájlt?**; a jelölés megmarad
+- [ ] Futó LinVPN mellett a terminálban `linvpn ~/Letöltések/teszt.ovpn` → nem indul második példány, a futó LinVPN importálja a fájlt; `linvpn` fájl nélkül → a futó LinVPN előhozza az ablakait
+
+### Vezérlő API
+- [ ] **Kapcsolatok kezelése…** → **Párosított appok** → **Más appok vezérelhetik a VPN-eket** be → `ls -l $XDG_RUNTIME_DIR/linvpn/control/linvpn.sock` → `srw-------`, a `control` mappa `drwx------`; ki → a socket eltűnik
+- [ ] A példakliens (`cargo build -p macvpn-control-client`, majd `target/debug/macvpn-control-client pair "Teszt"`, lásd `examples/macvpn-control-client/README.md`) a LinVPN jóváhagyó ablaka után tokent kap; a `list` az engedélyezett kapcsolatokat listázza; a `hold <ID>` válasza: **A kapcsolódás a LinVPN egy későbbi verziójában érkezik.** (L-b óta: a kapcsolat felépül, és a `release` után lebomlik)
+
+### Még nem csatlakozik (csak L-a; az L-b óta elavult, a helyét az L-b rész vette át)
+- [ ] Egy kapcsolat bekapcsolása → **A kapcsolódás a LinVPN egy későbbi verziójában érkezik.**; a **Rendszerállapot** a motorok helyett ezt írja: **A kapcsolódás a LinVPN egy későbbi verziójában érkezik: a motorjai a NetworkManager-támogatással jönnek. …**
+- [ ] A saját NetworkManager VPN-ek nem jelennek meg rendszer VPN-ként; `nmcli connection show` a LinVPN futása után sem mutat új kapcsolatot
+
+### Kijelentkezés, alvás
+- [ ] Nem mentett változás a Kapcsolatok ablakban, majd kijelentkezés → a LinVPN rákérdez (**Nem mentett változások**), a munkamenet a rendszer időkorlátja után akkor is véget ér; nem mentett változás nélkül a kijelentkezés várakozás nélkül megy
+- [ ] Alvás és ébresztés → a LinVPN fut tovább, a katalógus legutóbbi frissítésének ideje az ébredés ideje
+
+### Frissítés (CP-update)
+- [ ] Egy újabb, aláírt csomag felajánlása → **Letöltés és telepítés** → a rendszer jelszókérő ablaka (a polkit üzenete: a LinVPN a frissítését szeretné telepíteni) → rendszergazdai jelszó → a LinVPN újraindul, és ezt írja: **A LinVPN frissült erre a verzióra: X.Y.Z.**; `dpkg -s linvpn` → az új verzió
+- [ ] A jelszókérő ablak bezárása → semmi nem települ, a LinVPN fut tovább
+- [ ] Hibás aláírású csomag → a LinVPN nem telepíti (**A frissítést nem a LinVPN fejlesztője írta alá**), jelszót sem kér; régebbi verziót sosem ajánl fel és nem telepít
+- [ ] A root lépés kimenete a `~/.cache/LinVPN/updates/install-<verzió>.log` fájlban van
+- [ ] A frissítés után a `/var/cache/linvpn-update` alatt nem marad csomagmásolat
+
+### Eltávolítás
+- [ ] `sudo apt remove linvpn` → a program, az alkalmazásbejegyzés, a fájltípusok és a polkit-művelet eltűnik; a `~/.local/share/LinVPN`, a `~/.config/LinVPN`, a `~/.config/autostart/linvpn.desktop` és a **LinVPN vault key** megmarad; újratelepítés után a széf kérdés nélkül megnyílik
+
+### Nyelv
+- [ ] Mindez magyarul és angolul (Beállítások → Rendszer → Terület és nyelv, ki- és bejelentkezés): a LinVPN-szövegek GNOME-szavakat használnak (bejelentkezési kulcstartó, Fájlok, Beállítások, felső sáv), sehol nincs „Mac”, „Finder”, „Keychain”, „menüsor”, „Hitelesítőadat-kezelő” vagy „értesítési terület”
+
+## LinVPN (Linux, L-b): VPN-ek a NetworkManageren keresztül
+
+A LinVPN L-b fázisa (a terv: `docs/superpowers/plans/2026-10-29-linvpn-lb.md`, 26–28. feladat; az útmutató: `docs/linvpn-user-guide.hu.md`): mind a hat kapcsolattípus a NetworkManageren át, a titokügynök, a rendszer VPN-ek, a `linvpn-logd`, a PackageKit-telepítés, a forgalom, a halott alagút és a hálózatfigyelés. Az útmutató a szándékolt működést írja le; ami itt még nincs kipipálva, azt élesben még senki nem ellenőrizte. A tesztgép az Ubuntu 26.04-es VM (GNOME, Wayland), a felhasználó a nem rendszergazda `linvpn-dev`, **asztali bejelentkezéssel** (a parancsokat a VM saját termináljában futtasd, ne SSH-n: SSH-ról a NetworkManager minden írása jelszót kérne). Ami root jogot kér (`apt-get`, a `.deb` telepítése, a PackageKit jelszava), az a karbantartóé. A VM, a Mac és a labor LAN-címét ne írd a jegyzetekbe; a labor belső címei (10.99.x.x) maradhatnak. Ha bárhol váratlan rendszerablak (jelszókérés, a GNOME saját VPN-jelszóablaka) jelenik meg, az hiba: jegyezd fel. A csomag **verziója: ___**, NetworkManager (`nmcli --version`): ___, OpenVPN (`openvpn --version | head -n 1`): ___, `network-manager-openvpn`, `-l2tp`, `-strongswan`, `-vpnc`, `-sstp` verziója (`dpkg-query -W 'network-manager-*'`): ___
+
+### A labor és a profilok (CP-lab)
+- [ ] A Macen a labor fut (lásd „A VPN-labor előkészítése”), és **a VM eléri a Mac közzétett portjait**: a VM-en `curl --max-time 5 http://<a Mac LAN-címe>:8081/ca.crl -o /dev/null -w '%{http_code}\n'` → `200`. Ha nem: (a) a macOS tűzfalában a Docker bejövő kapcsolatai engedélyezve; (b) a VM hálózati adaptere **híd** (bridged) módban a Mac LAN-ján; (c) a labor egy másik, Dockeres LAN-gépen (`up.sh --bind <annak a címe>`). Melyik kellett: ___
+- [ ] A Linux-profilok a VM-en: a Macen `scripts/vpn-lab/.state/client/linux/` tartalma a VM `~/lab-client/` mappájába másolva (a `CREDENTIALS.txt`-t ne másold; az értékeit kézzel írd be)
+- [ ] Az IKEv2-tanúsítványok a LinVPN strongSwan-mappájában: `mkdir -p ~/.local/share/LinVPN/swanctl && cp -r ~/lab-client/swanctl/* ~/.local/share/LinVPN/swanctl/ && chmod -R go-rwx ~/.local/share/LinVPN/swanctl` → `ls -lR ~/.local/share/LinVPN/swanctl` az `x509ca`, `x509`, `private` mappákat mutatja, más számára olvashatatlanul
+- [ ] A bővítmények (CP-plugins): `dpkg-query -W network-manager-openvpn network-manager-l2tp network-manager-strongswan libcharon-extauth-plugins libcharon-extra-plugins network-manager-vpnc` → mind telepítve; a **`network-manager-sstp` nincs telepítve** (ha mégis, előbb: `sudo apt-get remove network-manager-sstp`, hogy a CP-engines lépés a **Telepítés** gombot is kipróbálja)
+
+### Telepítés (CP-deb)
+- [ ] `sudo apt-get install ./linvpn_<verzió>_amd64.deb` → hiba és figyelmeztetés nélkül települ; `systemctl status linvpn-logd.socket linvpn-xfrmd.socket` → mindkettő `active (listening)`, `enabled`
+- [x] `cat /run/linvpn/package-version` → a telepített verzió; `ls -ld /run/linvpn /run/linvpn/package-version` → `drwxr-xr-x root`, `-rw-r--r-- root`
+- [x] **Frissítés apt-tal futás közben:** a LinVPN fut, egy kapcsolat csatlakozva; egy újabb (vagy régebbi) csomag `sudo apt-get install ./linvpn_<másik verzió>_amd64.deb`-vel → néhány másodpercen belül a LinVPN kérdés nélkül kilép és magától újraindul; a tálca menüje és a **Frissítés** ablak az új verziót mutatja; a kapcsolat végig fennáll, és az új folyamat csatlakozottként mutatja (az első ilyen frissítés egy figyelő nélküli régebbi csomagról még kézi újraindítást kér) — 2026-10-30: 2.0.90→2.0.6 és 2.0.6→2.0.7 rendben, értesítéssel (élő kapcsolat nélkül; a kapcsolatos rész a laborral)
+- [ ] **Felügyelő (újraindítás összeomlás után):** a telepített LinVPN fut, egy kapcsolat csatlakozva; `pgrep -af /usr/bin/linvpn` → két folyamat (a felügyelő és a `--supervised` alkalmazás); `pkill -KILL -f -- '--supervised'` → kb. 2 mp múlva a tálcaikon visszatér, ablak nem nyílik meg magától, a kapcsolat végig fennáll és csatlakozottként látszik; `journalctl --user -t linvpn --since -5min` (vagy a teljes `journalctl --user | grep LinVPN`) → „restarting it” és „started again by its supervisor … (signal 9)”. **Kilépés** a menüből → mindkét folyamat eltűnik, nincs újraindulás. Ötször egymás után megölve a hatodik után már nem indul újra („not restarting it again”). Egy második `linvpn` indítás futás közben nem hoz létre újabb felügyelőt (`pgrep` továbbra is kettőt mutat). RDP-vel nézett VM-en az RDP-kapcsolat megszakítása (ha a LinVPN ettől kilép) → újraindul: ___ — 2026-10-30 részben: `pkill -KILL` után visszajött, a **Kilépés** után nem; hátra: élő kapcsolat, ötös korlát, második indítás, RDP
+- [ ] Ugyanez nem mentett változással a Kapcsolatok ablakban → a LinVPN nem indul újra; mentés vagy elvetés után néhány másodpercen belül újraindul
+- [ ] `dpkg-deb --ctrl-tarfile linvpn_<verzió>_amd64.deb | tar -t` → `./`, `./control`, `./md5sums`, `./postinst`, `./prerm`, más nincs
+- [ ] `ls -l /usr/lib/NetworkManager/VPN/nm-linvpn-openvpn-service.name /usr/lib/linvpn/ /usr/libexec/linvpn/ /usr/share/linvpn/source/` → a `.name` fájl, a `nm-openvpn-service` és a `nm-openvpn-service-openvpn-helper`, a `linvpn-install-update`, a `linvpn-logd` és a `linvpn-xfrmd`, a forrás (`NetworkManager-openvpn-1.12.5.tar.xz`, `linvpn-nm-openvpn.patch`, `README.md`); mind `root:root`; a szokásos `/usr/lib/NetworkManager/VPN/nm-openvpn-service.name` változatlanul megvan
+- [ ] `sudo systemd-analyze security linvpn-logd@.service | tail -n 1` → a pontszám: ___ (feljegyezve)
+- [ ] `ls -l /run/linvpn-logd.sock` → `root` tulajdonú socket
+- [ ] `sudo systemd-analyze security linvpn-xfrmd@.service | tail -n 1` → a pontszám: ___ (feljegyezve); `ls -l /run/linvpn-xfrmd.sock` → `root` tulajdonú socket; `systemctl cat linvpn-xfrmd@.service | grep -i capab` → csak `CAP_NET_ADMIN` (ambient és bounding), `User=` nincs (DynamicUser)
+- [ ] **Rendszerállapot**: a NetworkManager sor a verzióval, a WireGuard **A NetworkManager része**, az OpenVPN **OpenVPN 2.7.0 · követi a szerver redirect-gateway beállítását**, az L2TP/IPsec, az IKEv2 és a Cisco IPsec **Telepítve**, az SSTP piros: **Nincs telepítve: network-manager-sstp**, **Telepítés** gombbal; a fejléc: „A LinVPN a NetworkManageren és a VPN-bővítményein keresztül kapcsolódik…”
+- [ ] Egy SSTP-kapcsolat (`sstp-ca.sstp` importálva) a listában szürke: **Nincs telepítve: NetworkManager SSTP-bővítmény – Rendszerállapot**; a **Rendszerállapot** hivatkozás megnyitja az ablakot
+
+### Titokügynök (L0-4, 2. rész)
+- [ ] Az első csatlakozások alatt (lent) a GNOME saját VPN-jelszóablaka **egyszer sem** jelenik meg; a LinVPN kódablaka a szokásos
+- [ ] Debug módban csatlakozva a Napló fülön a `vpn.data` sorokban a jelszó és a PSK helyén `***` áll; `nmcli connection show` a futó LinVPN-kapcsolatnál nem mutat jelszót, és bontás után a kapcsolat eltűnik a listából
+
+### OpenVPN
+- [ ] `openvpn-tun-dco.ovpn` importálva (`labuser` + jelszó), **Minden forgalom a VPN-en keresztül** = **A szerver dönt** → csatlakozik; a kártyán „Csatlakozva”, a cím (`10.99.x.x`) és élő forgalom; `curl --max-time 5 http://10.99.0.10/` → „via: openvpn”; `ip route get 1.1.1.1` **nem** a `lvo…` interfészen megy (osztott alagút); a szerkesztő alatt „Linuxon: NetworkManager a LinVPN OpenVPN-szolgáltatásával · a teljes forgalomról a szerver dönt”
+- [ ] `openvpn-tun-cbc.ovpn` → csatlakozik
+- [ ] Rossz jelszó → nem csatlakozik; a Napló fülön `AUTH_FAILED` sor; a hitelesítőadat-ablak egyszer újra megnyílik
+- [ ] **Statikus challenge:** `openvpn-static-challenge.ovpn` `labotp`-vel → a kódablak csatlakozás **előtt** jön; a kóddal csatlakozik
+- [ ] **CRV1:** `openvpn-tun-dco.ovpn` `labotp`-vel → a kódablak csatlakozás **közben** jön a szerver szövegével; a kóddal csatlakozik; ugyanez kód nélkül, a **Mégse** gombbal → a csatlakozás hiba nélkül leáll
+- [ ] **A szerver által küldött teljes alagút:** `labfull` felhasználóval, **A szerver dönt** → `ip route get 1.1.1.1` a `lvo…` interfészen megy (a VM-nek ilyenkor nincs internete: szándékos); bontás után újra van
+- [ ] **Soha:** ugyanez **Soha (osztott alagút)** beállítással (a configba `pull-filter ignore "redirect-gateway"` kerül) → `ip route get 1.1.1.1` nem a tunnelen megy; **Mindig** beállítással `labuser`-rel → a tunnelen megy, a configban `redirect-gateway def1`
+- [ ] Egy `peer-fingerprint` sort tartalmazó config → a kártya szürke: „Linuxon nem támogatott: peer-fingerprint (a NetworkManager így nem tudja ellenőrizni a szervert; használj CA-t)”, a kapcsoló tiltott; egy `sndbuf` sor → a **Kockázatos beállítások** panelen „Linuxon a NetworkManager figyelmen kívül hagyja”, tudomásulvétellel menthető, és csatlakozik
+- [ ] A labor OpenVPN-konténerének újraindítása csatlakozás közben (a Macen `docker restart` a labor OpenVPN-szolgáltatására) → a sor **Újracsatlakozás…** állapotba kerül (vagy a kapcsolat megszakad és az automatikus újracsatlakozás visszahozza); melyik történt, és mennyi idő alatt: ___
+- [ ] A futás alatt `ls -ld $XDG_RUNTIME_DIR/linvpn/nm/*` → `drwx------`, a fájlok `-rw-------`; bontás után a kapcsolat mappája eltűnik
+- [ ] **Jelszó nélküli PKCS#12 (pfSense „Archive” export):** egy `<pkcs12>` blokkos config, amelynek a PKCS#12 fájlja üres jelszóval készült (`openssl pkcs12 -export -passout pass:` a labor klienskulcsából) → csatlakozik, **Privát kulcs jelszava** nem kell, GNOME-jelszóablak nem jelenik meg; ugyanez jelszavas PKCS#12-vel → a jelszót kéri (vagy a széfből veszi), és csatlakozik
+
+### WireGuard
+- [ ] `wireguard-linux.conf` → csatlakozik, „via: wireguard”; a szerkesztő alatt „Linuxon: a NetworkManager WireGuard-ja (interfész: lvw…)”; `ip link show` → `lvw…` interfész; a kártyán cím és élő forgalom
+- [ ] `nmcli connection show` csatlakozás közben a LinVPN kapcsolatát mutatja, bontás után már nem; `nmcli --show-secrets connection show <uuid>` csatlakozás közben **nem** mutatja a privát kulcsot (a titkokat az ügynök adja)
+- [ ] Egy `Table = 1234` sor → a kártya szürke: „Linuxon nem támogatott: Table = 1234 (a NetworkManager a saját útválasztási táblázatát használja)”
+
+### WireGuard-kulcs a vágólapon (Linux)
+A szerkesztő **Interface-kulcsok** dobozában a privát kulcs **Másolás** gombja (a macOS/Windows k6–k8 pontjainak linuxos párja).
+- [ ] **Másolás** → „Kimásolva. Egy perc múlva lekerül a vágólapról.”; beillesztve (pl. a Szövegszerkesztőbe) pontosan a kulcs; 60 mp múlva a vágólap üres (beillesztés semmit nem ad), ha közben mást nem másoltál
+- [ ] Ha 60 mp-en belül mást másolsz (pl. egy szót a Szövegszerkesztőből), a 60 mp letelte után is az marad a vágólapon (a LinVPN csak a saját másolatát törli)
+- [ ] Másolás után **Széf zárolása most** → a vágólap azonnal üres
+- [ ] Másolás után **Kilépés a LinVPN-ből** → a vágólap üres (a LinVPN kilépés előtt törli)
+- [ ] GNOME vágólap-bővítménnyel (pl. Clipboard Indicator vagy Pano; a bővítmény neve: ___): a privát kulcs másolása után megjelenik-e az előzményei között? ___ (elvárt: csak a `x-kde-passwordManagerHint` jelölést figyelembe vevő bővítmény hagyja ki; ha megjelenik, az a LinVPN útmutatójának 3.2 pontja szerint ismert korlát). A publikus kulcs másolata megjelenik
+- [ ] Ha van KDE Plasma (Klipper) teszthelyzet: a privát kulcs másolata nincs a Klipper előzményeiben, a publikus kulcsé ott van
+
+### L2TP/IPsec, IKEv2, Cisco IPsec
+- [ ] **L2TP:** új L2TP kapcsolat az `l2tp.txt` értékeivel (szerver, fióknév, jelszó, PSK) → a gomb **Mentés**, nincs profiljóváhagyás; `~/.local/share/LinVPN/nm/<azonosító>.json` létrejön (`-rw-------`), jelszó és PSK nincs benne; csatlakozás → „Csatlakozva”, cím (`10.99.16.x`), forgalom, „via: ipsec”; bontás
+- [ ] **L2TP egyszeri kóddal:** `labotp`, elválasztó „,”, **Egyszer használatos kód kérése csatlakozáskor…** → a kódablak után csatlakozik
+- [ ] **IKEv2 EAP:** `ikev2-eap.swanctl.conf` (`labuser` + jelszó) → csatlakozik, „via: ipsec”; a kártyán élő forgalom (strongSwan 6-tal a charon-nm `nm-xfrm-*` interfészéből: `ip -o addr show | grep nm-xfrm` a VPN-címet mutatja; régebbi strongSwannál a `linvpn-xfrmd`-ből), a Naplóban „Csatlakozva (az IPv4-cím még nem ismert)”, majd „IPv4-cím: …” (nem „IPv4 -”); egy `eap_id = %any` szerverrel is csatlakozik (a `libcharon-extra-plugins` EAP-Identity bővítménye; nélküle a rendszerállapot IKEv2-sora „Az EAP-hoz szükséges: libcharon-extra-plugins”, és a Naplóban `EAP_IDENTITY not supported, sending EAP_NAK`), és `curl --max-time 5 http://10.99.0.10/` után a ↓ érték nő; a három IKEv2-módnál (EAP, PSK, tanúsítvány) ugyanígy: ___
+- [ ] **IKEv2 PSK:** `ikev2-psk.swanctl.conf` → ha a labor PSK-ja legalább 20 karakter, csatlakozik; egy 19 karakteres PSK-val → „Linuxon az IKEv2-höz legalább 20 karakteres előre megosztott kulcs (PSK) kell…”, és a NetworkManagerhez semmi nem jut el
+- [ ] **IKEv2 tanúsítvány:** `ikev2-cert.swanctl.conf` (a tanúsítványok a strongSwan-mappában) → csatlakozik, jelszót nem kér; a `swanctl/x509ca` kiürítése után a szerkesztő a „Nincs megnevezett CA-tanúsítvány…” figyelmeztetést mutatja, és a csatlakozás tanúsítványhibával elakad; visszatéve újra működik
+- [ ] **IKEv2 importált klienstanúsítvány (G4, PEM):** a strongSwan-mappa `x509/` és `private/` labor-fájljai törölve (a CA maradjon az `x509ca/`-ban); `ikev2-cert.swanctl.conf` `certs` nélkül → a szerkesztő alatt szürkén „Linuxon kliens-tanúsítvány kell: importáld a Klienstanúsítvány importálása… gombbal…”, a **Klienstanúsítvány** dobozban „Nincs importált klienstanúsítvány. A LinVPN a saját strongSwan-mappájában…”; **Klienstanúsítvány importálása…** → a `lab-client.pem` és a kulcsa → „PEM-tanúsítvány és kulcs” + ujjlenyomat, a szürke ok eltűnik, a **Tanúsítványok** dobozban elöl „Importált klienstanúsítvány”, utána a CA; csatlakozás → Csatlakozva, „via: ipsec”; közben `ls -l $XDG_RUNTIME_DIR/linvpn/nm/*/` → `client-cert.pem` és `client-key.pem`, `-rw-------`, a mappa `drwx------`; `nmcli -f vpn.data connection show <a LinVPN kapcsolat>` csak útvonalakat mutat (`usercert`, `userkey`), kulcsot nem; bontás után a mappa eltűnik
+- [ ] **IKEv2 titkosított PEM-kulcs (G2):** `openssl pkcs8 -topk8 -v2 aes-256-cbc` kulccsal importálva → „A kulcsot jelszó védi…”; mentett jelszó nélkül csatlakozva a **Hitelesítő adatok szükségesek** ablak csak a **Privát kulcs jelszava** mezőt kéri; jó jelszóval Csatlakozva; rossz jelszóval hiba, a jelszó a naplóban (debug módban sem) nem látszik; a strongSwan-mappában (`certs = …`) lévő titkosított kulcs a **Privát kulcs jelszava** mezőben mentett jelszóval csatlakozik
+- [ ] **IKEv2 PKCS#12 Linuxon (automatikus átalakítás):** a `lab-client.p12` importálása → „A PKCS#12 fájl jelszava” ablak; rossz jelszóval „A PKCS#12 fájl jelszava hibás.”, az ablak marad; **Mégse** → semmi nem kerül a széfbe; jó jelszóval „PEM-tanúsítvány és kulcs”, „A kulcsot jelszó védi…”; csatlakozás a **Privát kulcs jelszava** megadásával (a .p12 jelszava) → Csatlakozva; egy régi (`-legacy`, RC2/3DES) .p12 is működik; egy Macen PKCS#12-vel importált kapcsolat mentésből visszaállítva a kulcsjelszóval csatlakozik; `ps`-ben az openssl parancssorában nincs jelszó
+- [ ] **Cisco IPsec:** új Cisco kapcsolat a `cisco-ipsec.txt` értékeivel (csoportnévvel) → csatlakozik, „via: ipsec”. Ha a vpnc javaslatai nem egyeznek a laboréval, jegyezd fel a Napló `[vpnc]` sorait: ___
+- [ ] **Osztály szerinti útvonal (L2TP, SSTP; `90-linvpn-route`):** a **Minden forgalom a VPN-en keresztül** kikapcsolva csatlakozva `ip -4 route` → a VPN-cím osztályának hálózata (A: `/8`, B: `/16`, C: `/24`) `dev pppN … metric 50`, mellette a VPN-szerver `/32` útvonala a fizikai interfészen; a szerver mögötti hálózat egy gépe elérhető; `journalctl -t linvpn-route --since -5min` → egy „pppN: added <hálózat> (the class of <cím>)” sor; bontás után az útvonal eltűnt; bekapcsolt **Minden forgalom**-mal nincs ilyen sor és útvonal; Cisco IPsec-nél sincs; ha a helyi hálózat ugyanaz a hálózat, vagy az alapértelmezett átjáró beleesik, nem vesz fel útvonalat, és ezt naplózza; `ls -l /usr/lib/NetworkManager/dispatcher.d/90-linvpn-route` → `-rwxr-xr-x root root`
+- [ ] Egy második LinVPN-folyamat (például egy `lab_e2e` teszt) ugyanazzal a felhasználóval, miközben a LinVPN fut → a csatlakozás hibája „Ehhez a felhasználóhoz már egy másik LinVPN (vagy LinVPN-teszt) regisztrált a NetworkManagernél…”, nem „A NetworkManager nem fut.”
+- [ ] A Napló fülön mindháromnál a NetworkManager (`[nm]`) és a bővítmény (`[charon-nm]`, `[nm-l2tp-service]`, `[pppd]`, `[vpnc]`) sorai is látszanak
+- [ ] **IKEv2-forgalom és a `linvpn-xfrmd` (rendszergazdaként ellenőrizve):** IKEv2 csatlakozva; `sudo ip -s xfrm state` két ESP SA-t mutat (be és ki); a kártya ↓/↑ összege nagyságrendben egyezik a bejövő és a kimenő SA `lifetime current` bájtjaival: ___; `journalctl -u 'linvpn-xfrmd@*' --since -5min` → csak `uid=<szám> answer=T` / `answer=N` sorok, kérés, cím vagy kulcs nincs bennük
+- [ ] A saját kapcsolat azonosítójával (a `~/.local/share/LinVPN/logs/<azonosító>.log` fájlnévből): `printf 'linvpn-xfrmd-v1 linvpn <azonosító>\n' | nc -U -N /run/linvpn-xfrmd.sock` → `T <szám> <szám>`; egy másik helyi felhasználóként ugyanez → `N` (ha van második felhasználó); egy véletlen azonosítóval → `N`
+- [ ] `systemctl stop linvpn-xfrmd.socket` (rendszergazda) után az IKEv2-kártyán nincs forgalmi adat, minden más működik; `systemctl start linvpn-xfrmd.socket` után újra látszik
+- [ ] Laborteszt valódi XFRM-dumppal, IKEv2 csatlakozva: `cargo test -p macvpn-helper --test xfrmd --no-run` (felhasználóként; a kimenet a tesztprogram útvonala), majd `sudo <tesztprogram> --ignored --exact lab_a_real_xfrm_dump_parses --nocapture` → `ok`, a policyk és SA-k száma: ___
+
+### SSTP és PackageKit (CP-engines)
+- [ ] **Rendszerállapot** → az SSTP sorában **Telepítés** → a rendszer (PackageKit) jelszókérő ablaka rendszergazdai jelszót kér → megadva a sor alatt a kimenet, a végén a sor zöld (**Telepítve**), és az SSTP-kapcsolat már nem szürke
+- [ ] Ugyanez (előbb `sudo apt-get remove network-manager-sstp`, majd **Újraellenőrzés**) a jelszóablak bezárásával → „A telepítés megszakadt.” vagy „A telepítés nem kapott engedélyt.”, semmi nem települt
+- [ ] `sstp-ca.sstp` és `sstp-ca-alt-port.sstp` → csatlakozik, „via: sstp”, cím és forgalom; `sstp-no-verification.sstp` → a figyelmeztetéssel („Ellenőrzés nélkül a LinVPN nem vizsgálja a szerver tanúsítványát.”) csatlakozik; `sstp-system-ca.sstp` → tanúsítványhiba (elvárt: a labor CA-ja nincs a rendszer tárolójában)
+
+### DNS
+- [ ] OpenVPN osztott alagúttal: `resolvectl query whoami.lab.test` → `10.99.0.10` a tunnel interfészén át; `resolvectl query example.com` nem a `10.99.0.53`-at kérdezi; `resolvectl status <lvo…>` → `DefaultRoute: no`, a `~lab.test` tartomány
+- [ ] `labfull`-lal (**A szerver dönt** → teljes alagút) → `resolvectl status <lvo…>` → `DefaultRoute: yes`
+- [ ] Bontás után a VM saját DNS-e változatlanul működik (`resolvectl status`)
+
+### Rendszer VPN-ek (CP-system-vpn)
+- [ ] A karbantartó a GNOME Beállítások → Hálózat → VPN → + alatt **WireGuard** VPN-t vesz fel kézzel (nem *Importálás fájlból*: az minden felhasználónak szóló profilt írhat, és rendszergazdai jelszót kérhet) a `~/lab-client/wireguard-linux.conf` értékeivel, a **Személyazonosság** alatt a „Más felhasználók számára is elérhető” **kikapcsolva**, `Lab WG (system)` néven; nem csatlakoztatja; a LinVPN saját WireGuard-kapcsolata előtte bontva (ugyanaz a laborkulcs)
+- [ ] A LinVPN listájában másodperceken belül megjelenik „rendszer VPN (nem a LinVPN hozta létre)”, „WireGuard (app)” típussal; csatlakozás a panelről → „Csatlakozva”, cím és forgalom; bontás; a részletező nézet: „Ezt a kapcsolatot csak indítani és bontani lehet innen…”, szerkesztés és törlés nincs
+- [ ] Bontás a GNOME gyorsbeállításaiból → a LinVPN-ben is bontott lesz (néhány másodpercen belül); a profil törlése a Beállításokban → eltűnik a listából; ha éppen a részleteit nézed: „Ezt a VPN-t eltávolították a NetworkManagerből”
+- [ ] Opcionális: egy IKEv2 rendszer VPN (strongSwan) minden felhasználónak (`connection.permissions` üres) → csatlakozva a LinVPN-ben forgalom látszik; ugyanez csak a `linvpn-dev` felhasználónak beállítva → csatlakozik, de forgalom nem látszik (elvárt: a `linvpn-xfrmd` nem látja, kié a profil)
+- [ ] Opcionális: egy saját L2TP VPN a Beállításokból, a LinVPN-ben tárolt **Közös kulcs (PSK)**-val és jelszóval → csatlakozik; a profil a Beállításokban változatlan (`nmcli connection show <név>` előtte és utána ugyanaz)
+
+### Halott alagút, hálózat, alvás
+- [ ] **Halott WireGuard:** csatlakozva, forgalommal (`while true; do curl -s --max-time 5 http://10.99.0.10/ >/dev/null; sleep 10; done`), a labor WireGuard-konténerének leállítása a Macen (`docker stop`) → legfeljebb kb. 230 másodpercen belül „… nem válaszol” értesítés, és az automatikus újracsatlakozás elindul; az idő: ___ s; a konténer újraindítása után a kapcsolat visszajön
+- [ ] Forgalom nélküli (üresjáratú) WireGuard a konténer leállítása után sem lesz „Nem válaszol”
+- [ ] **Halott IKEv2:** IKEv2 (PSK vagy EAP) csatlakozva, ugyanazzal a `curl`-ciklussal; a labor strongSwan-konténerének leállítása a Macen (`docker stop`) → „… nem válaszol” értesítés és automatikus újracsatlakozás legfeljebb kb. 230 másodpercen belül, vagy előbb a charon-nm saját DPD-je bontja (a Napló `[charon-nm]` soraiból: melyik volt): ___; az idő: ___ s; a konténer újraindítása után a kapcsolat visszajön
+- [ ] Forgalom nélküli (üresjáratú) IKEv2 legalább 5 percig → nem lesz „Nem válaszol” (a DPD-csomagok az SA-kon kívül mennek, a számlálók állnak)
+- [ ] **Hálózatvesztés:** OpenVPN csatlakozva, a hálózat kikapcsolása a GNOME gyorsbeállításaiban → **Hálózatra vár…** a sorban; visszakapcsolva a kapcsolat magától visszajön (jelszókérés nélkül)
+- [ ] **Alvás:** felfüggesztés és ébresztés csatlakozott OpenVPN-nel → ébredés után visszacsatlakozik (ugyanazon a hálózaton)
+
+### Napló és linvpn-logd
+- [ ] OpenVPN-csatlakozás után a Napló fülön a LinVPN sorai („Kapcsolódás a NetworkManagerrel (org.freedesktop.NetworkManager.linvpn-openvpn)”, „Csatlakozva, IPv4: …”), a `[nm]` és az `[openvpn]` sorok, mindegyik a rendszernapló idejével
+- [ ] Két VPN egyszerre (például az OpenVPN és az L2TP) → az L2TP naplójában „A bővítmény néhány sora nem jelenik meg: ugyanekkor egy másik VPN is aktív volt.”, és nincs benne az OpenVPN egyetlen sora sem
+- [ ] Az időszűrő (**Utolsó 5 perc**) megtartja a friss sorokat; a **Napló törlése…** után a fájl üres („Napló törölve: …”), de `journalctl -u NetworkManager --since -10min` (rendszergazdaként) továbbra is mutatja a sorokat, és egy új csatlakozás után a LinVPN újra megkapja a sajátjait
+- [ ] Egy másik helyi felhasználó nem kapja meg a `linvpn-dev` kapcsolatainak sorait (ha van második felhasználó: annak a LinVPN-jében a saját kapcsolatain kívül semmi nem jelenik meg)
+- [ ] `systemctl stop linvpn-logd.socket` (rendszergazda) után egy új csatlakozás naplójában: „A rendszernapló nem érhető el (a linvpn-logd nincs telepítve).”; `systemctl start linvpn-logd.socket` után újra működik
+- [ ] Egyetlen naplósorban, értesítésben vagy `journalctl` kimenetben sincs jelszó, PSK, egyszeri kód vagy kulcs (a `CREDENTIALS.txt` értékeire keresve)
+
+### Kilépés, frissítés, eltávolítás
+- [ ] Csatlakozott LinVPN-kapcsolattal (egy OpenVPN-nel beágyazott CA-val és egy WireGuarddal) **Kilépés, fussanak tovább** → a LinVPN saját kapcsolatai és egy rendszer VPN is fut tovább (`nmcli connection show --active`); a `$XDG_RUNTIME_DIR/linvpn/nm/<UUID>/` mappák megmaradnak
+- [ ] A LinVPN újraindítása után a futva hagyott kapcsolatok **Csatlakozva** állapotúak (cím, forgalom, élő alagút ellenőrzése működik), a Napló folytatódik; az OpenVPN szerver újraindítása (`docker restart`) után a kapcsolat újra feláll, a CA-fájl megvan
+- [ ] Futó LinVPN mellett egy csatlakozott LinVPN-kapcsolat bontása a GNOME hálózati menüjéből (és egy másikkal `nmcli connection down <uuid>`) → a LinVPN-ben bontott (kikapcsolt) állapot, nem „A kapcsolat megszakadt”; nincs értesítés, nincs automatikus újracsatlakozás (2 perc várakozás után sem); a Naplóban „NetworkManager: disconnected by the user”. A LinVPN-ből újra csatlakoztatva rendben működik
+- [ ] Futva hagyott LinVPN-kapcsolat bontása a GNOME hálózati menüjéből (LinVPN nélkül) → a kapcsolat eltűnik az `nmcli connection show` listából; a LinVPN következő indítása a mappáját is törli
+- [ ] **Bontás és kilépés** csatlakozott LinVPN-kapcsolattal → a kapcsolat lebomlik, a NetworkManagerben és a `$XDG_RUNTIME_DIR/linvpn/nm/` alatt nem marad belőle semmi
+- [ ] A LinVPN folyamatának kilövése csatlakozott kapcsolattal (`kill -KILL <pid>`) → a kapcsolat fut tovább, és a következő indításkor **Csatlakozva** állapotú (mint macOS-en és Windowson)
+- [ ] SSH-ról indított LinVPN (vagy a polkit korlátozása) csatlakozáskor → „A LinVPN jelszókérés nélkül nem módosíthatja a számítógép hálózati beállításait…”, jelszóablak nem jelenik meg
+- [ ] `sudo apt-get remove linvpn` → `systemctl status linvpn-logd.socket linvpn-xfrmd.socket` → egyik sem létezik; a `nm-linvpn-openvpn-service.name` eltűnt; a szokásos OpenVPN-bővítmény és a többi VPN-bővítmény megmaradt; `nmcli connection show` nem mutat LinVPN-kapcsolatot; a `~/.local/share/LinVPN` (a `logs`, `nm` és `swanctl` mappákkal) megmaradt
+
+### Nyelv
+- [ ] Mindez magyarul és angolul: a NetworkManager-sorok, a „Minden forgalom a VPN-en keresztül” három értéke, a „Linuxon nem támogatott” okok és a Napló üzenetei a nyelvnek megfelelően jelennek meg (a NetworkManager angol hibaokai, például `AUTH_FAILED: …`, angolul maradnak)
 
 ## MacVPN: a korábbi kiadások funkciói (regresszió, macOS)
 

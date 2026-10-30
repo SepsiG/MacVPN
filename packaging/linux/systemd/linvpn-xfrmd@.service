@@ -1,0 +1,44 @@
+[Unit]
+Description=LinVPN IKEv2 traffic counters (one request)
+CollectMode=inactive-or-failed
+
+[Service]
+ExecStart=/usr/libexec/linvpn/linvpn-xfrmd
+StandardInput=socket
+StandardOutput=journal
+StandardError=journal
+DynamicUser=yes
+RuntimeMaxSec=20
+# One instance per request (at most 16 at a time): two netlink dumps and one small answer, single-threaded.
+MemoryMax=64M
+TasksMax=4
+# The only capability: the kernel answers an XFRM dump, even a read-only one, only with CAP_NET_ADMIN in the host's
+# user namespace (so no PrivateUsers). The binary only ever sends the two fixed dump requests.
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+# No PrivateNetwork: XFRM state is per network namespace, and the host's is the one to read. No IP traffic at all.
+IPAddressDeny=any
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+# AF_UNIX: the caller's socket and the system bus (NetworkManager's properties); AF_NETLINK: NETLINK_XFRM.
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+UMask=0077

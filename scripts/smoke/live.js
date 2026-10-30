@@ -22,10 +22,13 @@
   const checks = {};
   try {
     const vm = await invoke('get_view_model');
-    const windows = (await invoke('get_platform')).os === 'windows';
-    const banner = windows
-      ? { en: 'This VPN was removed from Windows', hu: 'Ezt a VPN-t eltávolították a Windowsból' }[vm.language]
-      : { en: 'This VPN was removed from macOS', hu: 'Ezt a VPN-t eltávolították a macOS-ből' }[vm.language];
+    // The banner names the platform's VPN list (strings.json's variants).
+    const banners = {
+      windows: { en: 'This VPN was removed from Windows', hu: 'Ezt a VPN-t eltávolították a Windowsból' },
+      linux: { en: 'This VPN was removed from NetworkManager', hu: 'Ezt a VPN-t eltávolították a NetworkManagerből' },
+      macos: { en: 'This VPN was removed from macOS', hu: 'Ezt a VPN-t eltávolították a macOS-ből' },
+    };
+    const banner = banners[(await invoke('get_platform')).os]?.[vm.language];
     const a = await waitFor(() => row('Smoke Live A'));
     checks.listed = !!a;
     a.click();

@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; font: 14px system-ui, sans-serif; }
+  body { background: #24273a; color: #eee; }
+  html.overlay, html.overlay body { background: transparent; }
+  .card { box-sizing: border-box; width: 360px; height: 420px; padding: 16px; background: #24273a;
+          border: 3px solid #f5a97f; border-radius: 12px; }
+  html.overlay .card { position: absolute; top: 8px; right: 8px; box-shadow: 0 6px 24px #0008; }
+  h1 { font-size: 18px; margin: 0 0 8px; }
+  .row { margin: 8px 0; padding: 10px; background: #363a4f; border-radius: 8px; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>LinVPN card panel (spike)</h1>
+    <div class="row">Office VPN - Connected</div>
+    <div class="row">Home WireGuard - Off</div>
+    <div class="row" id="mode"></div>
+  </div>
+  <script>
+    const q = new URLSearchParams(location.search);
+    if (q.get('place') === 'overlay') document.documentElement.classList.add('overlay');
+    document.getElementById('mode').textContent = 'tray=' + q.get('tray') + ' place=' + q.get('place');
+  </script>
+</body>
+</html>

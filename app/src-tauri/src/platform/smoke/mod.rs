@@ -1,14 +1,19 @@
-//! Development only (debug builds on macOS and Windows; the app reaches it through the `platform::smoke_*`
+//! Development only (debug builds on macOS, Windows and Linux; the app reaches it through the `platform::smoke_*`
 //! facades): the sandbox's stand-ins for the steps that would change the system, and the smoke test driver. This
 //! file is the portable driver; `macos.rs` holds what reads AppKit back (the popover's shape, the Dock icon, the
 //! window numbers and screenshots, the appearance), the old Keychain items, the mock Homebrew report and the DMG
-//! update's steps. On Windows those steps print `MacVPN smoke: <step>: skipped on Windows` (the prefix stays
-//! `MacVPN smoke:` on both, `scripts/smoke-manage.sh` greps it), System Status' mock report has the engine rows, and
-//! `MACVPN_SMOKE_LANG` (`SMOKE_LANG`) forces the language (macOS: `-AppleLanguages`).
+//! update's steps; `unix.rs` the plain Unix helpers of macOS and Linux. On Windows those steps print
+//! `MacVPN smoke: <step>: skipped on Windows` (the prefix stays `MacVPN smoke:` everywhere, `scripts/smoke-manage.sh`
+//! greps it), System Status' mock report has the engine rows, and `MACVPN_SMOKE_LANG` (`SMOKE_LANG`) forces the
+//! language (macOS: `-AppleLanguages`). On Linux (`linux.rs`) they print `… skipped on Linux`, the System Status
+//! report has L-b's NetworkManager rows from stand-in facts (every kind usable through [`FakeHelper`] and
+//! [`FakeNative`]), `LANGUAGE` (`SMOKE_LANG`) picks the language, and the system's quit request is a SIGTERM the
+//! driver sends to its own process.
 //!
 //! - The update in the sandbox: macOS `macos::SandboxUpdate` (every stage runs against `<sandbox>/tmp`, nothing is
 //!   downloaded, mounted or verified, the helper script is written but never run, and "launching" it only logs);
-//!   Windows: the stages and the quit questions only (no MSI, no msiexec, no relauncher).
+//!   Windows and Linux: the stages and the quit questions only (no MSI, no msiexec, no relauncher; no `.deb`, no
+//!   pkexec).
 //! - `MACVPN_SMOKE_DIR=<absolute dir>` (with `MACVPN_SANDBOX_HOME` only): mock data (a System Status report with
 //!   a missing tool and an older root layer, an offered release whose notes hold markup), then the scripts of
 //!   that directory run in the real windows one after the other – `manage.js` (Connections), `setup.js` (System
@@ -45,7 +50,9 @@
 //!   `traffic.js`;
 //!   the scripted network, the recorded notices and the engines step's reports are its hooks). On Windows then
 //!   WinVPN 2c's native VPNs (`ras.rs`: `ras.js`; [`FakeNative`] answers each connection's `WinVPN-<UUID>` entry
-//!   as the `RasEngine` does, listed while the sandbox engine keeps its saved profile, and dials nothing).
+//!   as the `RasEngine` does, listed while the sandbox engine keeps its saved profile, and dials nothing); on Linux
+//!   LinVPN L-b's NetworkManager step (`linux.rs`: `nm.js`; [`FakeNative`] answers `linvpn-<UUID>` while the
+//!   sandbox's engine keeps the connection's plan record).
 //!   Last, `system.js` leaves an unsaved change and answers the quit question the shell's quit Apple Event
 //!   raises. Between the window scripts and the prompts, the Dock icon is checked (`NSApp.activationPolicy`): shown with the windows open, a Dock click (`dock::reopen`) restoring a minimized window without
 //!   opening any, hidden again once they are closed and while only a prompt is open. The results go to stderr (`MacVPN smoke: …`, first the language), ending with `MacVPN smoke: done`.
@@ -69,12 +76,20 @@ use super::Environment;
 use crate::state::AppState;
 
 mod features;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(windows)]
 mod ras;
+#[cfg(unix)]
+mod unix;
+#[cfg(target_os = "linux")]
+use linux::skipped;
 #[cfg(target_os = "macos")]
-use macos::{private_temp_dir, shoot, with_shot};
+use macos::{shoot, with_shot};
+#[cfg(unix)]
+use unix::{mode, private_temp_dir};
 
 pub use features::{network, notice, recheck_unthrottled, records_notices};
 
@@ -112,7 +127,8 @@ const SEEDED_PSK: &str = "seeded-psk-0815";
 
 /// A smoke run seeds the sandbox's in-memory "old Keychain" with one item (`SEEDED_L2TP`'s PSK). Windows has no
 /// old Keychain: there the smoke run's language is forced instead (`MACVPN_SMOKE_LANG=en|hu`, the step that runs
-/// after the platform's core hooks and before any window).
+/// after the platform's core hooks and before any window). Linux has none either, and needs nothing here: the
+/// shell's `LANGUAGE` picks the language through the real path.
 pub fn seed_legacy_keychain(env: &Environment) {
     if smoke_dir_of(env).is_some() {
         #[cfg(target_os = "macos")]
@@ -165,6 +181,9 @@ pub struct FakeHelper {
     log: Mutex<Vec<(&'static str, Uuid)>>,
     /// What `liveness` reports for a connected connection (dead-tunnel detection; none: nothing).
     liveness: Mutex<std::collections::HashMap<Uuid, macvpn_core::liveness::Liveness>>,
+    /// Linux: the folder of the connection logs the Log tab reads (the engine's `<data>/logs` in the sandbox).
+    #[cfg(target_os = "linux")]
+    logs: Option<PathBuf>,
 }
 
 static FAKE_HELPER: OnceLock<Arc<FakeHelper>> = OnceLock::new();
@@ -173,6 +192,9 @@ static FAKE_HELPER: OnceLock<Arc<FakeHelper>> = OnceLock::new();
 pub fn fake_helper(env: &Environment) -> Option<Arc<dyn HelperClient>> {
     smoke_dir_of(env)?;
     let fake = FAKE_HELPER.get_or_init(|| {
+        #[cfg(target_os = "linux")]
+        let root = FakeHelper { logs: Some(env.application_support().join("logs")), ..FakeHelper::default() };
+        #[cfg(not(target_os = "linux"))]
         let root = FakeHelper::default();
         root.fail_once.lock().unwrap_or_else(PoisonError::into_inner).extend(parse_uuid(CRED_RETRY));
         Arc::new(root)
@@ -301,12 +323,27 @@ impl HelperClient for FakeHelper {
         })
     }
 
+    /// Linux: the connection's log in the sandbox, as the engine keeps it (`<data>/logs/<UUID>.log`; the
+    /// NetworkManager step writes one).
+    #[cfg(target_os = "linux")]
+    fn log_path(&self, id: &Uuid) -> Option<PathBuf> {
+        self.logs.as_ref().map(|dir| dir.join(format!("{}.log", uuid_string(id))))
+    }
+
     /// "Clear Log…" (manage.js): logged with whether the note is the localized header the time filter reads.
+    /// Linux: the log is cleared as the engine clears it (the note its first line).
     fn clear_log(&self, id: &Uuid, note: &str) -> Result<(), String> {
         let expected = macvpn_core::log::cleared_note("");
         let prefix = expected.trim_end_matches(" ═══").trim_end();
         let ok = note.starts_with(prefix) && macvpn_app_core::logs::line_time(note).is_some();
         eprintln!("MacVPN smoke: fake root: clear-log {} note={}", uuid_string(id), if ok { "ok" } else { "bad" });
+        #[cfg(target_os = "linux")]
+        if let (Some(dir), Some(path)) = (&self.logs, self.log_path(id))
+            && path.exists()
+        {
+            let owner = macvpn_core::fsx::ensure_private_dir(dir).map_err(|e| e.to_string())?;
+            macvpn_core::log::clear_file(&path, &owner, Some(note)).map_err(|e| e.to_string())?;
+        }
         Ok(())
     }
 }
@@ -338,14 +375,17 @@ fn framed_secret_names(stdin: &[u8], config: &[u8]) -> Option<Vec<&'static str>>
 /// own service is its entry `WinVPN-<UUID>`, listed (as `L2TP`) while the sandbox's RAS engine keeps the
 /// connection's saved profile `<data>\ras\<UUID>.ras` (written when an L2TP connection is saved, deleted with its
 /// entry): the sandbox's engine writes the entry, this stand-in dials nothing (no `RasDialW`, no PSK stored).
+/// Linux: the same with the NetworkManager engine's service `linvpn-<UUID>`, listed while the sandbox's engine keeps
+/// the connection's plan record `<data>/nm/<UUID>.json` (written when an L2TP or Cisco connection is saved); no
+/// NetworkManager connection is added.
 #[derive(Default)]
 pub struct FakeNative {
     services: Mutex<Vec<SystemVpn>>,
-    /// Windows: the sandbox engine's `<data>\ras` folder.
-    #[cfg(windows)]
-    ras_dir: Option<PathBuf>,
-    /// Windows: the managed entries' states (`Connected` after a start, until the stop).
-    #[cfg(windows)]
+    /// Windows: the sandbox engine's `<data>\ras` folder; Linux: its plan records' `<data>/nm` folder.
+    #[cfg(any(windows, target_os = "linux"))]
+    managed_dir: Option<PathBuf>,
+    /// Windows and Linux: the managed services' states (`Connected` after a start, until the stop).
+    #[cfg(any(windows, target_os = "linux"))]
     managed: Mutex<std::collections::HashMap<String, String>>,
     /// Every start and stop (`start <id> <which secrets were set>`, `stop <id>`), in order.
     calls: Mutex<Vec<String>>,
@@ -359,10 +399,12 @@ pub fn fake_native(env: &Environment) -> Option<Arc<dyn NativeController>> {
     let fake = FAKE_NATIVE.get_or_init(|| {
         #[cfg(windows)]
         let native = FakeNative {
-            ras_dir: Some(env.application_support().join(macvpn_core::ras::names::PHONEBOOK_DIR)),
+            managed_dir: Some(env.application_support().join(macvpn_core::ras::names::PHONEBOOK_DIR)),
             ..FakeNative::default()
         };
-        #[cfg(not(windows))]
+        #[cfg(target_os = "linux")]
+        let native = FakeNative { managed_dir: Some(env.application_support().join("nm")), ..FakeNative::default() };
+        #[cfg(target_os = "macos")]
         let native = FakeNative::default();
         native.add(LIVE_A, "Smoke Live A");
         Arc::new(native)
@@ -387,14 +429,14 @@ impl FakeNative {
         if let Some(s) = self.services().iter_mut().find(|s| s.id == id) {
             s.status = status.into();
         }
-        #[cfg(windows)]
-        if macvpn_core::ras::names::connection_id(id).is_some() {
+        #[cfg(any(windows, target_os = "linux"))]
+        if managed_connection(id).is_some() {
             self.managed.lock().unwrap_or_else(PoisonError::into_inner).insert(id.into(), status.into());
         }
     }
 
     /// Whether `line` (`start <id>…` / `stop <id>`) was called.
-    #[cfg_attr(not(windows), allow(dead_code))]
+    #[cfg_attr(target_os = "macos", allow(dead_code))]
     fn recorded(&self, line: &str) -> bool {
         self.calls.lock().unwrap_or_else(PoisonError::into_inner).iter().any(|l| l == line)
     }
@@ -404,18 +446,19 @@ impl FakeNative {
         self.calls.lock().unwrap_or_else(PoisonError::into_inner).push(line);
     }
 
-    /// Windows: the entries of the connections whose saved profile the sandbox's RAS engine keeps.
-    #[cfg(windows)]
+    /// Windows: the entries of the connections whose saved profile the sandbox's RAS engine keeps; Linux: the
+    /// services of the connections whose plan record the sandbox's NetworkManager engine keeps.
+    #[cfg(any(windows, target_os = "linux"))]
     fn managed_entries(&self) -> Vec<SystemVpn> {
-        let Some(dir) = &self.ras_dir else { return Vec::new() };
+        let Some(dir) = &self.managed_dir else { return Vec::new() };
         let Ok(files) = std::fs::read_dir(dir) else { return Vec::new() };
         let states = self.managed.lock().unwrap_or_else(PoisonError::into_inner);
         let mut entries: Vec<SystemVpn> = files
             .flatten()
             .filter_map(|f| {
                 let name = f.file_name().into_string().ok()?;
-                let id = parse_uuid(name.strip_suffix(".ras")?)?;
-                let entry = macvpn_core::ras::names::entry_name(&id);
+                let id = parse_uuid(name.strip_suffix(MANAGED_SUFFIX)?)?;
+                let entry = managed_service(&id);
                 let status = states.get(&entry).map_or("Disconnected", String::as_str);
                 Some(SystemVpn::new(&entry, &entry, "L2TP", status))
             })
@@ -425,11 +468,37 @@ impl FakeNative {
     }
 }
 
+/// The sandbox engine's saved file of a managed connection: `<UUID>.ras` (Windows), `<uuid>.json` (Linux).
+#[cfg(windows)]
+const MANAGED_SUFFIX: &str = ".ras";
+#[cfg(target_os = "linux")]
+const MANAGED_SUFFIX: &str = ".json";
+
+/// A managed connection's own service: `WinVPN-<UUID>` (Windows), `linvpn-<UUID>` (Linux).
+#[cfg(windows)]
+fn managed_service(id: &Uuid) -> String {
+    macvpn_core::ras::names::entry_name(id)
+}
+#[cfg(target_os = "linux")]
+fn managed_service(id: &Uuid) -> String {
+    macvpn_core::nm_plan::names::service_id(id)
+}
+
+/// The connection of a managed service, or `None` (a system VPN).
+#[cfg(windows)]
+fn managed_connection(service: &str) -> Option<Uuid> {
+    macvpn_core::ras::names::connection_id(service)
+}
+#[cfg(target_os = "linux")]
+fn managed_connection(service: &str) -> Option<Uuid> {
+    macvpn_core::nm_plan::names::parse_service_id(service)
+}
+
 impl NativeController for FakeNative {
     fn list(&self) -> Result<Vec<SystemVpn>, String> {
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let mut services = self.managed_entries();
-        #[cfg(not(windows))]
+        #[cfg(target_os = "macos")]
         let mut services = Vec::new();
         services.extend(self.services().iter().cloned());
         Ok(services)
@@ -460,15 +529,17 @@ impl NativeController for FakeNative {
         Ok(())
     }
 
-    /// Windows: the connection's entry `WinVPN-<UUID>`, as the `RasEngine` answers (macOS: none).
-    #[cfg(windows)]
+    /// The connection's own service, as the platform's engine answers: Windows `WinVPN-<UUID>`, Linux
+    /// `linvpn-<UUID>` (macOS: none).
+    #[cfg(any(windows, target_os = "linux"))]
     fn managed_service_id(&self, connection: &Uuid) -> Option<String> {
-        Some(macvpn_core::ras::names::entry_name(connection))
+        Some(managed_service(connection))
     }
 }
 
 /// The mock System Status report. macOS: Homebrew is there, `sstpc` is missing, root layer 7 is installed (8
-/// bundled). Windows: the engine rows – the WinVPN Service running, OpenVPN Community not installed ("Install"),
+/// bundled). Linux: the NetworkManager rows from stand-in facts, every kind usable (`linux::report`).
+/// Windows: the engine rows – the WinVPN Service running, OpenVPN Community not installed ("Install"),
 /// WireGuard loaded – and the green Windows VPN client row (WinVPN 2c). While the engines step runs, its own reports instead
 /// ([`features::Engines`]).
 pub fn setup_report(state: &AppState) -> Option<SetupReport> {
@@ -480,15 +551,19 @@ pub fn setup_report(state: &AppState) -> Option<SetupReport> {
     return Some(macos::mock_report());
     #[cfg(windows)]
     return Some(windows_report(false));
+    #[cfg(target_os = "linux")]
+    return Some(linux::report());
 }
 
 /// The report once the control API's client connects: every row usable (macOS: the root layer up to date, `sstpc`
-/// still missing; Windows: OpenVPN Community installed with both drivers).
+/// still missing; Windows: OpenVPN Community installed with both drivers; Linux: the same stand-in report).
 fn ready_report() -> SetupReport {
     #[cfg(target_os = "macos")]
     return macos::ready_report();
     #[cfg(windows)]
     return windows_report(true);
+    #[cfg(target_os = "linux")]
+    return linux::report();
 }
 
 /// The engine rows from the facts the WinVPN Service would report (`engine::report`, the real texts), with
@@ -551,7 +626,7 @@ fn mock_release() -> Release {
 
 /// The update in the sandbox. macOS: `install_update` over `macos::SandboxUpdate`, for
 /// `<sandbox>/Applications/MacVPN.app`. Windows: the updater's stages and its quit questions; nothing is downloaded,
-/// no msiexec and no relauncher starts.
+/// no msiexec and no relauncher starts. Linux: the same in the order of `LinUpdater::install` (no `.deb`, no pkexec).
 pub fn update_install(
     env: &Environment,
     release: &Release,
@@ -579,6 +654,8 @@ pub fn update_install(
         eprintln!("MacVPN (sandbox): update installer not run");
         Ok(UpdateOutcome::HelperLaunched)
     }
+    #[cfg(target_os = "linux")]
+    return linux::update_install(env, release, stage, confirm_quit);
 }
 
 pub fn start(app: &AppHandle, state: &Arc<AppState>) {
@@ -614,7 +691,7 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         }
         #[cfg(target_os = "macos")]
         macos::dock(&app);
-        #[cfg(windows)]
+        #[cfg(not(target_os = "macos"))]
         {
             skipped("dock");
             close_windows(&app);
@@ -632,10 +709,16 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         // WinVPN 2c: the native VPNs' forms, reasons, the Cisco copy and the L2TP / IKEv2 / SSTP connects.
         #[cfg(windows)]
         ras::run(&app, &state, &dir);
+        // LinVPN L-b: the NetworkManager rows, the Linux reasons, OpenVPN's routing, the L2TP plan record, the log.
+        #[cfg(target_os = "linux")]
+        linux::nm(&app, &state, &dir);
         #[cfg(target_os = "macos")]
         macos::menu_shape(&app);
         #[cfg(windows)]
         menu_corners(&app);
+        // GTK's overlay draws the card's corners itself (CSS); there is nothing to read back.
+        #[cfg(target_os = "linux")]
+        skipped("menu");
         shared(&app, &state, &dir);
         team_catalog(&app, &state, &dir);
         opened_files(&app, &state, &dir);
@@ -645,7 +728,7 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
             macos::manage_shot(&app);
             macos::popover_shots(&app, &dir);
         }
-        #[cfg(windows)]
+        #[cfg(not(target_os = "macos"))]
         if std::env::var_os("MACVPN_SMOKE_SHOTS").is_some() {
             skipped("shots");
         }
@@ -658,7 +741,7 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         let ready = run_script(&app, &dir, "manage", "system.js", &|| {
             state.connections.has_unsaved_changes().then(|| "unsaved change ready".to_string())
         });
-        #[cfg(windows)]
+        #[cfg(not(target_os = "macos"))]
         let ready_now = ready.is_ok();
         eprintln!("MacVPN smoke: system: {}", ready.unwrap_or_else(|e| format!("ERROR {e}")));
         // Windows: the app's own lifecycle window gets logoff's WM_QUERYENDSESSION (macOS: the shell sends the
@@ -667,6 +750,13 @@ pub fn start(app: &AppHandle, state: &Arc<AppState>) {
         if ready_now {
             let blocked = macvpn_platform_win::smoke::query_end_session() == Some(0);
             eprintln!("MacVPN smoke: system: quit request blocked={blocked}");
+        }
+        // Linux: logout's SIGTERM (systemd stops the session's scope), raised in this process; the GLib signal source
+        // hands it to the terminate handler on the main thread, which answers "later" and asks; system.js answers.
+        #[cfg(target_os = "linux")]
+        if ready_now {
+            linux::logout();
+            eprintln!("MacVPN smoke: system: quit request sent=sigterm");
         }
         eprintln!("MacVPN smoke: done");
     });
@@ -735,8 +825,8 @@ fn menu_corners(app: &AppHandle) {
     crate::tray::hide_menu(app);
 }
 
-/// Windows, in place of the Dock step: its end state, every window the scripts left open closed.
-#[cfg(windows)]
+/// Windows and Linux, in place of the Dock step: its end state, every window the scripts left open closed.
+#[cfg(not(target_os = "macos"))]
 fn close_windows(app: &AppHandle) {
     let open = || crate::dock::DOCK_WINDOWS.iter().filter(|l| app.get_webview_window(l).is_some()).count();
     for label in crate::dock::DOCK_WINDOWS {
@@ -748,13 +838,13 @@ fn close_windows(app: &AppHandle) {
     eprintln!("MacVPN smoke: windows: closed={closed}");
 }
 
-/// No screenshots on Windows: a window script runs on without waiting for one.
-#[cfg(windows)]
+/// No screenshots on Windows and Linux: a window script runs on without waiting for one.
+#[cfg(not(target_os = "macos"))]
 fn with_shot(source: &str) -> String {
     source.to_string()
 }
 
-#[cfg(windows)]
+#[cfg(not(target_os = "macos"))]
 fn shoot(_: &AppHandle, _: &str, _: &str, _: Duration) {}
 
 /// A private directory under `base` (Windows: owner-only DACL, a new random name).
@@ -776,9 +866,6 @@ fn mode(path: &Path) -> String {
         _ => "other".into(),
     }
 }
-
-#[cfg(target_os = "macos")]
-use macos::mode;
 
 /// The seeded connection's name once it starts with `prefix`.
 fn renamed(state: &AppState, id: &str, prefix: &str) -> Option<String> {
@@ -868,11 +955,16 @@ fn control(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     // `setup_required`.
     features::use_ready_report(state, true);
     // macOS: the socket file; Windows: the named pipe of the running server (which has no file to look at: opening
-    // the pipe's path would connect to it).
+    // the pipe's path would connect to it); Linux: the socket file in the sandbox's runtime directory, and the
+    // server's own endpoint (the shell checks it is that file).
     #[cfg(target_os = "macos")]
     let socket = state.env.application_support().join("control").join("macvpn.sock");
     #[cfg(target_os = "macos")]
     let (present, endpoint) = (|| socket.exists(), || socket.display().to_string());
+    #[cfg(target_os = "linux")]
+    let socket = state.env.home.join("run/linvpn/control/linvpn.sock");
+    #[cfg(target_os = "linux")]
+    let (present, endpoint) = (|| socket.exists(), || state.control.endpoint().unwrap_or_default());
     #[cfg(windows)]
     let (present, endpoint) = (|| state.control.endpoint().is_some(), || state.control.endpoint().unwrap_or_default());
     let source = match std::fs::read_to_string(dir.join("control.js")) {
@@ -968,8 +1060,18 @@ fn live(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     // The menu popover was created at launch and is never reopened: its rows follow the view model.
     let menu = std::fs::read_to_string(dir.join("live-menu.js"))
         .map_err(|e| e.to_string())
-        .and_then(|source| eval(app, crate::tray::MENU_WINDOW, source))
-        .map(|()| wait_for(30, || renamed(state, LIVE_MENU_RESULT, "MENU")).unwrap_or_else(|| "no result".into()));
+        .and_then(|source| eval(app, crate::tray::MENU_WINDOW, source));
+    // Linux: the card panel's overlay has no size of its own while hidden (it covers the work area once shown), so
+    // once the script has read the rows (at most 8 s), the panel is shown for its check of the version line.
+    #[cfg(target_os = "linux")]
+    if menu.is_ok() {
+        std::thread::sleep(Duration::from_secs(10));
+        crate::tray::show_menu(app);
+    }
+    let menu =
+        menu.map(|()| wait_for(30, || renamed(state, LIVE_MENU_RESULT, "MENU")).unwrap_or_else(|| "no result".into()));
+    #[cfg(target_os = "linux")]
+    crate::tray::hide_menu(app);
     say(format!("menu: {}", menu.unwrap_or_else(|e| format!("ERROR {e}"))));
 }
 

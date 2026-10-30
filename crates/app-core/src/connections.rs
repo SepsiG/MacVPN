@@ -10,6 +10,7 @@ use crate::manager::ConnectionItem;
 use crate::questions::{QuestionBroker, QuestionView};
 use crate::shared_credentials::{self, CredentialsView, ImportLink, SharedCredentials};
 use macvpn_core::certificates::{self, ConfigCertificates};
+use macvpn_core::client_cert;
 use macvpn_core::importer;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
@@ -212,6 +213,11 @@ pub struct ConnectionsModel {
     /// **Import Client Certificate…** is offered (G4): the platform loads an IKEv2 client key itself (macOS'
     /// root layer 12). Off where the system's certificate store signs (WinVPN) or the staging is missing.
     client_cert_import: std::sync::atomic::AtomicBool,
+    /// LinVPN: converts a PKCS#12 file to the PEM form at import (strongSwan's NetworkManager plugin reads only PEM
+    /// files); unset (macOS): a PKCS#12 file is kept as it is.
+    pkcs12_converter: Mutex<Option<Pkcs12Converter>>,
+    /// The PKCS#12 files waiting for their password, by editor key (wiped on drop).
+    pending_pkcs12: Mutex<HashMap<String, Zeroizing<Vec<u8>>>>,
     /// The swanctl folder whose `x509` / `x509ca` files the IKEv2 editor shows ([`Self::set_swanctl_folder`]).
     swanctl_folder: Mutex<Option<PathBuf>>,
     /// The swanctl files last read and their certificates (read again when the list changes or an editor opens).
@@ -223,6 +229,10 @@ type SwanctlRead = (Vec<(bool, String)>, ConfigCertificates);
 
 /// The largest swanctl certificate file read for the editor.
 const MAX_SWANCTL_FILE_BYTES: u64 = 64 * 1024;
+
+/// [`ConnectionsModel::set_pkcs12_converter`]: a PKCS#12 file and its password → the checked PEM form (LinVPN:
+/// the system's `openssl pkcs12`).
+pub type Pkcs12Converter = Arc<dyn Fn(&[u8], &str) -> Result<macvpn_core::client_cert::Imported, String> + Send + Sync>;
 
 /// [`ConnectionsModel::set_native_platform`].
 #[derive(Clone)]
@@ -248,6 +258,8 @@ impl ConnectionsModel {
             native_platform: Mutex::new(None),
             ca_trust: Mutex::new(None),
             client_cert_import: std::sync::atomic::AtomicBool::new(true),
+            pkcs12_converter: Mutex::new(None),
+            pending_pkcs12: Mutex::default(),
             swanctl_folder: Mutex::new(None),
             swanctl_cache: Mutex::new(None),
         }
@@ -314,6 +326,12 @@ impl ConnectionsModel {
         self.client_cert_import.store(on, std::sync::atomic::Ordering::Relaxed);
     }
 
+    /// LinVPN: a PKCS#12 file chosen in **Import Client Certificate…** is converted to the PEM form with its
+    /// password ([`Self::convert_client_cert`]) instead of being kept as it is.
+    pub fn set_pkcs12_converter(&self, converter: Pkcs12Converter) {
+        *self.pkcs12_converter.lock().unwrap_or_else(PoisonError::into_inner) = Some(converter);
+    }
+
     fn client_cert_import(&self) -> bool {
         self.client_cert_import.load(std::sync::atomic::Ordering::Relaxed)
     }
@@ -342,6 +360,8 @@ impl ConnectionsModel {
         // Windows signs with a computer certificate from its own store: no import there (see the user guide).
         if let Some(cert) = view.client_cert.as_mut() {
             cert.import = self.client_cert_import();
+            cert.pkcs12_password =
+                self.pending_pkcs12.lock().unwrap_or_else(PoisonError::into_inner).contains_key(&view.id);
         }
         // The IKEv2 editor's certificates are files outside the config.
         if view.kind == "strongswan"
@@ -385,7 +405,13 @@ impl ConnectionsModel {
                     }
                     EditorFields::System(_) => Vec::new(),
                 };
-                let notes = platform.support.editor_notes(&c, &config);
+                let notes = if c.kind == VPNKind::Strongswan {
+                    // The imported client certificate's form (the editor's panel shows the vault's, G4).
+                    let form = view.client_cert.as_ref().and_then(|cert| cert.imported.as_ref()).map(|s| s.form);
+                    platform.support.editor_notes_with_cert(&c, &config, form)
+                } else {
+                    platform.support.editor_notes(&c, &config)
+                };
                 let ca_trusted = match fields {
                     EditorFields::Sstp(f) if notes.trust_ca && f.cert == Cert::Ca && !f.ca_pem.trim().is_empty() => {
                         self.ca_trusted(platform.admin.as_ref(), &f.ca_pem)
@@ -886,8 +912,48 @@ impl ConnectionsModel {
             return Err(l10n::tr("Not available on this system", &[]));
         }
         let deps = self.deps.clone();
+        let converter = self.pkcs12_converter.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        self.pending_pkcs12.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+        let imported = client_cert::import(files)?;
+        if let (client_cert::ClientCert::Pkcs12 { der }, Some(_)) = (&imported.cert, converter) {
+            // LinVPN: converted with its password (asked next, [`Self::convert_client_cert`]).
+            let view = self.with_draft(key, |d| {
+                d.client_cert_target()?;
+                Ok(d.view(key))
+            })?;
+            self.pending_pkcs12.lock().unwrap_or_else(PoisonError::into_inner).insert(key.to_string(), der.clone());
+            return Ok(self.with_platform(view));
+        }
         self.with_draft(key, |d| {
-            d.import_client_cert(&deps, files)?;
+            d.store_client_cert(&deps, imported)?;
+            Ok(d.view(key))
+        })
+        .map(|v| self.with_platform(v))
+    }
+
+    /// LinVPN: the password of the PKCS#12 file [`Self::import_client_cert`] keeps waiting. `None` cancels the
+    /// import. The file is converted to the PEM form (certificate + key, the key still encrypted with this
+    /// password) and stored as a PEM import is. A failed conversion (a wrong password) keeps the file waiting, so
+    /// the user can try again or cancel.
+    pub fn convert_client_cert(&self, key: &str, password: Option<&str>) -> Result<EditorView, String> {
+        let pending = self.pending_pkcs12.lock().unwrap_or_else(PoisonError::into_inner).get(key).cloned();
+        let deps = self.deps.clone();
+        let Some(password) = password else {
+            self.pending_pkcs12.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+            return self.with_draft(key, |d| Ok(d.view(key))).map(|v| self.with_platform(v));
+        };
+        let Some(der) = pending else { return Err("no PKCS#12 file waits for its password".into()) };
+        let converter = self.pkcs12_converter.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        let Some(converter) = converter else { return Err(l10n::tr("Not available on this system", &[])) };
+        let imported = converter(&der, password)?;
+        if imported.cert.form() != client_cert::Form::Pem {
+            return Err(l10n::tr("The imported client certificate cannot be read. Import it again.", &[]));
+        }
+        self.pending_pkcs12.lock().unwrap_or_else(PoisonError::into_inner).remove(key);
+        self.with_draft(key, |d| {
+            d.store_client_cert(&deps, imported)?;
+            // The key keeps this password: typed once, it is the draft's "Private key password" (saved with Save).
+            d.prefill_key_password(password)?;
             Ok(d.view(key))
         })
         .map(|v| self.with_platform(v))

@@ -487,6 +487,18 @@ A `DNS` sorban a nevek keresési tartományok. Az `Address` és az `AllowedIPs` 
 
 **IPsec:** **VPN → IPsec → Connections**; ugyanazt a `swanctl.conf`-ot írd, mint a pfSense-hez. Az OPNsense `default` javaslataihoz nem kell `proposals` sor (vagy írd: `proposals = default`).
 
+### Linuxon (LinVPN)
+
+Ugyanezek a fájlok hiba és kockázatos beállítás nélkül importálhatók a LinVPN-be, a fenti lépések ugyanazok; a LinVPN a NetworkManageren keresztül futtatja őket ([LinVPN felhasználói útmutató, 3](linvpn-user-guide.hu.md#3-kapcsolatok-felvétele-típusonként)). A különbségek:
+
+- **OpenVPN:** a pfSense **Archive** exportja, ha a PKCS#12 fájlnak nincs jelszava, jelszókérés nélkül csatlakozik; ha van, a **Privát kulcs jelszava** mezőbe kerül, mint Macen.
+- **WireGuard:** a UniFi, a pfSense és az OPNsense fájljaiból a NetworkManager saját WireGuard-kapcsolatai lesznek; mást nem kell telepíteni.
+- **IKEv2 EAP-MSCHAPv2** (pfSense, OPNsense) működik; a CA-tanúsítvány a strongSwan `x509ca/` mappája helyett a LinVPN strongSwan-mappájába kerül: `~/.local/share/LinVPN/swanctl/x509ca/` ([LinVPN felhasználói útmutató, 3.3](linvpn-user-guide.hu.md#33-ikev2-strongswan)).
+- **IKEv2 EAP-TLS** (pfSense, `auth = eap-tls`) Linuxon nem támogatott: a kapcsolat ezt mutatja: **Linuxon nem támogatott: local auth = eap-tls**. Helyette tanúsítványos profilt használj (`auth = pubkey`, `certs = <fájl>`).
+- **IKEv2 tanúsítvánnyal** (az OPNsense `auth = pubkey` profilja): vagy töröld a `certs` sort, és importáld a tanúsítványt a **Klienstanúsítvány importálása…** gombbal, vagy hagyd meg a `certs = <fájl>` sort, és tedd a tanúsítványt és a kulcsát a LinVPN strongSwan-mappájába (`x509/<fájl>` és `private/<fájlnév kiterjesztés nélkül>.key`); lásd a [LinVPN felhasználói útmutató 3.3 pontját](linvpn-user-guide.hu.md#33-ikev2-strongswan). Ha egyik sincs meg, a kapcsolat megmondja, mi hiányzik.
+- **IKEv2 PSK:** a közös kulcsnak Linuxon **legalább 20 karakteresnek** kell lennie (a strongSwan NetworkManager-bővítménye a rövidebbet elutasítja; a LinVPN ezt csatlakozás előtt jelzi). A tűzfalon elég hosszú kulcsot adj meg.
+- **IKEv1 XAuth-tal (Cisco IPsec)** és **L2TP/IPsec** úgy működik, mint Macen (**Új → Cisco IPsec**, **Új → L2TP**).
+
 ### Források
 
 - Ubiquiti Help Center: [UniFi Gateway – WireGuard VPN Server](https://help.ui.com/hc/en-us/articles/115005445768), [OpenVPN Server](https://help.ui.com/hc/en-us/articles/12600064355991), [L2TP VPN Server](https://help.ui.com/hc/en-us/articles/12594825307927), [Teleport VPN](https://help.ui.com/hc/en-us/articles/5246403561495), [Introduction to VPNs](https://help.ui.com/hc/en-us/articles/7951513517079), [WireGuard VPN Client](https://help.ui.com/hc/en-us/articles/16357883221015) és [OpenVPN Client](https://help.ui.com/hc/en-us/articles/12648654915863) (a UniFi által olvasott és írt fájlformátumok).

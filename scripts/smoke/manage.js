@@ -136,7 +136,8 @@
     checks.sstpSaved = !!(await waitFor(() => document.querySelector('.footer .secondary')));
 
     const invoke = window.__TAURI_INTERNALS__.invoke;
-    const windows = (await invoke('get_platform')).os === 'windows';
+    const { os } = await invoke('get_platform');
+    const windows = os === 'windows';
     if (windows) {
       // WinVPN 2c: the L2TP form saves the Windows VPN entry at once ("Save", no profile to approve); it is not
       // saved here (the sandbox's RAS engine would write an entry). SSTP cannot skip the certificate check.
@@ -151,6 +152,23 @@
       checks.nativeSaveButton = !!(await waitFor(() => document.querySelector('.form .footer button.primary')?.textContent.trim() === saveLabel));
       const nativeView = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
       checks.nativeNoInstallStep = nativeView.platform?.noInstallStep === true && nativeView.platform.l2tpCopy === false;
+    } else if (os === 'linux') {
+      // LinVPN L-b: the native form saves at once ("Save": the plan record in the sandbox's data folder, no profile
+      // to approve, no NetworkManager connection). The stored password is never sent back.
+      row('Seeded L').click();
+      await shown('Seeded L');
+      const saveLabel = { en: 'Save', hu: 'Mentés' }[vm.language];
+      checks.nativeSaveButton = !!(await waitFor(() => document.querySelector('.form .footer button.primary')?.textContent.trim() === saveLabel));
+      const password = await waitFor(() => document.querySelector('.form input[type=password]'));
+      setValue(password, 'native-secret');
+      setValue(document.querySelector('.form .field input[type=text]'), 'Seeded L2');
+      await sleep(300);
+      save();
+      checks.nativeSaved = !!(await waitFor(() => document.querySelector('.footer .ok')));
+      const nativeView = await invoke('editor_open', { id: '31111111-2222-4333-8444-555555555555' });
+      checks.nativeStored = nativeView.fields.name === 'Seeded L2' && nativeView.hasStoredSecret.password && nativeView.fields.password === null && !nativeView.dirty;
+      checks.nativeNoInstallStep = nativeView.platform?.noInstallStep === true;
+      checks.noSecretInView = !JSON.stringify(nativeView).includes('native-secret');
     } else {
       // Native form: the profile is generated and staged (the sandbox does not open it).
       row('Seeded L').click();
@@ -176,7 +194,7 @@
       checks.secretKept = again.hasStoredSecret.password && again.fields.password === null && !again.dirty;
     }
 
-    // The native connection's name now (renamed on macOS only).
+    // The native connection's name now (renamed by the native form's save above: macOS and Linux; Windows saves none).
     const l2 = windows ? 'Seeded L' : 'Seeded L2';
     // The search: typed with accents the names do not have, by server and by type; Up / Down and Return open a
     // result; the empty result and its Clear; Escape clears, then leaves the field; Cmd+F comes back to it.
@@ -230,8 +248,9 @@
     checks.searchEscape = !!(await showing(all)) && field.value === '' && document.activeElement === field;
     key('Escape');
     checks.searchBlur = document.activeElement !== field;
-    // The platform's find shortcut: Cmd+F on macOS, Ctrl+F on Windows.
-    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: !windows, ctrlKey: windows, bubbles: true, cancelable: true }));
+    // The platform's find shortcut: Cmd+F on macOS, Ctrl+F on Windows and Linux.
+    const ctrl = os !== 'macos';
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'f', metaKey: !ctrl, ctrlKey: ctrl, bubbles: true, cancelable: true }));
     checks.searchCmdF = document.activeElement === field;
     field.blur();
 

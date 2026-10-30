@@ -283,8 +283,10 @@ fn network_loss(state: &Arc<AppState>, now: Date) {
 }
 
 /// The engines whose tunnels report liveness (the helper's `liveness`); the others' death shows in their state.
+/// LinVPN's IKEv2 too: its IPsec SAs' counters (`linvpn-xfrmd`), since charon-nm's own DPD is all it has otherwise.
 fn watched(kind: VPNKind) -> bool {
     matches!(kind, VPNKind::Wireguard | VPNKind::Openvpn)
+        || (kind == VPNKind::Strongswan && crate::platform::ikev2_reports_liveness())
 }
 
 /// Dead-tunnel detection: when due, the connected tunnels are asked (without the planner's lock) and the planner
@@ -465,6 +467,17 @@ mod tests {
     use macvpn_platform_api::Gateway;
     use std::io;
     use uuid::Uuid;
+
+    #[test]
+    fn ikev2_liveness_is_watched_on_linux_only() {
+        assert!(watched(VPNKind::Wireguard) && watched(VPNKind::Openvpn));
+        assert_eq!(
+            watched(VPNKind::Strongswan),
+            crate::platform::ikev2_reports_liveness(),
+            "LinVPN's IKEv2 SA counters"
+        );
+        assert!(!watched(VPNKind::Sstp) && !watched(VPNKind::L2tp));
+    }
 
     struct NoConfigs;
     impl ConnectionRepository for NoConfigs {

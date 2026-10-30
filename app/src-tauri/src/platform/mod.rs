@@ -1,10 +1,11 @@
 //! The app's one door to the operating system (spec 3): it picks the platform crate for the target
-//! (`macvpn-platform-mac` on macOS, `macvpn-platform-win` on Windows; no other OS yet), hands out the one
-//! [`Platform`] handle, and holds the Tauri glue that platform-api cannot (it does not depend on Tauri): the
-//! native window handle, the activation policy, the macOS-only run events.
+//! (`macvpn-platform-mac` on macOS, `macvpn-platform-win` on Windows, `macvpn-platform-linux` on Linux), hands out
+//! the one [`Platform`] handle, and holds the Tauri glue that platform-api cannot (it does not depend on Tauri): the
+//! native window handle, the activation policy, the macOS-only run events, Linux's own tray icon and its card
+//! panel overlay.
 //!
-//! This module is the only place in the app with `cfg(target_os)`. The smoke driver (`smoke`, debug builds on
-//! macOS and Windows) lives here too; the rest of the app reaches it through the `smoke_*` facades.
+//! This module is the only place in the app with `cfg(target_os)`. The smoke driver (`smoke`, debug builds) lives
+//! here too; the rest of the app reaches it through the `smoke_*` facades.
 
 #[cfg(target_os = "macos")]
 mod macos;
@@ -14,8 +15,12 @@ use macos as selected;
 mod windows;
 #[cfg(windows)]
 use windows as selected;
-#[cfg(not(any(target_os = "macos", windows)))]
-compile_error!("no platform layer for this operating system yet (Linux is phase 4)");
+#[cfg(target_os = "linux")]
+mod linux;
+#[cfg(target_os = "linux")]
+use linux as selected;
+#[cfg(not(any(target_os = "macos", windows, target_os = "linux")))]
+compile_error!("no platform layer for this operating system");
 
 mod environment;
 #[cfg(debug_assertions)]
@@ -24,7 +29,7 @@ pub mod smoke;
 pub use environment::Environment;
 
 use macvpn_platform_api::{LoginItems, NativeWindow, Platform};
-use tauri::AppHandle;
+use tauri::{AppHandle, WebviewWindow};
 
 /// Created once in `main` (`sandbox`: `MACVPN_SANDBOX_HOME`, see [`Environment::sandbox_home`]); a second call
 /// returns the first platform.
@@ -68,8 +73,9 @@ pub fn on_run_event(app: &AppHandle, event: &tauri::RunEvent) {
     selected::on_run_event(app, event);
 }
 
-/// Windows: restricts the process' DLL search to System32 (L-5 of the 2.0.0 security review). The very first
-/// statement of `main`, before any mode. macOS: nothing.
+/// Windows: restricts the process' DLL search to System32 (L-5 of the 2.0.0 security review). Linux: the process'
+/// GTK program name (the windows' app id) and WebKit's renderer, before any thread. The very first statement of
+/// `main`, before any mode. macOS: nothing.
 pub fn harden_dll_search() {
     selected::harden_dll_search();
 }
@@ -86,6 +92,19 @@ pub fn helper_mode() -> Option<i32> {
 /// single-instance claim) and returns `true`. macOS: never.
 pub fn relaunch() -> bool {
     selected::relaunch()
+}
+
+/// Linux: the installed LinVPN's supervisor (`macvpn_platform_linux::supervise`): `Some(exit code)` when this
+/// process supervised the GUI process (`main` exits with it), `None` when this process is the app. Called after the
+/// helper modes, before anything starts. macOS and Windows: never.
+pub fn supervise() -> Option<i32> {
+    selected::supervise()
+}
+
+/// Linux: why the supervisor started this GUI process again (`exit code 1`, `signal 9`); `None` for a normal launch.
+/// Such a launch opens no window by itself. macOS and Windows: never.
+pub fn restart_reason() -> Option<String> {
+    selected::restart_reason()
 }
 
 /// Debug builds: the updater's install half on a local MSI (Windows, CP2); `Some(exit code)` when this launch was
@@ -112,14 +131,77 @@ pub fn uses_app_menu() -> bool {
     selected::uses_app_menu()
 }
 
-/// Whether IKEv2 editors offer **Import Client Certificate…** (G4): macOS' root layer 12 loads the imported key;
-/// Windows signs with a computer certificate from its own store.
+// MARK: - The tray icon and the popover (Linux: the card panel)
+
+/// The tray icon is the platform's own (Linux: a StatusNotifierItem, spike L0-2 variant S), created here with the
+/// first icon (RGBA, `width` × `height`) and its tooltip; its clicks reach [`crate::tray`] on the main thread.
+/// `true`: done, Tauri's tray icon is not built. macOS, Windows: `false`.
+pub fn create_own_tray(app: &AppHandle, rgba: &[u8], width: u32, height: u32, tooltip: &str) -> bool {
+    selected::create_own_tray(app, rgba, width, height, tooltip)
+}
+
+/// A new icon and tooltip for the platform's own tray; `false`: there is none (Tauri's tray icon is updated
+/// instead).
+pub fn set_own_tray_icon(rgba: &[u8], width: u32, height: u32, tooltip: &str) -> bool {
+    selected::set_own_tray_icon(rgba, width, height, tooltip)
+}
+
+/// Once, when the popover window is created (Linux: the overlay's input region, kept on every size allocation).
+/// macOS, Windows: nothing.
+pub fn prepare_menu_window(window: &WebviewWindow) {
+    selected::prepare_menu_window(window);
+}
+
+/// Whether the popover is the platform's overlay (Linux on Wayland, spike L0-2 and CP-L0: a transparent window over
+/// the whole work area that draws the card at its top-right and takes clicks only there): it is never positioned
+/// and never resized to its content; the page reports the card's rectangle instead ([`set_menu_card`]). macOS,
+/// Windows: `false`.
+pub fn menu_is_overlay() -> bool {
+    selected::menu_is_overlay()
+}
+
+/// Right before the popover is shown as the overlay: the tray's activation token (focus), the work area
+/// (maximized). Main thread. `false`: not shown as an overlay here (macOS, Windows; Linux without its GTK window),
+/// the caller places the window itself.
+pub fn present_menu_overlay(window: &WebviewWindow, activation_token: Option<&str>) -> bool {
+    selected::present_menu_overlay(window, activation_token)
+}
+
+/// The card's rectangle in the overlay as the page laid it out (CSS pixels of the window: left, top, width,
+/// height): only it takes clicks. Main thread. macOS, Windows: nothing (no overlay).
+pub fn set_menu_card(window: &WebviewWindow, card: (f64, f64, f64, f64)) {
+    selected::set_menu_card(window, card);
+}
+
+/// Where the popover goes when no tray icon position is known (Linux outside the overlay: the work area's top-right
+/// corner; `work_area` = (x, y, width, height), physical pixels). macOS, Windows: `None` (their icon gives the
+/// place).
+pub fn corner_position(work_area: (i32, i32, u32, u32), window: (u32, u32)) -> Option<(i32, i32)> {
+    selected::corner_position(work_area, window)
+}
+
+/// Whether IKEv2 tunnels report liveness (LinVPN: the IPsec SAs' counters through `linvpn-xfrmd`; macOS' strongSwan
+/// and Windows' RAS IKEv2 end a dead connection themselves).
+pub fn ikev2_reports_liveness() -> bool {
+    selected::ikev2_reports_liveness()
+}
+
+/// Whether IKEv2 editors offer **Import Client Certificate…** (G4): macOS' root layer 12 loads the imported key,
+/// LinVPN writes it as files for NetworkManager's strongSwan plugin; Windows signs with a computer certificate from
+/// its own store.
 pub fn imports_client_certificates() -> bool {
     selected::imports_client_certificates()
 }
 
+/// LinVPN: the PKCS#12 conversion of that import (strongSwan's NetworkManager plugin reads PEM files only); macOS
+/// keeps a PKCS#12 file as it is.
+pub fn pkcs12_converter() -> Option<macvpn_app_core::connections::Pkcs12Converter> {
+    selected::pkcs12_converter()
+}
+
 /// The swanctl folder whose `x509` / `x509ca` certificate files the IKEv2 editor shows (macOS: Homebrew's
-/// `etc/swanctl`; Windows: none, its IKEv2 uses the computer's certificate store).
+/// `etc/swanctl`; LinVPN: its own `$XDG_DATA_HOME/LinVPN/swanctl`; Windows: none, its IKEv2 uses the computer's
+/// certificate store).
 pub fn swanctl_folder() -> Option<std::path::PathBuf> {
     selected::swanctl_folder()
 }

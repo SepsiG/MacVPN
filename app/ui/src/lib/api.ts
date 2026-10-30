@@ -211,6 +211,8 @@ export interface SetupView {
   engine?: EngineRowsView;
   /** The Windows VPN client row (WinVPN 2c: L2TP/IPsec, IKEv2, SSTP), also without the WinVPN Service. Absent on macOS. */
   ras?: CheckRow;
+  /** LinVPN (L-b): the NetworkManager row and one row per kind (its plugin), instead of the Homebrew, tools and root rows. Absent on macOS and Windows. */
+  nm?: import('./setup').NmRowsView;
 }
 
 export interface EngineRowsView {
@@ -400,6 +402,8 @@ export interface ClientCertView {
   ignored: number;
   /// "Import Client Certificate…" is offered (macOS; Windows uses its own certificate store).
   import: boolean;
+  /// LinVPN: a chosen PKCS#12 file waits for its password (converted to PEM at import).
+  pkcs12Password: boolean;
 }
 
 export interface ClientCertSummary {
@@ -698,6 +702,9 @@ export const api = {
   movePinned: (from: number[], to: number) => invoke<void>('move_pinned', { from, to }),
   openWindow: (name: WindowName) => invoke<void>('open_window', { name }),
   setMenuHeight: (height: number) => invoke<void>('set_menu_height', { height }),
+  /// The card's rectangle in Linux's overlay (CSS pixels): only it takes clicks.
+  setMenuCard: (left: number, top: number, width: number, height: number) =>
+    invoke<void>('set_menu_card', { left, top, width, height }),
   /// A prompt window's content height (its own window only).
   fitWindow: (height: number) => invoke<void>('fit_window', { height }),
   quit: (choice: QuitChoice | null) => invoke<QuitReply>('quit', { choice }),
@@ -718,6 +725,10 @@ export const api = {
   editorSave: (id: string, fields: EditorFields) => invoke<EditorView>('editor_save', { id, fields }),
   editorForget: (id: string) => invoke<EditorView>('editor_forget', { id }),
   editorChooseCa: (id: string) => invoke<EditorView>('editor_choose_ca', { id }),
+  /// LinVPN's OpenVPN "Send all traffic over VPN": what the config text says, and the text with another choice.
+  openvpnRoutingRead: (config: string) => invoke<'server' | 'always' | 'never'>('openvpn_routing_read', { config }),
+  openvpnRoutingWrite: (config: string, routing: 'server' | 'always' | 'never') =>
+    invoke<string>('openvpn_routing_write', { config, routing }),
   /// "Generate Key Pair" / "Generate Preshared Key": the backend makes the key (OS CSPRNG) into the draft.
   editorWireguardGenerate: (id: string, key: WireGuardKeyLine) => invoke<EditorView>('editor_wireguard_generate', { id, key }),
   /// "Copy" of the private / preshared key: the backend copies the draft's key through the secret clipboard
@@ -727,6 +738,8 @@ export const api = {
   editorImportClientCert: (id: string) => invoke<EditorView>('editor_import_client_cert', { id }),
   /// "Remove" of the imported client certificate.
   editorRemoveClientCert: (id: string) => invoke<EditorView>('editor_remove_client_cert', { id }),
+  /// LinVPN: the waiting PKCS#12 file's password (`null` cancels that import).
+  editorConvertClientCert: (id: string, password: string | null) => invoke<EditorView>('editor_convert_client_cert', { id, password }),
   createConnection: (kind: Kind) => invoke<void>('create_connection', { kind }),
   importFiles: () => invoke<Report | null>('import_files'),
   /// Files opened from Finder: their outcome, once.
@@ -751,7 +764,9 @@ export const api = {
   setupCheck: () => invoke<void>('setup_check'),
   setupInstallHomebrew: () => invoke<Notice | null>('setup_install_homebrew'),
   // `engine`: WinVPN's WireGuard row (its "Update"); without it the OpenVPN row's action (or Homebrew's tools).
-  setupInstallTools: (engine?: 'wireguard') =>
+  /// `engine`: WinVPN's 'wireguard' (the WireGuard row's update), or on LinVPN the raw value of the kind whose plugin
+  /// to install; none: the tools (macOS) or OpenVPN (WinVPN).
+  setupInstallTools: (engine?: string) =>
     engine ? invoke<void>('setup_install_tools', { engine }) : invoke<void>('setup_install_tools'),
   setupInstallRoot: () => invoke<void>('setup_install_root'),
   setupUninstall: (removeUserData: boolean) => invoke<UninstallResult>('setup_uninstall', { removeUserData }),

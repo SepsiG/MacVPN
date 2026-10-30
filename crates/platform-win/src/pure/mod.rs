@@ -3,7 +3,7 @@
 pub mod admin_steps;
 pub mod ca_trust;
 pub mod cisco;
-pub mod dates;
+pub use macvpn_platform_api::dates;
 pub mod engine;
 pub mod forward;
 pub mod instance;

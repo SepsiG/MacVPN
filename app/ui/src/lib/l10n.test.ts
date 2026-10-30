@@ -62,8 +62,8 @@ test('a windows variant is used on Windows in both languages', () => {
   );
   assert.equal(translate(table, 'hu', WINDOWS, 'On this Mac', []), 'Ezen a számítógépen');
   assert.equal(translate(table, 'en', WINDOWS, 'Option-click a switch: debug mode', []), 'Alt-click a switch: debug mode');
-  // Linux has no variant yet: the base text.
-  assert.equal(translate(table, 'en', { os: 'linux', product: 'MacVPN' }, 'On this Mac', []), 'On this Mac');
+  assert.equal(translate(table, 'en', { os: 'linux', product: 'LinVPN' }, 'On this Mac', []), 'On this computer');
+  assert.equal(translate(table, 'hu', { os: 'linux', product: 'LinVPN' }, 'On this Mac', []), 'Ezen a számítógépen');
 });
 
 test('without a variant the product name is replaced', () => {

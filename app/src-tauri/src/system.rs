@@ -126,8 +126,9 @@ pub async fn setup_install_homebrew(window: Window, state: Shared<'_>) -> Result
     .await
 }
 
-/// "Install" of the missing tools: `brew install …` as the user with live output; it goes on when the window
-/// closes, and the system is checked again at its end.
+/// "Install" of the missing tools: `brew install …` as the user with live output (LinVPN: the clicked kind's
+/// NetworkManager plugin through PackageKit); it goes on when the window closes, and the system is checked again at
+/// its end.
 #[tauri::command]
 pub async fn setup_install_tools(window: Window, state: Shared<'_>, engine: Option<String>) -> Result<(), String> {
     crate::guard::only(&window, "setup_install_tools", SETUP_WINDOW)?;
@@ -138,8 +139,19 @@ pub async fn setup_install_tools(window: Window, state: Shared<'_>, engine: Opti
     {
         e.openvpn.action = None;
     }
-    // macOS: Homebrew's `brew install`; Windows: the OpenVPN or WireGuard row's action (the engine rows).
-    if !report.engine.as_ref().is_some_and(|e| e.openvpn.action.is_some() || e.wireguard.action.is_some()) {
+    // LinVPN's NetworkManager rows: only the clicked kind's row keeps its action (its packages go to PackageKit).
+    if let Some(nm) = report.nm.as_mut() {
+        let kind = engine.as_deref().and_then(VPNKind::from_raw_value).ok_or("no kind")?;
+        for (k, row, _) in &mut nm.kinds {
+            if *k != kind {
+                row.action = None;
+            }
+        }
+        if nm.row(kind).is_none_or(|r| r.action.is_none()) {
+            return Err("nothing to install".into());
+        }
+    } else if !report.engine.as_ref().is_some_and(|e| e.openvpn.action.is_some() || e.wireguard.action.is_some()) {
+        // macOS: Homebrew's `brew install`; Windows: the OpenVPN or WireGuard row's action (the engine rows).
         report.package_manager.as_ref().ok_or("no Homebrew")?;
     }
     if !state.brew.lock().unwrap_or_else(PoisonError::into_inner).start() {

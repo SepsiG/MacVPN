@@ -10,7 +10,7 @@ use macvpn_app_core::{ConnectionManager, DisconnectCause};
 use macvpn_core::date::Date;
 use macvpn_core::l10n::AppLanguage;
 use macvpn_core::mfa::{AuthPromptResult, AuthUIMethod, AuthUIState, AuthUIStateKind};
-use macvpn_core::models::{Connection, ConnectionState, VPNKind, uuid_string};
+use macvpn_core::models::{Connection, ConnectionState, SecretField, VPNKind, uuid_string};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -167,4 +167,25 @@ impl macvpn_app_core::deps::AuthStateReader for Reader {
     fn read(&self, id: &uuid::Uuid) -> Option<AuthUIState> {
         (self.0)(id)
     }
+}
+
+#[test]
+fn an_adopted_tunnels_log_gets_its_secrets_once_the_vault_is_open() {
+    let f = Fixture::new(EN);
+    let c = Connection::new("WG", VPNKind::Wireguard);
+    f.store.save(&c, Some("x")).unwrap();
+    f.secrets.set("s3cret", &c.id, SecretField::Password);
+    f.helper.respond("status", Ok(&connected_status(&c)));
+    f.helper.want_log_secrets(&c.id);
+    let m = f.manager();
+    m.enter_locked();
+    m.refresh();
+    let line = format!("log-secrets {}", uuid_string(&c.id));
+    assert!(!f.helper.lines().contains(&line), "nothing while the vault is locked");
+    m.reload();
+    m.refresh();
+    m.refresh();
+    let calls: Vec<_> = f.helper.calls().into_iter().filter(|c| c.line == line).collect();
+    assert_eq!(calls.len(), 1, "once");
+    assert_eq!(calls[0].stdin.as_deref(), Some("s3cret"));
 }

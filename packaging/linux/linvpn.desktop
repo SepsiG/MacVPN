@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=LinVPN
+GenericName=VPN Connections
+GenericName[hu]=VPN-kapcsolatok
+Comment=VPN connections in the top bar
+Comment[hu]=VPN-kapcsolatok a felső sávban
+Exec=/usr/bin/linvpn %F
+Icon=linvpn
+Terminal=false
+Categories=Network;
+Keywords=VPN;OpenVPN;WireGuard;IPsec;
+MimeType=application/x-openvpn-profile;application/x-linvpn-sstp;application/x-macvpn-catalog;
+StartupWMClass=linvpn

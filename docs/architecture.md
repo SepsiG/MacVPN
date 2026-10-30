@@ -12,7 +12,10 @@ history is [the phase 1 plan](superpowers/plans/2026-10-20-platform-neutral-refa
 [the phase 2c plan](superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md) with its
 [parity audit](superpowers/specs/2026-10-25-winvpn-parity-audit.md). The features added for 2.0
 (appearance, connection notices, missing engines, auto-reconnect, the macOS DNS manager, log caps, engine updates)
-are mapped in [The 2.0 features](#the-20-features).
+are mapped in [The 2.0 features](#the-20-features). The third product, **LinVPN** (Linux), is being built after
+[the LinVPN spec](superpowers/specs/2026-10-29-linvpn-design.md): its phase L-a (the platform layer, the tray and
+panel, the `.deb` and the signed self-update, [the L0/L-a plan](superpowers/plans/2026-10-29-linvpn-l0-la.md)) is
+described in [LinVPN on Linux](#linvpn-on-linux); it connects no VPN yet (the NetworkManager engines are phase L-b).
 
 In one sentence: **one app, one UI and one body of logic; a thin platform layer per operating system, chosen once
 at compile time.** Both products are complete. WinVPN connects OpenVPN and WireGuard through the **WinVPN Service**
@@ -29,7 +32,7 @@ crates/
                  `vault` feature, team catalogs, MFA, update checks, the EN/HU text table). Its only
                  OS-specific code is `fsx`, the safe file operations.
   platform-api/  macvpn-platform-api: the traits every platform implements, the shared types,
-                 `PlatformError` and the product identity (`Product`, `MACVPN`, `WINVPN`).
+                 `PlatformError` and the product identity (`Product`, `MACVPN`, `WINVPN`, `LINVPN`).
   platform-mac/  macvpn-platform-mac: the macOS platform (`MacPlatform`): Keychain, native VPN, notifications,
                  file panels, login item, installers, updater, the control socket. macOS-only as a whole.
   platform-win/  macvpn-platform-win: the Windows platform (`WinPlatform`, WinVPN): Credential Manager, known
@@ -40,15 +43,23 @@ crates/
   winsys/        macvpn-winsys: the Win32 calls core's `fsx` and platform-win share (SIDs, security
                  descriptors, file identity, randomness, named pipes, Authenticode, the service manager, the
                  certificate store, IP Helper, the RAS API). Windows only; empty elsewhere.
+  platform-linux/ macvpn-platform-linux: the Linux platform (`LinPlatform`, LinVPN): `pure/` (paths, texts, the
+                 autostart file, the update rules, placement; every OS) and `lin/` (Linux only): the D-Bus
+                 services through `zbus` (Secret Service, notifications, the desktop portal, logind, the
+                 single-instance name, the tray over `ksni`), GTK (clipboard, window sizes, SIGTERM), the
+                 control socket, autostart, the `.deb` updater; the VPN parts answer "not yet" until L-b.
+  unixsys/       macvpn-unixsys: the Unix calls macOS and Linux share: the control API's Unix socket (moved from
+                 platform-mac) with its transport, and the kernel's randomness. Unix only; empty on Windows.
   helper/        macvpn-helper: the privileged helper, binary `mvpn`: the macOS root layer, and on Windows the
                  WinVPN Service (installed as `WinVPNService.exe`). Shared protocol logic plus one backend per OS.
+                 On Linux no `mvpn`: only LinVPN's root update step, binary `linvpn-install-update`.
   app-core/      macvpn-app-core: the app logic without a UI (connection manager, view model, control server,
                  vault flows, catalogs, quit guard, updates).
 app/src-tauri/   macvpn-app: the Tauri 2 app. Its `platform` module picks the platform crate; everything else
                  uses platform-api only.
 app/ui/          the Svelte + TypeScript UI, one for every OS.
-examples/macvpn-control-client/   a control-API client template for other apps (a Unix socket on macOS, the
-                 named pipe on Windows through macvpn-winsys).
+examples/macvpn-control-client/   a control-API client template for other apps (a Unix socket on macOS and
+                 Linux, the named pipe on Windows through macvpn-winsys).
 ```
 
 The dependency graph (an arrow means "depends on"):
@@ -66,6 +77,9 @@ The dependency graph (an arrow means "depends on"):
 
  Windows only:   macvpn-core ──▶ macvpn-winsys ◀── platform-win, macvpn-helper
                  macvpn-control-client ──▶ macvpn-winsys ◀── macvpn-app-core (tests only)
+
+ Linux:          platform-linux ──▶ core (vault), platform-api; macvpn-app ──▶ platform-linux
+ Unix only:      platform-mac, platform-linux, macvpn-helper (Linux) ──▶ macvpn-unixsys ──▶ platform-api
 ```
 
 - `platform-api` depends on core only (with `vault`, for the traits it re-exports). It never depends on Tauri.
@@ -77,9 +91,14 @@ The dependency graph (an arrow means "depends on"):
   example client depend on it under `[target.'cfg(windows)'.dependencies]`, so no macOS binary links it:
   `cargo tree --locked -e normal --target aarch64-apple-darwin -p macvpn-app -p macvpn-helper --prefix none | grep -E '^(windows|macvpn-winsys)'`
   prints nothing (the same for `x86_64-apple-darwin`).
-- The app depends on `macvpn-platform-mac` only for `cfg(target_os = "macos")` and on `macvpn-platform-win` only
-  for `cfg(windows)` (`app/src-tauri/Cargo.toml`); any other target stops at a `compile_error!` in
-  `app/src-tauri/src/platform/mod.rs` (Linux is phase 4).
+- The app depends on `macvpn-platform-mac` only for `cfg(target_os = "macos")`, on `macvpn-platform-win` only
+  for `cfg(windows)` and on `macvpn-platform-linux` only for `cfg(target_os = "linux")`
+  (`app/src-tauri/Cargo.toml`); any other target stops at a `compile_error!` in `app/src-tauri/src/platform/mod.rs`.
+- `platform-linux` depends on core and platform-api like the other platform crates; its Linux bindings (`zbus`,
+  `ksni`, `gtk`, `glib`, `gdk`, `libc`, `macvpn-unixsys`) are `[target.'cfg(target_os = "linux")'.dependencies]`
+  pinned exactly, so no Linux-only crate reaches a macOS or Windows binary:
+  `cargo tree --locked -e normal --target aarch64-apple-darwin -p macvpn-app -p macvpn-helper --prefix none | grep -E '^(zbus|ksni|macvpn-platform-linux) '`
+  prints nothing (and the same for `x86_64-pc-windows-msvc`).
 - The helper uses core **without** the `vault` feature. The release gate in `scripts/build-dmg.sh` checks that
   `mvpn` links no SQLite and no catalog code.
 
@@ -362,6 +381,37 @@ this crate and never derive from `Product`. Tests on Windows (`tests/windows.rs`
 `tests/control_pipe.rs`) use their own names (`local.winvpn.test.<uuid>`, `WinVPN-test-…`) and delete them; the
 Credential Manager round trip skips itself in an SSH key logon, so it is part of the manual checklist.
 
+### platform-linux
+
+The Linux platform (LinVPN), laid out like platform-win: `src/pure/` compiles and is tested on every OS (the XDG
+paths, the sandbox's "not yet" texts, the autostart file, the update rules and the update check, the panel's
+placement, the portal's values, the single-instance names, the preferred languages, the download mark's decision,
+and `pure::nm`/`pure::net`: NetworkManager's states, the agent's rules, the plugin rows, the system VPN rules, the
+tunnel interfaces, the physical network's choice); `src/lin/` calls the system and exists only under
+`cfg(target_os = "linux")`: `LinPlatform` (every trait, `lin/platform.rs`), one lazily opened session and system bus
+(`lin/bus.rs`; the sandbox and the tests open none unless they call a service), one module per facility, and
+`lin/nm/` (the NetworkManager engine, L-b). The pure translation of a connection into NetworkManager settings is
+`macvpn_core::nm_plan`, `linvpn-logd`'s protocol and filter are `macvpn_core::logd`, and `linvpn-xfrmd`'s protocol,
+XFRM dump parser and ownership rule are `macvpn_core::xfrmd` (all tested on every OS).
+Details in [LinVPN on Linux](#linvpn-on-linux).
+
+The storage identifiers are literals in this crate and never derive from `Product`: the Secret Service attributes
+`application = local.linvpn`, `kind = vault-key`, the bus names `local.linvpn.Instance` and
+`local.linvpn.Sandbox.h<hash>`, `linvpn.desktop`, `linvpn.sock` / `linvpn.lock`. Tests that need a session bus run
+under `dbus-run-session` against fakes they serve themselves; the few that need the real desktop are ignored
+everywhere (`desktop:` in `scripts/ignored-everywhere.txt`) and run at a checkpoint.
+
+### unixsys
+
+`crates/unixsys` (`macvpn-unixsys`) holds the Unix calls macOS and Linux share, behind a safe API: the control API's
+socket (`control_socket`: the private `control/` directory, `bind` with the lock file and `flock`, the umask, the
+peer's identity, `is_already_closed`, `random_32`; moved from platform-mac byte for byte, which re-exports it as
+`macvpn_platform_mac::control_socket`, so its callers and tests did not change), the socket's platform-api transport
+(`transport`), and the kernel's randomness (`random`: `getentropy` on macOS, `getrandom(2)` on Linux). The peer
+lookup is per OS: macOS keeps `getpeereid` + `LOCAL_PEERPID` + `proc_pidpath`; Linux uses `SO_PEERCRED` and
+`/proc/<pid>/exe` (a target ending in ` (deleted)` cannot pair). `SUN_PATH_LEN` is 104 on macOS and 108 on Linux.
+`#![cfg(unix)]`: empty on Windows. Every `unsafe` block is a direct libc call with a `SAFETY` comment.
+
 ### helper
 
 `crates/helper` (package `macvpn-helper`, binary `mvpn`: installed as `/usr/local/libexec/macvpn/mvpn` on macOS and
@@ -381,7 +431,16 @@ certificates](#ikev2-client-certificates-root-layer-12)).
   engines' pure parts (`service`, `logs`, `ovpn_args`, `ovpn_run`, `bridge_state`, `wg_nt`, `wg_plan`, `wg_update`,
   `diagnostics`, `ras_logoff`, `recovery`, the pins) compile and are tested on every OS; `sys/` (Windows only) holds
   the host, the pipe server and the engines.
-- `src/main.rs` picks the backend with `cfg`; Linux prints "Not available on this system yet" until phase 4.
+- `src/linux/`: LinVPN's root update step, the second binary `linvpn-install-update`
+  (`src/linux/main_install_update.rs`, installed as `/usr/libexec/linvpn/linvpn-install-update`; see [the update
+  chain](#the-update-chain-and-the-deb)), and the third binary `linvpn-logd` (`src/linux/logd*.rs`, installed as
+  `/usr/libexec/linvpn/linvpn-logd`, socket-activated, not root; see [`linvpn-logd`](#linvpn-logd-and-the-log-tab)),
+  and the fourth binary `linvpn-xfrmd` (`src/linux/xfrmd*.rs`, installed as `/usr/libexec/linvpn/linvpn-xfrmd`,
+  socket-activated, not root, `CAP_NET_ADMIN` only; see [`linvpn-xfrmd`](#linvpn-xfrmd-ikev2-traffic-and-liveness)).
+  Their pure rules are `macvpn_core::deb_update` (asset names, the `.deb` fields, version order, exit codes),
+  `macvpn_core::logd` and `macvpn_core::xfrmd`, shared with the app. `#![cfg(target_os = "linux")]`; elsewhere the binaries exit 2.
+- `src/main.rs` picks the backend with `cfg`; on Linux `mvpn` only says it is not used there (exit 2): LinVPN drives
+  NetworkManager and needs no root layer for its VPNs.
 
 ### The WinVPN Service
 
@@ -458,8 +517,8 @@ field names (`#[serde(rename = …)]` where a Rust name changed); the 1.4.0 comp
 
 `app/src-tauri/src/platform/` is the app's one door to the OS and its only `cfg(target_os)`:
 
-- `mod.rs` picks `macos.rs` (creates `MacPlatform`) or `windows.rs` (creates `WinPlatform`; any other target is a
-  `compile_error!`) and offers `init(sandbox)` / `get()` (the `&'static dyn Platform`), and the Tauri glue that
+- `mod.rs` picks `macos.rs` (creates `MacPlatform`), `windows.rs` (creates `WinPlatform`) or `linux.rs` (creates
+  `LinPlatform`; any other target is a `compile_error!`) and offers `init(sandbox)` / `get()` (the `&'static dyn Platform`), and the Tauri glue that
   platform-api cannot hold because it does not depend on Tauri: `native_window` (`ns_window()` / `hwnd()`),
   `configure_app` (macOS: the activation policy; Windows: this launch's files and the single-instance listener),
   `set_window_presence` (the Dock icon; a no-op on Windows, which shows a taskbar button for every real window),
@@ -477,9 +536,15 @@ field names (`#[serde(rename = …)]` where a Rust name changed); the 1.4.0 comp
   resized in one step by `WindowChrome::set_outer_frame`); the icons are
   template images on macOS and the same PNGs tinted with `WindowChrome::tray_tint()` on Windows; the tooltip is the
   product's name.
+- On Linux (`linux.rs`) the glue is the `GtkWindow` handle, one instance per user over the session bus (a second
+  launch forwards its files, `linvpn %F`, through the same `open_files` handlers), the exit hook for SIGTERM, and
+  the platform's own tray icon (`create_own_tray`) and the popover as the card panel's overlay
+  (`menu_is_overlay`, `present_menu_overlay`), which `tray.rs` uses instead of Tauri's tray (see [LinVPN on
+  Linux](#linvpn-on-linux)).
 - `environment.rs`: `Environment` (home, bundle, sandbox, Info.plist), built from `SystemInfo` and `Product`.
-- `smoke.rs`: the smoke driver (macOS debug builds only), reached elsewhere through the `platform::smoke_*`
-  facades, which do nothing on other targets.
+- `smoke/`: the smoke driver (debug builds), reached elsewhere through the `platform::smoke_*` facades, which do
+  nothing on other targets; on Linux `linux_smoke.rs` answers "not a smoke run" until the Linux smoke driver
+  (LinVPN plan, Task 23) arrives.
 
 Window code passes `platform::native_window(&w)` (a `NativeWindow`, never dereferenced outside a platform crate)
 to `WindowChrome` and `FilePanels`.
@@ -565,6 +630,505 @@ without the WinVPN Service and without an administrator; the user's own Windows 
   `WinVPN-test-…`); dialling, hanging up and finding a dial (`desktop:` tests) at the VM's desktop; real connections
   against the lab (`scripts/vpn-lab/`) in the native VPN section of the manual checklist.
 
+## LinVPN on Linux
+
+LinVPN's phase L-a ([the plan](superpowers/plans/2026-10-29-linvpn-l0-la.md), "Resolved points"; the spikes behind
+it are in `docs/superpowers/spikes/2026-10-29-linvpn-*.md`) brought every platform facility to Linux; phase L-b
+([the plan](superpowers/plans/2026-10-29-linvpn-lb.md), "Resolved points") the VPNs, through NetworkManager (from
+[The NetworkManager engine](#the-networkmanager-engine) on). The code is `crates/platform-linux` (above), the app's
+`platform/linux.rs`, `crates/unixsys`, the helper's `src/linux/`, `macvpn_core::{nm_plan, logd, xfrmd, openvpn_routing}`
+and `packaging/linux/`.
+
+### Paths and the control socket
+
+- **XDG base directories** (`pure::paths`): data `$XDG_DATA_HOME/LinVPN` (default `~/.local/share/LinVPN`: the
+  vault, `control/` with the control API's audit file), settings `$XDG_CONFIG_HOME/LinVPN` (default
+  `~/.config/LinVPN`: `preferences.json`, platform-api's `FilePreferences`, private dir 0700 and file 0600), the
+  update cache `$XDG_CACHE_HOME/LinVPN/updates` (default `~/.cache`), run files `$XDG_RUNTIME_DIR/linvpn`. A
+  variable counts only when it is set, non-empty and absolute. The sandbox keeps everything under its home, with
+  `<sandbox>/run` as the runtime dir, and memory preferences.
+- **The control socket** is `$XDG_RUNTIME_DIR/linvpn/control/linvpn.sock` with `linvpn.lock` beside it (unixsys'
+  code; spec 3.1), not under the data dir: `ControlTransport::bind(dir)` ignores `dir` for the socket, as Windows'
+  pipe does, while `prepare_dir(dir)` still prepares the audit file's directory. `$XDG_RUNTIME_DIR` must be a real
+  directory of this uid with no group or other access, else the control API stays off with the error shown (fail
+  closed). The peer is identified with `SO_PEERCRED` and `/proc/<pid>/exe`. The example client's
+  `default_socket_path()` returns the same path on Linux.
+
+### Desktop services
+
+- **The vault key** (`lin/keystore.rs`) is one item in the Secret Service's default collection (gnome-keyring):
+  label `LinVPN vault key`, attributes `application = local.linvpn`, `kind = vault-key`, over plain `zbus` calls
+  (`OpenSession("plain")`, `SearchItems`, `Unlock` with the system's own prompt, at most 120 s, `GetSecret`,
+  `CreateItem` with `replace`, `Item.Delete`); every copy of the key is `Zeroizing`. No Secret Service, or a
+  dismissed prompt: `Unavailable`, and the vault asks for the master password. The `plain` session crosses only the
+  user's own session bus: the same-user boundary the Keychain and Credential Manager already accept.
+- **Notifications** (`lin/notify.rs`): `org.freedesktop.Notifications.Notify` with app name `LinVPN`, the hint
+  `desktop-entry = linvpn`, the `default` action (a click: `ActionInvoked` → the click handler with the user info),
+  `replaces_id` per identifier; the identifier → id map is in memory only.
+- **The desktop portal** (`lin/portal.rs`): appearance from `org.freedesktop.portal.Settings` `color-scheme`
+  (1 dark, 2 light, 0 or unreadable: the toolkit's default) through `WindowChrome::system_dark()`, re-applied on
+  `SettingChanged` (GTK 3 and WebKitGTK do not follow it themselves); the file panels through the portal's
+  `FileChooser` (`OpenFile`, `SaveFile`, the `Response` signal), with an empty parent window id.
+- **The clipboard** (`lin/clipboard.rs`): GTK's, on the main thread; a secret carries the extra target
+  `x-kde-passwordManagerHint` = `secret`, and `clear_if_unchanged` compares an `owner-change` counter.
+- **The download mark** (`pure/mark.rs`, `lin/xattr.rs`): the `user.xdg.origin.url` extended attribute browsers
+  set. Only "absent", "no user xattrs on this file system" and "no such file" count as unmarked (fail closed).
+- **Window chrome** (`lin/chrome.rs`): sizes through GTK; square corners on Linux; the tray icon drawn white
+  (GNOME's top bar is dark in both themes).
+
+### The tray icon and the panel
+
+Spike L0-2 ([findings](superpowers/spikes/2026-10-29-linvpn-tray.md)) and the maintainer's decision at CP-L0
+(2026-10-29) chose **variant S**: LinVPN's own StatusNotifierItem over `ksni` 0.3.7 (`lin/tray.rs`; Tauri's Linux
+tray delivers no click at all). `ItemIsMenu = false`, so the host sends `Activate` (GNOME's AppIndicator extension:
+a double click; KDE: a single click) and `SecondaryActivate` (a middle click): both toggle the panel. A single left
+or right click on GNOME shows the item's menu after the host's double-click wait: **Open LinVPN** first, then
+**Quit LinVPN**. The host's XDG activation token is passed to GTK before the panel is presented. ksni runs on
+zbus' own executor (`async-io`, no tokio); its callbacks only hand the event to the main thread.
+
+**The panel** (`FORCE_X11 = false`): GNOME on Wayland centres every positioned toplevel and has no layer shell, so
+the popover window is a **transparent, undecorated, maximized overlay** (Mutter fills the work area of its
+monitor); the page draws the card at the top-right, 8 px in from the right edge and 8 px below the work area's top
+(`pure::placement`), and the GDK window's input region is the card's rectangle, re-applied on every
+`size-allocate` (GTK resets it), so a click outside passes through and the focus loss hides the panel. LinVPN stays
+on native Wayland; `GDK_BACKEND=x11` (Xwayland, with an explicit position) is only the fallback if the overlay fails
+on real hardware, and it is not built in L-a. Every window carries the Wayland app id `linvpn`, so the dock shows
+LinVPN's icon.
+
+### Single instance, quitting, sleep and autostart
+
+- **One LinVPN per user and session** (`lin/instance.rs`): the first launch owns the session-bus name
+  `local.linvpn.Instance` (`RequestName` with `DO_NOT_QUEUE`) and serves `local.linvpn.Instance1.Open(aay files)`
+  at `/local/linvpn/Instance`; a later launch calls `Open` with its absolute file arguments (none: "show
+  yourself", `open_files::show_yourself`) and exits 0. A sandbox owns `local.linvpn.Sandbox.h<16 hex digits>`,
+  so a smoke run never meets an installed LinVPN. Without a session bus LinVPN runs anyway (the control socket's
+  lock still keeps one control server per user).
+- **Quitting and logout** (`lin/lifecycle.rs`): SIGTERM (systemd stops the session's scope at logout) and SIGINT
+  reach the terminate handler on the GTK main loop: `Now` exits, `Later` runs the app's quit flow, `Cancel` is
+  logged and the app stays (the session then ends with SIGKILL after systemd's stop timeout).
+- **Sleep and wake:** logind's `PrepareForSleep(bool)` on the system bus.
+- **Launch at login** (`pure/autostart.rs`, `lin/login_item.rs`): `$XDG_CONFIG_HOME/autostart/linvpn.desktop`
+  with `Exec=/usr/bin/linvpn`. On when the file exists without `Hidden=true` or `X-GNOME-Autostart-enabled=false`;
+  a file another tool turned off shows "Turned off by another app." and switching on rewrites it. Only the installed
+  `/usr/bin/linvpn` can toggle it (a development build shows why); GNOME has no settings page for it.
+
+### The update chain and the `.deb`
+
+- **The update check** (`pure/update_check.rs`) compiles the update source in (the `.deb` has no Info.plist), as
+  WinVPN does; only the installed `/usr/bin/linvpn` checks. The asset is `linvpn_<version>_amd64.deb` or
+  `_arm64.deb` (`Product::update_asset`).
+- **The app's checks** (`pure/update.rs`, `lin/updater.rs`): the `.deb`, its `.sha256` and `.sig` through
+  `/usr/bin/curl` (the shared curl layer) into `$XDG_CACHE_HOME/LinVPN/updates` (0700, files 0600); the hash and
+  the Ed25519 signature under `LinVpnV1` and the asset's name; then the quit questions.
+- **pkexec:** `/usr/bin/pkexec /usr/libexec/linvpn/linvpn-install-update --deb … --sig … --version … --asset …`
+  under the polkit action `local.linvpn.update` (`auth_admin`); its output goes to `install-<version>.log` in the
+  updates folder. pkexec's 126 (dismissed) or 127 (not authorized) is `Cancelled`: nothing installed. 127 is also
+  pkexec's "could not run the program", so the app first checks that the step and the polkit action file are
+  installed (before the download) and again after a 127: a missing one is the helper error, never a silent cancel.
+- **The root step** (`crates/helper/src/linux/install_update.rs`) trusts nothing from the caller: it opens the two
+  files without following links (regular files of `PKEXEC_UID` in a folder of that user with no group or other
+  access), copies the package into a fresh root-owned 0700 folder under `/var/cache/linvpn-update` while hashing
+  it, and on that copy verifies the signature itself, the architecture, and `dpkg-deb --field`'s Package
+  (`linvpn`), Version (the signed one, newer than the installed one) and Architecture (`macvpn_core::deb_update`).
+  Only then `apt-get install -y <copy>` with a clean environment; the copy is removed afterwards. Both files are
+  read through their size limits (512 MiB, 1 KiB), also when they grow after the check. "No downgrade" fails
+  closed: `dpkg-query` failing, or reporting `linvpn` as not installed, is refused. At its start the step sets
+  umask 022 and its own resource limits (no core dumps, no file size limit, at least 1024 open files), since pkexec
+  passes the caller's on. Exit codes (stable; a new one takes the next number): 10 bad arguments, 11 not root, 12
+  unsafe file (also: too large), 13 bad signature, 14 wrong package, 15 wrong architecture, 16 wrong version, 17 not
+  newer, 18 a tool failed, 19 apt failed, 20 `linvpn` not installed.
+- **After the update:** the app writes the outcome notice into the updates folder, starts `/usr/bin/linvpn
+  --after-update` detached and quits (`HelperLaunched`); the new process waits up to 20 s for the single-instance
+  name, then starts; its launch housekeeping reads and removes the notice and posts "LinVPN was updated to X.Y.Z."
+  as a desktop notification (`Updater::take_updated_notice`; macOS and Windows show no success notice).
+- **The supervisor** (`pure/supervisor.rs`, `lin/supervisor.rs`, called first in `main` through
+  `platform::supervise`): the installed LinVPN (`/usr/bin/linvpn`; not the sandbox, not a development build) starts
+  itself again as the GUI process (`--supervised`) and only waits for it: no GTK, no Tauri, no instance name, no
+  tray. When the GUI ends abnormally (a non-zero exit code, or a signal other than SIGTERM, SIGINT, SIGHUP) while the
+  graphical session lives (the `WAYLAND_DISPLAY` socket, else the `DISPLAY` X socket, is there, and logind's
+  `/run/systemd/sessions/<id>` is not `STATE=closing`; the id is `XDG_SESSION_ID` or the user's `DISPLAY=` session),
+  it starts it again 2 s later with `--supervised --restarted=<reason>`: no files, no `--after-update`, and the launch
+  opens no window by itself (no unlock or System Status window: the tray unlocks); the new process logs the reason
+  and adopts the tunnels still up as any launch does (`.linvpn-run.json`). At most 5 restarts in 10 minutes, then it
+  gives up and logs it. Exit 0 is never restarted: Quit, SIGTERM through the exit hook, and the updater's and the
+  package watch's hand-over (`linvpn --after-update` started, then the old GUI exits 0). SIGTERM, SIGINT or SIGHUP to
+  the supervisor ends the supervision (not passed on: a logout reaches the whole scope). A launch while the instance
+  name has an owner (`linvpn file.ovpn`, the dock) is not supervised: it goes on as a plain launch and forwards its
+  files; `--after-update` is supervised although the old process still owns the name (its GUI waits for it). Why:
+  GTK 3 exits with `_exit(1)` ("Error reading events from display: Broken pipe") when the compositor closes its
+  Wayland connection; on the Ubuntu 26.04 VM mutter closed LinVPN's (and no other app's) connection 0.5 s after a
+  gnome-remote-desktop RDP session dropped, without the log line mutter writes for a client that is too slow or made
+  a protocol error. The trigger is still open; the supervisor keeps the tray and the secret agent alive whatever it is.
+- **A package installed outside the app** (`sudo apt-get install ./linvpn_*.deb`, the Software app; also a
+  downgrade): the `.deb`'s `postinst` (`configure`) writes the installed version (`dpkg-query`) to
+  `/run/linvpn/package-version` (folder 0755, file 0644, temp file and `mv`; never failing the install). The
+  installed LinVPN (`/usr/bin/linvpn`, not the sandbox) reads it every 3 s (`pure/package_watch.rs`,
+  `lin/package_watch.rs`, started from the app's `platform::linux::configure_app`). Once it holds a plain X.Y.Z
+  other than the running version and other than what it held when the watch began (no restart loop for a package
+  whose binary reports another version), the app takes the updater's path (`LinUpdater::restart_after_package`:
+  the notice `ok <version>`, `linvpn --after-update` detached) and quits through `commands::terminate`: no quit
+  questions, nothing disconnected (the tunnels outlive the app, as with "Quit, Keep Them Running"). It waits while
+  the editor has unsaved changes and while the in-app update installs (`UpdateController::is_installing`, set from
+  "Download and Install" until the app quits: that update relaunches by itself, so there is never a second
+  relaunch). A missing marker (a fresh boot clears `/run`; an older package) is no change. `prerm remove` deletes
+  the marker.
+- **The `.deb`** is built by `scripts/build-deb.sh` with `dpkg-deb` (not Tauri's bundler: `tauri build
+  --no-bundle`), one architecture per run, on Ubuntu 24.04 in CI (so it runs on Ubuntu 24.04+ and Debian 13). Its
+  files: `/usr/bin/linvpn`, `/usr/libexec/linvpn/linvpn-install-update`, `/usr/share/applications/linvpn.desktop`
+  (`.ovpn`, `.sstp`, `.macvpncatalog`; not `.conf`, which is `text/plain` on Linux), the MIME XML
+  `/usr/share/mime/packages/linvpn.xml` (`application/x-linvpn-sstp`, `application/x-macvpn-catalog`; `.ovpn` is
+  shared-mime-info's `application/x-openvpn-profile`), the polkit action
+  `/usr/share/polkit-1/actions/local.linvpn.update.policy`, the hicolor icons (32, 128, 256), and
+  `/usr/share/doc/linvpn/{copyright,THIRD-PARTY-NOTICES.txt}`; since L-b also `/usr/libexec/linvpn/linvpn-logd`
+  with `/usr/lib/systemd/system/linvpn-logd.{socket,@.service}`, `/usr/libexec/linvpn/linvpn-xfrmd` with
+  `/usr/lib/systemd/system/linvpn-xfrmd.{socket,@.service}`, LinVPN's NetworkManager OpenVPN service
+  (`/usr/lib/linvpn/nm-openvpn-service{,-openvpn-helper}`, `/usr/lib/NetworkManager/VPN/nm-linvpn-openvpn-service.name`,
+  `/usr/share/dbus-1/system.d/nm-linvpn-openvpn-service.conf`) and its GPL source in `/usr/share/linvpn/source/`
+  (see [LinVPN's OpenVPN service](#linvpns-networkmanager-openvpn-service)); the list is pinned in
+  `scripts/bundle-baseline/linvpn-deb-files.txt`. `Depends`: what `dpkg-shlibdeps` finds over all six programs,
+  plus `network-manager`, `network-manager-openvpn (>= 1.10)` (the `nm-openvpn` user and chroot LinVPN's service
+  uses), `openvpn`, `systemd`, `curl`, `pkexec | policykit-1` and a StatusNotifierItem host
+  (`gnome-shell-extension-appindicator | plasma-workspace`); `Recommends`: the NetworkManager VPN plugins (OpenVPN,
+  L2TP, strongSwan, SSTP, vpnc). **Exactly two maintainer scripts** (L-b, resolved point 12; L-a had none):
+  `postinst` (`configure`: `systemctl daemon-reload` and `systemctl enable --now` of `linvpn-logd.socket` and
+  `linvpn-xfrmd.socket` when `/run/systemd/system` exists; the installed version into `/run/linvpn/package-version`)
+  and `prerm` (`remove`: `systemctl disable --now` of both sockets; the version record removed), checked byte for
+  byte by the gate, which refuses any other; dpkg's file triggers (shared-mime-info, desktop-file-utils, the icon
+  cache, NetworkManager's VPN directory, dbus-daemon's `system.d`) do the rest. Further gates: the three
+  version numbers, no debug-only markers, SQLCipher on the vendored OpenSSL linked statically (no `libssl`,
+  `libcrypto` or `libsqlite3` among the NEEDED libraries), the root step and the two readers linking only libc, libm,
+  libgcc_s and the loader, every file `root:root`. The user's data and autostart file stay on removal (the user guide says how to
+  remove them).
+
+### The NetworkManager engine
+
+LinVPN drives NetworkManager over the system bus as the desktop user; it runs no VPN program itself (spec decision
+3). One `lin::nm::engine::Engine` per process owns the state; its trait implementations are split by file as
+WinVPN's are (resolved point 1):
+
+- **The trait split** (WinVPN 2c's): `HelperClient` (`helper_impl.rs`) runs OpenVPN, WireGuard, IKEv2
+  (`VPNKind::Strongswan`) and SSTP: each `up` plans the config it is given and activates it. `NativeController` +
+  `NativeProfiles` (`native_impl.rs`) run L2TP and Cisco IPsec and the system VPNs. `AuthStateReader` (`auth.rs`)
+  reports the agent's pending CRV1 challenge; `NativeSupport` (`support_impl.rs`) gives `nm_plan`'s Linux reasons
+  and the editor's notes for every kind at every reload (pure and cached: no D-Bus call). Managed L2TP / Cisco have
+  no NM profile: `NativeProfiles::install` writes a secret-free plan record `$XDG_DATA_HOME/LinVPN/nm/<UUID>.json`
+  (`plan_store.rs`: dir 0700, file 0600, strict keys, never through a symlink), `needs_approval() = false`,
+  `PlatformNotes::no_install_step` (the button reads **Save**), `managed_service_id = linvpn-<UUID>`; `start` builds
+  the volatile connection from the record. Cisco runs on Linux (vpnc), unlike Windows.
+- **`macvpn_core::nm_plan`** (pure, every OS): `plan(Input)` → `NmPlan { settings, secrets, files, summary, warnings,
+  iface, … }` or `Unsupported { reasons, invalid_config }`, one module per backend (`wireguard`, `openvpn`, `l2tp`,
+  `vpnc`, `strongswan`, `sstp`, `dns`). `settings` (a neutral value tree, `lin::nm::value` turns it into `a{sa{sv}}`)
+  never holds a secret: secrets are `SecretItem`s the agent answers, inline certificates and keys `RuntimeFile`s.
+  IKEv2 client certificates imported in the app (G4, `Input::client_cert` = `ImportedCert`): a key-signing config
+  without `certs` gets `usercert` / `userkey` = `<runtime dir>/client-cert.pem` / `client-key.pem`, written from the
+  vault's PEM `ClientCert` (0600, removed with the runtime dir at down); its passphrase stays the `password` secret
+  (`KeyPassword`). charon-nm loads `usercert` as X.509 only, so a PKCS#12 file is converted with the system's
+  `/usr/bin/openssl pkcs12` (`lin::pkcs12`: password on fd 3, never argv/env; stdin/stdout, capped, 20 s; `-legacy`
+  retried; the key re-encrypted with the same password; output checked by `client_cert::import`): at import
+  (`ConnectionsModel::set_pkcs12_converter`, the password asked by the editor, the vault keeps PEM) and, for one
+  restored from a Mac, at connect into the runtime files only. `openssl` is a `.deb` Depends. The row's reason and the editor's notes get only the imported
+  form (`NativeSupport::{unsupported_reason,editor_notes}_with_cert`, read by app-core from the vault); the editor's
+  Certificates section reads `certs` / `cacerts` from `$XDG_DATA_HOME/LinVPN/swanctl` (`platform::swanctl_folder`).
+  Every plan has `connection.permissions = ["user:<name>"]`, `autoconnect = false`, the derived UUID, and for
+  plugin kinds `vpn.persistent = false` (LinVPN's planner alone reconnects). The plugins' `vpn.data` keys are pinned
+  against the Ubuntu 26.04 versions (named in each module); a key a plugin does not know fails its connection.
+- **The derived UUID** (`nm_plan::names`, resolved point 3): `nm_uuid = UUIDv8(SHA-256("linvpn-nm-v1\0" ‖ uid as u32
+  LE ‖ connection UUID bytes)[..16])`. A stale volatile connection of a crashed run is found and deleted before the
+  next add, and `linvpn-logd` proves ownership from it without state. The interface names are `lvw` / `lvo` + the
+  first 4 bytes of SHA-256(connection UUID) in hex (11 characters).
+- **Activation** (`Engine::activate`, `lin/nm/client.rs`): plan → resolve the secrets from the prepared `Secrets`
+  (IKEv2: a PSK under `CHARON_NM_PSK_MIN` = 20 bytes is refused here, charon-nm would refuse it opaquely) → the
+  non-interactive polkit pre-check (`lin/nm/polkit.rs`: `CheckAuthorization` with flags 0 for
+  `settings.modify.own` and `network-control`, subject = our system-bus name; only "authorized, no challenge" for
+  both proceeds, anything else is the "may not change … without asking for a password" refusal; R1, R9) → delete a
+  leftover of the same derived UUID → write the runtime files → announce the expected secrets to the agent →
+  `AddAndActivateConnection2(settings, "/", "/", {persist: volatile})`, never with the interactive-authorization
+  flag. NM deletes the profile on deactivation. The activation is **not** bound to LinVPN's process (no
+  `bind-activation`): as on macOS and Windows, "Quit, Keep Them Running" and a crash leave the tunnel up, and the
+  user can still take it down from LinVPN's next launch or GNOME's network menu (the profile vanishes then). A
+  normal quit disconnects through app-core's quit flow (`down` → `Engine::deactivate`). `nmcli connection import`
+  is never used.
+- **Adoption at launch** (`Engine::adopt`, once per process: `prepare_engine` at setup, or the first start, stop or
+  status, whichever comes first): each run's directory holds a run record (`.linvpn-run.json`: the connection id,
+  kind, interface name, keepalive and connect time; never a secret; parsed strictly, our own 0600 file, no
+  symlink). A record is adopted only when its directory is the derived UUID of its id, NM reports that UUID
+  active, and its profile is volatile with `permissions = ["user:<name>"]` (R9). The run gets its log, journal pump
+  and an agent expectation without secrets (a dynamic challenge still reaches the app) and reports `connected`, so
+  app-core's adoption, liveness, traffic and reconnect take it over. Then the runtime dir is swept, keeping the
+  directories of NM's active connections (OpenVPN may read its files again on a restart); without NM's answer
+  nothing is swept. A watcher on NM's `VpnStateChanged` keeps each run's facts
+  (connected, reconnecting since, the failure reason) and writes NM's reason with the words `failure_reason.rs`
+  already matches (`AUTH_FAILED: …`, `Connection timed out (NetworkManager)`), so failure notices need no app-core
+  change.
+- **The runtime dir** (`lin/nm/files.rs`): `$XDG_RUNTIME_DIR/linvpn/nm/<nm uuid>`; `linvpn`, `nm` and the run's
+  directory must be real directories of ours (never a symlink), tightened to 0700; each file is created
+  `O_CREAT|O_EXCL|O_NOFOLLOW` 0600 under one plain path component; the guard removes the directory when the run is
+  stopped or ends (a quit that keeps the tunnel leaves it for the next launch's adoption). Without a valid
+  `$XDG_RUNTIME_DIR` every connect is refused.
+
+### The secret agent
+
+`lin/nm/agent.rs` registers `org.freedesktop.NetworkManager.SecretAgent` (identifier `local.linvpn.agent`, VPN
+hints capability) at first use and again when NetworkManager restarts.
+
+- **The sender rule:** a `GetSecrets` / `CancelGetSecrets` is answered only when its sender is the current unique
+  name of `org.freedesktop.NetworkManager` (followed through `NameOwnerChanged`, so an NM restart replaces it), and only for a connection
+  UUID the engine announced with `Agent::expect` (its own activation, or a system VPN start with stored secrets).
+  Anything else gets "no secrets" (R9). The agent never saves or deletes secrets (`SaveSecrets` / `DeleteSecrets`
+  do nothing).
+- **The answers:** static secrets (password, PSK, key password, WireGuard private and preshared keys) from the
+  expectation, built from `Zeroizing` values and dropped after the reply; nothing is logged. The static challenge
+  needs no key of its own: `password` is already app-core's packed `SCRV1:…` / `password+code`. A dynamic
+  challenge (CRV1: the `x-dynamic-challenge[-echo]:challenge-response` hint, the text from `x-vpn-message:`, at
+  most 512 characters) becomes a pending `AuthUIState` that `AuthStateReader` reports; `HelperClient::respond(id,
+  Crv1, code)` answers it, ended by a cancel, `CancelGetSecrets` or `CRV1_DEADLINE_SECS` (110 s). Web
+  authentication is not offered on Linux (`WebauthAck` → "No code is being asked for.").
+- **Secret mode** (resolved point 8): `pure::nm::agent::DEFAULT_SECRET_MODE = Agent` (every secret flag 1,
+  agent-owned; branch A of spike L0-4). `Inline` (branch B: the static secrets put into the volatile in-memory
+  connection just before the add, flags 0; CRV1 stays with the agent) is implemented and tested but not the
+  default. Both constants are marked `// L0-4:` until spike L0-4 part 2 confirms them on the installed `.deb`.
+
+### LinVPN's NetworkManager OpenVPN service
+
+Stock NM ignores a `redirect-gateway` the server pushes (the `--up` helper never sends `NEVER_DEFAULT`), so LinVPN
+ships its own build of upstream NetworkManager-openvpn **1.12.5** plus `packaging/linux/nm-linvpn-openvpn/
+linvpn-nm-openvpn.patch` (decision 8, resolved point 6; `packaging/linux/nm-linvpn-openvpn/README.md`):
+
+- **Build:** `scripts/build-nm-linvpn-openvpn.sh` downloads the tarball, checks it against
+  `scripts/pins/nm-openvpn.sha256`, applies the patch and builds the service and its helper with upstream's
+  autotools (`--libexecdir=/usr/lib/linvpn --without-gnome`); `scripts/test-build-nm-linvpn-openvpn.sh` checks the
+  result. Installed next to the untouched stock plugin under its own service name
+  `org.freedesktop.NetworkManager.linvpn-openvpn` (`nm-linvpn-openvpn-service.name`, no editor or auth dialog,
+  upstream's D-Bus policy for the new name). It still runs OpenVPN as `nm-openvpn` in upstream's chroot.
+- **The patch:** the helper's `--redirect-info` sends `NEVER_DEFAULT = false` for IPv4 (IPv6) exactly when OpenVPN
+  2.7+ exports `route_redirect_gateway_ipv4` (`_ipv6`) as 1 or 2 (`block-local` routes as a plain full tunnel); the
+  service passes `--redirect-info` when `openvpn --version` is ≥ 2.7, accepts four more `vpn.data` keys, each
+  validated in C with the Rust side's character rules (`linvpn-redirect-gateway` flags, `linvpn-pull-filter` lines,
+  `linvpn-route-nopull`, `linvpn-verb` 0–4, raising only), and starts OpenVPN with `--syslog
+  linvpn-ovpn-<NM connection UUID>` so `linvpn-logd` can attribute its lines.
+- **"Send all traffic over VPN"** (resolved point 4, `macvpn_core::openvpn_routing`, the editor's three-way control
+  `OpenVpnRouting.svelte`, Linux only): stored in the config itself, so it syncs through backups, exports and
+  catalogs and means the same to every OpenVPN (R10: no format change): **Always** = a `redirect-gateway def1` line
+  (plus `ipv6` when the profile had it), **Never** = `pull-filter ignore "redirect-gateway"`, **Server decides** =
+  neither. `nm_plan::openvpn` turns them into the `linvpn-*` keys and `never-default = no`. With OpenVPN < 2.7
+  (`Caps::openvpn_push_visible = false`, read from `openvpn --version` as the user) "Server decides" acts as decision
+  7: the profile's own `redirect-gateway` → full, else split; the editor and System Status' OpenVPN row say so.
+- **The Linux OpenVPN tier** (`platform_reasons(TargetOs::Linux)`, [openvpn-directives.md](openvpn-directives.md#linux-linvpn)):
+  69 names NM drops are RISKY "Ignored by NetworkManager on Linux"; the 8 refusals of L0-1 (`peer-fingerprint`,
+  `verify-hash`, `remote-cert-ku`, `remote-cert-eku`, a route past the tunnel, an unflattenable `<connection>`, a
+  `pull-filter` the service cannot pass, `compress stub*`/`migrate`) are `nm_plan` reasons (resolved point 5): the
+  row is greyed, the start refused, the config stays valid for macOS and Windows.
+- **The source obligation** (resolved point 13): the `.deb` ships the unmodified tarball, the patch and the README in
+  `/usr/share/linvpn/source/`, and `/usr/share/doc/linvpn/copyright` has the GPL-2+ stanza for `/usr/lib/linvpn/nm-*`.
+  LinVPN itself stays MIT (aggregation). Upstream security fixes and offering the patch upstream: `docs/RELEASING.md`.
+
+### `linvpn-logd` and the Log tab
+
+`linvpn-logd` (spec decision 6, resolved points 9 to 11) is the only way LinVPN reads the system journal:
+
+- **The unit** (`packaging/linux/systemd/`): `linvpn-logd.socket` listens on `/run/linvpn-logd.sock` (0666,
+  `Accept=yes`, at most 4 connections per source and 16 in all); `linvpn-logd@.service` runs one instance per
+  connection with `DynamicUser=yes`, `SupplementaryGroups=systemd-journal`, no capabilities, `NoNewPrivileges`,
+  `ProtectSystem=strict`, `ProtectHome`, `PrivateNetwork`, `RestrictAddressFamilies=AF_UNIX` (the caller's socket, the
+  system bus for NetworkManager's read-only properties, the journal stream), a system-call filter and
+  `RuntimeMaxSec=20`. **It is not root** (the spec's "the only root component" became "no root component" for logs).
+- **One request, one answer** (`macvpn_core::logd`): `linvpn-logd-v1 <connection UUID> <since µs> <cursor or ->`;
+  the caller's uid from `SO_PEERCRED` (none: no answer); the NM UUID derived from that uid and the named connection
+  (`nm_plan::names::nm_uuid`), so a caller can only reach its own connections' UUIDs, also after NM deleted the
+  volatile connection; `/usr/bin/journalctl` with fixed arguments (only validated UUIDs, numbers and a validated
+  cursor, each its own argv element; environment cleared; `--after-cursor` *or* `--since`, never both: journalctl
+  259 refuses the pair), its output capped and time-limited; lines `L <µs>
+  <nm|openvpn|plugin:<ident>> <escaped text>`, an optional `W` (withheld), `C <cursor>`, `E`.
+- **The attribution rule** (`logd::select`, fail closed): NetworkManager's lines with `NM_CONNECTION=<nm_uuid>` (NM
+  1.54.3 writes it; a `MESSAGE` fallback covers other versions); OpenVPN's lines with `SYSLOG_IDENTIFIER =
+  linvpn-ovpn-<nm_uuid>`; the plugins' lines (`charon-nm`, `nm-l2tp-service`, `xl2tpd`, `pppd`, `nm-sstp-service`,
+  `sstpc`, `nm-vpnc-service`, `vpnc`, …) only while the caller's connection was active (its own `starting <plugin>`
+  line, until its end) and no other VPN connection may have been; otherwise they are withheld (`W`). Who was
+  active when (security review M1, reworked after lab run 2): NetworkManager's `VPN`-domain lines since its last
+  start (activations; the warning-level lines NM 1.54.3's `nm-vpn-connection.c` writes only as a connection fails:
+  `dbus: failure: <reason> (<n>)`, `failed to connect: '…'`, `connect: failed to connect interactively: '…'`, `did
+  not receive valid IP config information`, `connect timeout exceeded`, the four secrets failures, `starting: timed
+  out …` / `starting: failure to start VPN service: …`; NM logs nothing at its default level when a VPN finishes
+  normally) and logd's own *readings*: at every request logd reads NM's `ActiveConnections` (each `Vpn`, `State`,
+  `Uuid`; any doubt: no reading) between two clock readings and, when it says something new, records it in its own
+  journal at priority notice (`linvpn-logd-vpns-v1 <before µs> <after µs> <uuids>`, trusted by
+  `_SYSTEMD_UNIT=linvpn-logd@….service`). A connection active since before a reading began that the reading did not
+  list ended by the reading's end; a reading that lists a connection voids an earlier end line of it (no activation
+  in between) and opens it back to its last known inactive moment when its activation line is missing; anything else
+  stays active. The engine asks logd once right before each activation (`logd_client::mark`, at most 3 s), so
+  earlier connections that are gone are recorded as gone before the new one starts. **Residual risk:** a plugin's
+  lines journald stamps after NM already dropped that connection (a dying pppd's last lines, journald's delay) can
+  reach a caller whose connection is then the only one active; a plugin that reports `Failure` yet keeps its
+  connection up and ends it before any reading would have its lines in between attributed the same way; a stopped
+  logd, a bus failure or a lost reading only withholds more. Since the sender
+  writes `SYSLOG_IDENTIFIER`, `MESSAGE` and `NM_CONNECTION` itself, a line counts only when journald's trusted
+  fields name the expected process: NM `_SYSTEMD_UNIT=NetworkManager.service` and `_UID=0`, OpenVPN `_COMM=openvpn`
+  and root or `nm-openvpn`, each plugin its own process names and root.
+- **The app side** (`lin/nm/logd_client.rs`, `lin/nm/connlog.rs`): the client checks that root owns the socket,
+  reads at most `MAX_RESPONSE` bytes within its timeout and parses strictly. Each connection has one log file
+  `$XDG_DATA_HOME/LinVPN/logs/<UUID>.log` (dir 0700, file 0600, never through a symlink, capped at 5 MiB by
+  dropping its oldest half): the engine's own lines (connect steps, NM's state reasons, in debug mode the plan's
+  summary, warnings and effective `vpn.data` with protected keys as `***`) and the *journal pump*'s, which asks
+  logd every poll while the run lives and for a linger after it ends, prefixing each line with its journal time
+  (`YYYY-MM-DD HH:MM:SS`, so the time filter works) and its source tag, masked with the connection's `Masker`.
+  `HelperClient::log_path` / `NativeController::log_source` + `FileLogSource`, "Clear Log…" (`clear_file`, the
+  journal untouched) and the time filter work unchanged. Without the socket the log says logd is not installed.
+
+### `linvpn-xfrmd` (IKEv2 traffic and liveness)
+
+strongSwan 6's charon-nm (Ubuntu 26.04: 6.0.4) creates an XFRM interface per connection (`nm-xfrm-<id>`, handed to
+NM as the tunnel device, holding the virtual IP; its sysfs counters are user-readable), and LinVPN counts that
+interface when there is one (see Traffic below). An older charon-nm creates no interface: IKEv2 is policy-based XFRM,
+and the only byte counters of such a tunnel are its IPsec SAs' (`struct xfrm_lifetime_cur`). `linvpn-xfrmd` stays in
+the package for those systems. The kernel answers an XFRM dump, even a
+read-only one, only to `CAP_NET_ADMIN` in the host's user namespace, so `linvpn-xfrmd` reads them for the user:
+
+- **A service of its own**, not a second query of `linvpn-logd`: it needs what logd must never have (the host's
+  network namespace, since XFRM state is per namespace and logd runs with `PrivateNetwork`; `CAP_NET_ADMIN`;
+  `AF_NETLINK`) and logd needs what this one must never have (the `systemd-journal` group). Both read NetworkManager's
+  properties over the system bus.
+- **The unit** (`packaging/linux/systemd/`): `linvpn-xfrmd.socket` listens on `/run/linvpn-xfrmd.sock` (0666,
+  `Accept=yes`, at most 4 connections per source and 16 in all); `linvpn-xfrmd@.service` runs one instance per
+  connection with `DynamicUser=yes`, `AmbientCapabilities=CAP_NET_ADMIN` and `CapabilityBoundingSet=CAP_NET_ADMIN`
+  (nothing else), `NoNewPrivileges`, `ProtectSystem=strict`, `ProtectHome`, `PrivateTmp`, `PrivateDevices`,
+  `IPAddressDeny=any`, `ProtectProc=invisible`, `ProcSubset=pid`, `RestrictAddressFamilies=AF_UNIX AF_NETLINK`,
+  `RestrictNamespaces`, a system-call filter (`@system-service` without `@privileged @resources`) and
+  `RuntimeMaxSec=20`; no `PrivateNetwork` (the host's XFRM state is the one to read) and no `PrivateUsers` (the
+  capability must count in the host's user namespace). **It is not root.**
+- **One request, one answer** (`macvpn_core::xfrmd`): `linvpn-xfrmd-v1 linvpn <connection id>` or
+  `linvpn-xfrmd-v1 system <NM UUID>`, answered `T <rx> <tx>` or `N` (refused, not found, no SA, any error: the same
+  `N`). The caller's uid from `SO_PEERCRED` (none: no answer).
+- **Ownership** (`xfrmd::authorize`, before any netlink dump): NM's active connections from the system bus (read-only
+  properties of `Connection.Active`, `VPN.Connection`, `IP4Config`, `IP6Config`, which NM's D-Bus policy lets every
+  user read). A `linvpn` target's NM UUID is derived from the caller's uid and the connection id
+  (`nm_plan::names::nm_uuid`, as logd does): a caller only reaches its own LinVPN connections. A `system` target
+  counts only when NM shows the service the profile's settings (`GetSettings`) and they are a strongSwan VPN **for
+  every user** (empty `connection.permissions`): NM hides a user-restricted profile from the service's dynamic user
+  and exposes no "activated by" uid, so whose it is cannot be decided safely, and such IKEv2 system VPNs show no
+  traffic. (A system-wide profile's counters are what every local user can already read for the interface-based
+  kinds in `/sys/class/net/*/statistics`.) The connection must be an activated NM VPN (`Type` `vpn`, state and VPN
+  state activated) with an address, and no other active connection may hold any of its addresses (NM's own
+  `loopback` connection excepted: charon-nm installs the virtual IP on `lo`, and NM 1.54 shows it there too).
+- **Which SAs** (`xfrmd::counters`): one `XFRM_MSG_GETPOLICY` and one `XFRM_MSG_GETSA` dump (bare headers built from
+  constants: nothing the caller sent reaches the netlink socket; never a write). The policies whose selector is
+  exactly the connection's NM address (outbound: source /32 or /128; inbound: destination) give `(reqid, tunnel
+  endpoint, protocol)` keys from their templates (reqid 0, "any", never); the ESP and AH SAs with those keys are
+  summed: outbound `tx`, inbound `rx` (a rekey's old and new SA both). Without an SA in each direction: `N`.
+- **The parser** (`xfrmd::DumpParser`): every netlink and attribute length checked against its container, the
+  datagram's real length (`MSG_TRUNC`) checked against the buffer, only the kernel's datagrams (`nl_pid` 0), the
+  sequence number, the message type, kernel errors (`NLMSG_ERROR`, a negative `NLMSG_DONE`) and at most 16 384
+  entries; the SAs' key attributes are skipped, never read, and each receive buffer is wiped after parsing. The
+  offsets are Linux's 64-bit layout (`struct xfrm_usersa_info` 224 bytes; checked against `<linux/xfrm.h>`).
+- **The app side** (`lin/nm/xfrmd_client.rs`): the client checks that root owns the socket, reads at most
+  `MAX_RESPONSE` bytes within 3 s and parses strictly; a reading is reused for 500 ms so one status poll's traffic
+  and liveness questions start one instance.
+- **Security notes for the L-b plan's Task 31 review:** the capability allows XFRM *writes* too, and no system-call
+  filter can tell netlink message types apart: the guarantee that it only reads is the code (`dump_request` builds
+  the only two messages ever sent, `Netlink::dump` the only sender). The dynamic user can call any NM method NM's
+  D-Bus policy allows every user, but NM's polkit rules refuse a user outside the active session; the code calls
+  only `Get` and `GetSettings`. The answer is two sums; the request is never logged (`uid=<n> answer=<T|N>`).
+  What only the lab can confirm: the dump under the unit's sandbox (`lab_a_real_xfrm_dump_parses` with `sudo -E`,
+  and the checklist's live items), charon-nm's policies carrying the NM address as selector, and NM putting
+  charon-nm's virtual IP into the VPN connection's `Ip4Config`.
+
+### The class-based PPP route (`90-linvpn-route`)
+
+Without "Send all traffic", Windows (RAS without the remote default gateway) and macOS' PPP route the network of the
+class of the assigned address (A `/8`, B `/16`, C `/24`; `172.16.x.x` is class B: `172.16.0.0/16`) through the
+tunnel, besides the routes the server sends; NetworkManager's L2TP and SSTP plugins set never-default and route only
+the peer, so the network behind the server was unreachable. NetworkManager offers no user-level way to add a route
+once the address is known: a VPN active connection has no Reapply (its routes come from the applied connection copied
+at activation, `nm-vpn-connection.c`), `Device.Reapply` on the ppp interface fails because `NMDevicePpp` cannot
+generate a connection for an external interface (it is never "connected (externally)"), and neither plugin has a
+route or prefix option. So:
+
+- **The mark** (`nm_plan::classful_route_section`): an L2TP (`send_all_traffic` off) or SSTP (`route_all = no`)
+  plan carries `user.data` `linvpn.classful = 1`. "Always" (all traffic) carries none; these kinds have no per-entry
+  routes. Cisco/vpnc carries none: the server's split networks decide, as on macOS.
+- **The script** (`packaging/linux/nm-dispatcher/90-linvpn-route`, POSIX sh, installed root:root 0755 into NM's
+  packaged folder `/usr/lib/NetworkManager/dispatcher.d/`, which NM 1.54 reads besides `/etc`; NM runs only root-owned
+  scripts that group and others cannot write). It acts only on `vpn-up` with `CONNECTION_USER_LINVPN__CLASSFUL=1`
+  (NM's dispatcher encodes the profile's `user.data` keys into `CONNECTION_USER_*` itself, from the activated
+  connection; the dispatcher's D-Bus API is NM's only, so the environment is NM's, not the user's; reading the
+  profile again with `nmcli` would add a second parser and a race with the volatile profile's removal for the same
+  data). `VPN_IP_IFACE` must be `ppp` plus 1–4 digits and exist in `/sys/class/net`; `VPN_IP4_ADDRESS_0`'s address a
+  plain dotted quad (no leading zeros, octets ≤ 255) of class A (not 0 or 127), B or C. It adds nothing when the main
+  table has a route to exactly that network through another interface (the local network: equal prefix, ours would
+  win by metric; a more specific local route still wins by length) or when a default route's gateway is inside it.
+  Then `ip -4 route replace <net> dev <ppp> metric 50` (NM's VPN metric), one `logger -t linvpn-route` line, exit 0
+  always. The VPN server stays outside the tunnel: NM routes the VPN gateway as a `/32` through the parent device
+  (`L3CD_TYPE_GW_EXTERN`), more specific than any class route. The route goes when the kernel removes the ppp
+  interface; nothing is done on `vpn-down`. `PATH` is fixed first, no `eval`, globbing off where words are split.
+- **Security:** the script runs as root, but grants nothing new: the owner of a private NM VPN profile may already
+  set any `ipv4.routes` through its tunnel without an administrator (`settings.modify.own`), and the mark only asks
+  for one route through that same connection's own PPP interface. Its inputs are NM's environment, each validated
+  before use. Tests: `scripts/test-linvpn-route.sh` (a copy with fake `ip`/`logger` and interface folder; `/bin/sh`
+  and dash), `scripts/test-build-deb.sh` (staged 0755, in the file baseline, packaged byte for byte), the nm_plan
+  tests.
+
+### System VPNs, status, traffic and liveness
+
+- **System VPNs** (`lin/nm/system_vpns.rs`, `pure::nm::system_vpn`, resolved point 14): NM's `vpn` and `wireguard`
+  profiles whose `connection.permissions` is empty or holds `user:<name>`, never a LinVPN-made one (a derived UUID
+  or a `linvpn-` id); id = the NM UUID, name = `connection.id`, labels `L2TP`, `Cisco IPsec`, `IKEv2`,
+  `WireGuard (app)`, `OpenVPN (app)`, else `VPN`. Read-only: `start` is `ActivateConnection` of the profile (after
+  announcing stored L2TP / Cisco secrets to the agent for that activation only), `stop` deactivates it; LinVPN
+  never edits or deletes them. `watch` follows NM's profile and active-connection signals (`SystemVpnWatch`).
+- **Status:** the runs from NM's active connections and `VpnStateChanged` (`pure::nm::state`); a failed or vanished
+  run leaves `status` only after its reason is in the log (a 3 s grace).
+- **Traffic** (resolved point 16, `lin/nm/sysfs.rs`, `pure::nm::iface`): `/sys/class/net/<if>/statistics/{rx,tx}_bytes`
+  of a *tunnel* interface only (`type` 65534 or 512), every name checked before a path is built: WireGuard and
+  OpenVPN by the name LinVPN chose, PPP kinds and system VPNs by the interface holding the VPN's `Ip4Config` address
+  (`getifaddrs`). IKEv2 reads charon-nm's XFRM interface the same way (a tunnel interface named `nm-xfrm-*` holding
+  the virtual IP; `pure::nm::iface::is_charon_nm_xfrm`; the address is on `lo` too, which is no tunnel); without one
+  (an older, policy-based charon-nm) it reads its IPsec SAs' counters from
+  [`linvpn-xfrmd`](#linvpn-xfrmd-ikev2-traffic-and-liveness) (`lin/nm/xfrmd_client.rs`; LinVPN's runs as
+  `linvpn <connection id>`, system VPNs as `system <NM UUID>`); no answer is no traffic, as before. A rekey's old SA
+  leaving makes the sum drop, which `TrafficBook` takes as a restart: the total can overcount by the new SA's
+  bytes at the previous reading (one poll's worth, once per rekey).
+- **Liveness** (resolved point 15): `Liveness::Counters { rx, tx, keepalive }` (Linux, in-process only; its wire form
+  is never sent by a root layer or service): WireGuard always, OpenVPN while NM's VPN state is not "reconnecting
+  after having been activated" (then `Liveness::OpenVpn { reconnecting_since }`), IKEv2 from its XFRM interface's
+  counters, else its SA counters (`linvpn-xfrmd`), with `keepalive` 0: IKE's DPD and NAT-T keepalives travel outside
+  the ESP SAs and the interface, so an idle IKEv2
+  tunnel's counters stay still and it is never dead, while one that keeps sending into SAs that bring nothing back
+  for 200 s is (the app watches `Strongswan` liveness on Linux only). Pure one-way traffic with no answer at all for
+  200 s would also count as dead; TCP's acknowledgements and DNS answers make that practically impossible. app-core's rule: dead when tx grew
+  and rx did not change for `COUNTER_SILENCE` = 200 s (spike L0-3: past WireGuard's 180 s session expiry); after a
+  live switch `SWITCH_SILENCE` with `KEEPALIVE_BYTES` × keepalives as for WireGuard; an idle tunnel is never dead.
+- **The network watcher** (`lin/net.rs`, `pure::net`): `NetworkProbe::snapshot` reads NM's devices (each call
+  bounded), keeps Ethernet and Wi-Fi only (never VPN, WireGuard, tun, PPP, bridge or veth, so LinVPN's own tunnels
+  are never the network), takes the gateway of the activated device with the best default route, its MAC from
+  `/proc/net/arp` and the active access point's SSID; `watch` follows NM's change signals. Sleep and wake come from
+  logind's `PrepareForSleep` (L-a).
+
+### PackageKit, System Status and DNS
+
+- **System Status' NetworkManager rows** (`lin/nm/plugins.rs`, `pure::nm::plugins`, `SetupReport::nm` = `NmReport`):
+  NetworkManager (its version over D-Bus; at least 1.36 for `AddAndActivateConnection2`), WireGuard (built in from
+  1.16), OpenVPN (LinVPN's service files present, the stock plugin's `.name`, `openvpn --version`: "follows the
+  server" from 2.7), L2TP, IKEv2 (plus the EAP-MSCHAPv2 plugin of `libcharon-extauth-plugins` and the EAP-Identity plugin of
+  `libcharon-extra-plugins`: without it charon-nm answers a server's `eap_id = %any` request with EAP-NAK), Cisco, SSTP (their
+  `.name` files under `/usr/lib/NetworkManager/VPN` and `/etc/NetworkManager/VPN`). Read-only, as the user.
+  `SetupReport::missing_engine` names a kind's plugin ("Not installed: NetworkManager SSTP plugin"); `needs_service`
+  is false for every kind (no service); a system VPN needs only NetworkManager.
+- **PackageKit** (`lin/nm/packagekit.rs`, resolved point 17): **Install** on a row asks PackageKit's system D-Bus API
+  for exactly that kind's packages from the fixed list `pure::nm::plugins::PACKAGES` (`network-manager-openvpn`,
+  `-l2tp`, `-strongswan`, `libcharon-extauth-plugins`, `libcharon-extra-plugins`, `-vpnc`, `-sstp`; any other name is refused before the first
+  call): `Resolve` (not installed, newest, this architecture; a name not found is looked up among the installed
+  ones), then `InstallPackages` with `ONLY_TRUSTED`. PackageKit itself asks polkit
+  (`org.freedesktop.packagekit.package-install`), so the password prompt is the system's; LinVPN never runs
+  `pkexec` or `apt` for plugins.
+- **DNS** (`nm_plan::dns`): no DNS manager. NM and systemd-resolved apply and restore it. A split tunnel uses the
+  connection's DNS only for its domains (routing-only `~domain` entries); a full tunnel takes every query (`~.`) with
+  a negative `dns-priority`. Pushed DNS (OpenVPN's `dhcp-option`, PPP, IKEv2's configuration payload) is applied by
+  NM itself; SSTP's `peer_dns = no` → `ignore-auto-dns`.
+- **Tested where:** `nm_plan`, `logd`, `openvpn_routing`, the Linux tier, `pure::nm` and `pure::net` on every OS;
+  the NM client, the agent, the engine, the system VPNs, PackageKit, sysfs and logd against fakes on a private bus
+  (`dbus-run-session`) on the VM and in CI; the smoke run's NetworkManager rows (`scripts/smoke/nm.js`) over the
+  sandbox's stand-ins; real connections against the VPN lab (the L-b plan's Tasks 26–28, run at the maintainer's
+  checkpoints) and the "LinVPN (L-b)" section of `docs/manual-test-checklist.md`.
+
 ## The 2.0 features
 
 Four user-facing features from the same code on both OSes (the plan: `superpowers/plans/2026-10-25-features-2-0.md`),
@@ -636,7 +1200,8 @@ entry to the backup.
   row text, in order: the platform's own reason, `engine_missing` (WinVPN's service text), the later text,
   `missing_engine`. Names: macOS `Homebrew`, "Permissions (root scripts + sudoers)", `OpenVPN`, `WireGuard tools`
   (or `bash`), `strongSwan`, `sstp-client`; Windows `OpenVPN Community`, `WireGuard`, "WinVPN Service", "Windows
-  VPN client".
+  VPN client"; Linux `NetworkManager` (not running or too old), then the kind's plugin ("NetworkManager L2TP plugin",
+  "… strongSwan plugin", "… vpnc plugin", "… SSTP plugin", "LinVPN OpenVPN service", "WireGuard (NetworkManager)").
 - app-core: `ViewModel::set_unavailable_kinds` (rows: `available = false`, switch disabled,
   `unavailableReason`, `setupLink` when System Status helps), the Connections window's "New" menu filtered
   (`kindsNote` when nothing is left) and the import gate (`connections::KindGate`, checked in
@@ -669,6 +1234,8 @@ entry to the backup.
   Windows without WLAN still loads the app), platform-win `pure::net` (the physical adapters, the best default
   route, the connected prefixes; tested on every OS) and `win::net::WinNetwork`; the lifecycle window adds
   `PBT_APMSUSPEND` and `RegisterSuspendResumeNotification` (Modern Standby).
+- Linux: `lin::net` over NetworkManager's devices (see [System VPNs, status, traffic and
+  liveness](#system-vpns-status-traffic-and-liveness)) and logind's `PrepareForSleep`.
 - app-core `reconnect`: the pure decision (`fingerprint`, `decide` → `Reconnect` / `Wait` / `Skip(Unidentified |
   DifferentNetwork | DirectlyReachable | DnsDirectlyReachable | VaultLocked)`, `surviving_check`), the per-connection
   switch (`OFF_KEY` = `autoReconnectOff`, `is_enabled` / `set_enabled`) and the `Planner` state machine
@@ -702,6 +1269,9 @@ rule in the same planner:
   answers the usage error → `None`): WireGuard from `WireGuardGetConfiguration` (`wg_nt::liveness`, the same decoder
   as the debug peer status, plus `PersistentKeepalive`), OpenVPN from the in-process bridge's state
   (`BridgeState::reconnecting_since`). RAS connections are not asked (`RasHelper::liveness` → `None`).
+- **Linux:** `Liveness::Counters` from the tunnel interface's sysfs counters (WireGuard, OpenVPN) and
+  `Liveness::OpenVpn` from NM's VPN state; the rule's `COUNTER_SILENCE` (200 s). See [System VPNs, status, traffic
+  and liveness](#system-vpns-status-traffic-and-liveness).
 - **The rule** (`app-core liveness::Monitor`, pure): WireGuard by its timers: with `PersistentKeepalive` dead after
   `STALE_AFTER` (180 s + one poll) without a handshake; without it dead when the sent bytes grew after the session
   expired (`REJECT_AFTER_TIME`) and no handshake came within `REKEY_ATTEMPT_TIME` (90 s); an idle tunnel is never dead;
@@ -784,6 +1354,8 @@ VPN's detail, for every engine on both OSes.
     VPNs) by `RasGetConnectionStatistics` (`winsys::ras::statistics`, 32-bit), a new generation when a handle value
     comes back with a shorter connected time (`RasGenerations`); their IPv4 address (`NativeController::address`)
     from the dial or `RasGetProjectionInfoEx`.
+  - Linux: the tunnel interface's sysfs counters (see [System VPNs, status, traffic and
+    liveness](#system-vpns-status-traffic-and-liveness)); none for IKEv2.
 - **The totals and the rate** (`app-core::traffic`, pure): per key a session; a new generation adds its counters whole
   (or from its first reading when not `from_zero`), a 64-bit fall is a restart, a 32-bit fall from the upper to the
   lower half a wrap; never down. The rate is the change over the last `RATE_WINDOW` (3 s) of readings, unknown when
@@ -881,10 +1453,11 @@ once by hand (the user guide, 5.6).
 
 | Rule | Enforced by |
 |---|---|
-| An OS `cfg` (`cfg(target_os …)`, `cfg(unix)`, `cfg(windows)`, their `not` / `any` / `all` forms, `cfg_attr` and `cfg!` with one of them, `target_os =`) appears in production code only in `crates/core/src/fsx/`, `crates/platform-mac/`, `crates/platform-win/`, `crates/winsys/`, `crates/helper/src/{macos,windows}/`, `crates/helper/src/main.rs` and `app/src-tauri/src/platform/`. Tests, `examples/`, build scripts and Cargo target tables are outside the rule; `debug_assertions`, `test` and `feature` are not OS `cfg`s. | `crates/app-core/tests/cfg_rule.rs` (`os_cfgs_only_in_the_platform_places`; it scans `crates/*/src` and `app/src-tauri/src`, ignoring comments, strings and `#[cfg(test)]` items; `target_env` and `target_family` count as OS words, and a `cfg($metavariable)`, `#[path = …]` and `include!` count as violations, because the scan cannot see their code) |
-| `unsafe`, and an `allow`/`expect`/`warn` of the `unsafe_code` lint, appear only in `crates/platform-mac`, `crates/platform-win`, `crates/winsys` and `crates/helper`. The workspace lint `unsafe_code = "deny"` holds everywhere else; platform-api also `#![forbid(unsafe_code)]`, and platform-win allows `unsafe` only in its `win` module. | `cfg_rule.rs` (`unsafe_only_in_the_platform_crates_and_the_helper`) |
+| An OS `cfg` (`cfg(target_os …)`, `cfg(unix)`, `cfg(windows)`, their `not` / `any` / `all` forms, `cfg_attr` and `cfg!` with one of them, `target_os =`) appears in production code only in `crates/core/src/fsx/`, `crates/platform-mac/`, `crates/platform-win/`, `crates/platform-linux/`, `crates/winsys/`, `crates/unixsys/`, `crates/helper/src/{macos,windows,linux}/`, `crates/helper/src/main.rs` and `app/src-tauri/src/platform/` (`CFG_ALLOWED`; LinVPN plan Task 9 added the Linux entries). Tests, `examples/`, build scripts and Cargo target tables are outside the rule; `debug_assertions`, `test` and `feature` are not OS `cfg`s. | `crates/app-core/tests/cfg_rule.rs` (`os_cfgs_only_in_the_platform_places`; it scans `crates/*/src` and `app/src-tauri/src`, ignoring comments, strings and `#[cfg(test)]` items; `target_env` and `target_family` count as OS words, and a `cfg($metavariable)`, `#[path = …]` and `include!` count as violations, because the scan cannot see their code) |
+| `unsafe`, and an `allow`/`expect`/`warn` of the `unsafe_code` lint, appear only in `crates/platform-mac`, `crates/platform-win`, `crates/platform-linux`, `crates/winsys`, `crates/unixsys` and `crates/helper` (`UNSAFE_ALLOWED`). The workspace lint `unsafe_code = "deny"` holds everywhere else; platform-api also `#![forbid(unsafe_code)]`, platform-win allows `unsafe` only in its `win` module and platform-linux only in its `lin` module and the debug-only `smoke::send_terminate`. | `cfg_rule.rs` (`unsafe_only_in_the_platform_crates_and_the_helper`) |
 | No test is ignored on one OS only: the ignored tests are exactly the entries of `scripts/ignored-everywhere.txt` that are built on this OS (the fixture writers, a timing measurement, a manual Windows test), and no `cfg_attr(windows, ignore …)` is left in the sources. | `scripts/check-ignored.sh` (both CI test jobs; on Windows `scripts/check-ignored.sh --target x86_64-pc-windows-msvc`) |
 | No Windows crate in a macOS binary. | `cargo tree --locked -e normal --target aarch64-apple-darwin -p macvpn-app -p macvpn-helper --prefix none \| grep -E '^(windows\|macvpn-winsys)'` prints nothing (and the same for `x86_64-apple-darwin`) |
+| No Linux-only crate in a macOS or Windows binary. | `cargo tree --locked -e normal --target aarch64-apple-darwin -p macvpn-app -p macvpn-helper --prefix none \| grep -E '^(zbus\|ksni\|macvpn-platform-linux) '` prints nothing (and the same for `x86_64-pc-windows-msvc`) |
 | MacVPN's data formats, view model and IPC payloads stay as in 1.4.0. | `crates/app-core/tests/compat_1_4.rs` (the fixtures normalize the version) |
 | Every macOS text that 1.4.0 had stays byte-identical (newer texts are counted, not compared). | `node scripts/l10n-baseline.mjs --check` (against `scripts/bundle-baseline/1.4.0/l10n-macos.json`), and the same comparison in `crates/core/tests/l10n.rs` and `app/ui/src/lib/l10n.test.ts` |
 | The built bundle looks the same from outside (Info.plist, files, linked libraries, entitlements, Tauri config). | `scripts/bundle-baseline.sh dist/MacVPN.app` (compare with `scripts/bundle-baseline/1.4.0/`) |
@@ -892,22 +1465,28 @@ once by hand (the user guide, 5.6).
 
 ## Product identity and the per-OS Tauri config
 
-`Product` (`crates/platform-api/src/product.rs`) is the identity: `name` (`MacVPN` / `WinVPN`, also the data
-directory's name), `os`, `app_id` (`local.macvpn` / `local.winvpn`), `repo` (`SepsiG/MacVPN` for both: one
-repository, one version number), `user_guide_stem` (`user-guide` / `winvpn-user-guide`) and `signature_domain`
-(`MacVpnV1` / `WinVpnV1`). From these:
+`Product` (`crates/platform-api/src/product.rs`) is the identity: `name` (`MacVPN` / `WinVPN` / `LinVPN`, also the
+data directory's name), `os`, `app_id` (`local.macvpn` / `local.winvpn` / `local.linvpn`), `repo` (`SepsiG/MacVPN`
+for all three: one repository, one version number), `user_guide_stem` (`user-guide` / `winvpn-user-guide` /
+`linvpn-user-guide`) and `signature_domain` (`MacVpnV1` / `WinVpnV1` / `LinVpnV1`). The constants are `MACVPN`,
+`WINVPN` and `LINVPN`. From these:
 
 - `data_dir(app_data_root)`: `<root>/<name>`; the platform gives the root (macOS:
   `~/Library/Application Support`, so `~/Library/Application Support/MacVPN` as before).
-- `update_asset(version, arch)`: `MacVPN-<version>.dmg`; `WinVPN-<version>-x64.msi` or `-arm64.msi`.
+- `update_asset(version, arch)`: `MacVPN-<version>.dmg`; `WinVPN-<version>-x64.msi` or `-arm64.msi`;
+  `linvpn_<version>_amd64.deb` or `_arm64.deb` (the Debian package name, not the product name).
 - `text_platform()`: the OS and product the texts are worded for.
 
 The update signature is bound to the product (`crates/core/src/update.rs`, `SignatureDomain`). MacVPN keeps
 `macvpn-update-v1\n<version>\n<sha256>\n` byte for byte. WinVPN signs `winvpn-update-v1\n<asset>\n<version>\n<sha256>\n`
 with the asset's file name, which must be exactly `WinVPN-<version>-x64.msi` or `WinVPN-<version>-arm64.msi`
 (anything else has no message and never verifies). Same keys; the domains make a signature of one product or one
-architecture useless for another. `scripts/sign-release.sh` signs each asset with its product's message. The
-WinVPN updater (download, verify, `msiexec` through UAC, the relauncher) is in platform-win (2b).
+architecture useless for another. LinVPN signs `linvpn-update-v1\n<asset>\n<version>\n<sha256>\n` with the asset
+exactly `linvpn_<version>_amd64.deb` or `linvpn_<version>_arm64.deb` (`SignatureDomain::LinVpnV1`,
+`UpdateSignature::LINVPN_DOMAIN`). `scripts/sign-release.sh` signs each asset with its product's message. The
+WinVPN updater (download, verify, `msiexec` through UAC, the relauncher) is in platform-win (2b); LinVPN's (download,
+verify, pkexec, the root step, the relaunch) in platform-linux and the helper's `src/linux/` (see [the update
+chain](#the-update-chain-and-the-deb)).
 
 The Tauri config is split: `app/src-tauri/tauri.conf.json` holds everything shared and the macOS identity as the
 default (product name, identifier, version, windows, CSP); `tauri.macos.conf.json` adds the macOS bundle settings
@@ -918,11 +1497,13 @@ WebView2 bootstrapper embedded in the MSI (`embedBootstrapper`: no download into
 (`allowDowngrades: false`; the same version still reinstalls), the fixed WiX `UpgradeCode` and the WiX fragment
 `wix/file-associations.wxs` (`.conf` under "Open with" only; `build-msi.sh` adds `wix/service.wxs.in`, which also pins
 the install folder to `<Program Files>\WinVPN` and gives it a protected, admin-only ACL), `useHttpsScheme` on the popover window and IPC over `https://ipc.localhost` in the CSP's
-`connect-src`. Tauri merges the OS file over the base (JSON merge patch, which replaces arrays whole).
+`connect-src`. `tauri.linux.conf.json` sets `LinVPN`, `local.linvpn`, the binary name `linvpn` (`mainBinaryName`),
+the popover window titled `LinVPN` and transparent (the overlay panel), and turns the bundler off (`bundle.active:
+false`: `tauri build --no-bundle`, the `.deb` is `scripts/build-deb.sh`'s). Tauri merges the OS file over the base (JSON merge patch, which replaces arrays whole).
 `app/src-tauri/tests/tauri_config.rs` checks that base + macOS equals the 1.4.0 config.
 
 Every web view only navigates within the app's origin (`app/src-tauri/src/navigation.rs`, the `on_navigation`
-handler of every window): `tauri://localhost` on macOS, `https://tauri.localhost` on Windows, where WebView2 serves
+handler of every window): `tauri://localhost` on macOS and Linux, `https://tauri.localhost` on Windows, where WebView2 serves
 the embedded UI under a special host and every window (the config's popover and the windows built in code, through
 `navigation::uses_https_scheme`) uses the https scheme. `navigation::app_origin()` picks the origin by the running
 product's OS (`Product::os`), so `navigation.rs` has no OS `cfg`.
@@ -946,9 +1527,15 @@ The glossary for Windows variants: Keychain → Credential Manager („Hitelesí
 („Gépház”), Login Items → Startup apps („Indítási alkalmazások”), menu bar → notification area („értesítési
 terület”), Dock → taskbar („tálca”), Option-click → Alt-click („Alt+kattintás”).
 
+The glossary for Linux variants (GNOME words): Keychain → the login keyring („bejelentkezési kulcstartó”), Finder →
+Files („Fájlok”), this Mac → this computer („ez a számítógép”, with the right case), System Settings → Settings
+(„Beállítások”), Login Items / Open at Login → launch at login („automatikus indítás bejelentkezéskor”), menu bar →
+top bar („felső sáv”), Dock → dash („dokk”), Option-click → Alt-click („Alt+kattintás”), Homebrew-only texts stay
+`only: ["macos"]`. `no_macos_term_reaches_linux` and `no_windows_term_reaches_linux` check the resolved texts.
+
 The coverage test `macos_terms_are_classified` in `crates/app-core/tests/l10n_coverage.rs` fails for any text that
-names a macOS facility (Keychain, Finder, Mac, System Settings, Dock, menu bar, …) without `only` or a `windows`
-variant. Every variant keeps its base's format specifiers (`crates/core/tests/l10n.rs`).
+names a macOS facility (Keychain, Finder, Mac, System Settings, Dock, menu bar, …) unless, for Windows and for
+Linux each, `only` leaves that OS out or the entry has that OS's variant. Every variant keeps its base's format specifiers (`crates/core/tests/l10n.rs`).
 
 ## The control API transport
 
@@ -959,7 +1546,9 @@ line, the socket file to remove at stop, a guard); `ControlListener::accept(poll
 with `PeerUser::Uid(n)` or `PeerUser::Sid(…)`), so a named pipe needs no stream downcast later. `PeerUser::Uid(501)`
 displays as `uid 501`, so every audit log line keeps its 1.4 text.
 
-macOS implements it over the Unix socket (`crates/platform-mac/src/api/control.rs`, `control_socket.rs`). Windows
+macOS implements it over the Unix socket (`crates/platform-mac/src/api/control.rs` over `macvpn_unixsys`'s
+`control_socket` and `transport`, which platform-mac re-exports as `control_socket`). Linux uses the same code at
+`$XDG_RUNTIME_DIR/linvpn/control/linvpn.sock` (see [LinVPN on Linux](#linvpn-on-linux)). Windows
 implements it over the named pipe `\\.\pipe\WinVPN-control-<user SID>` (`crates/platform-win/src/win/control.rs`
 over `macvpn_winsys::pipe`; not `\\.\pipe\WinVPN`, which the spec reserves for the 2b service): `display` is the pipe
 name, there is no socket file, and the first pipe instance is the guard. A name already taken leaves the control API
@@ -1069,12 +1658,64 @@ build. Steps that need an administrator (installing the MSI, from 2b the service
 maintainer's; they are in the WinVPN section of `docs/manual-test-checklist.md`. Several worktrees use separate remote checkouts:
 `WINVPN_REMOTE_DIR=winvpn-work-<name>`.
 
+## Checking Linux
+
+### The Linux test machine
+
+The coordinator reaches an Ubuntu 26.04 desktop VM (GNOME, Wayland) over SSH as the **non-admin** user `linvpn-dev`
+(key `~/.ssh/linvpn_dev` on the Mac, host key pinned in `~/.ssh/linvpn_known_hosts`, no alias in `~/.ssh/config`;
+the address is never in the repository: `LINVPN_SSH=linvpn-dev@<VM address>`). The maintainer installed the build
+dependencies and the NetworkManager VPN plugins with apt (LinVPN plan, CP0); rustup lives in the user's home.
+Anything that needs root (apt, installing the `.deb`, a polkit password) is the maintainer's, at a checkpoint.
+
+`scripts/lin-remote.sh` syncs the working tree (HEAD plus uncommitted changes of tracked files; `git add -N` a new
+file first) and runs every command as a **job**: detached on the VM, its output in `<checkout>/.lin-jobs/<id>.log`,
+polled from the Mac over short SSH calls, so a hanging SSH session loses nothing (`attach <id>` continues):
+
+    scripts/lin-remote.sh test                      # the CI linux job's test set (dbus-run-session, CI=1)
+    scripts/lin-remote.sh run 'cargo test --locked -p macvpn-platform-linux'
+    scripts/lin-remote.sh desktop 'cargo test --locked -p macvpn-platform-linux -- --ignored desktop'
+    scripts/lin-remote.sh run 'scripts/build-deb.sh'
+    scripts/lin-remote.sh fetch dist/linux ./dist/linux
+
+`desktop` runs the job with `systemd-run --user` in the user's systemd instance, which has the desktop session's
+display and session bus and which polkit counts as the graphical session; `linvpn-dev` must be logged in at the VM's
+desktop (the screen may be locked). Several worktrees use separate remote checkouts:
+`LINVPN_REMOTE_DIR=linvpn-work-slot<N>` (warm build directories, reused, never deleted after a task).
+
+**The smoke run on Linux** (LinVPN plan, Task 23): `scripts/lin-smoke.sh en|hu` builds the debug app on the VM and runs
+`scripts/smoke-manage.sh` in `linvpn-dev`'s desktop session (through `lin-remote.sh desktop`), so it needs the
+checkpoint **CP-desktop login**: `linvpn-dev` logged in at the VM's desktop (the screen may be locked). Every JS step
+runs on Linux except what is AppKit's or RAS's (the Dock icon, the screenshots, the appearance print), which says
+"skipped on Linux"; the system's quit request is the SIGTERM the driver sends to its own process. The sandbox never asks
+NetworkManager: the driver's stand-in report and stand-in engines let `scripts/smoke/nm.js` (L-b Task 25) check the
+NetworkManager rows with Install, a greyed OpenVPN connection with its Linux reason, the "Send all traffic over VPN"
+control, an L2TP connection's Save / Connect / Disconnect and the Log tab.
+
+There is no `scripts/check-linux.sh` on the Mac: unlike Windows, every Linux crate needs C code built for Linux
+(SQLCipher, GTK, WebKitGTK), so the VM and CI check it. What only a person at the Linux desktop can check (the tray
+clicks, the panel's place, the keyring's unlock prompt, notifications, logout, the installed `.deb`, the pkexec
+prompt of an update, and since L-b the real VPN connections, PackageKit's prompt and the system VPNs) is the
+LinVPN sections of `docs/manual-test-checklist.md`.
+
 ## Adding a platform
 
-Phase 2 (WinVPN) followed this list; Linux (phase 4) will too. For Windows, steps 1–4, 6–8 and 10–12 were done in
+Phase 2 (WinVPN) followed this list, and LinVPN follows it too. For Windows, steps 1–4, 6–8 and 10–12 were done in
 phase 2a ([the plan](superpowers/plans/2026-10-21-winvpn-2a-foundations.md)), step 5 (the helper, as the WinVPN
 Service) and step 9 (the Windows OpenVPN tier, `FORBIDDEN_WINDOWS` in the validator) in 2b, and the native VPNs (the
 platform's own VPN client, step 13 below) in 2c.
+
+For Linux, L-a ([the plan](superpowers/plans/2026-10-29-linvpn-l0-la.md)) did steps 1–4, 6–8 and 10–12: `LINVPN`
+(1), `crates/platform-linux` with `crates/unixsys` (2), `platform/linux.rs` (3), fsx's Unix code, which Linux shares
+with macOS (4), the Linux entries of the cfg rule (6), the Linux variants and the Linux-only texts (7),
+`tauri.linux.conf.json` (8), the VM harness, `scripts/build-deb.sh` and CI's Linux jobs (10), `linvpn-update-v1` (11),
+and the importer, whose Unix rules hold on Linux (12). L-b ([the plan](superpowers/plans/2026-10-29-linvpn-lb.md))
+did steps 5, 9 and 13: step 5 is the root update step `linvpn-install-update` (L-a) plus `linvpn-logd` (a
+socket-activated journal reader that is not root; LinVPN has no root layer for its VPNs: NetworkManager runs them),
+step 9 the Linux OpenVPN tier (`PLATFORM_LINUX`: 69 names RISKY "Ignored by NetworkManager on Linux", `setcon`
+"Not supported on Linux", the 8 refusals as `nm_plan` reasons), step 13 the VPNs through NetworkManager
+(`NativeController`, `NativeProfiles` and `NativeSupport` over NM; no `AdminSteps`: nothing needs an administrator
+except PackageKit's own prompt) and the system VPNs. The parity audit is L-c.
 
 1. **Product.** Add a `Product` constant in `crates/platform-api/src/product.rs` (name, OS, app id, repo, user
    guide stem) and its `update_asset` rule, with tests in `crates/platform-api/tests/product.rs`.
@@ -1087,13 +1728,16 @@ platform's own VPN client, step 13 below) in 2c.
 4. **fsx.** Implement `Access::Private`, `owner` and `has_access` for the OS, so the tests that create private
    files or a vault run on that OS too. *Windows: done in 2a* (ACLs from the open handle through `macvpn-winsys`,
    see [core](#core)); no test is ignored on Windows only any more (`scripts/check-ignored.sh`).
-5. **Helper.** A backend in `crates/helper/src/<os>/` over `shared`, and its `main` in `src/main.rs`.
+5. **Helper.** A backend in `crates/helper/src/<os>/` over `shared`, and its `main` in `src/main.rs`. *Linux: no
+   VPN backend (NetworkManager runs the VPNs): the binaries `linvpn-install-update` and `linvpn-logd`.*
 6. **The cfg rule.** Add the new directories to `CFG_ALLOWED` (and `UNSAFE_ALLOWED` if needed) in
    `crates/app-core/tests/cfg_rule.rs`. Nowhere else.
 7. **Texts.** Write the OS's `variants` for every text the coverage test flags, and new texts for the OS's own
    flows (with `only`).
 8. **Tauri config.** `app/src-tauri/tauri.<os>.conf.json` with the identity and bundle settings.
-9. **OpenVPN tier.** Review `platform_reasons(os)` (the Linux table is a draft until then).
+9. **OpenVPN tier.** Review `platform_reasons(os)`, and refuse what the OS's engine cannot run as a per-connection
+   reason, not a tier (the config stays valid elsewhere). *Linux: done in L-b* (see [LinVPN's OpenVPN
+   service](#linvpns-networkmanager-openvpn-service)).
 10. **Checks.** Extend `scripts/check-windows.sh` or the CI job, and the release gates of the OS's build script.
 11. **Update signature (phase 2 blocker).** Before the first signed asset of a new product, give it its own
     signature domain. *Windows: done in 2a* (`winvpn-update-v1\n<asset>\n<version>\n<sha256>\n`, see
@@ -1114,4 +1758,6 @@ platform's own VPN client, step 13 below) in 2c.
     credentials go to a server the config names; the containment check on the canonical path then refuses it.
 13. **Native VPNs.** `NativeController`, `NativeProfiles`, `NativeSupport` and `AdminSteps` over the OS's own VPN
     client; per-connection reasons for what it cannot run; a parity audit against MacVPN
-    ([Windows' audit](superpowers/specs/2026-10-25-winvpn-parity-audit.md)).
+    ([Windows' audit](superpowers/specs/2026-10-25-winvpn-parity-audit.md)). *Linux: L-b* runs every kind through
+    NetworkManager (the helper kinds through `HelperClient` in-process, as WinVPN's RAS IKEv2 and SSTP), with
+    `nm_plan`'s reasons; the parity audit is L-c.

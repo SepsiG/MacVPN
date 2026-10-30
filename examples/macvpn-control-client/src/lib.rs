@@ -57,11 +57,23 @@ pub const PAIRING_WAIT: Duration = Duration::from_secs(150);
 
 /// `~/Library/Application Support/MacVPN/control/macvpn.sock`, where MacVPN listens while
 /// "Allow other apps to control VPNs" is on. The file does not exist while the setting is off.
+#[cfg(not(target_os = "linux"))]
 pub fn default_socket_path() -> io::Result<PathBuf> {
     let home = std::env::var_os("HOME")
         .filter(|home| !home.is_empty())
         .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "HOME is not set"))?;
     Ok(PathBuf::from(home).join("Library/Application Support/MacVPN/control/macvpn.sock"))
+}
+
+/// `$XDG_RUNTIME_DIR/linvpn/control/linvpn.sock`, where LinVPN listens while "Allow other apps to control VPNs" is
+/// on.
+#[cfg(target_os = "linux")]
+pub fn default_socket_path() -> io::Result<PathBuf> {
+    let run = std::env::var_os("XDG_RUNTIME_DIR")
+        .map(PathBuf::from)
+        .filter(|p| p.is_absolute())
+        .ok_or_else(|| io::Error::new(ErrorKind::NotFound, "XDG_RUNTIME_DIR is not set"))?;
+    Ok(run.join("linvpn/control/linvpn.sock"))
 }
 
 // MARK: - Values on the wire
@@ -751,6 +763,13 @@ mod tests {
         assert_eq!(client.closing_reason(), None);
         assert_eq!(client.next_event().unwrap(), None);
         assert_eq!(client.closing_reason(), Some("disabled"));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_default_socket_is_in_the_runtime_dir() {
+        let path = default_socket_path().unwrap();
+        assert!(path.ends_with("linvpn/control/linvpn.sock"), "{}", path.display());
     }
 
     #[test]

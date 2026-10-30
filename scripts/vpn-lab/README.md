@@ -1,6 +1,7 @@
 # MacVPN / WinVPN test lab
 
-A throwaway set of VPN servers in Docker for the manual tests of MacVPN (macOS) and WinVPN (Windows): every
+A throwaway set of VPN servers in Docker for the manual tests of MacVPN (macOS), WinVPN (Windows) and LinVPN
+(Linux): every
 connection kind the apps have, with generated credentials, a lab PKI and ready-to-import client profiles. Built for
 plan 2c, Task 4 (`docs/superpowers/plans/2026-10-25-winvpn-2c-native-vpns.md`; its checkpoints CP1/CP2 used it); the
 2.0.0 manual checks (`docs/manual-test-checklist.md`, "A VPN-labor előkészítése" and the sections after it) use it.
@@ -12,7 +13,7 @@ names and expires after 90 days, and `down.sh` deletes everything.
 
 | Kind | Server | Authentication | Published on `LAB_BIND` |
 |---|---|---|---|
-| OpenVPN, routed (`tun`) | OpenVPN 2.7 | user name + password; static challenge (SCRV1), dynamic challenge (CRV1) and "code appended to the password" for the one-time-code user | UDP 1194 |
+| OpenVPN, routed (`tun`) | OpenVPN 2.7 | user name + password; static challenge (SCRV1), dynamic challenge (CRV1) and "code appended to the password" for the one-time-code user; user `labfull` gets a pushed `redirect-gateway def1` (`server/ccd/labfull`) | UDP 1194 |
 | OpenVPN, layer 2 (`tap`) | OpenVPN 2.7 | user name + password | UDP 1195 |
 | WireGuard | kernel WireGuard (Docker Desktop's VM kernel has it) | key pairs + preshared key | UDP 51820 |
 | IKEv2 | strongSwan 6.0 | EAP-MSCHAPv2 (server certificate), PSK, client certificate | UDP 500, 4500; alternative 4510 |
@@ -33,7 +34,8 @@ Behind the tunnels (all IPv4; the lab has no IPv6):
 | Docker networks (inside Docker only) | edge `172.31.99.0/24`, services `10.99.0.0/24` |
 
 Every profile routes **only `10.99.0.0/24`** (and the server's tunnel address): nothing overlaps a home or office
-LAN unless that LAN is in `10.99.0.0/16`. The servers forward a client's traffic only into `10.99.0.0/24`
+LAN unless that LAN is in `10.99.0.0/16`. The one exception is the OpenVPN user `labfull`: the server itself pushes
+`redirect-gateway def1` to it (no internet while connected), to test a server-pushed full tunnel. The servers forward a client's traffic only into `10.99.0.0/24`
 (`server/common.sh`: `FORWARD` policy `DROP`); a client that sends everything through the tunnel ("Send all traffic
 over VPN", `route_all=yes`, `remote_ts = 0.0.0.0/0`) has **no internet** while connected. The services network has no
 way out at all.
@@ -76,19 +78,25 @@ scripts/vpn-lab/down.sh                    # remove containers, networks, images
   `--renew` or the name/address changed). It needs no Docker. After it, `up.sh` again (it recreates the containers).
 - `down.sh --keep-state` keeps the credentials and the PKI (so a CA trusted on a test machine stays valid).
 - Every script has `--dry-run` (prints the docker commands, runs nothing); `scripts/test-vpn-lab.sh` tests the lab
-  without Docker (shellcheck, the generated PKI and profiles, MacVPN's own validators for macOS and Windows, the
+  without Docker (shellcheck, the generated PKI and profiles, MacVPN's own validators for macOS, Windows and Linux, the
   compose files).
 - The addresses never enter the repository: they are arguments or environment variables (`LAB_BIND`, `LAB_HOST`)
   and are written only into the git-ignored `.state/`.
 
 ### The generated state (`scripts/vpn-lab/.state/`, git-ignored, mode 700)
 
-- `client/CREDENTIALS.txt` — user names, password, PSK, Cisco group name, the one-time code, the `.p12` password.
+- `client/CREDENTIALS.txt` — user names (also `labfull`), password, PSK, Cisco group name, the one-time code, the
+  `.p12` password.
 - `client/macos/` — MacVPN imports: `openvpn-*.ovpn`, `wireguard-macos.conf`, `ikev2-{eap,psk,cert}.swanctl.conf`
   (with `remote_port = 4510`), `sstp-*.sstp`, `l2tp.txt` and `cisco-ipsec.txt` (the values to type into the form),
   `lab-ca.pem`, and `swanctl/{x509ca,x509,private}` (the CA, the client certificate and its key for strongSwan).
 - `client/windows/` — WinVPN imports: the same set without `remote_port`, plus `openvpn-tap-l2.ovpn`,
   `wireguard-windows.conf`, `lab-ca.cer` (DER) and `lab-client.p12` (the IKEv2 computer certificate).
+- `client/linux/` — LinVPN imports: the `client/macos` set (OpenVPN, IKEv2 with `remote_port = 4510` — NetworkManager's
+  charon-nm sends to the profile's port —, SSTP, `l2tp.txt`, `cisco-ipsec.txt`, `lab-ca.pem`) with its own WireGuard
+  peer, `wireguard-linux.conf` (`10.99.13.5`, so the Mac, the Windows VM and the Linux VM can be connected at once;
+  `wireguard-linux.pub` is its public key), and `swanctl/{x509ca,x509,private}`, whose contents go into LinVPN's
+  credential folder `$XDG_DATA_HOME/LinVPN/swanctl/` (`~/.local/share/LinVPN/swanctl/`).
 - `server/`, `pki/`, `crl/`, `secrets.env` — the servers' side.
 
 Which profile tests what:
@@ -99,7 +107,8 @@ Which profile tests what:
 | `openvpn-tun-cbc.ovpn` | AES-256-CBC: on Windows the TAP-Windows6 driver in `tun` mode |
 | `openvpn-tap-l2.ovpn` | `dev tap` (Windows only: macOS has no tap driver) |
 | `openvpn-static-challenge.ovpn` | the static challenge (user `labotp`; the code is asked before connecting) |
-| `wireguard-*.conf` | WireGuard (separate keys for the Mac and the VM, so both can be connected at once) |
+| any `openvpn-tun-*.ovpn` with user `labfull` | a server-pushed `redirect-gateway def1` (LinVPN: "Send all traffic over VPN" = **Server decides** sends everything through the tunnel — no internet while connected —, **Never** keeps the default route; macOS and Windows honour the push too) |
+| `wireguard-*.conf` | WireGuard (separate keys for the Mac, the Windows VM and the Linux VM, so all can be connected at once) |
 | `ikev2-eap.swanctl.conf` | IKEv2 EAP-MSCHAPv2 with the server certificate (the lab CA must be trusted) |
 | `ikev2-psk.swanctl.conf` | IKEv2 PSK on both sides (macOS; on Windows it imports greyed with the reason: Windows' IKEv2 client has no PSK sign-in) |
 | `ikev2-cert.swanctl.conf` | IKEv2 with a client certificate |
@@ -169,7 +178,7 @@ The Mac's own IKE clients need UDP 500/4500 themselves, and Docker holds them on
 - **The Mac**: macOS' application firewall (if on) asks once whether Docker (`com.docker.backend`) may accept
   incoming connections: allow it, or the VM cannot connect. Nothing else changes on the Mac; the lab never touches
   its network settings.
-- **The LAN**: the VM must reach the Mac's address on UDP 500, 4500, 1194, 1195, 51820 and TCP 443, 8443, 8081
+- **The LAN**: the VMs must reach the Mac's address on UDP 500, 4500, 1194, 1195, 51820 and TCP 443, 8443, 8081
   (8081: the CRL, which Windows' SSTP client downloads to check revocation).
 - **Windows**: no inbound rule is needed (all connections are outgoing).
 

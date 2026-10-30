@@ -42,6 +42,9 @@ pub struct SetupReport {
     /// The kinds this platform keeps (editable, exported, backed up) but cannot connect, with the localized reason
     /// (WinVPN 2c: Cisco IPsec). Empty on macOS.
     pub ras_unsupported_kinds: Vec<(VPNKind, String)>,
+    /// LinVPN's engine (L-b): NetworkManager and the plugin each kind needs, which decide every kind and the system
+    /// VPNs. `None` on macOS and Windows.
+    pub nm: Option<NmReport>,
 }
 
 /// A package with a newer version (macOS: an outdated Homebrew formula).
@@ -64,6 +67,41 @@ pub struct EngineRow {
     /// The row's localized detail line.
     pub detail: String,
     pub action: Option<&'static str>,
+}
+
+/// LinVPN's engine (L-b): NetworkManager and the plugin each kind needs (spec 4, resolved point 17).
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct NmReport {
+    /// NetworkManager itself (on the bus, version ≥ 1.36: `AddAndActivateConnection2`).
+    pub networkmanager: EngineRow,
+    /// One row per kind, with the package(s) its Install button asks PackageKit for (space-separated; empty for
+    /// WireGuard, built into NM).
+    pub kinds: Vec<(VPNKind, EngineRow, String)>,
+    /// The system's OpenVPN is 2.7 or later: NetworkManager sees the server's `redirect-gateway` (the editor's
+    /// "Server decides" help text; L-b resolved point 7).
+    pub openvpn_push_visible: bool,
+}
+
+impl NmReport {
+    /// The row of `kind`; `None`: the report has none (the kind cannot start).
+    pub fn row(&self, kind: VPNKind) -> Option<&EngineRow> {
+        self.kinds.iter().find(|(k, _, _)| *k == kind).map(|(_, r, _)| r)
+    }
+}
+
+/// The name of what a kind needs on Linux, as System Status and the row's "Not installed: …" name it.
+fn plugin_name(kind: VPNKind) -> String {
+    l10n::tr(
+        match kind {
+            VPNKind::L2tp => "NetworkManager L2TP plugin",
+            VPNKind::Strongswan => "NetworkManager strongSwan plugin",
+            VPNKind::Cisco => "NetworkManager vpnc plugin",
+            VPNKind::Sstp => "NetworkManager SSTP plugin",
+            VPNKind::Openvpn => "LinVPN OpenVPN service",
+            VPNKind::Wireguard => "WireGuard (NetworkManager)",
+        },
+        &[],
+    )
 }
 
 /// The WinVPN Service's engine as System Status shows it.
@@ -107,6 +145,9 @@ impl SetupReport {
     /// every row must be green, except an OpenVPN that is only not installed (WinVPN 2.0: an optional engine; its
     /// row stays red with "Install", its connections greyed); a RAS row (WinVPN 2c) must be green too.
     pub fn is_complete(&self) -> bool {
+        if let Some(nm) = &self.nm {
+            return nm.networkmanager.ok && nm.kinds.iter().all(|(_, r, _)| r.ok);
+        }
         let ras_ok = self.ras.as_ref().is_none_or(|r| r.ok);
         if self.engine_missing.is_some() {
             return false;
@@ -123,6 +164,9 @@ impl SetupReport {
     pub fn is_available(&self, kind: VPNKind) -> bool {
         if self.ras_unsupported_reason(kind).is_some() || self.later_reason(kind).is_some() {
             return false;
+        }
+        if let Some(nm) = &self.nm {
+            return nm.networkmanager.usable && nm.row(kind).is_some_and(|r| r.usable);
         }
         if let Some(ras) = self.ras_row(kind) {
             return ras.usable;
@@ -182,6 +226,15 @@ impl SetupReport {
             return None;
         }
         let missing = |name: &str, installed: bool| Some(MissingEngine { name: name.to_string(), installed });
+        // LinVPN: NetworkManager first (a system service: "Not installed"), then the kind's plugin; only a row that
+        // offers "install" lacks its package, any other red row needs a repair ("Not ready").
+        if let Some(nm) = &self.nm {
+            if !nm.networkmanager.usable {
+                return missing("NetworkManager", false);
+            }
+            let row = nm.row(kind);
+            return missing(&plugin_name(kind), row.is_some_and(|r| r.action != Some("install")));
+        }
         // The Windows VPN client is part of Windows: never "Not installed", only "Not ready" (a Windows service it
         // needs is disabled).
         if self.ras_row(kind).is_some() {
@@ -240,6 +293,10 @@ impl SetupReport {
     /// `kind` `None`: a system VPN. `None`: the setup check ([`Self::is_available`]) decides.
     pub fn start_refusal(&self, kind: Option<VPNKind>) -> Option<String> {
         let Some(kind) = kind else {
+            // LinVPN: a system VPN starts through NetworkManager.
+            if let Some(nm) = &self.nm {
+                return (!nm.networkmanager.usable).then(|| nm.networkmanager.detail.clone());
+            }
             return self.engine_missing.clone().filter(|_| self.needs_service(None));
         };
         if let Some(reason) = self.ras_unsupported_reason(kind) {
@@ -255,8 +312,12 @@ impl SetupReport {
 
     /// A start of `kind` (`None`: a system VPN) needs the platform's engine, so [`Self::engine_missing`] concerns
     /// it: every start without a RAS row (macOS, WinVPN before 2c); with one, only the kinds the WinVPN Service
-    /// runs (not the RAS kinds, the system VPNs, or a kind the platform cannot connect at all).
+    /// runs (not the RAS kinds, the system VPNs, or a kind the platform cannot connect at all). LinVPN (`nm`): no
+    /// kind needs a service (NetworkManager's rows decide).
     pub fn needs_service(&self, kind: Option<VPNKind>) -> bool {
+        if self.nm.is_some() {
+            return false;
+        }
         match kind {
             None => self.ras.is_none(),
             Some(kind) => self.ras_row(kind).is_none() && self.ras_unsupported_reason(kind).is_none(),
@@ -314,9 +375,10 @@ pub trait SystemSetup: Send + Sync {
     fn later_note(&self) -> Option<String> {
         None
     }
-    /// The app is uninstalled through the system, not by the app (WinVPN: the MSI, in Settings → Apps): the
-    /// localized note System Status shows, with a button to [`Self::open_system_uninstall`], instead of its own
-    /// "Uninstall" button. `None` (macOS): the app's own uninstall.
+    /// The app is uninstalled through the system, not by the app (WinVPN: the MSI, in Settings → Apps; LinVPN: the
+    /// package, `apt remove linvpn`): the localized note System Status shows, with a button to
+    /// [`Self::open_system_uninstall`] (WinVPN; LinVPN has no page to open), instead of its own "Uninstall" button.
+    /// `None` (macOS): the app's own uninstall.
     fn system_uninstall_note(&self) -> Option<String> {
         None
     }

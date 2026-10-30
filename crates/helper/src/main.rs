@@ -11,8 +11,9 @@ fn main() {
     std::process::exit(macvpn_helper::windows::main())
 }
 
-/// Linux comes with phase 4: until then, as on Windows.
+/// Linux runs no `mvpn` (LinVPN drives NetworkManager; its only root step is `linvpn-install-update`).
 #[cfg(not(any(target_os = "macos", windows)))]
 fn main() {
-    std::process::exit(macvpn_helper::windows::main())
+    eprintln!("mvpn is not used on this operating system");
+    std::process::exit(2)
 }

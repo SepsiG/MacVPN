@@ -53,13 +53,14 @@ const view = (over: Partial<ClientCertView> = {}): ClientCertView => ({
   imported: null,
   ignored: 0,
   import: true,
+  pkcs12Password: false,
   ...over,
 });
 
 async function html(props: Record<string, unknown>): Promise<string> {
   const { default: panel } = (await import('./ClientCert.svelte')) as { default: Component<Record<string, unknown>> };
   const done = async () => {};
-  return render(panel, { props: { onimport: done, onremove: done, ...props } })
+  return render(panel, { props: { onimport: done, onremove: done, onconvert: done, ...props } })
     .body.replace(/<!--[^>]*-->/g, '')
     .replace(/ class="svelte-[a-z0-9]+"/g, '')
     .replace(/ svelte-[a-z0-9]+/g, '');
@@ -110,6 +111,15 @@ test('the panel rendered: import, the fingerprint, remove, read-only', async () 
   const readOnly = await html({ cert: view({ imported: { form: 'pem', sha256: SHA, needsPassword: false } }), readOnly: true });
   assert.match(readOnly, /<button class="import-cert" type="button" disabled/);
   assert.match(readOnly, /<button class="remove-cert" type="button" disabled/);
+});
+
+test('LinVPN: a chosen PKCS#12 file asks for its password', async () => {
+  assert.doesNotMatch(await html({ cert: view() }), /pkcs12-password/);
+  const asking = await html({ cert: view({ pkcs12Password: true }) });
+  assert.match(asking, /Password of the PKCS#12 file/);
+  assert.match(asking, /<input data-field="pkcs12-password" type="password"/);
+  assert.match(asking, />Import<\/button>/);
+  assert.match(asking, />Cancel<\/button>/);
 });
 
 test('the panel in Hungarian', async () => {

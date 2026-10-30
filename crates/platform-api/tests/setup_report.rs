@@ -400,3 +400,84 @@ fn macos_refusals_are_unchanged() {
     assert_eq!(later.start_refusal(Some(VPNKind::Openvpn)), None);
     assert_eq!(later.start_refusal(None), None);
 }
+
+// LinVPN (L-b): NetworkManager and the plugin each kind needs decide (resolved point 17).
+
+use macvpn_platform_api::setup::NmReport;
+
+fn nm_row(ok: bool, action: Option<&'static str>) -> EngineRow {
+    EngineRow { ok, usable: ok, detail: String::new(), action }
+}
+
+fn linux(l2tp_ok: bool) -> SetupReport {
+    SetupReport {
+        package_manager: Some("PackageKit".into()),
+        nm: Some(NmReport {
+            networkmanager: nm_row(true, None),
+            kinds: vec![
+                (VPNKind::Wireguard, nm_row(true, None), String::new()),
+                (VPNKind::Openvpn, nm_row(true, None), "network-manager-openvpn".into()),
+                (VPNKind::L2tp, nm_row(l2tp_ok, (!l2tp_ok).then_some("install")), "network-manager-l2tp".into()),
+                (VPNKind::Strongswan, nm_row(true, None), "network-manager-strongswan".into()),
+                (VPNKind::Cisco, nm_row(true, None), "network-manager-vpnc".into()),
+                (VPNKind::Sstp, nm_row(true, None), "network-manager-sstp".into()),
+            ],
+            openvpn_push_visible: true,
+        }),
+        ..SetupReport::unknown()
+    }
+}
+
+#[test]
+fn linux_kinds_follow_their_plugin_rows() {
+    let r = linux(false);
+    assert!(r.is_available(VPNKind::Wireguard));
+    assert!(r.is_available(VPNKind::Cisco), "Cisco works on Linux");
+    assert!(!r.is_available(VPNKind::L2tp));
+    assert!(!r.is_complete());
+    let m = r.missing_engine(VPNKind::L2tp).unwrap();
+    assert!(!m.installed);
+    assert!(m.name.contains("L2TP"));
+    assert!(linux(true).is_complete());
+}
+
+#[test]
+fn without_networkmanager_nothing_starts_and_system_vpns_are_refused() {
+    let mut r = linux(true);
+    r.nm.as_mut().unwrap().networkmanager = nm_row(false, None);
+    assert!(VPNKind::ALL.iter().all(|k| !r.is_available(*k)));
+    assert!(r.start_refusal(None).is_some());
+}
+
+#[test]
+fn macos_and_windows_reports_are_unaffected() {
+    assert!(SetupReport::unknown().nm.is_none());
+}
+
+/// The rest of the Linux decisions: a red row without "install" needs a repair ("Not ready"), NetworkManager missing
+/// names NetworkManager, no kind needs the WinVPN Service, and a kind without a row cannot start.
+#[test]
+fn linux_names_the_missing_engine_and_needs_no_service() {
+    let mut r = linux(true);
+    let nm = r.nm.as_mut().unwrap();
+    nm.kinds[1].1 = nm_row(false, None);
+    nm.kinds.retain(|(k, _, _)| *k != VPNKind::Sstp);
+    assert_eq!(
+        r.missing_engine(VPNKind::Openvpn),
+        Some(MissingEngine { name: "LinVPN OpenVPN service".into(), installed: true })
+    );
+    assert!(!r.is_available(VPNKind::Sstp), "no row: not available");
+    assert!(VPNKind::ALL.iter().all(|k| !r.needs_service(Some(*k))));
+    assert!(!r.needs_service(None));
+    assert_eq!(r.start_refusal(None), None, "NetworkManager usable: a system VPN may start");
+    assert_eq!(r.start_refusal(Some(VPNKind::Openvpn)), None, "the setup check decides");
+    let mut down = linux(true);
+    down.nm.as_mut().unwrap().networkmanager =
+        EngineRow { ok: false, usable: false, detail: "NetworkManager is not running.".into(), action: None };
+    assert_eq!(
+        down.missing_engine(VPNKind::Wireguard),
+        Some(MissingEngine { name: "NetworkManager".into(), installed: false })
+    );
+    assert_eq!(down.start_refusal(None).as_deref(), Some("NetworkManager is not running."));
+    assert!(!down.is_complete());
+}

@@ -1,0 +1,59 @@
+[package]
+name = "macvpn-platform-linux"
+description = "MacVPN platform layer for Linux (LinVPN)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lib]
+name = "macvpn_platform_linux"
+
+[lints]
+workspace = true
+
+# `pure` compiles on every OS (tested on macOS too); `lin` only on Linux.
+[dependencies]
+# `vault` for the `KeyStore`, `Entropy` and `LegacyKeychain` it returns.
+macvpn-core = { path = "../core", features = ["vault"] }
+macvpn-platform-api = { path = "../platform-api" }
+# The NetworkManager engine's plan records (`lin::nm::plan_store`, L-b Task 22; the version core uses).
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+uuid = "1.26.1"
+zeroize = "1.9.1"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+macvpn-unixsys = { path = "../unixsys" }
+libc = "0.2.191"
+# GTK 3 and GLib as Tauri already brings them (no new crate in Cargo.lock), pinned exactly: the clipboard, window
+# sizes and the SIGTERM source on the GTK main loop.
+gtk = "=0.18.2"
+glib = "=0.18.5"
+# The clipboard atom (`SELECTION_CLIPBOARD`), as Tauri already brings it.
+gdk = "=0.18.2"
+# D-Bus (LinVPN plan, "Resolved points"): Secret Service, notifications, the desktop portal, logind, the
+# single-instance name and the tray; blocking API, its own executor.
+zbus = "=5.19.0"
+# The StatusNotifierItem (spike L0-2, variant S). Without ksni's default `tokio` feature, which would switch zbus to
+# tokio for the whole process: `async-io` keeps zbus on its own executor (see zbus above).
+ksni = { version = "=0.3.7", default-features = false, features = ["blocking", "async-io"] }
+# The secret agent (L-b Task 14), all three already in Cargo.lock through zbus (no new crate): the one-shot answer to
+# a pending CRV1 request,
+async-channel = "=2.5.0"
+# its deadline's timer,
+async-io = "=2.6.0"
+# and the race of the answer against that deadline.
+futures-lite = "=2.6.1"
+
+[dev-dependencies]
+# `tests/update.rs`: throwaway signing keys (the version core already uses; no new crate in Cargo.lock).
+ed25519-dalek = "3.0.0"
+uuid = { version = "1.26.1", features = ["v4"] }
+# `tests/control_server.rs`: the app-core control server over the real Linux transport.
+macvpn-app-core = { path = "../app-core" }
+
+# `tests/control_server.rs`: the example client over the real Linux transport.
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+macvpn-control-client = { path = "../../examples/macvpn-control-client" }

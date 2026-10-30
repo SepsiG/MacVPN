@@ -237,6 +237,13 @@ body {
   overflow: hidden;
 }
 
+/* LinVPN's card panel (Linux): the menu window is a transparent overlay over the work area; only the card is drawn
+   (Menu.svelte), the rest of the page shows what is below and lets its clicks through. */
+html.overlay,
+html.overlay body {
+  background: transparent;
+}
+
 button {
   cursor: default;
   -webkit-tap-highlight-color: transparent;

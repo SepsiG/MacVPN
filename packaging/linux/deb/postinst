@@ -1,0 +1,20 @@
+#!/bin/sh
+# LinVPN: starts the log reader's and the IKEv2 traffic counter reader's sockets (linvpn-logd, linvpn-xfrmd) and
+# records the installed version for a running LinVPN, which restarts into it (/run/linvpn/package-version). Nothing
+# else: dpkg triggers do the rest.
+set -e
+if [ "$1" = "configure" ] && [ -d /run/systemd/system ]; then
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable --now linvpn-logd.socket >/dev/null 2>&1 || true
+    systemctl enable --now linvpn-xfrmd.socket >/dev/null 2>&1 || true
+fi
+if [ "$1" = "configure" ]; then
+    v="$(dpkg-query -W -f='${Version}' linvpn 2>/dev/null || true)"
+    if [ -n "$v" ] && mkdir -p /run/linvpn 2>/dev/null && chmod 0755 /run/linvpn 2>/dev/null; then
+        { printf '%s\n' "$v" > /run/linvpn/package-version.tmp \
+            && chmod 0644 /run/linvpn/package-version.tmp \
+            && mv -f /run/linvpn/package-version.tmp /run/linvpn/package-version; } 2>/dev/null \
+            || rm -f /run/linvpn/package-version.tmp 2>/dev/null || true
+    fi
+fi
+exit 0

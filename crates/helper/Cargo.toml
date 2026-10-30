@@ -15,15 +15,41 @@ path = "src/lib.rs"
 name = "mvpn"
 path = "src/main.rs"
 
+# LinVPN's root update step (`/usr/libexec/linvpn/linvpn-install-update`, started by pkexec). Its entry lives in the
+# Linux backend's folder (the cfg rule); on other OSes it only exits 2.
+[[bin]]
+name = "linvpn-install-update"
+path = "src/linux/main_install_update.rs"
+
+# LinVPN's journal reader (`/usr/libexec/linvpn/linvpn-logd`, socket-activated by systemd, not root; L-b Task 18).
+# Its entry lives in the Linux backend's folder (the cfg rule); on other OSes it only exits 2.
+[[bin]]
+name = "linvpn-logd"
+path = "src/linux/logd_main.rs"
+
+# LinVPN's IKEv2 traffic counter reader (`/usr/libexec/linvpn/linvpn-xfrmd`, socket-activated by systemd, not root,
+# `CAP_NET_ADMIN` only). Its entry lives in the Linux backend's folder (the cfg rule); on other OSes it only exits 2.
+[[bin]]
+name = "linvpn-xfrmd"
+path = "src/linux/xfrmd_main.rs"
+
 [dependencies]
 base64 = "0.23.1"
 macvpn-core = { path = "../core" }
 regex = "1.13.1"
+sha2 = "0.11.1"
 uuid = { version = "1.26.1", features = ["v4"] }
 zeroize = "1.9.1"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.191"
+
+# The root update step (src/linux): the kernel's randomness for its staging folder names.
+[target.'cfg(target_os = "linux")'.dependencies]
+macvpn-unixsys = { path = "../unixsys" }
+# linvpn-xfrmd (src/linux/xfrmd.rs): NetworkManager's read-only properties on the system bus. The version LinVPN's
+# platform crate already pins (no new crate in Cargo.lock).
+zbus = "=5.19.0"
 
 # The WinVPN Service's Win32 calls (src/windows/sys). Pinned exactly: the version Tauri already brings.
 # miniz_oxide (already in Cargo.lock through flate2/png; `#![forbid(unsafe_code)]`): raw deflate of the one member of
@@ -48,6 +74,8 @@ windows-sys = { version = "=0.61.2", features = [
 
 # The zip tests of `windows::wg_update` (every OS) build their archives with it.
 [dev-dependencies]
+# The root update step's tests (tests/install_update.rs) sign with a throwaway key.
+ed25519-dalek = "3.0.0"
 miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
 
 [lints]

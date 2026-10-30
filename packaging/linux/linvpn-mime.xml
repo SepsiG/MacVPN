@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-linvpn-sstp">
+    <comment>SSTP connection</comment>
+    <comment xml:lang="hu">SSTP-kapcsolat</comment>
+    <glob pattern="*.sstp"/>
+  </mime-type>
+  <mime-type type="application/x-macvpn-catalog">
+    <comment>MacVPN, WinVPN and LinVPN team catalog</comment>
+    <comment xml:lang="hu">MacVPN-, WinVPN- és LinVPN-csapatkatalógus</comment>
+    <glob pattern="*.macvpncatalog"/>
+  </mime-type>
+</mime-info>

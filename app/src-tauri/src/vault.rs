@@ -174,7 +174,10 @@ pub fn launch(app: &AppHandle, state: &Arc<AppState>) {
         },
         LaunchDecision::Unlock => {
             after_lock(state);
-            if let Err(e) = open_window(app, state, UNLOCK_WINDOW) {
+            // A process started again after a crash (Linux' supervisor) opens no window: the tray unlocks.
+            if crate::platform::restart_reason().is_none()
+                && let Err(e) = open_window(app, state, UNLOCK_WINDOW)
+            {
                 eprintln!("MacVPN: vault window: {e}");
             }
         }

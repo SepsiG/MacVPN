@@ -3,12 +3,12 @@
 //! - An OS `cfg` (`cfg(target_os …)`, `cfg(unix)`, `cfg(windows)`, their `not(…)`, `any(…)` and `all(…)`
 //!   combinations, `cfg_attr(…)` and `cfg!(…)` with one of them, or `target_os =` anywhere in code) appears in
 //!   production code only in `crates/core/src/fsx/`, `crates/platform-mac/`, `crates/platform-win/`,
-//!   `crates/winsys/`, `crates/helper/src/{macos,windows}/`, the helper's binary entry `crates/helper/src/main.rs` and
-//!   `app/src-tauri/src/platform/`. A `cfg` whose predicate is a macro metavariable (`cfg($m)`) counts as one,
+//!   `crates/platform-linux/`, `crates/winsys/`, `crates/unixsys/`, `crates/helper/src/{macos,windows,linux}/`, the
+//!   helper's binary entry `crates/helper/src/main.rs` and `app/src-tauri/src/platform/`. A `cfg` whose predicate is a macro metavariable (`cfg($m)`) counts as one,
 //!   because the scan cannot see what it expands to; so do `#[path = …]` and `include!(…)`, which pull in code
 //!   from places the scan does not read.
 //! - `unsafe`, and an `allow`/`expect`/`warn` of the `unsafe_code` lint, appear only in `crates/platform-mac`,
-//!   `crates/platform-win`, `crates/winsys` and `crates/helper`.
+//!   `crates/platform-win`, `crates/platform-linux`, `crates/winsys`, `crates/unixsys` and `crates/helper`.
 //!
 //! Scanned: `crates/*/src` and `app/src-tauri/src`. Comments and string literals are not code. Tests are outside the
 //! cfg rule (see the plan's "Resolved points"): an item under `#[cfg(test)]` (the unit test module) is skipped for
@@ -22,14 +22,24 @@ const CFG_ALLOWED: &[&str] = &[
     "crates/core/src/fsx/",
     "crates/platform-mac/",
     "crates/platform-win/",
+    "crates/platform-linux/",
     "crates/winsys/",
+    "crates/unixsys/",
     "crates/helper/src/macos/",
     "crates/helper/src/windows/",
+    "crates/helper/src/linux/",
     "crates/helper/src/main.rs",
     "app/src-tauri/src/platform/",
 ];
 
-const UNSAFE_ALLOWED: &[&str] = &["crates/platform-mac/", "crates/platform-win/", "crates/winsys/", "crates/helper/"];
+const UNSAFE_ALLOWED: &[&str] = &[
+    "crates/platform-mac/",
+    "crates/platform-win/",
+    "crates/platform-linux/",
+    "crates/winsys/",
+    "crates/unixsys/",
+    "crates/helper/",
+];
 
 /// The words that make a `cfg` predicate an OS one.
 const OS_WORDS: &[&str] = &["target_os", "unix", "windows", "target_family", "target_vendor", "target_env"];
@@ -375,7 +385,8 @@ fn unsafe_only_in_the_platform_crates_and_the_helper() {
     }
     assert!(
         bad.is_empty(),
-        "`unsafe` (or an allowed `unsafe_code` lint) outside platform-mac, platform-win and the helper:\n{}",
+        "`unsafe` (or an allowed `unsafe_code` lint) outside platform-mac, platform-win, platform-linux, winsys, unixsys \
+         and the helper:\n{}",
         bad.join("\n")
     );
 }
@@ -474,12 +485,25 @@ fn the_allow_lists_are_exactly_the_platform_places() {
             "crates/core/src/fsx/",
             "crates/platform-mac/",
             "crates/platform-win/",
+            "crates/platform-linux/",
             "crates/winsys/",
+            "crates/unixsys/",
             "crates/helper/src/macos/",
             "crates/helper/src/windows/",
+            "crates/helper/src/linux/",
             "crates/helper/src/main.rs",
             "app/src-tauri/src/platform/",
         ]
     );
-    assert_eq!(UNSAFE_ALLOWED, ["crates/platform-mac/", "crates/platform-win/", "crates/winsys/", "crates/helper/"]);
+    assert_eq!(
+        UNSAFE_ALLOWED,
+        [
+            "crates/platform-mac/",
+            "crates/platform-win/",
+            "crates/platform-linux/",
+            "crates/winsys/",
+            "crates/unixsys/",
+            "crates/helper/",
+        ]
+    );
 }

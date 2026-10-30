@@ -1,6 +1,6 @@
 {
   "identifier": "menu",
-  "description": "The menu popover (menu, local content only): its rows (connect, disconnect, open a window), the Settings section (updates, launch at login, appearance, notifications, the user guide, Back Up / Restore, the vault's Lock Now and automatic unlock) and Quit; the view model, the platform (its texts), the live traffic of the connected rows and listening to events. Nothing that changes the machine or deletes data.",
+  "description": "The menu popover (menu, local content only): its rows (connect, disconnect, open a window), the Settings section (updates, launch at login, appearance, notifications, the user guide, Back Up / Restore, the vault's Lock Now and automatic unlock) and Quit; the view model, the platform (its texts), the card's place in Linux's overlay, the live traffic of the connected rows and listening to events. Nothing that changes the machine or deletes data.",
   "windows": [
     "menu"
   ],
@@ -14,6 +14,7 @@
     "allow-disconnect",
     "allow-open-window",
     "allow-set-menu-height",
+    "allow-set-menu-card",
     "allow-quit",
     "allow-check-for-updates",
     "allow-set-update-option",

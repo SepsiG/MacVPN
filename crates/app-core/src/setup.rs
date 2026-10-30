@@ -9,9 +9,9 @@ use crate::manager::ConnectionManager;
 use crate::migration::LegacyKeychain;
 use crate::updates::Notice;
 use macvpn_core::l10n::{self, Arg};
-use macvpn_core::models::uuid_string;
+use macvpn_core::models::{VPNKind, uuid_string};
 use macvpn_core::vault::KeyStore;
-use macvpn_platform_api::setup::{EngineReport, EngineRow, OutdatedPackage};
+use macvpn_platform_api::setup::{EngineReport, EngineRow, NmReport, OutdatedPackage};
 use serde::Serialize;
 use std::collections::HashSet;
 
@@ -61,6 +61,33 @@ pub struct EngineRowsView {
     pub later_note: String,
 }
 
+/// System Status' NetworkManager rows (LinVPN, L-b); absent from the JSON on macOS and Windows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NmRowsView {
+    pub networkmanager: CheckRow,
+    /// One row per kind, in the platform's order.
+    pub kinds: Vec<NmKindRow>,
+}
+
+/// One kind's row under NetworkManager: the plugin it needs.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NmKindRow {
+    /// The kind's raw value (`"l2tp"`): the Install button sends it to `setup_install_tools`.
+    pub kind: &'static str,
+    pub row: CheckRow,
+    /// The package(s) the Install button asks PackageKit for (space-separated; empty for WireGuard).
+    pub packages: String,
+    /// `"install"` / none: the row's button.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action: Option<&'static str>,
+    /// OpenVPN's row: NetworkManager sees the server's `redirect-gateway` (OpenVPN 2.7 or later), for the editor's
+    /// "Server decides" help text. Absent when false.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub push_visible: bool,
+}
+
 /// The System Status window.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -108,6 +135,10 @@ pub struct SetupView {
     /// the engine rows, also without the WinVPN Service. Absent from the JSON when `None` (MacVPN).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub ras: Option<CheckRow>,
+    /// The NetworkManager and plugin rows (LinVPN, L-b), shown instead of the Homebrew, tools and root rows. Absent
+    /// from the JSON when `None` (MacVPN and WinVPN).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub nm: Option<NmRowsView>,
 }
 
 /// The Swift `SetupView.rootDetail`.
@@ -202,6 +233,34 @@ impl SetupView {
         self
     }
 
+    /// The view with LinVPN's NetworkManager rows (`SetupReport::nm`): they replace the Homebrew, tools and root
+    /// rows and the root layer's notice; the installer's output stays (PackageKit's progress is written there), and
+    /// "Install" can be used when a row offers it and no install runs. `None` returns the view unchanged.
+    pub fn with_nm(mut self, report: Option<&NmReport>) -> SetupView {
+        let Some(report) = report else { return self };
+        self.homebrew = None;
+        self.tools = None;
+        self.root = None;
+        self.upgrade_notice = None;
+        self.tools_action = None;
+        self.can_install_tools = report.kinds.iter().any(|(_, r, _)| r.action.is_some()) && !self.brew_running;
+        self.nm = Some(NmRowsView {
+            networkmanager: (&report.networkmanager).into(),
+            kinds: report
+                .kinds
+                .iter()
+                .map(|(kind, row, packages)| NmKindRow {
+                    kind: kind.raw_value(),
+                    row: row.into(),
+                    packages: packages.clone(),
+                    action: row.action,
+                    push_visible: *kind == VPNKind::Openvpn && report.openvpn_push_visible,
+                })
+                .collect(),
+        });
+        self
+    }
+
     /// The platform's Windows VPN client row (`SetupReport::ras`). `None` returns the view unchanged.
     pub fn with_ras(mut self, row: Option<&EngineRow>) -> SetupView {
         if let Some(row) = row {
@@ -265,6 +324,7 @@ impl SetupView {
             account_cleanup: false,
             engine: None,
             ras: None,
+            nm: None,
         }
     }
 }

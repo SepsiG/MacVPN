@@ -10,6 +10,8 @@ A minimal Rust client for MacVPN's local control API. It needs only `std` and `s
 
 The transport is a Unix domain socket on macOS and WinVPN's named pipe on Windows ([Windows](#windows)).
 
+LinVPN: `$XDG_RUNTIME_DIR/linvpn/control/linvpn.sock` (`default_socket_path()` returns it on Linux).
+
 ## Before you start
 
 In MacVPN (or WinVPN), open the Connections window (**Manage Connections…** in the menu), select **Paired apps** in the sidebar, and turn on **Allow other apps to control VPNs**. While the setting is off, the socket (the pipe on Windows) does not exist.

@@ -1182,6 +1182,143 @@ fn a_platform_with_its_own_certificate_store_imports_no_client_certificate() {
     assert_eq!(w.fx.secrets.get(&ikev2.id, SecretField::ClientCert), None);
 }
 
+/// A platform like LinVPN's: the IKEv2 notes depend on the imported client certificate's form.
+struct LinLike;
+
+impl macvpn_platform_api::NativeSupport for LinLike {
+    fn unsupported_reason(&self, c: &Connection, config: &[u8]) -> Option<String> {
+        self.unsupported_reason_with_cert(c, config, None)
+    }
+
+    fn unsupported_reason_with_cert(
+        &self,
+        _: &Connection,
+        _: &[u8],
+        cert: Option<macvpn_core::client_cert::Form>,
+    ) -> Option<String> {
+        match cert {
+            Some(macvpn_core::client_cert::Form::Pem) => None,
+            other => Some(format!("cert: {other:?}")),
+        }
+    }
+
+    fn editor_notes_with_cert(
+        &self,
+        c: &Connection,
+        config: &[u8],
+        cert: Option<macvpn_core::client_cert::Form>,
+    ) -> macvpn_platform_api::PlatformNotes {
+        macvpn_platform_api::PlatformNotes {
+            reasons: self.unsupported_reason_with_cert(c, config, cert).into_iter().collect(),
+            ..Default::default()
+        }
+    }
+}
+
+/// A converter like LinVPN's `openssl pkcs12`: "right" opens the file, giving an encrypted PEM pair.
+fn fake_converter() -> macvpn_app_core::connections::Pkcs12Converter {
+    use macvpn_core::client_cert::fixtures;
+    Arc::new(|der: &[u8], password: &str| {
+        assert_eq!(der, fixtures::p12().as_slice());
+        if password != "right" {
+            return Err("The PKCS#12 password is wrong.".into());
+        }
+        let pem = format!(
+            "{}{}",
+            fixtures::pem("CERTIFICATE", &fixtures::cert(false)),
+            fixtures::pem("ENCRYPTED PRIVATE KEY", &fixtures::pkcs8())
+        );
+        macvpn_core::client_cert::import(&[pem.as_bytes()])
+    })
+}
+
+/// LinVPN (G4): a PKCS#12 file waits for its password at import, is converted to the PEM form with it (a wrong one
+/// keeps it waiting; Cancel drops it) and stored as a PEM import is; nothing reaches the vault before.
+#[test]
+fn linux_converts_a_pkcs12_file_with_its_password_at_import() {
+    use macvpn_core::client_cert::{Form, fixtures};
+    let w = system_window("L2TP");
+    w.model.set_pkcs12_converter(fake_converter());
+    let ikev2 = w.add("IKE", VPNKind::Strongswan, Some(SWAN_PUBKEY));
+    let k = key(&ikev2);
+    w.model.open_editor(&k).unwrap();
+    let view = w.model.import_client_cert(&k, &[&fixtures::p12()]).unwrap();
+    let cert = view.client_cert.unwrap();
+    assert!(cert.pkcs12_password && cert.imported.is_none());
+    assert_eq!(w.fx.secrets.get(&ikev2.id, SecretField::ClientCert), None, "nothing stored yet");
+    let err = w.model.convert_client_cert(&k, Some("wrong")).unwrap_err();
+    assert!(err.contains("wrong"), "{err}");
+    assert!(w.model.open_editor(&k).unwrap().client_cert.unwrap().pkcs12_password, "still waiting");
+    let view = w.model.convert_client_cert(&k, Some("right")).unwrap();
+    let cert = view.client_cert.unwrap();
+    let summary = cert.imported.unwrap();
+    assert!(!cert.pkcs12_password);
+    assert_eq!((summary.form, summary.needs_password), (Form::Pem, true), "the key keeps its password");
+    assert!(w.fx.secrets.get(&ikev2.id, SecretField::ClientCert).unwrap().starts_with("pem:"));
+    // The password is typed once: the draft's "Private key password" has it, unsaved until Save.
+    let EditorFields::Text(f) = view.fields.clone() else { panic!() };
+    assert_eq!(f.key_password.as_deref(), Some("right"));
+    assert!(view.dirty);
+    assert_eq!(w.fx.secrets.get(&ikev2.id, SecretField::KeyPassword), None, "not stored before Save");
+    w.model.save_editor(&k, EditorFields::Text(f)).unwrap();
+    assert_eq!(w.fx.secrets.get(&ikev2.id, SecretField::KeyPassword).as_deref(), Some("right"), "stored by Save");
+    // Discard drops a prefilled password.
+    let other = w.add("IKE 2", VPNKind::Strongswan, Some(SWAN_PUBKEY));
+    let k2 = key(&other);
+    w.model.open_editor(&k2).unwrap();
+    w.model.import_client_cert(&k2, &[&fixtures::p12()]).unwrap();
+    assert!(w.model.convert_client_cert(&k2, Some("right")).unwrap().dirty);
+    w.model.discard_unsaved();
+    assert_eq!(w.fx.secrets.get(&other.id, SecretField::KeyPassword), None, "discarded");
+    let EditorFields::Text(f) = w.model.open_editor(&k2).unwrap().fields else { panic!() };
+    assert_eq!(f.key_password, None);
+    // Cancel drops a waiting file and keeps the stored certificate.
+    w.model.open_editor(&k).unwrap();
+    w.model.import_client_cert(&k, &[&fixtures::p12()]).unwrap();
+    let view = w.model.convert_client_cert(&k, None).unwrap();
+    assert!(!view.client_cert.unwrap().pkcs12_password);
+    assert!(w.model.convert_client_cert(&k, Some("right")).is_err(), "nothing waits");
+    assert!(w.fx.secrets.get(&ikev2.id, SecretField::ClientCert).unwrap().starts_with("pem:"));
+    // macOS (no converter): the file is stored as it is.
+    let mac = window();
+    let c = mac.add("IKE", VPNKind::Strongswan, Some(SWAN_PUBKEY));
+    mac.model.open_editor(&key(&c)).unwrap();
+    let view = mac.model.import_client_cert(&key(&c), &[&fixtures::p12()]).unwrap();
+    assert_eq!(view.client_cert.unwrap().imported.unwrap().form, Form::Pkcs12);
+}
+
+/// LinVPN (G4): the IKEv2 editor's notes and the row's reason know the imported client certificate's form (read
+/// from the vault, never its content).
+#[test]
+fn linux_notes_know_the_imported_client_certificates_form() {
+    use macvpn_core::client_cert::fixtures;
+    let w = system_window("L2TP");
+    w.model.set_native_platform(Arc::new(LinLike), Arc::new(CaCheck::default()));
+    w.manager.set_native_support(Arc::new(LinLike));
+    let ikev2 = w.add("IKE", VPNKind::Strongswan, Some(SWAN_PUBKEY));
+    let view = w.model.open_editor(&key(&ikev2)).unwrap();
+    assert_eq!(view.platform.unwrap().reasons, ["cert: None"]);
+    assert!(view.client_cert.unwrap().import);
+    w.manager.reload();
+    assert_eq!(w.manager.unsupported_reason(&key(&ikev2)).as_deref(), Some("cert: None"));
+
+    let pair = fixtures::pem_pair();
+    let view = w.model.import_client_cert(&key(&ikev2), &[pair.as_bytes()]).unwrap();
+    assert_eq!(view.platform.map(|p| p.reasons), None, "no notes: the PEM certificate is used");
+    w.manager.reload();
+    assert_eq!(w.manager.unsupported_reason(&key(&ikev2)), None);
+    assert_eq!(w.manager.client_cert_form(&ikev2.id), Some(macvpn_core::client_cert::Form::Pem));
+
+    // A PKCS#12 stored elsewhere (a restored vault) is reported with its form.
+    w.fx.secrets.set(
+        &macvpn_core::client_cert::import(&[&fixtures::p12()]).unwrap().cert.stored(),
+        &ikev2.id,
+        SecretField::ClientCert,
+    );
+    w.manager.reload();
+    assert_eq!(w.manager.unsupported_reason(&key(&ikev2)).as_deref(), Some("cert: Some(Pkcs12)"));
+}
+
 /// The notes follow the draft (not the saved config): the IKEv2 reasons and warnings as typed, the L2TP server as
 /// edited; the flags per kind; the system VPN's PSK note.
 #[test]
@@ -1458,4 +1595,51 @@ fn an_expired_sstp_ca_and_ikev2_certificates_from_the_swanctl_folder() {
     assert_eq!(rows, [("client", "client.pem", "expired"), ("ca", "ca.pem", "valid")]);
     assert_eq!(certs[0].note.as_deref(), Some("Expired"));
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// LinVPN (G1, G4): with Linux's platform set (its notes, PEM-only import, its own strongSwan folder), the editor
+/// masks the inline secrets of every text kind as on macOS, and the IKEv2 "Certificates" section lists the imported
+/// client certificate first, then the CA the config names from LinVPN's folder.
+#[test]
+fn linux_editors_mask_secrets_and_list_the_imported_and_folder_certificates() {
+    use macvpn_core::client_cert::fixtures;
+    use macvpn_core::config_secrets::MASK;
+    let w = window_at(CLIENT_NOT_AFTER - 86_400);
+    w.model.set_native_platform(Arc::new(LinLike), Arc::new(CaCheck::default()));
+    w.model.set_pkcs12_converter(fake_converter());
+    let data = std::env::temp_dir().join(format!("linvpn-data-{}", uuid::Uuid::new_v4()));
+    let folder = data.join("LinVPN/swanctl");
+    std::fs::create_dir_all(folder.join("x509ca")).unwrap();
+    std::fs::write(folder.join("x509ca/lab-ca.pem"), CERT_CA).unwrap();
+    w.model.set_swanctl_folder(folder);
+
+    // G1: the secrets of OpenVPN, WireGuard and a swanctl `secrets` section are masked.
+    let ovpn = format!("{CLEAN}<key>\n-----BEGIN PRIVATE KEY-----\nKEYDATA\n-----END PRIVATE KEY-----\n</key>\n");
+    let wg = "[Interface]\nPrivateKey = abc=\n[Peer]\nPresharedKey = psk=\n";
+    let ike_secret = format!("{SWAN_PUBKEY}secrets {{\n  ike-lab {{\n    secret = hunter2-psk\n  }}\n}}\n");
+    for (kind, text, secret) in [
+        (VPNKind::Openvpn, ovpn.as_str(), "KEYDATA"),
+        (VPNKind::Wireguard, wg, "abc="),
+        (VPNKind::Strongswan, ike_secret.as_str(), "hunter2-psk"),
+    ] {
+        let c = w.add("Masked", kind, Some(text));
+        let masked = w.model.open_editor(&key(&c)).unwrap().masked_text.expect("a masked text");
+        assert!(!masked.contains(secret) && masked.contains(MASK), "{kind:?}: {masked}");
+    }
+
+    // G4 + certificates: the imported PEM certificate first, then the folder's CA the config names.
+    let ike = SWAN_PUBKEY.replacen(
+        "auth = pubkey\n    }\n    children",
+        "auth = pubkey\n      cacerts = lab-ca.pem\n    }\n    children",
+        1,
+    );
+    assert!(ike.contains("cacerts = lab-ca.pem"));
+    let c = w.add("IKEv2", VPNKind::Strongswan, Some(&ike));
+    w.model.open_editor(&key(&c)).unwrap();
+    let view = w.model.import_client_cert(&key(&c), &[fixtures::pem_pair().as_bytes()]).unwrap();
+    let certs = view.certificates.unwrap().certificates;
+    let rows: Vec<(&str, &str)> = certs.iter().map(|c| (c.role, c.source.as_str())).collect();
+    assert_eq!(rows, [("client", "Imported client certificate"), ("ca", "lab-ca.pem")]);
+    assert_eq!(certs[1].status, "valid");
+    let _ = std::fs::remove_dir_all(&data);
 }

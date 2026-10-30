@@ -2,7 +2,7 @@
 # Tests the VPN test lab (scripts/vpn-lab) without Docker: the scripts are shellcheck-clean, profiles.sh generates
 # a complete state with throwaway values (a lab PKI the clients accept, name-constrained to the lab's names and
 # limited to the TLS server / client and IKE usages, its CA key deleted; the CRL; WireGuard keys that pair; credentials kept across re-runs and renewed with --renew), the client profiles pass
-# MacVPN's import and validators for macOS and Windows (crates/core/tests/vpn_lab_profiles.rs) and pick their
+# MacVPN's import and validators for macOS, Windows and Linux (crates/core/tests/vpn_lab_profiles.rs) and pick their
 # Windows OpenVPN driver (crates/helper/tests/vpn_lab_driver.rs), the compose files are valid and publish every port
 # on LAB_BIND only, the --dry-run modes of up.sh / down.sh / check.sh run nothing, and down.sh deletes only the
 # lab's own state folder. Needs OpenSSL 3+.
@@ -85,6 +85,20 @@ check "lab-client.p12 opens with its password" \
   "$OSSL" pkcs12 -in "$S/client/windows/lab-client.p12" -passin "pass:$LAB_P12_PASSWORD" -noout
 check "lab-ca.cer is the CA in DER" bash -c "cmp -s <('$OSSL' x509 -inform DER -in '$S/client/windows/lab-ca.cer') <('$OSSL' x509 -in '$S/pki/ca.pem')"
 
+# LinVPN's imports (client/linux): the macOS set with its own WireGuard peer, and the user labfull, whose OpenVPN
+# session gets a pushed redirect-gateway (LinVPN's "Server decides" routing test).
+STATE="$S"
+L="$STATE/client/linux"
+check "linux: openvpn profiles"        test -f "$L/openvpn-tun-dco.ovpn" -a -f "$L/openvpn-static-challenge.ovpn" -a -f "$L/openvpn-tun-cbc.ovpn"
+check "linux: own wireguard peer"      grep -q '^Address = 10.99.13.5/' "$L/wireguard-linux.conf"
+check "linux: wireguard key differs"   test "$(grep PrivateKey "$L/wireguard-linux.conf")" != "$(grep PrivateKey "$STATE/client/macos/wireguard-macos.conf")"
+check "server knows the linux peer"    grep -q "$(sed -n 's/^PublicKey = //p' "$STATE/client/linux/wireguard-linux.pub" 2>/dev/null || echo none)" "$STATE/server/wg0.conf"
+check "linux: ikev2 alt port"          grep -q 'remote_port = 4510' "$L/ikev2-eap.swanctl.conf"
+check "linux: swanctl folder"          test -f "$L/swanctl/x509ca/lab-ca.pem" -a -f "$L/swanctl/x509/lab-client.pem" -a -f "$L/swanctl/private/lab-client.key"
+check "linux: forms"                   test -f "$L/l2tp.txt" -a -f "$L/cisco-ipsec.txt"
+check "labfull gets redirect-gateway"  grep -q 'push "redirect-gateway def1"' "$STATE/server/ccd/labfull"
+check "labfull in credentials"         grep -q 'labfull' "$STATE/client/CREDENTIALS.txt"
+
 # WireGuard: each client's private key pairs with the public key the server lists for it, and the client knows the
 # server's public key.
 wg_pub() { # raw base64 private key -> base64 public key
@@ -101,12 +115,13 @@ wg_pair() { # client-file peer-comment
 check "WireGuard keys pair (macOS)" wg_pair "$S/client/macos/wireguard-macos.conf" macos
 check "WireGuard keys pair (Windows)" wg_pair "$S/client/windows/wireguard-windows.conf" windows
 check "WireGuard keys pair (selftest)" wg_pair "$S/client/selftest/wireguard.conf" selftest
+check "WireGuard keys pair (Linux)" wg_pair "$S/client/linux/wireguard-linux.conf" linux
 
 # The profiles route only the lab, and carry no secret.
 check "no profile sends all traffic (no 0.0.0.0/0, route_all=no, no redirect-gateway)" bash -c \
-  "! grep -rlE '0\.0\.0\.0/0|route_all=yes|redirect-gateway' '$S/client/macos' '$S/client/windows'"
+  "! grep -rlE '0\.0\.0\.0/0|route_all=yes|redirect-gateway' '$S/client/macos' '$S/client/windows' '$S/client/linux'"
 check "no profile contains the password or the PSK" bash -c \
-  "! grep -rlE '$LAB_PASSWORD|$LAB_PSK' '$S/client/macos' '$S/client/windows' --include='*.ovpn' --include='*.conf' --include='*.sstp'"
+  "! grep -rlE '$LAB_PASSWORD|$LAB_PSK' '$S/client/macos' '$S/client/windows' '$S/client/linux' --include='*.ovpn' --include='*.conf' --include='*.sstp'"
 check "macOS IKEv2 profiles use the alternative IKE port, Windows' none" bash -c \
   "[ \"\$(grep -l 'remote_port = $LAB_IKE_ALT_PORT' '$S'/client/macos/*.swanctl.conf | wc -l)\" -eq 3 ] && ! grep -q remote_port '$S'/client/windows/*.swanctl.conf"
 
@@ -118,6 +133,13 @@ check "a re-run keeps the credentials and the CA" bash -c \
 check "a re-run without the CA key keeps the CRL and the certificates valid" bash -c \
   "[ ! -e '$S/pki/ca.key' ] && '$OSSL' crl -inform DER -in '$S/crl/ca.crl' -noout -CAfile '$S/pki/ca.pem' 2>&1 | grep -q 'verify OK' \
    && '$OSSL' verify -CAfile '$S/pki/ca.pem' -purpose sslserver '$S/pki/server.pem'"
+# A state made before the linux peer existed (no wg-linux key) gains it on a re-run; the other keys stay.
+mac_wg="$(cat "$S/pki/wg-macos.key")"
+rm -f "$S/pki/wg-linux.pem" "$S/pki/wg-linux.key" "$S/pki/wg-linux.pub"
+"$LAB/profiles.sh" >/dev/null 2>&1
+check "a re-run adds a missing linux WireGuard key and keeps the others" bash -c \
+  "test -s '$S/pki/wg-linux.key' && [ \"\$(cat '$S/pki/wg-macos.key')\" = '$mac_wg' ]"
+check "WireGuard keys pair (Linux, added later)" wg_pair "$S/client/linux/wireguard-linux.conf" linux
 "$LAB/profiles.sh" --renew >/dev/null 2>&1
 check "--renew makes new credentials and a new CA" bash -c \
   "! grep -q 'LAB_PASSWORD=$LAB_PASSWORD' '$S/secrets.env' && [ \"\$('$OSSL' x509 -in '$S/pki/ca.pem' -noout -fingerprint -sha256)\" != '$ca1' ]"
@@ -181,7 +203,7 @@ check "down.sh deletes the lab's own state (marker written by profiles.sh)" bash
 # The client profiles through MacVPN's own import and validators, and the Windows OpenVPN driver choice.
 if [ "$CARGO" = 1 ]; then
   export MVPN_LAB_CLIENT_DIR="$S/client"
-  check "macvpn-core: the profiles import and validate for macOS and Windows" \
+  check "macvpn-core: the profiles import and validate for macOS, Windows and Linux" \
     cargo test -q --locked -p macvpn-core --test vpn_lab_profiles
   check "macvpn-helper: the OpenVPN profiles choose DCO / TAP-Windows6 as named" \
     cargo test -q --locked -p macvpn-helper --test vpn_lab_driver

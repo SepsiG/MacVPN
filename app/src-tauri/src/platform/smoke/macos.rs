@@ -1,8 +1,8 @@
 //! The smoke driver's macOS-only part (debug builds on macOS): what reads AppKit back (the popover's shape, the
 //! window numbers for `screencapture`, the Dock icon's activation policy, the forced appearance), the screenshots,
 //! the old Keychain items the migration moves, the mock Homebrew report and the DMG update's sandbox steps. The
-//! portable driver (`super`) calls these through `#[cfg(target_os = "macos")]` lines; on Windows those steps print
-//! `MacVPN smoke: <step>: skipped on Windows`.
+//! portable driver (`super`) calls these through `#[cfg(target_os = "macos")]` lines; on Windows and Linux those
+//! steps print `MacVPN smoke: <step>: skipped on Windows` / `… on Linux`. The plain Unix helpers are in `unix.rs`.
 
 use macvpn_core::update::Release;
 use macvpn_platform_api::{SetupReport, SmokeHooks, UpdateOutcome};
@@ -51,6 +51,7 @@ pub(super) fn mock_report() -> SetupReport {
         outdated_packages: Vec::new(),
         ras: None,
         ras_unsupported_kinds: Vec::new(),
+        nm: None,
     }
 }
 
@@ -62,17 +63,6 @@ pub(super) fn ready_report() -> SetupReport {
 /// [`ready_report`] once `sstpc` was installed (outside the app): nothing missing.
 pub(super) fn installed_report() -> SetupReport {
     SetupReport { missing_tools: Vec::new(), ..ready_report() }
-}
-
-/// A private temporary directory (0700) under `base`.
-pub(super) fn private_temp_dir(prefix: &str, base: &Path) -> Result<PathBuf, String> {
-    make_private_temp_directory(prefix, base).map_err(|e| e.to_string())
-}
-
-/// The file's permission bits in octal (`600`).
-pub(super) fn mode(path: &Path) -> String {
-    use std::os::unix::fs::PermissionsExt;
-    format!("{:o}", std::fs::metadata(path).map(|m| m.permissions().mode() & 0o777).unwrap_or(0))
 }
 
 /// The update steps in the sandbox (see the module docs).

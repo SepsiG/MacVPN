@@ -473,3 +473,25 @@ fn a_refused_lease_connect_leaves_no_mark() {
     p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::NetworkLost);
     assert_eq!(p.evaluate(t0().adding(5.0), &home(), &on, false), vec![Action::Connect("k".into())]);
 }
+
+/// LinVPN (audit C1): stopped outside the app (GNOME's menu, `nmcli connection down`) is the user's stop: never
+/// reconnected (also not after a later drop of the planner's knowledge), no notice; a connect of the user's own
+/// starts over.
+#[test]
+fn a_stop_outside_the_app_is_a_user_disconnect() {
+    let mut p = slept_planner();
+    p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::StoppedByUser);
+    assert!(!p.due(t0().adding(100.0)));
+    assert!(p.evaluate(t0().adding(100.0), &home(), &on, false).is_empty());
+    assert!(p.take_actions().is_empty(), "no notice");
+    // Our own attempt cancelled from GNOME's menu: no "could not reconnect", no further attempts.
+    let mut q = slept_planner();
+    q.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::NetworkLost);
+    assert_eq!(q.evaluate(t0().adding(5.0), &home(), &on, false), vec![Action::Connect("k".into())]);
+    assert!(q.failed("k", t0().adding(7.0), FailureKind::StoppedByUser).is_empty());
+    assert!(!q.due(t0().adding(1000.0)));
+    // Off as after a disconnect in the app: a wake does not bring it back.
+    q.sleep(&[], fingerprint(&home()));
+    q.wake(t0().adding(2000.0), &[]);
+    assert!(q.evaluate(t0().adding(2100.0), &home(), &on, false).is_empty());
+}

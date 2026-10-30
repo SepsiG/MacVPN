@@ -4,8 +4,8 @@
 //! - `appearance` (`appearance.js`): the menu's Settings – Dark, Light, Match System clicked in the popover; after
 //!   each, `prefers-color-scheme: dark` in the popover and in the Connections window (Match System: the value the
 //!   popover had before the first click).
-//! - `engines` (`engines.js`): with a report that lacks one engine (macOS: `sstpc`, so SSTP; Windows: OpenVPN
-//!   Community), a seeded row of that kind in the popover says "Not installed: … – System Status", its switch is
+//! - `engines` (`engines.js`): with a report that lacks one engine (macOS and Linux: `sstpc`, so SSTP; Windows:
+//!   OpenVPN Community), a seeded row of that kind in the popover says "Not installed: … – System Status", its switch is
 //!   disabled and the link opens System Status; the Connections window's New menu has no such item; a file of that
 //!   kind opened from Finder / Explorer (`open_files::receive`) is refused with the gate's text and not imported.
 //!   Then the engine "is installed outside the app": the popover is shown again and its background check (not
@@ -49,7 +49,7 @@ use crate::state::AppState;
 
 /// Where the scripts write their results (`<SECTION> <phase> …`).
 const RESULT: &str = "F5111111-2222-4333-8444-555555555555";
-/// The engines step's row (macOS: SSTP; Windows: OpenVPN).
+/// The engines step's row (macOS and Linux: SSTP; Windows: OpenVPN).
 const ENGINES: &str = "F6111111-2222-4333-8444-555555555555";
 const ENGINES_NAME: &str = "Zz Engines";
 /// The notices step's connection.
@@ -64,7 +64,7 @@ const OFFICE_NAME: &str = "Zz Reconnect office";
 const TRAFFIC: &str = "FA111111-2222-4333-8444-555555555555";
 const TRAFFIC_NAME: &str = "Zz Traffic";
 const OVPN: &str = "client\ndev tun\nremote vpn.example.com 1194\n";
-#[cfg(target_os = "macos")]
+#[cfg(not(windows))]
 const SSTP: &str = "server=vpn.example.com\nport=443\nuser=alice\ncert=system\nroute_all=yes\npeer_dns=yes\n";
 
 // MARK: - The hooks the app calls (through the `platform::smoke_*` facades)
@@ -167,8 +167,18 @@ fn installed_report() -> SetupReport {
     super::windows_report(true)
 }
 
+#[cfg(target_os = "linux")]
+fn missing_report() -> SetupReport {
+    super::linux::missing_report()
+}
+
+#[cfg(target_os = "linux")]
+fn installed_report() -> SetupReport {
+    super::linux::report()
+}
+
 /// The kind whose engine the step's report lacks, its fixture's extension and config.
-#[cfg(target_os = "macos")]
+#[cfg(not(windows))]
 const ENGINE_KIND: (VPNKind, &str, &str) = (VPNKind::Sstp, "sstp", SSTP);
 #[cfg(windows)]
 const ENGINE_KIND: (VPNKind, &str, &str) = (VPNKind::Openvpn, "ovpn", OVPN);

@@ -7,13 +7,14 @@ fn kind(lines: &[&str]) -> FailureKind {
     classify(&lines.iter().map(|l| l.to_string()).collect::<Vec<_>>())
 }
 
-const ALL: [FailureKind; 7] = [
+const ALL: [FailureKind; 8] = [
     FailureKind::ServerNotResponding,
     FailureKind::ServerUnreachable,
     FailureKind::NameNotResolved,
     FailureKind::AuthFailed,
     FailureKind::CertificateProblem,
     FailureKind::NetworkLost,
+    FailureKind::StoppedByUser,
     FailureKind::Unknown,
 ];
 
@@ -48,6 +49,16 @@ fn openvpn_lines_are_classified() {
 fn strongswan_lines_are_classified() {
     assert_eq!(kind(&["giving up after 5 retransmits"]), FailureKind::ServerNotResponding);
     assert_eq!(kind(&["received AUTHENTICATION_FAILED notify error"]), FailureKind::AuthFailed);
+}
+
+/// LinVPN's SSTP (`sstpc` through NetworkManager, its journal line copied into the log): the lab's
+/// `sstp-system-ca.sstp` without the lab CA in the system store (L-b lab, 2026-10-30).
+#[test]
+fn sstpc_lines_are_classified() {
+    assert_eq!(
+        kind(&["2026-10-30 11:45:48 [sstpc] Verification of server certificate failed", "... [pppd] Modem hangup"]),
+        FailureKind::CertificateProblem
+    );
 }
 
 #[test]
@@ -104,7 +115,7 @@ fn texts_are_fixed_and_localized() {
 
 #[test]
 fn every_known_kind_has_a_hungarian_text() {
-    for k in ALL.into_iter().filter(|k| *k != FailureKind::Unknown) {
+    for k in ALL.into_iter().filter(|k| !matches!(k, FailureKind::Unknown | FailureKind::StoppedByUser)) {
         let en = with_language(AppLanguage::En, || plain(k)).expect("an English text");
         let hu = with_language(AppLanguage::Hu, || plain(k)).expect("a Hungarian text");
         assert_ne!(en, hu, "{k:?} has no Hungarian text");
@@ -127,10 +138,53 @@ fn texts_never_quote_the_log() {
 }
 
 #[test]
-fn retry_is_pointless_only_for_credentials_and_certificates() {
+fn retry_is_pointless_for_credentials_certificates_and_a_users_stop() {
     assert!(!FailureKind::AuthFailed.worth_retrying());
     assert!(!FailureKind::CertificateProblem.worth_retrying());
-    for k in ALL.into_iter().filter(|k| !matches!(k, FailureKind::AuthFailed | FailureKind::CertificateProblem)) {
+    for k in ALL.into_iter().filter(|k| {
+        !matches!(k, FailureKind::AuthFailed | FailureKind::CertificateProblem | FailureKind::StoppedByUser)
+    }) {
         assert!(k.worth_retrying(), "{k:?}");
     }
+}
+
+/// LinVPN (audit C1): NetworkManager ended the VPN at the user's request outside the app (GNOME's menu, `nmcli
+/// connection down`). Only the log's last own line counts (journal copies `<time> [tag] …` after it do not), so an
+/// older stop is no reason once the next connect wrote its own lines.
+#[test]
+fn a_stop_outside_the_app_is_the_users() {
+    let stop = "2026-10-30 10:00:05 NetworkManager: disconnected by the user";
+    assert_eq!(kind(&["2026-10-30 10:00:00 Connected, IPv4 198.51.100.7", stop]), FailureKind::StoppedByUser);
+    assert_eq!(
+        kind(&[
+            stop,
+            "2026-10-30 10:00:05 [openvpn] SIGTERM[hard,] received, process exiting",
+            "2026-10-30 10:00:06 [nm] vpn[0x1]: VPN connection: (ConnectInteractive) reply received",
+            ""
+        ]),
+        FailureKind::StoppedByUser
+    );
+    assert!(!FailureKind::StoppedByUser.worth_retrying());
+    assert_eq!(plain(FailureKind::StoppedByUser), None);
+    // A later connect's own lines: the old stop says nothing about this drop.
+    assert_eq!(
+        kind(&[
+            stop,
+            "2026-10-30 11:00:00 Connecting with NetworkManager (openvpn)",
+            "2026-10-30 11:00:03 Connected, IPv4 198.51.100.7",
+            "2026-10-30 11:30:00 NetworkManager: disconnected",
+        ]),
+        FailureKind::Unknown
+    );
+    assert_eq!(
+        kind(&[
+            stop,
+            "2026-10-30 11:00:00 Connecting with NetworkManager (openvpn)",
+            "... Inactivity timeout (--ping-restart), restarting",
+            "2026-10-30 11:30:00 NetworkManager: the VPN failed (reason 1)"
+        ]),
+        FailureKind::ServerNotResponding
+    );
+    // NetworkManager's other ends keep their meaning.
+    assert_eq!(kind(&["2026-10-30 10:00:05 NetworkManager: disconnected"]), FailureKind::Unknown);
 }

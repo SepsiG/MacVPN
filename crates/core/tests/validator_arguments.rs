@@ -9,7 +9,21 @@ use macvpn_core::models::ValidationIssue;
 use macvpn_core::validators::OpenVPNValidator;
 
 fn ovpn(body: &str) -> Vec<ValidationIssue> {
-    ovpn_all(&format!("remote a 1\n{body}"))
+    ovpn_args(&format!("remote a 1\n{body}"))
+}
+
+/// The host's issues apart from the Linux tier's acknowledgements: the argument rules are the same on every OS; on
+/// Linux the names NetworkManager ignores are RISKY (`openvpn_tiers.rs` tests that), so a Linux host acknowledges
+/// them here. On macOS and Windows this is `ovpn_all`.
+fn ovpn_args(text: &str) -> Vec<ValidationIssue> {
+    use macvpn_core::TargetOs;
+    use macvpn_core::validators::openvpn::platform_reasons;
+    let ack: std::collections::HashSet<String> = if TargetOs::host() == TargetOs::Linux {
+        platform_reasons(TargetOs::Linux).keys().map(|d| d.to_string()).collect()
+    } else {
+        Default::default()
+    };
+    OpenVPNValidator.validate_full(text, &ack).all_issues()
 }
 
 #[track_caller]
@@ -371,7 +385,7 @@ fn realistic_provider_profiles() {
     for (name, profile) in
         [("nord", NORD), ("pia", PIA), ("pfsense", PFSENSE), ("proton", PROTON), ("access server", ACCESS_SERVER)]
     {
-        assert_eq!(ovpn_all(profile), [], "{name}");
+        assert_eq!(ovpn_args(profile), [], "{name}");
     }
 }
 

@@ -67,3 +67,12 @@ fn anything_else_is_refused() {
     let long = format!("wireguard 0\n{}", " ".repeat(MAX_BYTES));
     assert_eq!(Liveness::parse(long.as_bytes()), None);
 }
+
+#[test]
+fn counters_round_trip_and_stay_strict() {
+    let l = Liveness::Counters { rx: 10, tx: 444, keepalive: 25 };
+    assert_eq!(l.encode(), "counters 10 444 25\n");
+    assert_eq!(Liveness::parse(b"counters 10 444 25\n"), Some(l));
+    assert_eq!(Liveness::parse(b"counters 10 444\n"), None);
+    assert_eq!(Liveness::parse(b"counters 01 4 0\n"), None);
+}

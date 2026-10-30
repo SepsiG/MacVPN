@@ -1,0 +1,9 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "linvpn-tray-spike",
+  "version": "0.0.0",
+  "identifier": "dev.spike.linvpn-tray",
+  "build": { "frontendDist": "www" },
+  "app": { "windows": [], "security": { "csp": null } },
+  "bundle": { "active": false, "icon": ["icons/icon.png"] }
+}

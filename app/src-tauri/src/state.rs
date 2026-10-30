@@ -194,6 +194,8 @@ impl AppState {
         .with_engine(setup.engine.as_ref(), crate::platform::get().setup().later_note())
         // The Windows VPN client row (WinVPN 2c), also while the service is missing; none on macOS.
         .with_ras(setup.ras.as_ref())
+        // LinVPN's NetworkManager rows (L-b); none on macOS and Windows.
+        .with_nm(setup.nm.as_ref())
         .with_system_uninstall(crate::platform::get().setup().system_uninstall_note())
         .with_account_cleanup(crate::platform::get().setup().account_cleanup());
         vm.quit = self.quit.question();

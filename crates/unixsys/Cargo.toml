@@ -1,0 +1,16 @@
+[package]
+name = "macvpn-unixsys"
+description = "The Unix system calls MacVPN and LinVPN share (the control socket, randomness)"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish.workspace = true
+rust-version.workspace = true
+
+[lints]
+workspace = true
+
+# The whole crate is Unix-only (`#![cfg(unix)]`): on Windows it is empty.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2.191"
+macvpn-platform-api = { path = "../platform-api" }

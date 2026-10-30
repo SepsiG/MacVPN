@@ -208,22 +208,107 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # 1c. LinVPN build Linuxon (amd64 és arm64, natív runnereken): csak olvasási jog, titok nélkül, cache nélkül. Minden
+  #     tagnél lefut; a .deb-eket a release job csak akkor teszi a piszkozatba, ha a LINVPN_DEB_IN_RELEASE repóváltozó
+  #     értéke `true` (2.1.0-tól az; előtte nem volt beállítva).
+  build-linux:
+    needs: ci-green
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+            target: x86_64-unknown-linux-gnu
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+            target: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Tag ellenőrzése
+        run: |
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid tag: $GITHUB_REF_NAME"; exit 1; }
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: A tagelt commit a main ágon van
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || { echo "The tagged commit $GITHUB_SHA is not on main"; exit 1; }
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "26.8.2"
+          # No automatic cache: release builds must not restore a cache written elsewhere.
+          package-manager-cache: false
+      - name: A verzió egyezik a taggel
+        run: |
+          # Mint a build jobban; a három verzió egyezését a build-deb.sh ellenőrzi.
+          V="${GITHUB_REF_NAME#v}"
+          CONF=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
+          [ "$CONF" = "$V" ] || { echo "tauri.conf.json version ($CONF) != tag ($V)"; exit 1; }
+      # A LinVPN saját NetworkManager OpenVPN szolgáltatásához (scripts/build-nm-linvpn-openvpn.sh, az upstream
+      # autotools buildje) kell a libnm, a GLib, a pkg-config és a gettext. A runner libnm-je (NM 1.46, 24.04) régebbi a
+      # célrendszerénél; a szolgáltatás csak libnm >= 1.10 szimbólumokat használ, a minimumot a dpkg-shlibdeps rögzíti.
+      - name: Build-függőségek
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev dpkg-dev desktop-file-utils \
+            pkg-config gettext libnm-dev libglib2.0-dev
+      - name: A NM OpenVPN szolgáltatás build-szkriptje (kiíró mód)
+        run: scripts/test-build-nm-linvpn-openvpn.sh
+      - name: Toolchain verzió
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          RUST_VERSION=$(sed -n 's/^channel = "\(.*\)"$/\1/p' rust-toolchain.toml)
+          [[ "$RUST_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "rust-toolchain.toml: channel must be an exact version"; exit 1; }
+          rustup toolchain install "$RUST_VERSION" --profile minimal -t "$TARGET"
+          [ "$(rustc --version | cut -d' ' -f2)" = "$RUST_VERSION" ] || { echo "rustc is not $RUST_VERSION"; exit 1; }
+          rustc --version
+          cargo --version
+          node --version
+      # A tesztek: lásd a ci-green jobot. Tiszta build, cache nélkül, mint a többi build jobban.
+      - name: .deb a kiadási kapukkal
+        run: scripts/build-deb.sh
+      - name: A kész .deb ellenőrzése
+        env:
+          ARCH: ${{ matrix.arch }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          [ -f "dist/linux/linvpn_${V}_${ARCH}.deb" ] && [ -f "dist/linux/linvpn_${V}_${ARCH}.deb.sha256" ] || { echo "missing linvpn_${V}_${ARCH}.deb or its .sha256"; exit 1; }
+      - name: SHA-256
+        run: cat dist/linux/linvpn_*.deb.sha256
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: deb-${{ matrix.arch }}
+          path: |
+            dist/linux/linvpn_*.deb
+            dist/linux/linvpn_*.deb.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   # 2. Release: írási jog, de nem futtat repó kódot (nincs checkout), csak a build artifactjait teszi fel egy
   #    *piszkozat* (draft) kiadásba. A `.sig` aláírást itt nem készítjük: a CI soha nem fér hozzá az aláíró kulcshoz.
   #    A karbantartó a saját gépén futtatja a `scripts/sign-release.sh vX.Y.Z`-t, ami aláír, feltölti a `.sig`-et és
   #    közzéteszi a kiadást. Aláírás nélkül a 0.2.2+ appok nem ajánlják fel és nem telepítik.
   #    A MacVPN piszkozat a Windows buildtől függetlenül elkészül, amíg a WINVPN_MSI_IN_RELEASE nem `true` (1.x: pontosan
-  #    úgy, mint eddig); ha `true`, a build-windows sikere is feltétel, és a két MSI is a piszkozatba kerül.
+  #    úgy, mint eddig); ha `true`, a build-windows sikere is feltétel, és a két MSI is a piszkozatba kerül. Ugyanígy a
+  #    LinVPN: amíg a LINVPN_DEB_IN_RELEASE nem `true`, a build-linux eredménye nem számít; ha `true`, a sikere feltétel,
+  #    és a két .deb (amd64, arm64) is a piszkozatba kerül.
   #    Build provenance (actions/attest-build-provenance): every file of the draft gets a signed SLSA attestation
   #    (Sigstore, short-lived certificate of this workflow at this tag), stored with GitHub's attestations API. The
   #    sign-release.sh script verifies it (`gh attestation verify`: this repository, release.yml, this tag and its
   #    commit) for each asset before signing, so a draft whose files were swapped after the build is refused. The
   #    attestation is made here, not in the build jobs: only this job (no repository code) gets the OIDC token.
   release:
-    needs: [build, build-windows]
+    needs: [build, build-windows, build-linux]
     if: >-
       !cancelled() && needs.build.result == 'success' &&
-      (needs.build-windows.result == 'success' || vars.WINVPN_MSI_IN_RELEASE != 'true')
+      (needs.build-windows.result == 'success' || vars.WINVPN_MSI_IN_RELEASE != 'true') &&
+      (needs.build-linux.result == 'success' || vars.LINVPN_DEB_IN_RELEASE != 'true')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -239,12 +324,20 @@ jobs:
         with:
           name: msi
           path: dist
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        if: vars.LINVPN_DEB_IN_RELEASE == 'true'
+        with:
+          pattern: deb-*
+          merge-multiple: true
+          path: dist
       - name: SHA-256 a letöltött fájlokra (az attesztáció előtt)
         env:
           WINVPN_MSI_IN_RELEASE: ${{ vars.WINVPN_MSI_IN_RELEASE }}
+          LINVPN_DEB_IN_RELEASE: ${{ vars.LINVPN_DEB_IN_RELEASE }}
         run: |
           (cd dist && sha256sum -c MacVPN-*.dmg.sha256)
           if [ "${WINVPN_MSI_IN_RELEASE:-}" = true ]; then (cd dist && sha256sum -c WinVPN-*.msi.sha256); fi
+          if [ "${LINVPN_DEB_IN_RELEASE:-}" = true ]; then (cd dist && sha256sum -c linvpn_*.deb.sha256); fi
       - name: Build provenance (DMG)
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
@@ -258,10 +351,18 @@ jobs:
           subject-path: |
             dist/WinVPN-*.msi
             dist/WinVPN-*.msi.sha256
+      - name: Build provenance (deb)
+        if: vars.LINVPN_DEB_IN_RELEASE == 'true'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            dist/linvpn_*.deb
+            dist/linvpn_*.deb.sha256
       - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
           WINVPN_MSI_IN_RELEASE: ${{ vars.WINVPN_MSI_IN_RELEASE }}
+          LINVPN_DEB_IN_RELEASE: ${{ vars.LINVPN_DEB_IN_RELEASE }}
         run: |
           ls -l dist
           FILES=(dist/MacVPN-*.dmg dist/MacVPN-*.dmg.sha256)
@@ -278,6 +379,21 @@ jobs:
             FILES+=(dist/WinVPN-*.msi dist/WinVPN-*.msi.sha256)
             TITLE="MacVPN $GITHUB_REF_NAME + WinVPN $GITHUB_REF_NAME"
             NOTES+=" WinVPN: a WinVPN-X.Y.Z-x64.msi és a WinVPN-X.Y.Z-arm64.msi nincs Authenticode-dal aláírva: a SmartScreen egyszer figyelmeztet („További információ” → „Futtatás mindenképp”). A telepítést rendszergazda végzi. A frissítéseket ugyanazok az offline Ed25519 aláírások védik (WinVPN-X.Y.Z-<arch>.msi.sig). / WinVPN: WinVPN-X.Y.Z-x64.msi and WinVPN-X.Y.Z-arm64.msi are not Authenticode-signed: SmartScreen warns once (More info → Run anyway). They are installed by an administrator. Updates are protected by the same offline Ed25519 signatures (WinVPN-X.Y.Z-<arch>.msi.sig). A WinVPN telepíti a WinVPN szolgáltatást (OpenVPN- és WireGuard-kapcsolatok) és a WireGuard aláírt wireguard.dll-jét; az OpenVPN Community-t szükség esetén a Rendszerállapotban telepítheted. / WinVPN installs the WinVPN Service (connects OpenVPN and WireGuard) and the signed wireguard.dll from WireGuard; OpenVPN Community is installed from System Status when needed."
+          fi
+          if [ "${LINVPN_DEB_IN_RELEASE:-}" != true ]; then
+            # 2.1.0-tól a LinVPN is a kiadás része: a változó hiánya a piszkozatban látható figyelmeztetést ad.
+            echo "::warning::LINVPN_DEB_IN_RELEASE is not 'true': this draft has no LinVPN .deb, and LinVPN users are offered nothing. From 2.1.0 on: delete this draft, set the repository variable to 'true' and re-run this workflow."
+          fi
+          if [ "${LINVPN_DEB_IN_RELEASE:-}" = true ]; then
+            V="${GITHUB_REF_NAME#v}"
+            # Mindkét .deb vagy egyik sem: a sign-release.sh csak így ír alá.
+            for arch in amd64 arm64; do
+              [ -f "dist/linvpn_${V}_${arch}.deb" ] && [ -f "dist/linvpn_${V}_${arch}.deb.sha256" ] || { echo "missing linvpn_${V}_${arch}.deb or its .sha256"; exit 1; }
+            done
+            (cd dist && sha256sum -c linvpn_*.deb.sha256)
+            FILES+=(dist/linvpn_*.deb dist/linvpn_*.deb.sha256)
+            TITLE="$TITLE + LinVPN $GITHUB_REF_NAME"
+            NOTES+=" LinVPN: a linvpn_X.Y.Z_amd64.deb és a linvpn_X.Y.Z_arm64.deb Debian- és Ubuntu-alapú asztali gépekre (Ubuntu 24.04 vagy újabb, Debian 13). Telepítés rendszergazdaként: sudo apt-get install ./linvpn_X.Y.Z_<arch>.deb. A frissítéseket ugyanazok az offline Ed25519 aláírások védik (linvpn_X.Y.Z_<arch>.deb.sig); a LinVPN a frissítést a rendszer jelszókérésével (pkexec) telepíti. / LinVPN: linvpn_X.Y.Z_amd64.deb and linvpn_X.Y.Z_arm64.deb for Debian and Ubuntu based desktops (Ubuntu 24.04 or newer, Debian 13). Install as an administrator: sudo apt-get install ./linvpn_X.Y.Z_<arch>.deb. Updates are protected by the same offline Ed25519 signatures (linvpn_X.Y.Z_<arch>.deb.sig); LinVPN installs them with the system's password prompt (pkexec)."
           fi
           gh release create "$GITHUB_REF_NAME" "${FILES[@]}" \
             --repo "$GITHUB_REPOSITORY" \

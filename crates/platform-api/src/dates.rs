@@ -1,4 +1,5 @@
-//! The local date formats of the UI, the same as MacVPN's (`platform-mac::system::local_date_time`).
+//! The local date formats of the UI, the same as MacVPN's (`platform-mac::system::local_date_time`), shared by WinVPN
+//! and LinVPN (each converts the time to local fields itself).
 
 use macvpn_core::l10n::AppLanguage;
 

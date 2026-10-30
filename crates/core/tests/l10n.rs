@@ -152,10 +152,13 @@ fn windows_variant_in_both_languages() {
         l10n::tr_for(WINDOWS, AppLanguage::Hu, key, &[]),
         "Add meg a mesterjelszót. A széf kulcsa ezután a Windows Hitelesítőadat-kezelőjében marad, és a WinVPN kérdés nélkül megnyílik."
     );
-    // Linux has no variant yet: the base text, with the product name.
     assert_eq!(
         l10n::tr_for(LINUX, AppLanguage::En, key, &[]),
-        "Enter the master password. Its key is then kept in the macOS Keychain, and LinVPN opens without asking."
+        "Enter the master password. Its key is then kept in your login keyring, and LinVPN opens without asking."
+    );
+    assert_eq!(
+        l10n::tr_for(LINUX, AppLanguage::Hu, key, &[]),
+        "Add meg a mesterjelszót. A széf kulcsa ezután a bejelentkezési kulcstartódban marad, és a LinVPN kérdés nélkül megnyílik."
     );
     // A variant with arguments.
     assert_eq!(

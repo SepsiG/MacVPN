@@ -1,0 +1,245 @@
+diff -ruN a/shared/nm-service-defines.h b/shared/nm-service-defines.h
+--- a/shared/nm-service-defines.h
++++ b/shared/nm-service-defines.h
+@@ -89,6 +89,11 @@
+ #define NM_OPENVPN_KEY_TUN_IPV6                  "tun-ipv6"
+ #define NM_OPENVPN_KEY_USERNAME                  "username"
+ #define NM_OPENVPN_KEY_VERIFY_X509_NAME          "verify-x509-name"
++/* LinVPN: keys of LinVPN's own service (org.freedesktop.NetworkManager.linvpn-openvpn), passed to OpenVPN */
++#define NM_OPENVPN_KEY_LINVPN_REDIRECT_GATEWAY   "linvpn-redirect-gateway"
++#define NM_OPENVPN_KEY_LINVPN_PULL_FILTER        "linvpn-pull-filter"
++#define NM_OPENVPN_KEY_LINVPN_ROUTE_NOPULL       "linvpn-route-nopull"
++#define NM_OPENVPN_KEY_LINVPN_VERB               "linvpn-verb"
+ 
+ #define NM_OPENVPN_KEY_PASSWORD                  "password"
+ #define NM_OPENVPN_KEY_CERTPASS                  "cert-pass"
+diff -ruN a/src/nm-openvpn-service-openvpn-helper.c b/src/nm-openvpn-service-openvpn-helper.c
+--- a/src/nm-openvpn-service-openvpn-helper.c
++++ b/src/nm-openvpn-service-openvpn-helper.c
+@@ -454,6 +454,7 @@
+ 	gboolean has_ip6_address = FALSE;
+ 	gchar *bus_name = NM_DBUS_SERVICE_OPENVPN;
+ 	gsize size;
++	gboolean redirect_info = FALSE; /* LinVPN: --redirect-info */
+ 
+ #if !GLIB_CHECK_VERSION (2, 35, 0)
+ 	g_type_init ();
+@@ -475,6 +476,8 @@
+ 			tapdev = 0;
+ 		else if (!strcmp (argv[i], "--tap"))
+ 			tapdev = 1;
++		else if (nm_streq (argv[i], "--redirect-info")) /* LinVPN: decision 8 */
++			redirect_info = TRUE;
+ 		else if (!strcmp (argv[i], "--bus-name")) {
+ 			if (++i == argc) {
+ 				g_printerr ("Missing bus name argument\n");
+@@ -754,6 +757,23 @@
+ 			g_variant_builder_add (&builder, "{sv}",
+ 			                       NM_VPN_PLUGIN_CONFIG_MTU,
+ 			                       g_variant_new_uint32 (mtu));
++		}
++	}
++
++	/* LinVPN: (decision 8) OpenVPN 2.7 exports the effective redirect-gateway state (profile + push + pull-filter)
++	 * for NetworkManager. Without it the tunnel never gets the default route. */
++	if (redirect_info) {
++		const char *rg4 = getenv ("route_redirect_gateway_ipv4");
++		const char *rg6 = getenv ("route_redirect_gateway_ipv6");
++
++		g_variant_builder_add (&ip4builder, "{sv}", NM_VPN_PLUGIN_IP4_CONFIG_NEVER_DEFAULT,
++		                       g_variant_new_boolean (!(rg4 && (rg4[0] == '1' || rg4[0] == '2') && rg4[1] == '\0')));
++		if (rg4 && rg4[0] == '2')
++			_LOGW ("redirect-gateway block-local is not supported by NetworkManager: routing as a plain full tunnel");
++		/* only with an IPv6 address: an IPv6 config without one is dropped below */
++		if (has_ip6_address) {
++			g_variant_builder_add (&ip6builder, "{sv}", NM_VPN_PLUGIN_IP6_CONFIG_NEVER_DEFAULT,
++			                       g_variant_new_boolean (!(rg6 && (rg6[0] == '1' || rg6[0] == '2') && rg6[1] == '\0')));
+ 		}
+ 	}
+ 
+diff -ruN a/src/nm-openvpn-service.c b/src/nm-openvpn-service.c
+--- a/src/nm-openvpn-service.c
++++ b/src/nm-openvpn-service.c
+@@ -199,6 +199,11 @@
+ 	{ NM_OPENVPN_KEY_TLS_VERSION_MIN_OR_HIGHEST,G_TYPE_BOOLEAN, 0, 0, FALSE },
+ 	{ NM_OPENVPN_KEY_TLS_VERSION_MAX,           G_TYPE_STRING, 0, 0, FALSE },
+ 	{ NM_OPENVPN_KEY_CHALLENGE_RESPONSE_FLAGS,  G_TYPE_STRING, 0, 0, FALSE },
++	/* LinVPN: the values are checked strictly in linvpn_args_add () */
++	{ NM_OPENVPN_KEY_LINVPN_REDIRECT_GATEWAY,   G_TYPE_STRING, 0, 0, FALSE },
++	{ NM_OPENVPN_KEY_LINVPN_PULL_FILTER,        G_TYPE_STRING, 0, 0, FALSE },
++	{ NM_OPENVPN_KEY_LINVPN_ROUTE_NOPULL,       G_TYPE_STRING, 0, 0, FALSE },
++	{ NM_OPENVPN_KEY_LINVPN_VERB,               G_TYPE_STRING, 0, 0, FALSE },
+ 	{ NULL,                                     G_TYPE_NONE, FALSE }
+ };
+ 
+@@ -1346,6 +1351,114 @@
+ 	io_data->proxy_password = g_strdup (nm_setting_vpn_get_secret (s_vpn, NM_OPENVPN_KEY_HTTP_PROXY_PASSWORD));
+ }
+ 
++/* LinVPN: (decision 8) the extra vpn.data keys, passed to OpenVPN itself so that it merges the profile's and the
++ * server's routing options as it does on macOS. Every value is checked with the same rules as LinVPN's Rust side;
++ * anything else fails the connection. */
++static gboolean
++linvpn_invalid (GError **error, const char *key)
++{
++	g_set_error (error, NM_VPN_PLUGIN_ERROR, NM_VPN_PLUGIN_ERROR_BAD_ARGUMENTS,
++	             _("property “%s” invalid or not supported"), key);
++	return FALSE;
++}
++
++/* ^[A-Za-z0-9 _.:/-]{1,64}$ */
++static gboolean
++linvpn_text_ok (const char *s, gsize len)
++{
++	gsize i;
++
++	if (len < 1 || len > 64)
++		return FALSE;
++	for (i = 0; i < len; i++) {
++		if (!g_ascii_isalnum (s[i]) && !NM_IN_SET (s[i], ' ', '_', '.', ':', '/', '-'))
++			return FALSE;
++	}
++	return TRUE;
++}
++
++/* ^[0-9a-f-]{36}$ */
++static gboolean
++linvpn_uuid_ok (const char *s)
++{
++	gsize i;
++
++	if (!s || strlen (s) != 36)
++		return FALSE;
++	for (i = 0; i < 36; i++) {
++		if (!g_ascii_isdigit (s[i]) && !NM_IN_SET (s[i], 'a', 'b', 'c', 'd', 'e', 'f', '-'))
++			return FALSE;
++	}
++	return TRUE;
++}
++
++static gboolean
++linvpn_args_add (GPtrArray *args, NMSettingVpn *s_vpn, int *verb, GError **error)
++{
++	const char *tmp;
++	guint i, n;
++
++	*verb = -1;
++	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_LINVPN_REDIRECT_GATEWAY);
++	if (tmp) {
++		gs_strfreev char **flags = g_strsplit (tmp, " ", 0);
++
++		args_add_strv (args, "--redirect-gateway");
++		for (i = 0, n = 0; flags[i]; i++) {
++			if (!flags[i][0])
++				continue;
++			if (   ++n > 8
++			    || !NM_IN_STRSET (flags[i], "def1", "ipv6", "!ipv4", "bypass-dhcp", "bypass-dns",
++			                      "local", "autolocal", "block-local"))
++				return linvpn_invalid (error, NM_OPENVPN_KEY_LINVPN_REDIRECT_GATEWAY);
++			args_add_strv (args, flags[i]);
++		}
++	}
++
++	/* "<ignore|accept|reject> <text>" per line, the text optionally in double quotes */
++	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_LINVPN_PULL_FILTER);
++	if (tmp) {
++		gs_strfreev char **lines = g_strsplit (tmp, "\n", 0);
++
++		for (i = 0, n = 0; lines[i]; i++) {
++			char *text;
++			gsize len;
++
++			if (!lines[i][0])
++				continue;
++			text = strchr (lines[i], ' ');
++			if (++n > 16 || !text)
++				return linvpn_invalid (error, NM_OPENVPN_KEY_LINVPN_PULL_FILTER);
++			*text++ = '\0';
++			len = strlen (text);
++			if (len >= 2 && text[0] == '"' && text[len - 1] == '"') {
++				text[len - 1] = '\0';
++				text++;
++				len -= 2;
++			}
++			if (   !NM_IN_STRSET (lines[i], "ignore", "accept", "reject")
++			    || !linvpn_text_ok (text, len))
++				return linvpn_invalid (error, NM_OPENVPN_KEY_LINVPN_PULL_FILTER);
++			args_add_strv (args, "--pull-filter", lines[i], text);
++		}
++	}
++
++	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_LINVPN_ROUTE_NOPULL);
++	if (tmp) {
++		if (!nm_streq (tmp, "yes"))
++			return linvpn_invalid (error, NM_OPENVPN_KEY_LINVPN_ROUTE_NOPULL);
++		args_add_strv (args, "--route-nopull");
++	}
++
++	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_LINVPN_VERB);
++	if (tmp) {
++		if (!(tmp[0] >= '0' && tmp[0] <= '4' && tmp[1] == '\0'))
++			return linvpn_invalid (error, NM_OPENVPN_KEY_LINVPN_VERB);
++		*verb = tmp[0] - '0';
++	}
++	return TRUE;
++}
++
+ static char *
+ mgt_path_create (NMConnection *connection, GError **error)
+ {
+@@ -1477,6 +1590,7 @@
+ 	NMOvpnComp comp;
+ 	NMOvpnAllowCompression allow_comp;
+ 	const char *private_user;
++	int linvpn_verb, verb; /* LinVPN: --verb */
+ 
+ 	s_vpn = nm_connection_get_setting_vpn (connection);
+ 	if (!s_vpn) {
+@@ -1961,14 +2075,24 @@
+ 		args_add_strv (args, "--reneg-sec", "0");
+ 	}
+ 
+-	if (gl.log_level_ovpn >= 0) {
++	/* LinVPN: the extra keys; linvpn-verb raises --verb (OpenVPN's default is 1), never lowers it */
++	if (!linvpn_args_add (args, s_vpn, &linvpn_verb, error))
++		return FALSE;
++	verb = gl.log_level_ovpn;
++	if (linvpn_verb > (verb >= 0 ? verb : 1))
++		verb = linvpn_verb;
++	if (verb >= 0) {
+ 		args_add_strv (args, "--verb");
+-		args_add_int64 (args, gl.log_level_ovpn);
++		args_add_int64 (args, verb);
+ 	}
+ 
++	/* LinVPN: one syslog identifier per connection, so that linvpn-logd can attribute OpenVPN's lines */
+ 	if (gl.log_syslog) {
+-		args_add_strv (args, "--syslog",
+-		                     "nm-openvpn");
++		args_add_strv (args, "--syslog");
++		if (linvpn_uuid_ok (nm_connection_get_uuid (connection)))
++			args_add_str_take (args, g_strconcat ("linvpn-ovpn-", nm_connection_get_uuid (connection), NULL));
++		else
++			args_add_strv (args, "linvpn-ovpn");
+ 	}
+ 
+ 	tmp = nm_setting_vpn_get_data_item (s_vpn, NM_OPENVPN_KEY_TUNNEL_MTU);
+@@ -2044,12 +2168,16 @@
+ 	/* Up script, called when connection has been established or has been restarted */
+ 	g_object_get (plugin, NM_VPN_SERVICE_PLUGIN_DBUS_SERVICE_NAME, &bus_name, NULL);
+ 	args_add_strv (args, "--up");
+-	args_add_str_take (args, g_strdup_printf ("%s --debug %d %ld --bus-name %s %s --",
++	/* LinVPN: OpenVPN >= 2.7 exports route_redirect_gateway_ipv4/6 to --up; the helper turns them into NEVER_DEFAULT */
++	args_add_str_take (args, g_strdup_printf ("%s --debug %d %ld --bus-name %s %s%s --",
+ 	                                          NM_OPENVPN_HELPER_PATH,
+ 	                                          gl.log_level,
+ 	                                          (long) getpid(),
+ 	                                          bus_name,
+-	                                          dev_type_is_tap ? "--tap" : "--tun"));
++	                                          dev_type_is_tap ? "--tap" : "--tun",
++	                                            openvpn_binary_detect_version_cached (openvpn_binary, &openvpn_binary_version)
++	                                          >= nmovpn_version_encode (2, 7, 0)
++	                                          ? " --redirect-info" : ""));
+ 
+ 	args_add_strv (args, "--up-restart");
+ 

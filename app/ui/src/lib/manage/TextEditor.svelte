@@ -4,7 +4,8 @@
   // (`WireGuardKeys`: Generate Key Pair, the public key with Copy, the private and preshared keys masked). WinVPN, IKEv2 (the backend's `platform`
   // notes): the settings Windows cannot run as yellow notes above the config (not save errors: the config stays
   // valid for macOS), Windows' summary of the entry and the settings it ignores in grey under it, and **Trust This
-  // CA in Windows…** with a PEM file the user picks.
+  // CA in Windows…** with a PEM file the user picks. LinVPN, OpenVPN: "Send all traffic over VPN" under the config
+  // (`OpenVpnRouting`), which rewrites the config text itself.
   // Inline secrets (keys, static keys, inline credentials, a strongSwan `secrets` section) are masked until "Show
   // secrets" is ticked: the backend sends the masked text (`maskedText`), shown read-only; only the real text is
   // ever edited and saved, so a mask can never be saved or half-edited. Under the config: the certificates
@@ -12,12 +13,14 @@
   import type { TextFields } from '../api';
   import Certificates from './Certificates.svelte';
   import Icon from '../Icon.svelte';
-  import { tr } from '../l10n.svelte';
+  import { i18n, tr } from '../l10n.svelte';
   import ClientCert from './ClientCert.svelte';
   import { showsKeyPassword as keyPasswordShown, showsPanel } from './clientcert';
   import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
+  import OpenVpnRouting from './OpenVpnRouting.svelte';
+  import { visible as routingVisible } from './openvpnRouting';
   import PlatformNotes from './PlatformNotes.svelte';
   import RiskyPanel from './RiskyPanel.svelte';
   import SecretField from './SecretField.svelte';
@@ -25,7 +28,11 @@
   import TrustCa from './TrustCa.svelte';
   import WireGuardKeys from './WireGuardKeys.svelte';
 
-  let { session, kind }: { session: EditorSession; kind: string } = $props();
+  let {
+    session,
+    kind,
+    openvpnPushVisible = true,
+  }: { session: EditorSession; kind: string; openvpnPushVisible?: boolean } = $props();
 
   const fields = $derived(session.fields as TextFields);
   const view = $derived(session.view);
@@ -107,6 +114,14 @@
       {/each}
     </ul>
   {/if}
+  {#if routingVisible(i18n.platform.os, kind)}
+    <OpenVpnRouting
+      config={fields.text}
+      pushVisible={openvpnPushVisible}
+      disabled={readOnly !== null}
+      onchange={(text) => (fields.text = text)}
+    />
+  {/if}
   {#if kind === 'wireguard' && view?.wireguard}
     <WireGuardKeys
       keys={view.wireguard}
@@ -124,6 +139,7 @@
       readOnly={readOnly !== null}
       onimport={() => session.importClientCert()}
       onremove={() => session.removeClientCert()}
+      onconvert={(password) => session.convertClientCert(password)}
     />
   {/if}
   {#if platform && (platform.summary || platform.warnings.length > 0 || platform.trustCa)}

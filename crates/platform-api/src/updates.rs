@@ -51,4 +51,11 @@ pub trait Updater: Send + Sync {
 
     /// The installer's download cache under `home` (removed with the user data); `None`: the platform keeps none.
     fn cache_directory(&self, home: &Path) -> Option<PathBuf>;
+
+    /// After [`launch_housekeeping`](Updater::launch_housekeeping), once: the localized "updated" text when the
+    /// previous run installed an update and relaunched this one (LinVPN: "LinVPN was updated to X.Y.Z."). macOS and
+    /// Windows show none.
+    fn take_updated_notice(&self) -> Option<String> {
+        None
+    }
 }

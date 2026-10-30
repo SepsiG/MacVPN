@@ -17,6 +17,7 @@ use crate::deps::{
     NoAuthState, Placement, RankingPersistence, SecretField, SecretReader, SecretWriter, SystemClock,
     SystemOTPPersistence, SystemVpn,
 };
+use crate::failure_reason;
 use macvpn_core::credentials::{
     self, CredentialAnswer, CredentialField, CredentialPrompt, CredentialValues, RequiredFields,
 };
@@ -737,8 +738,15 @@ impl ConnectionManager {
                 continue;
             }
             let Ok(config) = self.deps.store.load_config_wiped(&c.id) else { continue };
-            if let Some(reason) = support.as_ref().and_then(|s| s.unsupported_reason(c, config.as_bytes())) {
-                unsupported.insert(key.clone(), reason);
+            if let Some(support) = support.as_ref() {
+                let reason = if c.kind == VPNKind::Strongswan {
+                    support.unsupported_reason_with_cert(c, config.as_bytes(), self.client_cert_form(&c.id))
+                } else {
+                    support.unsupported_reason(c, config.as_bytes())
+                };
+                if let Some(reason) = reason {
+                    unsupported.insert(key.clone(), reason);
+                }
             }
             if let Some(not_after) = macvpn_core::certificates::of_config(c.kind, &config).earliest_expiry() {
                 expiry.insert(key.clone(), not_after);
@@ -748,6 +756,13 @@ impl ConnectionManager {
             }
         }
         (hosts, unsupported, expiry)
+    }
+
+    /// The form of the IKEv2 client certificate imported for `id` (G4), read from the vault and checked; the
+    /// stored value is wiped at once. `None`: none, or one that cannot be read (the connect then says so).
+    pub fn client_cert_form(&self, id: &Uuid) -> Option<macvpn_core::client_cert::Form> {
+        let stored = Zeroizing::new(self.deps.secrets.get(id, SecretField::ClientCert)?);
+        macvpn_core::client_cert::ClientCert::from_stored(&stored).map(|c| c.form())
     }
 
     /// The platform's answer which managed connections it cannot connect (read at every [`Self::reload`]; WinVPN
@@ -1374,6 +1389,20 @@ impl ConnectionManager {
 
     // MARK: - Refresh
 
+    /// A running tunnel whose log needs its connection's secrets to mask them (LinVPN: adopted from an earlier
+    /// process) gets them once the vault is unlocked; until then it is asked again at the next refresh.
+    fn hand_over_log_secrets(&self, root: &[macvpn_core::status::RootStatus]) {
+        if self.read(|i| i.locked || !i.loaded) {
+            return;
+        }
+        for status in root {
+            if self.deps.helper.wants_log_secrets(&status.id) {
+                let secrets = Zeroizing::new(self.deps.secrets.secrets(&status.id));
+                self.deps.helper.set_log_secrets(&status.id, &secrets);
+            }
+        }
+    }
+
     pub fn refresh(&self) {
         let (start, has_root) = {
             let mut i = self.lock();
@@ -1393,6 +1422,9 @@ impl ConnectionManager {
             // No root-backed connection: no query (sudo), and no error.
             Some(Vec::new())
         };
+        if let Some(root) = &root {
+            self.hand_over_log_secrets(root);
+        }
         let services = match self.deps.native.list() {
             Ok(services) => Some(services),
             Err(e) => {
@@ -1447,6 +1479,7 @@ impl ConnectionManager {
             let stale = |i: &Inner, key: &str| i.key_epoch(key) > start;
             let mut next: HashMap<String, ConnectionState> = HashMap::new();
             let mut to_stop: Vec<String> = Vec::new();
+            let mut user_stops: Vec<String> = Vec::new();
 
             for c in i.connections.clone() {
                 let key = uuid_string(&c.id);
@@ -1513,6 +1546,15 @@ impl ConnectionManager {
                     };
                     reported.map_or(ConnectionState::Disconnected, |r| r.connection_state())
                 };
+                // Stopped outside the app (LinVPN: GNOME's menu, `nmcli connection down`): off, as a disconnect of
+                // the user's, not a drop (no notice, no reconnect; the user-disconnect listeners hear it).
+                let dropped = previous.as_ref().is_some_and(ConnectionState::is_connected)
+                    && matches!(current, ConnectionState::Failed(_) | ConnectionState::Disconnected);
+                if dropped && self.stopped_outside(&c) {
+                    next.insert(key.clone(), ConnectionState::Disconnected);
+                    user_stops.push(key);
+                    continue;
+                }
                 let resolved = i.resolve(&key, &c.name, previous.as_ref(), current, c.kind.is_native());
                 next.insert(key, resolved);
             }
@@ -1596,11 +1638,14 @@ impl ConnectionManager {
             self.settle_successes(i, now);
             let events = std::mem::take(&mut i.queued_events);
             let seen = services.as_ref().map(|_| i.installed_native_ids.clone());
-            Some((events, seen, to_stop))
+            Some((events, seen, to_stop, user_stops))
         });
         let saves = std::mem::take(&mut self.lock().ready_saves);
         self.write_saves(saves);
-        let Some((events, seen, to_stop)) = applied else { return };
+        let Some((events, seen, to_stop, user_stops)) = applied else { return };
+        for key in &user_stops {
+            self.user_disconnected(key, DisconnectCause::User);
+        }
         self.emit(events);
         if let Some(seen) = seen
             && let Some(hook) = self.hooks().on_native_services_seen
@@ -1610,6 +1655,14 @@ impl ConnectionManager {
         for id in to_stop {
             let _ = self.deps.native.stop(&id);
         }
+    }
+
+    /// The connection's log says the user stopped it outside the app ([`failure_reason::stopped_by_user`]; only
+    /// LinVPN writes that line). Read only when a drop is seen.
+    fn stopped_outside(&self, c: &Connection) -> bool {
+        let source =
+            if c.kind.is_native() { self.deps.native.log_source(&c.id) } else { self.deps.helper.log_source(&c.id) };
+        source.is_some_and(|s| failure_reason::stopped_by_user(&macvpn_core::log::LogTailer::with_source(s).read_new()))
     }
 
     /// A system VPN's failure: without a PSK (L2TP / Cisco) the hint says it can be entered in MacVPN.

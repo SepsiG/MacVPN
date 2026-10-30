@@ -1,5 +1,5 @@
 #!/bin/sh
-# The WireGuard container: kernel WireGuard (Docker Desktop's VM kernel has it), UDP 51820, peers 10.99.13.2-4.
+# The WireGuard container: kernel WireGuard (Docker Desktop's VM kernel has it), UDP 51820, peers 10.99.13.2-5.
 # shellcheck source=scripts/vpn-lab/server/common.sh
 . /lab/server/common.sh
 

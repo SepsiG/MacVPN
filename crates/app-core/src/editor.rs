@@ -1101,8 +1101,14 @@ impl Draft {
     /// [`client_cert::MAX_FILE_BYTES`]) checked by [`client_cert::import`] and stored in the vault at once (a
     /// previous one is replaced). Refused for a read-only or removed editor and for anything but IKEv2.
     pub fn import_client_cert(&mut self, deps: &EditorDeps, files: &[&[u8]]) -> Result<(), String> {
-        let id = self.client_cert_target()?;
+        self.client_cert_target()?;
         let imported = client_cert::import(files)?;
+        self.store_client_cert(deps, imported)
+    }
+
+    /// A checked client certificate into the vault (LinVPN: a PKCS#12 file converted to PEM first).
+    pub fn store_client_cert(&mut self, deps: &EditorDeps, imported: client_cert::Imported) -> Result<(), String> {
+        let id = self.client_cert_target()?;
         deps.secret_writer.set(&imported.cert.stored(), &id, SecretField::ClientCert);
         self.client_cert = stored_client_cert(deps, &id);
         if self.client_cert.is_none() {
@@ -1110,6 +1116,18 @@ impl Draft {
         }
         self.client_cert_ignored = imported.ignored_certificates;
         Ok(())
+    }
+
+    /// The draft's "Private key password" set to `password`, as if typed there (LinVPN: the password a PKCS#12 file
+    /// was just converted with, which the key keeps): stored only when the connection is saved, gone on Discard.
+    /// An empty password changes nothing.
+    pub fn prefill_key_password(&mut self, password: &str) -> Result<(), String> {
+        let EditorFields::Text(f) = &self.fields else { return Ok(()) };
+        if password.is_empty() || self.kind() != Some(VPNKind::Strongswan) {
+            return Ok(());
+        }
+        let fields = TextFields { key_password: Some(password.to_string()), ..f.clone() };
+        self.update(EditorFields::Text(fields))
     }
 
     /// "Remove" of the imported client certificate (the key password stays: it is the editor's own field).
@@ -1121,7 +1139,7 @@ impl Draft {
         Ok(())
     }
 
-    fn client_cert_target(&self) -> Result<Uuid, String> {
+    pub(crate) fn client_cert_target(&self) -> Result<Uuid, String> {
         if let Some(reason) = &self.read_only {
             return Err(reason.clone());
         }
@@ -1139,6 +1157,7 @@ impl Draft {
             imported: self.client_cert.clone(),
             ignored: self.client_cert_ignored,
             import: true,
+            pkcs12_password: false,
         })
     }
 
@@ -1424,6 +1443,8 @@ pub struct ClientCertView {
     pub ignored: usize,
     /// The editor offers **Import Client Certificate…** (macOS; Windows uses the computer's certificate store).
     pub import: bool,
+    /// LinVPN: a chosen PKCS#12 file waits for its password (it is converted to PEM at import).
+    pub pkcs12_password: bool,
 }
 
 /// The vault's client certificate of `id`, if it reads back.

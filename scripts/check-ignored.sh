@@ -30,8 +30,13 @@ fi
 WRITE=0
 if [ "${1:-}" = --write ]; then WRITE=1; shift; fi
 LIST_FILE=scripts/ignored-everywhere.txt
-# The CI windows job's test set (and the release's), the app included.
-PACKAGES=(-p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper -p macvpn-winsys -p macvpn-control-client -p macvpn-app)
+# This OS's CI test set, the app included: on Linux the CI linux job's (platform-linux and unixsys); elsewhere the CI
+# windows job's (macOS lists the same crates; the Windows job passes --target).
+if [ "$(uname -s)" = Linux ]; then
+  PACKAGES=(-p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-linux -p macvpn-unixsys -p macvpn-helper -p macvpn-control-client -p macvpn-app)
+else
+  PACKAGES=(-p macvpn-core -p macvpn-app-core -p macvpn-platform-api -p macvpn-platform-win -p macvpn-helper -p macvpn-winsys -p macvpn-control-client -p macvpn-app)
+fi
 # tests all|ignored [CARGO ARGS...]: the test names (without their module path's binary), sorted, once each.
 tests() {
   local which=$1

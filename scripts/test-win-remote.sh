@@ -22,6 +22,19 @@ fi
 
 print() { WINVPN_SSH=nobody@example.invalid WINVPN_REMOTE_PRINT=1 "$SCRIPT" "$@"; }
 
+# LA-4: one folder name in the home, never a path that leaves it or a hidden folder (git clean -fdx runs there).
+for bad in "" "." ".." "/tmp/x" "/" "a/b" "a/.." "../x" "./x" ".ssh" "a b" "x;rm" "a\$b" "~" "a/"; do
+  check "refuses WINVPN_REMOTE_DIR='$bad'" bash -c "! WINVPN_SSH=a@b WINVPN_REMOTE_DIR='$bad' WINVPN_REMOTE_PRINT=1 '$SCRIPT' sync >/dev/null 2>&1"
+done
+for good in winvpn-work winvpn-work-slot1 a.b_c-1; do
+  check "accepts WINVPN_REMOTE_DIR=$good" bash -c "WINVPN_SSH=a@b WINVPN_REMOTE_DIR='$good' WINVPN_REMOTE_PRINT=1 '$SCRIPT' sync >/dev/null 2>&1"
+done
+
+# LA-5: no forwarding to the machine, whatever ~/.ssh/config says (every ssh and scp call uses SSH_OPTS).
+for opt in "-o ForwardAgent=no" "-o ForwardX11=no" "-o ClearAllForwardings=yes"; do
+  check "ssh options: $opt" grep -qF -- "$opt" "$SCRIPT"
+done
+
 TEST="$(print test)"
 LAST="$(tail -n 1 <<<"$TEST")"
 check "test: the CI windows job's set" has "$LAST" "cargo test --locked --target x86_64-pc-windows-msvc"

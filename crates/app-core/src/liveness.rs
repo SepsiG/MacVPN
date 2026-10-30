@@ -34,6 +34,15 @@
 //! `ping-restart`): the tunnel is [`Health::Reconnecting`] (shown as connecting, never connected) and dead when it
 //! has not come back within [`OPENVPN_RECONNECT_LIMIT`]. `--ping-exit` ends OpenVPN itself: that is a drop, handled
 //! as one.
+//!
+//! **Counters** (Linux): LinVPN cannot read WireGuard's last handshake without root (spike L0-3), so it reports the
+//! tunnel interface's byte counters ([`Liveness::Counters`]; WireGuard always, OpenVPN while NetworkManager has it
+//! activated). The first poll sets the baseline. Sent bytes above the baseline while the received bytes stay still
+//! start a clock; [`COUNTER_SILENCE`] after that growth was seen with still nothing received, the tunnel is dead (a
+//! live WireGuard peer answers a rekey at least every `REKEY_AFTER_TIME` while anything is sent, and keepalives
+//! count as sending). Any change of the received bytes resets the baseline and proves life. An idle tunnel (both
+//! counters still) is never dead. After a live switch the WireGuard close check above applies to the counters, with
+//! the same [`KEEPALIVE_BYTES`] allowance per keepalive and [`SWITCH_SILENCE`].
 
 use macvpn_core::liveness::{Liveness, WgPeer};
 use std::collections::HashMap;
@@ -63,6 +72,9 @@ pub const SWITCH_SILENCE: f64 = 20.0;
 pub const KEEPALIVE_BYTES: u64 = 96;
 /// After a switch, OpenVPN restarting itself for this long is dead.
 pub const SWITCH_OPENVPN_LIMIT: f64 = 60.0;
+/// Counters (Linux): sent data and nothing received for this long since the growth was seen is a dead tunnel;
+/// past WireGuard's `REJECT_AFTER_TIME`, L0-3.
+pub const COUNTER_SILENCE: f64 = 200.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Health {
@@ -119,6 +131,7 @@ impl Monitor {
                 if now - since >= limit { Health::Dead } else { Health::Reconnecting }
             }
             Liveness::WireGuard(peers) => wireguard(track, now, peers),
+            Liveness::Counters { rx, tx, keepalive } => counters(track, now, *rx, *tx, *keepalive),
         }
     }
 
@@ -190,6 +203,40 @@ fn wireguard(track: &mut Track, now: f64, peers: &[WgPeer]) -> Health {
         }
     }
     if watched > 0 && dead == watched { Health::Dead } else { Health::Alive { proven } }
+}
+
+/// The counter rule (see the module docs): one pseudo-peer whose `tx_mark` / `rx` are the baseline (`tx_mark`
+/// `None`: not seen yet).
+fn counters(track: &mut Track, now: f64, rx: u64, tx: u64, keepalive: u16) -> Health {
+    if track.peers.len() != 1 {
+        track.peers = vec![PeerTrack::default()];
+    }
+    let switch_active = track.switch.is_some_and(|s| now - s <= SWITCH_WINDOW);
+    let t = &mut track.peers[0];
+    let pseudo = WgPeer { last_handshake: None, rx, tx, keepalive, endpoint: true };
+    if switch_active && !t.sw_ok && switch_dead(t, &pseudo, now) {
+        return Health::Dead;
+    }
+    let Some(mark) = t.tx_mark else {
+        t.tx_mark = Some(tx);
+        t.rx = rx;
+        return Health::Alive { proven: false };
+    };
+    if rx != t.rx || tx < mark {
+        // Received something (or the interface's counters started over): a new baseline.
+        let received = rx != t.rx;
+        t.tx_mark = Some(tx);
+        t.rx = rx;
+        t.grew_at = None;
+        return Health::Alive { proven: received };
+    }
+    if tx > mark {
+        let grew_at = *t.grew_at.get_or_insert(now);
+        if now - grew_at >= COUNTER_SILENCE {
+            return Health::Dead;
+        }
+    }
+    Health::Alive { proven: false }
 }
 
 /// The close check after a switch (see the module docs); `true`: dead. Marks the peer answered once it is.

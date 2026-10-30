@@ -2,7 +2,7 @@
 
 [Magyar változat](control-api.hu.md)
 
-This guide is for developers who want another program on the same Mac to bring MacVPN connections up and down. Most MacVPN users never need it. The [User guide](user-guide.en.md) covers everything else. WinVPN, the Windows version, offers the same API over a named pipe: see [11](#11-windows-winvpn).
+This guide is for developers who want another program on the same Mac to bring MacVPN connections up and down. Most MacVPN users never need it. The [User guide](user-guide.en.md) covers everything else. WinVPN, the Windows version, offers the same API over a named pipe: see [11](#11-windows-winvpn). LinVPN, the Linux version, offers it over a Unix socket: see [12](#12-linux-linvpn).
 
 The API was built for [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop), a companion app that manages RDP, SSH, web admin and MikroTik connections and brings up the VPN each one needs. It is a working example of a paired app.
 
@@ -19,6 +19,7 @@ The API was built for [RemoteDesktop](https://github.com/LovaszCC/RemoteDesktop)
 9. [How to integrate a Rust app](#9-how-to-integrate-a-rust-app)
 10. [Troubleshooting](#10-troubleshooting)
 11. [Windows (WinVPN)](#11-windows-winvpn)
+12. [Linux (LinVPN)](#12-linux-linvpn)
 
 ---
 
@@ -567,3 +568,15 @@ Remove-Item Env:MACVPN_TOKEN
 - **Access denied when connecting:** you connect from another user or from a network logon (SSH, a remote shell, a service account). Run the client in the user's own desktop session.
 - **`PermissionDenied` before anything was sent:** the pipe is served by another user's process (a squatter took the name). Sign out and in again; report it to the PC's administrator.
 - **`unauthorized` after a rebuild:** as on macOS, the pairing is pinned to the executable path (`target\debug` and `target\release` differ).
+
+---
+
+## 12. Linux (LinVPN)
+
+LinVPN speaks exactly this protocol over a Unix socket, as MacVPN does (sections 3 to 10 apply as written: the same requests, events, error codes, lease rules and example client). Turning it on and pairing work as in sections 2 and 3, in LinVPN's Connections window → **Paired apps** ([LinVPN user guide, 5.3](linvpn-user-guide.en.md#53-paired-apps-control-api)).
+
+- **The socket:** `$XDG_RUNTIME_DIR/linvpn/control/linvpn.sock` (usually `/run/user/<uid>/linvpn/control/linvpn.sock`). The example client's `default_socket_path()` returns it on Linux. The `control/` folder is `0700`, the socket `0600`; LinVPN refuses to serve if `$XDG_RUNTIME_DIR` is not a private folder of the user. While **Allow other apps to control VPNs** is off, the socket does not exist.
+- **Identity:** LinVPN reads the client's user and process from the socket (`SO_PEERCRED`) and its executable path from `/proc/<pid>/exe`; the pairing is pinned to that path, as on macOS.
+- **`kind`:** the same values; `system` is one of the user's own NetworkManager VPNs (GNOME's network settings).
+- **Error codes** are the same. On Linux, `setup_required` means the NetworkManager VPN plugin of the connection's type is not installed (LinVPN's System Status lists it), and `failed` with the connection's reason covers a connection Linux cannot run ("Not supported on Linux: …").
+- **The token:** keep it in the user's keyring (the Secret Service, for example through `libsecret`) under your own item, never in a plain file, a log or on a command line.

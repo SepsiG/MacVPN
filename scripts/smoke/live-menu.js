@@ -24,7 +24,11 @@
   const product = (await invoke('get_platform')).productName;
   checks.version = !!version && document.querySelector('.version')?.textContent === `${product} ${version}`;
   // Not clipped: the window's height (set_menu_height, from the measured content) leaves the version line and
-  // the bottom padding inside the page.
+  // the bottom padding inside the page. Linux's card panel (the `overlay` page) is not sized to its content: hidden,
+  // the overlay has no size; the driver shows it once the rows above were read, and the card with its version line
+  // must then fit the overlay, which covers the work area.
+  const overlay = document.documentElement.classList.contains('overlay');
+  if (overlay) await waitFor(() => window.innerHeight > 0, 20000);
   const fits = () => {
     const line = document.querySelector('.version')?.getBoundingClientRect();
     const main = document.querySelector('main')?.getBoundingClientRect();
@@ -34,6 +38,12 @@
   const failed = Object.entries(checks)
     .filter(([, ok]) => !ok)
     .map(([k]) => k);
+  if (!checks.versionVisible) {
+    // The geometry, for the log: the version line's and the card's bottom, the window's and the work area's height.
+    const line = document.querySelector('.version')?.getBoundingClientRect();
+    const main = document.querySelector('main')?.getBoundingClientRect();
+    failed.push(`line=${Math.round(line?.bottom ?? -1)}/${Math.round(line?.height ?? -1)} main=${Math.round(main?.bottom ?? -1)} window=${window.innerHeight} screen=${window.screen.availHeight}`);
+  }
   const id = 'C2111111-2222-4333-8444-555555555555';
   const view = await invoke('editor_open', { id });
   await invoke('editor_save', { id, fields: { ...view.fields, name: failed.length === 0 ? 'MENU OK' : `MENU FAILED ${failed.join(',')}` } });

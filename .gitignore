@@ -15,3 +15,7 @@ app/src-tauri/gen/
 
 # The VPN test lab's generated state (throwaway credentials, keys, profiles): scripts/vpn-lab/profiles.sh
 scripts/vpn-lab/.state*/
+
+# Throwaway spike projects (LinVPN L0): their builds and lock files.
+/spikes/*/target/
+/spikes/*/Cargo.lock

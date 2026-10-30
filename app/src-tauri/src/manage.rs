@@ -225,6 +225,20 @@ pub async fn editor_import_client_cert(app: AppHandle, state: Shared<'_>, id: St
     .await?
 }
 
+/// LinVPN: the password of the PKCS#12 file **Import Client Certificate…** chose (converted to PEM with it), or
+/// `None` to cancel that import. The password is wiped after the conversion.
+#[tauri::command]
+pub async fn editor_convert_client_cert(
+    state: Shared<'_>,
+    id: String,
+    password: Option<String>,
+) -> Result<EditorView, String> {
+    managed(&state, &id)?;
+    let password = password.map(zeroize::Zeroizing::new);
+    let shared = state.inner().clone();
+    blocking(move || shared.connections.convert_client_cert(&id, password.as_deref().map(String::as_str))).await?
+}
+
 /// "Remove" of an IKEv2 editor's imported client certificate (deleted from the vault at once).
 #[tauri::command]
 pub async fn editor_remove_client_cert(state: Shared<'_>, id: String) -> Result<EditorView, String> {

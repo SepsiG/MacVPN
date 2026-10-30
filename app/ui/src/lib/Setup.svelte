@@ -5,14 +5,15 @@
   // confirmation and final message. The texts of the rows come from the backend.
   // On WinVPN the WinVPN Service, OpenVPN Community and WireGuard rows replace the first three (with the OpenVPN
   // installer's output); the Windows VPN client row (WinVPN 2c) follows them, or the engine note when the service
-  // is missing (the native Windows VPNs need no service).
+  // is missing (the native Windows VPNs need no service). On LinVPN (L-b) the NetworkManager row and one row per
+  // kind (its plugin, with "Install" when a package is missing: PackageKit's own prompt) replace them.
   import { onMount, tick } from 'svelte';
   import { api, onViewModel, type Notice, type UninstallResult, type ViewModel } from './api';
   import CheckRow from './CheckRow.svelte';
   import Icon from './Icon.svelte';
-  import { setLanguage, tr } from './l10n.svelte';
+  import { i18n, setLanguage, tr } from './l10n.svelte';
   import Modal from './manage/Modal.svelte';
-  import { engineRows, rasRow, uninstallTexts } from './setup';
+  import { engineRows, nmRows, opensInstalledApps, rasRow, uninstallTexts } from './setup';
   import './manage/manage.css';
 
   let vm = $state<ViewModel | null>(null);
@@ -22,7 +23,7 @@
   let uninstalled = $state<UninstallResult | null>(null);
   let output: HTMLElement | undefined = $state();
   // The engine row whose button ran last: the installer's output box is shown under it (WinVPN).
-  let outputRow = $state<'openvpn' | 'wireguard'>('openvpn');
+  let outputRow = $state<string>('openvpn');
 
   function runEngineAction(row: 'openvpn' | 'wireguard') {
     outputRow = row;
@@ -30,6 +31,14 @@
   }
 
   const setup = $derived(vm?.setup ?? null);
+  // LinVPN: NetworkManager and the kinds' plugin rows (none on macOS and Windows).
+  const nmItems = $derived(setup ? nmRows(setup, tr) : []);
+
+  // LinVPN: installs the plugin of `kind` (its raw value) through PackageKit; the output box follows its row.
+  function runNmInstall(kind: string) {
+    outputRow = `nm-${kind}`;
+    api.setupInstallTools(kind).catch(console.error);
+  }
   // "Uninstall MacVPN…", or WinVPN's "Remove WinVPN from This Account…" (the clean-up before the MSI's uninstall).
   const uninstallText = $derived(uninstallTexts(setup ?? {}, tr));
 
@@ -149,6 +158,28 @@
         <p class="caption later-note">{engine.laterNote}</p>
       {/if}
       <hr class="full" />
+    {:else if setup && nmItems.length > 0}
+      {#each nmItems as item, i (item.id)}
+        {#if i > 0}
+          <hr />
+        {/if}
+        <CheckRow row={item.row} title={item.title} showAction={item.install !== undefined}>
+          {#if item.install}
+            {@const install = item.install}
+            <button id={item.install.buttonId} disabled={!setup.canInstallTools} onclick={() => runNmInstall(install.kind)}>
+              {#if setup.brewRunning && outputRow === item.id}
+                {tr('Installing…')}
+              {:else}
+                {tr('Install')}
+              {/if}
+            </button>
+          {/if}
+        </CheckRow>
+        {#if item.id === outputRow && setup.brewOutput}
+          <pre class="output" bind:this={output}>{setup.brewOutput}</pre>
+        {/if}
+      {/each}
+      <hr class="full" />
     {:else if setup?.homebrew && setup.tools && setup.root}
       <CheckRow row={setup.homebrew} title={tr('Homebrew')}>
         <button onclick={() => installHomebrew().catch(console.error)}>{tr('Install…')}</button>
@@ -183,7 +214,7 @@
       <hr class="full" />
     {/if}
     <div class="line">
-      {#if !setup?.engine}
+      {#if !setup?.engine && nmItems.length === 0}
         <span class="caption">{tr('L2TP and Cisco IPsec work without these.')}</span>
       {/if}
       <span class="spacer"></span>
@@ -215,16 +246,21 @@
     </div>
   {/if}
 
+  <!-- WinVPN: the MSI's uninstall in Settings → Apps; LinVPN: the package's removal command (no page to open). -->
   {#if setup?.systemUninstall}
-    <div class="card">
+    <div class="card system-uninstall">
       <div class="line">
         <span class="caption">{setup.systemUninstall}</span>
-        <span class="spacer"></span>
-        <button onclick={() => api.setupOpenSystemUninstall().catch(console.error)}>{tr('Open Installed Apps…')}</button>
+        {#if opensInstalledApps(i18n.platform.os)}
+          <span class="spacer"></span>
+          <button onclick={() => api.setupOpenSystemUninstall().catch(console.error)}>{tr('Open Installed Apps…')}</button>
+        {/if}
       </div>
     </div>
   {/if}
-  {#if !setup?.systemUninstall || setup.accountCleanup}
+  <!-- Without an engine (LinVPN's sandbox) the app installed nothing of its own to remove, and with the system's
+       uninstall note (LinVPN, WinVPN without its account clean-up) the system removes it: no uninstall area. -->
+  {#if !setup?.engineNote && (!setup?.systemUninstall || setup.accountCleanup)}
     <div class="card danger">
       <div class="line">
         <span class="caption">{uninstallText.caption}</span>

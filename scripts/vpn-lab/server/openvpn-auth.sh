@@ -1,6 +1,6 @@
 #!/bin/sh
 # OpenVPN auth-user-pass-verify (via-file): $1 holds the user name and the password.
-# - LAB_USER: the password.
+# - LAB_USER and LAB_FULL_USER (the server pushes redirect-gateway to it: ccd/): the password.
 # - LAB_OTP_USER: the password with the code appended (separator none, "," or ":"), a static challenge response
 #   (SCRV1:base64(password):base64(code)), or the password alone, answered with a dynamic challenge (CRV1); the
 #   CRV1 response (CRV1::<state>::<code>) then completes it.
@@ -12,7 +12,7 @@ pass="$(sed -n 2p "$1")"
 state_file="/tmp/crv1-state"
 b64d() { printf '%s' "$1" | base64 -d 2>/dev/null || true; }
 
-if [ "$user" = "$LAB_USER" ]; then
+if [ "$user" = "$LAB_USER" ] || [ "$user" = "${LAB_FULL_USER:-}" ]; then
   [ "$pass" = "$LAB_PASSWORD" ] && exit 0
   exit 1
 fi

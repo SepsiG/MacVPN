@@ -1,5 +1,6 @@
-//! The per-OS Tauri config (Task 10): `tauri.conf.json` holds what every OS shares, `tauri.macos.conf.json` and
-//! `tauri.windows.conf.json` are merged over it by the Tauri CLI (JSON merge patch). Reads the JSON files only.
+//! The per-OS Tauri config (Task 10): `tauri.conf.json` holds what every OS shares, `tauri.macos.conf.json`,
+//! `tauri.windows.conf.json` and `tauri.linux.conf.json` are merged over it by the Tauri CLI (JSON merge patch).
+//! Reads the JSON files only.
 
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -152,6 +153,44 @@ fn the_conf_fragment_is_open_with_only() {
     assert!(!fragment.contains("<ProgId") && !fragment.contains("<Extension"));
 }
 
+/// LinVPN's identity (`tauri.linux.conf.json` merged over the base, as the Tauri CLI and `generate_context!` do on
+/// Linux): the menu window is the card panel's transparent overlay (spike L0-2, CP-L0: maximized at show, the card
+/// drawn at the top-right, the input region the card); everything else of the base popover stays.
+#[test]
+fn linux_config_is_linvpn() {
+    let base = config("tauri.conf.json");
+    let linux = config("tauri.linux.conf.json");
+    let merged = merged_config("tauri.linux.conf.json");
+    assert_eq!(merged["productName"], "LinVPN");
+    assert_eq!(merged["mainBinaryName"], "linvpn");
+    assert_eq!(merged["identifier"], "local.linvpn");
+    assert_eq!(merged["bundle"]["active"], false, "the .deb is built by scripts/build-deb.sh");
+    assert_eq!(merged["bundle"]["copyright"], "LinVPN");
+    assert_eq!(merged["version"], base["version"]);
+    assert!(linux.get("version").is_none(), "no version of its own");
+    assert_eq!(merged["app"]["security"], base["app"]["security"], "the CSP and the capabilities are shared");
+    let windows = merged["app"]["windows"].as_array().unwrap();
+    assert_eq!(windows.len(), 1);
+    let menu = &windows[0];
+    assert_eq!(menu["label"], "menu");
+    assert_eq!(menu["title"], "LinVPN");
+    assert_eq!(menu["transparent"], true, "the overlay: only the card is drawn");
+    assert!(menu.get("useHttpsScheme").is_none(), "WebKitGTK serves tauri://localhost, as macOS");
+    // Arrays are replaced whole by the merge: the popover keeps every other setting of the base.
+    let base_menu = base["app"]["windows"][0].as_object().unwrap();
+    for (key, value) in base_menu {
+        if key != "title" {
+            assert_eq!(&menu[key], value, "menu.{key}");
+        }
+    }
+    let extra: Vec<&String> = menu.as_object().unwrap().keys().filter(|k| !base_menu.contains_key(*k)).collect();
+    assert_eq!(extra, ["transparent"]);
+    assert!(merged["app"].get("macOSPrivateApi").is_none());
+    for key in ["targets", "icon", "macOS", "windows", "fileAssociations", "resources"] {
+        assert!(merged["bundle"].get(key).is_none(), "bundle.{key}: the .deb has its own files");
+    }
+}
+
 /// `scripts/build-dmg.sh` reads the version from `tauri.conf.json` (`plutil -extract version`): it stays there.
 #[test]
 fn build_script_finds_the_version_in_the_base_config() {
@@ -161,7 +200,7 @@ fn build_script_finds_the_version_in_the_base_config() {
     let version = config("tauri.conf.json")["version"].as_str().unwrap().to_string();
     let workspace = std::fs::read_to_string(root().join("Cargo.toml")).unwrap();
     assert!(workspace.contains(&format!("\nversion = \"{version}\"\n")), "tauri.conf.json version {version}");
-    for name in ["tauri.macos.conf.json", "tauri.windows.conf.json"] {
+    for name in ["tauri.macos.conf.json", "tauri.windows.conf.json", "tauri.linux.conf.json"] {
         assert!(config(name).get("version").is_none(), "{name} has no version of its own");
     }
 }

@@ -281,6 +281,7 @@ pub const REASON_WEAKENS: &str = "Weakens the security of the tunnel (deprecated
 pub const REASON_ROUTING: &str = "Allows routing that can bypass or loop the tunnel";
 pub const REASON_PLATFORM: &str = "Not supported on macOS (Windows or Linux only)";
 pub const REASON_PLATFORM_WINDOWS: &str = "Not supported on Windows (Linux only)";
+pub const REASON_PLATFORM_LINUX: &str = "Not supported on Linux";
 /// No table uses it since 2b (the Windows tier forbids these names); kept because its text is in the l10n baseline.
 pub const REASON_SERVICE_OWNED: &str = "Set by the VPN service itself, not by a connection's config";
 pub const REASON_STANDALONE: &str = "Standalone mode: OpenVPN prints information or exits instead of connecting";
@@ -414,12 +415,104 @@ pub static FORBIDDEN_WINDOWS: LazyLock<HashSet<&'static str>> = LazyLock::new(||
 static PLATFORM_WINDOWS: LazyLock<HashMap<&'static str, &'static str>> =
     LazyLock::new(|| [("setcon", REASON_PLATFORM_WINDOWS)].into());
 
-/// A draft (phase 4 revisits `setcon`): the macOS table without `setcon`.
-static PLATFORM_LINUX: LazyLock<HashMap<&'static str, &'static str>> =
-    LazyLock::new(|| NOT_ON_MACOS.into_iter().filter(|d| *d != "setcon").map(|d| (d, REASON_PLATFORM)).collect());
+pub const REASON_IGNORED_LINUX: &str = "Ignored by NetworkManager on Linux";
+
+/// Linux (LinVPN, spike L0-1 "Proposed Linux tier"): NetworkManager's OpenVPN service builds OpenVPN's command line
+/// from its own `vpn.data` keys only, so these are dropped: RISKY with their own reason (the user acknowledges that
+/// they have no effect). The tuning row, the TLS and peer-check details NM has no key for, the routing details
+/// `nm_plan` cannot express, and the other OSes' names (`NOT_ON_MACOS` but `setcon`). Not here: the names NM or
+/// `nm_plan` expresses, and the ones NM already does itself or that are no-ops on Linux (`nobind`, `persist-*`,
+/// `auth-nocache`, `resolv-retry`, the Windows-only SAFE options, …): they stay SAFE, so everyday profiles need no
+/// acknowledgement. `lport 0` (= NM's own `--nobind`, written by pfSense and OPNsense exports) gives no finding
+/// either (`check_unwrapped`). The refusals (a server check NM cannot express, a route past the tunnel, …) are
+/// `nm_plan::openvpn`'s reasons, not tiers: the config stays valid for macOS and Windows.
+const IGNORED_ON_LINUX: [&str; 69] = [
+    // Tuning: MTU and buffers, sockets, timers, process.
+    "link-mtu",
+    "udp-mtu",
+    "tun-mtu-extra",
+    "tun-mtu-max",
+    "max-packet-size",
+    "mtu-test",
+    "sndbuf",
+    "rcvbuf",
+    "txqueuelen",
+    "fast-io",
+    "tcp-nodelay",
+    "socket-flags",
+    "mark",
+    "bind",
+    "bind-dev",
+    "local",
+    "lport",
+    "passtos",
+    "nice",
+    "mlock",
+    "shaper",
+    "replay-window",
+    "hand-window",
+    "tran-window",
+    "tls-timeout",
+    "reneg-bytes",
+    "reneg-pkts",
+    "inactive",
+    "session-timeout",
+    "connect-retry",
+    "connect-retry-max",
+    "proto-force",
+    "persist-local-ip",
+    "persist-remote-ip",
+    "multihome",
+    "preresolve",
+    "ip-remote-hint",
+    "remap-usr1",
+    "up-delay",
+    "tls-exit",
+    "prng",
+    "keying-material-exporter",
+    "force-tls-key-material-export",
+    "use-prediction-resistance",
+    "http-proxy-option",
+    "http-proxy-timeout",
+    "tcp-queue-limit",
+    "ping-timer-rem",
+    // TLS and peer-check details: OpenVPN's default applies.
+    "tls-groups",
+    "ecdh-curve",
+    "tls-ciphersuites",
+    "tls-cert-profile",
+    "x509-track",
+    "x509-username-field",
+    "auth-token",
+    "auth-token-user",
+    "comp-noadapt",
+    // Routing details NM cannot express.
+    "route-gateway",
+    "route-ipv6-gateway",
+    "route-table",
+    "ifconfig-ipv6",
+    "block-ipv6",
+    // The other OSes' OpenVPN (`setcon` has its own reason below).
+    "win-sys",
+    "service",
+    "cryptoapicert",
+    "allow-nonadmin",
+    "msg-channel",
+    "rdns-internal",
+    "dhcp-internal",
+];
+
+static PLATFORM_LINUX: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
+    let mut t: HashMap<&'static str, &'static str> =
+        IGNORED_ON_LINUX.into_iter().map(|d| (d, REASON_IGNORED_LINUX)).collect();
+    // An SELinux context for the OpenVPN daemon: NetworkManager's OpenVPN service cannot pass it.
+    t.insert("setcon", REASON_PLATFORM_LINUX);
+    t
+});
 
 /// The platform tier: directives this OS refuses or that need an acknowledgement here, with the reason (`L10n`
-/// key). Consulted after [`RISKY_REASONS`].
+/// key). Consulted after [`RISKY_REASONS`]; it overrides the SAFE table (Linux: the names NetworkManager ignores
+/// keep their argument checks, see `check_unwrapped`, but are RISKY).
 pub fn platform_reasons(os: TargetOs) -> &'static HashMap<&'static str, &'static str> {
     match os {
         TargetOs::MacOs => &PLATFORM_MACOS,
@@ -897,12 +990,14 @@ impl OpenVPNValidator {
         Self::allowed_for(TargetOs::host())
     }
 
-    /// SAFE directives on `os` (the `argument_specs` keys; Windows leaves out `FORBIDDEN_WINDOWS`).
+    /// SAFE directives on `os` (the `argument_specs` keys; Windows leaves out `FORBIDDEN_WINDOWS`, every OS its
+    /// platform tier: on Linux the names NetworkManager ignores).
     pub fn allowed_for(os: TargetOs) -> HashSet<&'static str> {
         let mut names: HashSet<&'static str> = ARGUMENT_SPECS.keys().copied().collect();
         if os == TargetOs::Windows {
             names.retain(|d| !FORBIDDEN_WINDOWS.contains(d));
         }
+        names.retain(|d| !platform_reasons(os).contains_key(d));
         names
     }
 
@@ -915,6 +1010,7 @@ impl OpenVPNValidator {
         let host = TargetOs::host();
         argument_spec_for(host, directive).is_some()
             && !(host == TargetOs::Windows && set_contains(&FORBIDDEN_WINDOWS, directive))
+            && map_get(platform_reasons(host), directive).is_none()
     }
 
     /// The tier of a directive on this OS ([`OpenVPNValidator::tier_for`] with [`TargetOs::host`]).
@@ -930,10 +1026,14 @@ impl OpenVPNValidator {
         if os == TargetOs::Windows && set_contains(&FORBIDDEN_WINDOWS, directive) {
             return OpenVPNTier::Forbidden;
         }
+        // The platform tier before the SAFE table: on Linux the names NetworkManager ignores have an argument spec.
+        if map_get(platform_reasons(os), directive).is_some() {
+            return OpenVPNTier::Risky;
+        }
         if directive == "setenv" || argument_spec_for(os, directive).is_some() {
             return OpenVPNTier::Safe;
         }
-        if map_get(&RISKY_REASONS, directive).is_some() || map_get(platform_reasons(os), directive).is_some() {
+        if map_get(&RISKY_REASONS, directive).is_some() {
             return OpenVPNTier::Risky;
         }
         if matches(directive, FORBIDDEN_PATTERN) { OpenVPNTier::Forbidden } else { OpenVPNTier::Risky }
@@ -1264,10 +1364,18 @@ impl OpenVPNValidator {
         if directive == "connection" {
             return fail(l10n::tr("Invalid directive", &[]));
         }
+        // A SAFE directive the platform ignores (Linux: NetworkManager drops it): checked as SAFE below, then
+        // reported as RISKY with the platform's reason, in a `<connection>` block too (where OpenVPN allows it).
+        // `lport 0` asks for what NetworkManager does anyway (`--nobind`): no finding.
+        let ignored = argument_spec_for(os, &directive)
+            .and_then(|_| map_get(platform_reasons(os), &directive))
+            .copied()
+            .filter(|_| !(directive == "lport" && args.len() == 1 && swift_str::eq(&args[0], "0")));
         match Self::tier_for(os, &directive) {
             OpenVPNTier::Forbidden => {
                 return fail(l10n::tr("Forbidden directive: %@", &[Arg::Str(&directive)]) + &hint());
             }
+            OpenVPNTier::Risky if argument_spec_for(os, &directive).is_some() => {}
             OpenVPNTier::Risky => {
                 if in_connection {
                     return not_in_connection();
@@ -1316,7 +1424,8 @@ impl OpenVPNValidator {
                 _ => return fail(l10n::tr("Invalid argument: %@", &[Arg::Str(&directive)])),
             }
         }
-        LineResult { directive: Some(directive), ..Default::default() }
+        let risky = ignored.map(|reason| (directive.clone(), reason));
+        LineResult { messages: vec![], directive: Some(directive), risky }
     }
 
     pub(crate) fn argument_matches(arg: &str, rule: ArgRule) -> bool {

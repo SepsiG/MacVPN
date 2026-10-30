@@ -348,3 +348,41 @@ fn previous_update_notice_is_shown_once() {
     s.controller.dismiss_notice();
     assert_eq!(s.controller.view().notice, None);
 }
+
+#[test]
+fn install_takes_a_release_published_since_the_last_check() {
+    let s = setup(true);
+    offered(&s);
+    s.source.answer(Ok(release("1.3.0", Some(NOW - 7200.0), true)));
+    let outcome = s.controller.install(|r, _| {
+        assert_eq!(r.version, "1.3.0", "the newest, not the one offered at the last check");
+        Ok(InstallOutcome::HelperLaunched)
+    });
+    assert_eq!(outcome, InstallOutcome::HelperLaunched);
+    assert_eq!(s.controller.view().available.as_deref(), Some("v1.3.0"));
+}
+
+#[test]
+fn install_keeps_the_offered_release_when_the_newest_cannot_be_offered() {
+    let s = setup(true);
+    offered(&s);
+    let installs = |s: &Setup| {
+        s.controller.install(|r, _| {
+            assert_eq!(r.version, "1.1.0");
+            Ok(InstallOutcome::Cancelled)
+        })
+    };
+    // Not signed yet.
+    s.source.answer(Ok(release("1.3.0", Some(NOW - 7200.0), false)));
+    assert_eq!(installs(&s), InstallOutcome::Cancelled);
+    // The check fails.
+    s.source.answer(Err("offline"));
+    assert_eq!(installs(&s), InstallOutcome::Cancelled);
+    // Published within the 24 hours while the delay is on (the offered one is older than that).
+    s.source.answer(Ok(release("1.1.0", Some(NOW - 3.0 * 86400.0), true)));
+    assert!(s.controller.check());
+    s.controller.set_delay_updates(true);
+    s.source.answer(Ok(release("1.3.0", Some(NOW - 60.0), true)));
+    assert_eq!(installs(&s), InstallOutcome::Cancelled);
+    assert_eq!(s.controller.view().available.as_deref(), Some("v1.1.0"));
+}

@@ -44,12 +44,18 @@ rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher"], optional = t
 # Windows: SQLCipher 4 with a vendored OpenSSL (docs/superpowers/spikes/2026-10-20-windows-check-spike.md, decision
 # B), so the vault compiles and its tests run on Windows CI. It puts openssl-src and openssl-sys into Cargo.lock, but
 # resolver 3 never activates them for a macOS target: `cargo tree --target <macOS target> -i openssl-sys` prints
-# nothing, and the release gate in scripts/build-dmg.sh checks that the app links no OpenSSL. Linux comes later.
+# nothing, and the release gate in scripts/build-dmg.sh checks that the app links no OpenSSL. Linux: the same, below.
 [target.'cfg(windows)'.dependencies]
 rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }
 # The Win32 calls of `fsx` on Windows (core itself has no `unsafe`): the current user's SID, the handle-based
 # owner, ACL, identity and link count (plan 2a, Tasks 4 and 8).
 macvpn-winsys = { path = "../winsys" }
+
+# Linux: SQLCipher 4 with the vendored OpenSSL, as on Windows (LinVPN plan, "Resolved points"): statically linked, no
+# dependency on the distribution's libssl package; scripts/build-deb.sh checks the binary links no libssl, libcrypto
+# or libsqlite3.
+[target.'cfg(target_os = "linux")'.dependencies]
+rusqlite = { version = "=0.40.2", features = ["bundled-sqlcipher-vendored-openssl"], optional = true }
 
 [features]
 # The vault code (key hierarchy, database). Only the app side (app-core, platform-mac) enables it; the root layer

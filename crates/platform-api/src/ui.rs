@@ -43,6 +43,12 @@ pub trait WindowChrome: Send + Sync {
     fn tray_tint(&self) -> Option<[u8; 3]> {
         None
     }
+    /// The system's light/dark setting when the toolkit does not follow it by itself: `Some(true)` dark,
+    /// `Some(false)` light, `None` the toolkit follows the system (macOS, Windows) or the setting is unknown.
+    /// Linux: the desktop portal's `color-scheme` (GTK 3 and WebKitGTK ignore it). `Appearance::System` uses it.
+    fn system_dark(&self) -> Option<bool> {
+        None
+    }
 }
 
 /// Open and save panels, as sheets on `parent`. Main thread only; they return at once and call `done` later
