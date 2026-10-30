@@ -233,6 +233,7 @@ fn a_signed_package_is_downloaded_and_kept_with_its_signature() {
 
 #[test]
 fn a_bad_checksum_or_signature_deletes_the_package() {
+    l10n::set_text_platform(LINUX);
     let (key, public) = test_key();
     let sha = sha256_hex(BODY);
     let other = "b".repeat(64);

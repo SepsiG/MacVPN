@@ -385,7 +385,16 @@ jobs:
             arch: arm64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
+    # Built on the release's target, Ubuntu 26.04: LinVPN's NM OpenVPN service (NetworkManager-openvpn 1.12.5) needs
+    # libnm >= 1.52.2, and the binaries take the target's glibc. The runner image itself is older.
+    container: ubuntu:26.04
     steps:
+      - name: Container tools (git for checkout, curl and certificates for the toolchain, sudo-less apt)
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends git ca-certificates curl xz-utils rustup
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
@@ -395,12 +404,10 @@ jobs:
           # No automatic cache: release builds must not restore a cache written elsewhere.
           package-manager-cache: false
       # LinVPN's NM OpenVPN service (scripts/build-nm-linvpn-openvpn.sh, upstream's autotools build) needs libnm, GLib,
-      # pkg-config and gettext. The runner's libnm (NM 1.46 on 24.04) is older than the target's; the service uses only
-      # libnm >= 1.10 symbols, and dpkg-shlibdeps records the minimum it really needs.
+      # pkg-config and gettext; dpkg-shlibdeps records the minimum it really needs.
       - name: Build dependencies (Tauri's Linux prerequisites; dpkg-dev and desktop-file-utils for the package gates; the NM service's)
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev dpkg-dev desktop-file-utils \
             pkg-config gettext libnm-dev libglib2.0-dev
       - name: LinVPN's NM OpenVPN service build script (print mode)

@@ -115,7 +115,9 @@ SLICES=$(mktemp -d)
 trap 'rm -rf "$SLICES"' EXIT
 for a in "${ARCHS[@]}"; do
   lipo -thin "$a" -output "$SLICES/MacVPN-$a" "$APP_BIN"
-  if LC_ALL=C grep -a -q -F -e openssl -e libcrypto "$SLICES/MacVPN-$a"; then
+  # libcrypto's own texts (its OPENSSLDIR line, the openssl.cnf name), not the word "openssl": the app's texts name the
+  # openssl package (LinVPN's PKCS#12 import).
+  if LC_ALL=C grep -a -q -F -e OPENSSLDIR -e openssl.cnf -e libcrypto "$SLICES/MacVPN-$a"; then
     die "the app binary ($a) contains OpenSSL (an OPENSSL_* variable reached the SQLCipher build?)"
   fi
   if LC_ALL=C grep -a -q -F 'SQLite format' "$SLICES/MacVPN-$a"; then

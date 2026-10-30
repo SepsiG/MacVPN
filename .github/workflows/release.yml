@@ -223,9 +223,18 @@ jobs:
             arch: arm64
             target: aarch64-unknown-linux-gnu
     runs-on: ${{ matrix.runner }}
+    # A kiadás célrendszerén, Ubuntu 26.04-en épül: a LinVPN NM OpenVPN szolgáltatásának (NetworkManager-openvpn
+    # 1.12.5) libnm >= 1.52.2 kell, és a binárisok a célrendszer glibc-jét veszik fel. A runner image régebbi.
+    container: ubuntu:26.04
     permissions:
       contents: read
     steps:
+      - name: Konténer-eszközök (git a checkouthoz, curl és tanúsítványok a toolchainhez, sudo nélküli apt)
+        run: |
+          apt-get update
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends git ca-certificates curl xz-utils rustup
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Tag ellenőrzése
         run: |
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "Invalid tag: $GITHUB_REF_NAME"; exit 1; }
@@ -249,12 +258,10 @@ jobs:
           CONF=$(node -p "require('./app/src-tauri/tauri.conf.json').version")
           [ "$CONF" = "$V" ] || { echo "tauri.conf.json version ($CONF) != tag ($V)"; exit 1; }
       # A LinVPN saját NetworkManager OpenVPN szolgáltatásához (scripts/build-nm-linvpn-openvpn.sh, az upstream
-      # autotools buildje) kell a libnm, a GLib, a pkg-config és a gettext. A runner libnm-je (NM 1.46, 24.04) régebbi a
-      # célrendszerénél; a szolgáltatás csak libnm >= 1.10 szimbólumokat használ, a minimumot a dpkg-shlibdeps rögzíti.
+      # autotools buildje) kell a libnm, a GLib, a pkg-config és a gettext; a minimumot a dpkg-shlibdeps rögzíti.
       - name: Build-függőségek
         run: |
-          sudo apt-get update
-          sudo apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends build-essential libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev dpkg-dev desktop-file-utils \
             pkg-config gettext libnm-dev libglib2.0-dev
       - name: A NM OpenVPN szolgáltatás build-szkriptje (kiíró mód)
