@@ -232,7 +232,7 @@ jobs:
       - name: Konténer-eszközök (git a checkouthoz, curl és tanúsítványok a toolchainhez, sudo nélküli apt)
         run: |
           apt-get update
-          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends git ca-certificates curl xz-utils rustup
+          DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends git ca-certificates curl xz-utils rustup libstdc++6 libatomic1
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
       - name: Tag ellenőrzése
