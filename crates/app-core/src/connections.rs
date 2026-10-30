@@ -4,11 +4,12 @@
 //! quit), "save all" with the "Saving failed" report, and the one-time Log / Settings tab requests.
 
 use crate::deps::SecretField;
-use crate::editor::{Cert, Draft, EditorDeps, EditorFields, EditorPlatformView, EditorView, Target};
+use crate::editor::{Cert, CertificatesView, Draft, EditorDeps, EditorFields, EditorPlatformView, EditorView, Target};
 use crate::import_export::{self, ImportReport};
 use crate::manager::ConnectionItem;
 use crate::questions::{QuestionBroker, QuestionView};
 use crate::shared_credentials::{self, CredentialsView, ImportLink, SharedCredentials};
+use macvpn_core::certificates::{self, ConfigCertificates};
 use macvpn_core::importer;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::LogFilter;
@@ -208,7 +209,20 @@ pub struct ConnectionsModel {
     native_platform: Mutex<Option<NativePlatform>>,
     /// The last SSTP custom CA asked about and the platform's answer (the editor's updates do not ask again).
     ca_trust: Mutex<Option<(String, Option<bool>)>>,
+    /// **Import Client Certificate…** is offered (G4): the platform loads an IKEv2 client key itself (macOS'
+    /// root layer 12). Off where the system's certificate store signs (WinVPN) or the staging is missing.
+    client_cert_import: std::sync::atomic::AtomicBool,
+    /// The swanctl folder whose `x509` / `x509ca` files the IKEv2 editor shows ([`Self::set_swanctl_folder`]).
+    swanctl_folder: Mutex<Option<PathBuf>>,
+    /// The swanctl files last read and their certificates (read again when the list changes or an editor opens).
+    swanctl_cache: Mutex<Option<SwanctlRead>>,
 }
+
+/// The swanctl files read (`(is_ca, name)`) and their certificates.
+type SwanctlRead = (Vec<(bool, String)>, ConfigCertificates);
+
+/// The largest swanctl certificate file read for the editor.
+const MAX_SWANCTL_FILE_BYTES: u64 = 64 * 1024;
 
 /// [`ConnectionsModel::set_native_platform`].
 #[derive(Clone)]
@@ -233,13 +247,75 @@ impl ConnectionsModel {
             kind_gate: Mutex::new(None),
             native_platform: Mutex::new(None),
             ca_trust: Mutex::new(None),
+            client_cert_import: std::sync::atomic::AtomicBool::new(true),
+            swanctl_folder: Mutex::new(None),
+            swanctl_cache: Mutex::new(None),
         }
+    }
+
+    /// The swanctl folder (macOS: Homebrew's `etc/swanctl`) whose `x509` (`certs = …`) and `x509ca` (`cacerts = …`)
+    /// files the IKEv2 editor's "Certificates" section shows, as far as the user can read them. Unset: none.
+    pub fn set_swanctl_folder(&self, folder: PathBuf) {
+        *self.swanctl_folder.lock().unwrap_or_else(PoisonError::into_inner) = Some(folder);
+    }
+
+    /// The certificates of the swanctl files `config` names (regular files of at most 64 KB, no symlink followed;
+    /// unreadable ones are left out). Read once per list of names: an editor's typing elsewhere reads nothing.
+    fn swanctl_certificates(&self, config: &str) -> ConfigCertificates {
+        let Some(folder) = self.swanctl_folder.lock().unwrap_or_else(PoisonError::into_inner).clone() else {
+            return ConfigCertificates::default();
+        };
+        let files = certificates::swanctl_files(config);
+        if files.is_empty() {
+            return ConfigCertificates::default();
+        }
+        let mut cache = self.swanctl_cache.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((cached, read)) = cache.as_ref()
+            && *cached == files
+        {
+            return read.clone();
+        }
+        let read_file = |path: &std::path::Path| -> Option<Vec<u8>> {
+            use std::io::Read;
+            let (file, meta) = macvpn_core::fsx::open_regular(
+                path,
+                macvpn_core::fsx::OpenFor::Read,
+                macvpn_core::fsx::Follow::No,
+                true,
+            )
+            .ok()?;
+            if meta.len() > MAX_SWANCTL_FILE_BYTES {
+                return None;
+            }
+            let mut data = Vec::new();
+            file.take(MAX_SWANCTL_FILE_BYTES + 1).read_to_end(&mut data).ok()?;
+            (data.len() as u64 <= MAX_SWANCTL_FILE_BYTES).then_some(data)
+        };
+        let contents: Vec<(bool, String, Vec<u8>)> = files
+            .iter()
+            .filter_map(|(is_ca, name)| {
+                let path = folder.join(if *is_ca { "x509ca" } else { "x509" }).join(name);
+                read_file(&path).map(|data| (*is_ca, name.clone(), data))
+            })
+            .collect();
+        let read = certificates::of_swanctl_files(&contents);
+        *cache = Some((files, read.clone()));
+        read
     }
 
     /// The platform's notes on the editors' drafts and its administrator steps (WinVPN 2c): every editor view
     /// then carries [`EditorView::platform`]. Unset (macOS): no editor has one.
     pub fn set_native_platform(&self, support: Arc<dyn NativeSupport>, admin: Arc<dyn AdminSteps>) {
         *self.native_platform.lock().unwrap_or_else(PoisonError::into_inner) = Some(NativePlatform { support, admin });
+    }
+
+    /// Whether IKEv2 editors offer **Import Client Certificate…** (default on; the app sets it per OS).
+    pub fn set_client_cert_import(&self, on: bool) {
+        self.client_cert_import.store(on, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn client_cert_import(&self) -> bool {
+        self.client_cert_import.load(std::sync::atomic::Ordering::Relaxed)
     }
 
     /// The system's trust may have changed (a **Trust This CA in Windows…** ran): the next editor view asks again.
@@ -263,6 +339,28 @@ impl ConnectionsModel {
     /// The view with the platform's notes on its fields (the draft, so they follow the typing). No lock of the
     /// window is held here: the platform may read the system (the CA store).
     fn with_platform(&self, mut view: EditorView) -> EditorView {
+        // Windows signs with a computer certificate from its own store: no import there (see the user guide).
+        if let Some(cert) = view.client_cert.as_mut() {
+            cert.import = self.client_cert_import();
+        }
+        // The IKEv2 editor's certificates are files outside the config.
+        if view.kind == "strongswan"
+            && let EditorFields::Text(f) = &view.fields
+        {
+            let mut read = self.swanctl_certificates(&f.text);
+            // The client certificate imported in the app (G4, kept in the vault) comes first.
+            if let Some(der) = view.client_cert.as_ref().and_then(|c| c.imported.as_ref()?.certificate.clone()) {
+                let label = l10n::tr("Imported client certificate", &[]);
+                let mut imported = certificates::of_swanctl_files(&[(false, label, der)]);
+                imported.certificates.append(&mut read.certificates);
+                read.certificates = imported.certificates;
+            }
+            view.certificates = (!read.certificates.is_empty()).then(|| CertificatesView::of(&read));
+        }
+        // Each certificate's validity now ("Expires in 12 days").
+        if let Some(c) = view.certificates.as_mut() {
+            c.stamp(self.deps.clock.now().time_interval_since_1970() as i64);
+        }
         let Some(platform) = self.native_platform.lock().unwrap_or_else(PoisonError::into_inner).clone() else {
             return view;
         };
@@ -691,6 +789,8 @@ impl ConnectionsModel {
 
     fn open_editor_draft(&self, key: &str) -> Result<EditorView, String> {
         self.unlocked()?;
+        // The swanctl files are read again for an editor that is (re)opened.
+        *self.swanctl_cache.lock().unwrap_or_else(PoisonError::into_inner) = None;
         if let Some(d) = self.lock().drafts.get(key) {
             return Ok(d.view(key));
         }
@@ -774,6 +874,30 @@ impl ConnectionsModel {
     ) -> Result<EditorView, String> {
         self.with_draft(key, |d| {
             d.generate_wireguard_key(which, entropy)?;
+            Ok(d.view(key))
+        })
+        .map(|v| self.with_platform(v))
+    }
+
+    /// **Import Client Certificate…** of an IKEv2 editor (G4): the chosen files' bytes into the vault (see
+    /// [`Draft::import_client_cert`]). Not offered where the platform has its own certificate store (WinVPN).
+    pub fn import_client_cert(&self, key: &str, files: &[&[u8]]) -> Result<EditorView, String> {
+        if !self.client_cert_import() {
+            return Err(l10n::tr("Not available on this system", &[]));
+        }
+        let deps = self.deps.clone();
+        self.with_draft(key, |d| {
+            d.import_client_cert(&deps, files)?;
+            Ok(d.view(key))
+        })
+        .map(|v| self.with_platform(v))
+    }
+
+    /// "Remove" of an IKEv2 editor's imported client certificate.
+    pub fn remove_client_cert(&self, key: &str) -> Result<EditorView, String> {
+        let deps = self.deps.clone();
+        self.with_draft(key, |d| {
+            d.remove_client_cert(&deps)?;
             Ok(d.view(key))
         })
         .map(|v| self.with_platform(v))

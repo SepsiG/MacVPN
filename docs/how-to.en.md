@@ -71,9 +71,9 @@ Open the menu → **New Connection / Import…** (or **Manage Connections…**).
 |---|---|---|---|
 | OpenVPN | `.ovpn` file; keep the files it refers to (`ca.crt`, `client.key`, `.p12`, …) in the same folder | **New → OpenVPN** | **Username**, **Password**; **Private key password** if the key is encrypted. If the import asks **Use the credentials from … for this connection?**, choose **Use** to take them from the file. If a yellow **Risky settings** panel appears, read it and tick **I acknowledge these settings and the security risks** before saving. |
 | WireGuard | `.conf` file | **New → WireGuard** (template) | Nothing extra: the keys are in the config. |
-| IKEv2 (strongSwan) | `swanctl.conf` file | **New → IKEv2** (template) | **Username** (the same as `eap_id`) and **Password**, or **Pre-shared key (PSK)**. |
+| IKEv2 (strongSwan) | `swanctl.conf` file | **New → IKEv2** (template) | **Username** (the same as `eap_id`) and **Password**, or **Shared secret (PSK)**. |
 | SSTP | `.sstp` file | **New → SSTP** (form) | **Server**, **Port**, **Username**, **Password**, **Server certificate**. |
-| L2TP / Cisco IPsec | not possible (a `.mobileconfig` cannot be imported) | **New → L2TP** or **New → Cisco IPsec** (form) | **Server**, **Account name**, **Password**, **Pre-shared key (PSK)**, for Cisco **Group name**. Click **Save and Install Profile**, then approve the profile in **System Settings → General → Device Management**. |
+| L2TP / Cisco IPsec | not possible (a `.mobileconfig` cannot be imported) | **New → L2TP** or **New → Cisco IPsec** (form) | **Server**, **Account name**, **Password**, **Shared secret (PSK)**, for Cisco **Group name**. Click **Save and Install Profile**, then approve the profile in **System Settings → General → Device Management**. |
 
 **VPNs already set up in macOS** appear in the list by themselves, marked **System VPN**. You can start and stop them. For an L2TP or Cisco IPsec system VPN that does not connect from MacVPN, enter its **Shared secret (PSK)** (and, if needed, the password) in its detail view and click **Save**.
 
@@ -415,7 +415,7 @@ These gateways and firewalls make client files that MacVPN imports as they are: 
 3. Older UniFi versions exported `comp-lzo`; it imports, but newer UniFi servers no longer use compression. If such a connection stops working after a UniFi update, download a fresh file (or delete the `comp-lzo` line).
 4. Some guides show the file with `user nobody` and `group nogroup`. MacVPN lists them under **Risky settings** (reconnects may fail after OpenVPN drops root); delete the two lines, they are not needed.
 
-**L2TP/IPsec** (the legacy remote-user VPN of the USG / USG-Pro, also offered by newer gateways): **New → L2TP**. **Server**: the gateway's public address or DDNS name; **Account name** and **Password**: the VPN user (RADIUS user on a USG); **Pre-shared key (PSK)**: the server's pre-shared key. No certificate is needed. Keep **Send all traffic over VPN** on: UniFi's L2TP server pushes no routes, and Ubiquiti requires it for macOS clients. Ubiquiti recommends WireGuard instead.
+**L2TP/IPsec** (the legacy remote-user VPN of the USG / USG-Pro, also offered by newer gateways): **New → L2TP**. **Server**: the gateway's public address or DDNS name; **Account name** and **Password**: the VPN user (RADIUS user on a USG); **Shared secret (PSK)**: the server's pre-shared key. No certificate is needed. Keep **Send all traffic over VPN** on: UniFi's L2TP server pushes no routes, and Ubiquiti requires it for macOS clients. Ubiquiti recommends WireGuard instead.
 
 **Teleport (WiFiman) is not supported.** It is WireGuard inside, but the invitation links go through Ubiquiti's cloud and there is no published interface or exportable configuration, so a third-party app cannot use it. Use the WireGuard server above: it runs on the same gateways.
 
@@ -473,8 +473,8 @@ Names in `DNS` are search domains. Several networks and IPv6 work in `Address` a
     }
   }
   ```
-- **EAP-TLS** (`auth = eap-tls`), **certificate** (`auth = pubkey`, `certs = <file>`) and **PSK** (`auth = psk` on both sides, the key into **Pre-shared key (PSK)**) work too.
-- **IKEv1 with XAuth and a PSK** (the "Cisco-style" mobile setup): **New → Cisco IPsec** with **Server**, **Account name**, **Password**, **Pre-shared key (PSK)** and **Group name** (the Phase 1 identifier).
+- **EAP-TLS** (`auth = eap-tls`), **certificate** (`auth = pubkey`, `certs = <file>`) and **PSK** (`auth = psk` on both sides, the key into **Shared secret (PSK)**) work too.
+- **IKEv1 with XAuth and a PSK** (the "Cisco-style" mobile setup): **New → Cisco IPsec** with **Server**, **Account name**, **Password**, **Shared secret (PSK)** and **Group name** (the Phase 1 identifier).
 
 ### OPNsense
 

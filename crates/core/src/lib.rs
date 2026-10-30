@@ -7,7 +7,10 @@
 
 #[cfg(feature = "vault")]
 pub mod catalog;
+pub mod certificates;
+pub mod client_cert;
 pub mod collation;
+pub mod config_secrets;
 pub mod control;
 pub mod credentials;
 pub mod date;
@@ -24,6 +27,7 @@ pub mod mobileconfig;
 pub mod models;
 pub mod native;
 pub mod netaddr;
+pub mod pkcs12;
 pub mod plist_xml;
 pub mod ranking;
 pub mod ras;
@@ -43,6 +47,7 @@ pub mod validators;
 pub mod vault;
 pub mod vpn_networks;
 pub mod wireguard_keys;
+pub mod x509;
 
 pub use target_os::TargetOs;
 

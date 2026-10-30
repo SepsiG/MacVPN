@@ -178,6 +178,10 @@ pub struct RowView {
     /// the JSON when `None` (MacVPN).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub admin_action: Option<&'static str>,
+    /// A certificate in the connection's config expires within 30 days or has expired ("Certificate expires in 12
+    /// days"; [`ViewModel::set_certificate_expiry`]). Absent from the JSON when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificate_warning: Option<String>,
 }
 
 /// One row of the folder tree (spec 3), in display order: per folder its subfolders, then its items (pinned first,
@@ -571,6 +575,7 @@ impl ViewModel {
                     catalog: None,
                     published: Vec::new(),
                     admin_action: None,
+                    certificate_warning: None,
                 }
             })
             .collect();
@@ -799,6 +804,15 @@ impl ViewModel {
     pub fn set_catalog_badges(&mut self, badges: &HashMap<String, crate::catalog::CatalogBadge>) {
         for row in &mut self.rows {
             row.catalog = badges.get(&row.id).cloned();
+        }
+    }
+
+    /// The expiry warnings of the rows whose config has a certificate that expires within 30 days or has expired
+    /// (`ConnectionManager::certificate_expiry`: the earliest `notAfter` by row id), at `now` (Unix seconds).
+    pub fn set_certificate_expiry(&mut self, expiry: &HashMap<String, i64>, now: i64) {
+        for row in &mut self.rows {
+            row.certificate_warning =
+                expiry.get(&row.id).and_then(|not_after| crate::editor::certificate_row_warning(*not_after, now));
         }
     }
 

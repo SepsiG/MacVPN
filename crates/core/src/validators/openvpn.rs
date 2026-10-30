@@ -1342,7 +1342,13 @@ pub(crate) struct ConfigOutline {
     pub blocks: BTreeSet<String>,
     /// The lines of the `<key>` blocks (the private key).
     pub key: String,
+    /// The certificate and PKCS#12 blocks (`ca`, `cert`, `extra-certs`, `pkcs12`) in config order: the block name
+    /// and its lines.
+    pub data: Vec<(String, String)>,
 }
+
+/// The data blocks [`ConfigOutline::data`] collects.
+const OUTLINE_DATA_BLOCKS: [&str; 4] = ["ca", "cert", "extra-certs", "pkcs12"];
 
 impl OpenVPNValidator {
     pub(crate) fn outline(text: &str) -> ConfigOutline {
@@ -1360,6 +1366,9 @@ impl OpenVPNValidator {
                 } else if block == "key" {
                     outline.key.push_str(line);
                     outline.key.push('\n');
+                } else if let Some((_, text)) = outline.data.last_mut().filter(|(name, _)| name == block) {
+                    text.push_str(line);
+                    text.push('\n');
                 }
                 continue;
             }
@@ -1374,6 +1383,9 @@ impl OpenVPNValidator {
                     continue;
                 }
                 outline.blocks.insert(name.clone());
+                if OUTLINE_DATA_BLOCKS.contains(&name.as_str()) {
+                    outline.data.push((name.clone(), String::new()));
+                }
                 in_block = Some(name);
                 continue;
             }

@@ -2,8 +2,9 @@
   // SSTP: the config as a form, the password in the vault, the server certificate mode with the CA file
   // (the Swift `SSTPConfigForm`). WinVPN (the backend's `platform` notes): "No verification" is disabled with
   // Windows' reason, a custom CA can be trusted in Windows (or is shown as trusted), and the reasons Windows cannot
-  // connect the settings are shown above the form.
+  // connect the settings are shown above the form. The custom CA's certificates are listed with their details.
   import type { SstpFields } from '../api';
+  import Certificates from './Certificates.svelte';
   import Icon from '../Icon.svelte';
   import { tr } from '../l10n.svelte';
   import CredentialSelector from './CredentialSelector.svelte';
@@ -91,6 +92,9 @@
         {/if}
         {#if view?.importError}
           <p class="error">{view.importError}</p>
+        {/if}
+        {#if view?.certificates}
+          <Certificates certificates={view.certificates} />
         {/if}
       {:else}
         <p class="error">

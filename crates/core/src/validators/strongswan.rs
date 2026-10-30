@@ -511,6 +511,38 @@ impl StrongSwanValidator {
         values
     }
 
+    /// The `local…` sections (authentication rounds) of every connection, in order (parsed like [`Self::visit`]).
+    pub fn local_rounds(text: &str) -> Vec<LocalRound> {
+        let mut rounds: Vec<LocalRound> = Vec::new();
+        Self::visit(text, &mut |path: &[Section], event: Visit<'_>| {
+            let [_, c, l] = path else { return };
+            if c.context != Context::Conn || l.context != Context::Local {
+                return;
+            }
+            match event {
+                Visit::Open => {
+                    rounds.push(LocalRound { conn: c.name.clone(), name: l.name.clone(), auth: None, certs: false })
+                }
+                Visit::Key(key, items) => {
+                    if let Some(r) = rounds.last_mut() {
+                        match key {
+                            "auth" => r.auth = Some(items.join(" ")),
+                            "certs" => r.certs = true,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+        });
+        rounds
+    }
+
+    /// Some connection authenticates itself with a certificate and private key (a `local…` round with `auth =
+    /// pubkey` or one of its forms, or no `auth`: swanctl's default is `pubkey`).
+    pub fn uses_pubkey(text: &str) -> bool {
+        Self::local_rounds(text).iter().any(LocalRound::is_pubkey)
+    }
+
     /// Calls `visit` with every allowed section opened and every accepted `key = value` of the text, parsed like
     /// [`ConfigValidator::validate`] (comments removed; lines with an error, rejected sections and their keys are
     /// skipped). Meant for an already validated text.
@@ -638,6 +670,28 @@ impl StrongSwanValidator {
             return None;
         }
         Some((connection, child))
+    }
+}
+
+/// A connection's `local…` section ([`StrongSwanValidator::local_rounds`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LocalRound {
+    /// The connection's name.
+    pub conn: String,
+    /// The section's name (`local`, `local-1`, …).
+    pub name: String,
+    /// Its `auth` value (`None`: not set, swanctl's default `pubkey`).
+    pub auth: Option<String>,
+    /// It names certificates itself (`certs = …`).
+    pub certs: bool,
+}
+
+impl LocalRound {
+    /// `auth = pubkey` (also `pubkey-…`, `rsa…`, `ecdsa…`, `ed25519`, `ed448`, `bliss…`), or no `auth`.
+    pub fn is_pubkey(&self) -> bool {
+        let Some(auth) = &self.auth else { return true };
+        let auth = ascii_lowercased(auth.trim());
+        ["pubkey", "rsa", "ecdsa", "ed25519", "ed448", "bliss"].iter().any(|p| auth.starts_with(p))
     }
 }
 

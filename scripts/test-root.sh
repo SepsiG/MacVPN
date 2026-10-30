@@ -43,7 +43,7 @@ SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=11
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=12
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
@@ -972,7 +972,8 @@ case " $* " in
     f=""; prev=""; for a in "$@"; do [ "$prev" = --file ] && f=$a; prev=$a; done
     d=$(dirname "$f")
     (cd "$d" && find . -mindepth 1 -exec stat -f '%Lp %N' {} \; | LC_ALL=C sort) >"$CRED_OUT/tree"
-    cat "$d/x509ca/lab-ca.pem" >"$CRED_OUT/ca" 2>/dev/null ;;
+    cat "$d/x509ca/lab-ca.pem" >"$CRED_OUT/ca" 2>/dev/null
+    cat "$f" >"$CRED_OUT/load" 2>/dev/null ;;
 esac
 exit 0
 FAKE
@@ -1004,6 +1005,36 @@ CRID2=$(new_conn "$(swan_local 'certs = lab-client.pem')")
 grep -qF "strongSwan credentials copied from $CRL/etc/swanctl: 0 (skipped: 0)" "$MVPN_LOG_BASE/$CRID2.log" && ! grep -q 'pem\|key\|p12' "$CRO/tree" 2>/dev/null \
   && ok "strongswan L-7: symlinkelt etc könyvtáron át nem másol" || { nok "strongswan L-7: symlinkelt etc könyvtáron át nem másol"; cat "$MVPN_LOG_BASE/$CRID2.log" "$CRO/tree"; }
 env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$CRL" CRED_OUT="$CRO" "$SH" "$MVPN" down strongswan "$CRID2" >/dev/null 2>&1
+
+# Root réteg 12 (G2/G4): az appban importált klienstanúsítvány a keretben jön (`x509=` + `private=` base64, vagy
+# `pkcs12=`), a réteg az app szigorú értelmezőjével újra ellenőrzi, és `mvpn-<id>.crt` / `mvpn-<id>.pem` néven a
+# futási könyvtárba írja (0600); a `certs` nélküli `auth = pubkey` kör megkapja a `certs = mvpn-<id>.crt`-t, a
+# kulcsjelszó (`keypass=`) `private-mvpn-<id>-1 { file = … secret = … }` titok lesz. A jelszó sehol a naplóban.
+if command -v openssl >/dev/null 2>&1; then
+  CK="$T/clientkey"; mkdir -p "$CK"
+  openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -keyout "$CK/plain.pem" -out "$CK/c.pem" -subj /CN=lab-client -days 2 >/dev/null 2>&1
+  openssl pkcs8 -topk8 -v2 aes-256-cbc -in "$CK/plain.pem" -out "$CK/enc.pem" -passout pass:KeyPassS3cret >/dev/null 2>&1
+  X509=$(openssl x509 -in "$CK/c.pem" -outform DER | base64 | tr -d '\n'); PRIV=$(base64 <"$CK/enc.pem" | tr -d '\n')
+  ICID=$(new_conn "$(swan_local 'auth = pubkey')"); rm -f "$CRO/tree" "$CRO/load"
+  OUT=$({ feed "$ICID"; printf 'keypass=KeyPassS3cret\nx509=%s\nprivate=%s\n' "$X509" "$PRIV"; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$CRB" CRED_OUT="$CRO" "$SH" "$MVPN" up strongswan "$ICID" 2>&1); RC=$?
+  [ "$RC" = 0 ] || { nok "strongswan importált tanúsítvány: up ($RC)"; echo "$OUT"; cat "$MVPN_LOG_BASE/$ICID.log"; }
+  TREE=$(cat "$CRO/tree" 2>/dev/null)
+  for want in "600 ./x509/mvpn-$ICID.crt" "600 ./private/mvpn-$ICID.pem" "600 ./private/lab-client.key"; do
+    grep -qxF "$want" <<<"$TREE" && ok "strongswan importált tanúsítvány a futási könyvtárban: $want" || { nok "strongswan importált tanúsítvány: $want"; echo "$TREE"; }
+  done
+  grep -qF "certs = mvpn-$ICID.crt" "$CRO/load" && grep -qF "private-mvpn-$ICID-1 {" "$CRO/load" && grep -qF "file = \"mvpn-$ICID.pem\"" "$CRO/load" \
+    && ok "strongswan: certs a pubkey körben, a kulcsjelszó a kulcsfájlhoz kötve" || { nok "strongswan: certs / kulcsjelszó a betöltött fájlban"; cat "$CRO/load"; }
+  ! grep -q 'KeyPassS3cret' "$MVPN_LOG_BASE/$ICID.log" && ! grep -q 'KeyPassS3cret' <<<"$OUT" && ! grep -q 'KeyPassS3cret' "$CRO/argv" && ok "strongswan: a kulcsjelszó nincs a naplóban / argv-ben" || nok "strongswan: a kulcsjelszó nincs a naplóban / argv-ben"
+  env MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$CRB" CRED_OUT="$CRO" "$SH" "$MVPN" down strongswan "$ICID" >/dev/null 2>&1
+  [ ! -e "$MVPN_RUN_BASE/$ICID" ] && ok "strongswan down: az importált kulcs másolata törölve" || nok "strongswan down: az importált kulcs másolata törölve"
+  # Hibás keret: tanúsítvány kulcs nélkül → elutasítva, futási könyvtár nem marad.
+  BAD=$(new_conn "$(swan_local 'auth = pubkey')")
+  OUT=$({ feed "$BAD"; printf 'x509=%s\n' "$X509"; } | env MVPN_TEST_ALLOW_UP=1 MVPN_BREW="$CRB" CRED_OUT="$CRO" "$SH" "$MVPN" up strongswan "$BAD" 2>&1); RC=$?
+  [ "$RC" != 0 ] && [ "$OUT" = "The imported client certificate is invalid" ] && [ ! -e "$MVPN_RUN_BASE/$BAD" ] \
+    && ok "strongswan: kulcs nélküli tanúsítvány elutasítva" || { nok "strongswan: kulcs nélküli tanúsítvány elutasítva"; echo "$RC $OUT"; }
+else
+  ok "strongswan importált tanúsítvány: openssl nincs, kihagyva"
+fi
 
 # F2: két strongSwan kapcsolat egyszerre. A `swanctl --load-all --file F` (strongSwan 6.1 load_conns.c,
 # load_creds.c) mindent kitölt a charonból, ami nincs az F-ben: kapcsolatot, privát kulcsot, közös titkot. A hamis

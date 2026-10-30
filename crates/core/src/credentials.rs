@@ -10,8 +10,8 @@ use crate::mfa::PromptDeadline;
 /// The shared credential a prompt names (it lives in `models`, next to `SecretField`).
 pub use crate::models::CredentialRef;
 use crate::models::{Secrets, VPNKind};
+use crate::swift_str;
 use crate::validators::{OpenVPNValidator, SSTPConfig, StrongSwanValidator};
-use crate::{importer, swift_str};
 use std::collections::BTreeSet;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -164,7 +164,8 @@ pub fn required_fields(kind: VPNKind, config: Option<&str>) -> RequiredFields {
 }
 
 /// `auth-user-pass` without a file argument and without an inline `<auth-user-pass>` block: user name and
-/// password. An encrypted PEM key: its password.
+/// password. An encrypted PEM key, or a `<pkcs12>` that does not open with an empty password: its password
+/// ([`crate::certificates::openvpn_key_needs_password`]).
 fn openvpn_fields(config: &str) -> Vec<CredentialField> {
     let outline = OpenVPNValidator::outline(config);
     let mut fields = Vec::new();
@@ -172,11 +173,23 @@ fn openvpn_fields(config: &str) -> Vec<CredentialField> {
     if bare_auth_user_pass && !outline.blocks.contains("auth-user-pass") {
         fields.extend([CredentialField::Username, CredentialField::Password]);
     }
-    // Only the `<key>` block counts: a marker in a comment or in another block (a certificate) asks nothing.
-    if importer::contains_encrypted_key(&outline.key) {
+    // Only the `<key>` and `<pkcs12>` blocks count: a marker in a comment or in another block (a certificate) asks
+    // nothing.
+    if crate::certificates::openvpn_key_needs_password(config) {
         fields.push(CredentialField::KeyPassword);
     }
     fields
+}
+
+/// IKEv2 with a client certificate (client credential audit G2): the private key password when a `local…` round
+/// signs with a key (`auth = pubkey`) and the imported client certificate (`stored`, the vault's
+/// [`crate::models::SecretField::ClientCert`]) needs one (an encrypted PEM key, a PKCS#12 file). A key of
+/// Homebrew's `etc/swanctl` is not known to the app: its password is the editor's "Private key password" field.
+pub fn client_cert_fields(kind: VPNKind, config: &str, stored: Option<&str>) -> Vec<CredentialField> {
+    let needs = kind == VPNKind::Strongswan
+        && stored.and_then(crate::client_cert::ClientCert::from_stored).is_some_and(|c| c.needs_password())
+        && StrongSwanValidator::uses_pubkey(config);
+    if needs { vec![CredentialField::KeyPassword] } else { Vec::new() }
 }
 
 /// A `local…` section authenticates with EAP (`auth = eap`, `eap-mschapv2`, …).

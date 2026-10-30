@@ -35,6 +35,7 @@ pub trait SecretStore: Send + Sync {
             password: self.get(id, SecretField::Password),
             psk: self.get(id, SecretField::Psk),
             key_password: self.get(id, SecretField::KeyPassword),
+            client_cert: self.get(id, SecretField::ClientCert),
             ..Secrets::default()
         }
     }

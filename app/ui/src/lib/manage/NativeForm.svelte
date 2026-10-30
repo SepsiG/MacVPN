@@ -62,8 +62,13 @@
         </label>
       {/if}
       <label class="field">
-        <span>{tr('Pre-shared key (PSK)')}</span>
-        <SecretField label={tr('Pre-shared key (PSK)')} stored={view?.hasStoredSecret.psk ?? false} bind:value={fields.psk} />
+        <span>{tr('Shared secret (PSK)')}</span>
+        <SecretField
+          label={tr('Shared secret (PSK)')}
+          removeLabel={tr('Remove saved PSK')}
+          stored={view?.hasStoredSecret.psk ?? false}
+          bind:value={fields.psk}
+        />
       </label>
       {#if kind === 'cisco'}
         <label class="field"><span>{tr('Group name')}</span><input type="text" autocomplete="off" bind:value={fields.groupName} /></label>

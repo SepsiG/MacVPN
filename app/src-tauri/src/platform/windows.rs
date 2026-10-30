@@ -178,3 +178,12 @@ pub fn supported() -> Result<(), String> {
 pub fn uses_app_menu() -> bool {
     false
 }
+
+pub fn imports_client_certificates() -> bool {
+    false
+}
+
+/// None: Windows' IKEv2 authenticates with a certificate of the computer's store, not with swanctl files.
+pub fn swanctl_folder() -> Option<std::path::PathBuf> {
+    None
+}

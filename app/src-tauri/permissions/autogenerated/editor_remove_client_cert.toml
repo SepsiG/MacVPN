@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-editor-remove-client-cert"
+description = "Enables the editor_remove_client_cert command without any pre-configured scope."
+commands.allow = ["editor_remove_client_cert"]
+
+[[permission]]
+identifier = "deny-editor-remove-client-cert"
+description = "Denies the editor_remove_client_cert command without any pre-configured scope."
+commands.deny = ["editor_remove_client_cert"]

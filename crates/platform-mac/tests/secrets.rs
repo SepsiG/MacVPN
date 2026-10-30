@@ -55,8 +55,8 @@ fn default_service_is_reverse_dns() {
     );
     // The account uses the upper-case UUID, as Swift's `uuidString`.
     assert!(store.backend().accounts("local.macvpn.secrets")[0].starts_with(&uuid_string(&id)));
-    // The field names are the Swift raw values.
-    assert_eq!(SecretField::ALL.map(SecretField::raw_value), ["username", "password", "psk", "keypass"]);
+    // The field names are the Swift raw values (`clientcert`: 2.0.7, vault only).
+    assert_eq!(SecretField::ALL.map(SecretField::raw_value), ["username", "password", "psk", "keypass", "clientcert"]);
 }
 
 #[test]

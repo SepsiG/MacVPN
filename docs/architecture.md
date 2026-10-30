@@ -368,8 +368,9 @@ Credential Manager round trip skips itself in an SSH key logon, so it is part of
 as `C:\Program Files\WinVPN\WinVPNService.exe` on Windows; root layer version in `crates/helper/VERSION`, 8 from
 1.2.0, 9 in 2.0.0: the DNS manager, the log caps, strongSwan's credentials and concurrent connections; 10 in 2.0.3:
 `mvpn liveness <id>` for dead-tunnel detection, see [Dead tunnels](#dead-tunnels-and-the-live-network-switch); 11 in
-the release after 2.0.3: `mvpn traffic <id>` and strongSwan's virtual IP in `mvpn status`, see [Live
-traffic](#live-traffic)).
+2.0.4: `mvpn traffic <id>` and strongSwan's virtual IP in `mvpn status`, see [Live traffic](#live-traffic); 12 in
+2.0.7: an IKEv2 client certificate in the `up` frame and the key password, see [IKEv2 client
+certificates](#ikev2-client-certificates-root-layer-12)).
 
 - `src/shared/`: the logic every OS shares, with no `cfg`, no `unsafe` and no process or file I/O: the command
   line (`cli`), the framed stdin (`framing`), masking, the `respond` answer, the status JSON, the validation
@@ -796,6 +797,44 @@ VPN's detail, for every engine on both OSes.
   (3 s while a connection is active) also reads a round, so restarts while nothing is shown keep the totals (for
   strongSwan that is one more `sudo -n mvpn traffic` per poll). The control API and the tray tooltip carry no
   traffic.
+
+### IKEv2 client certificates (root layer 12)
+
+Client credential audit G2/G4 (`docs/superpowers/reviews/2026-10-29-client-credential-audit.md`), 2.0.7.
+
+- **Import** (`core::client_cert`, `app-core::editor::Draft::import_client_cert`, the app's `editor_import_client_cert`):
+  the open panel runs in the backend; each file is read there (`import_export::read_import_bytes`, at most 16 KB, at
+  most four files) and checked strictly: a PKCS#12 `PFX` (version 3, PKCS#7 `data` / `signedData`, definite or
+  indefinite outer lengths, nothing after it), or PEM blocks (strict base64, matching `END`) with exactly one private
+  key (`PRIVATE KEY`, `ENCRYPTED PRIVATE KEY`, traditional `RSA` / `EC PRIVATE KEY`, plain or `Proc-Type: 4,ENCRYPTED`
+  + `DEK-Info`) and the one certificate that is not a CA (a bounded DER walk: `Certificate`, `tbsCertificate`,
+  basicConstraints). No PKCS#12 decryption and no new crate: swanctl opens the file. The result is one vault secret,
+  `SecretField::ClientCert` (`clientcert`; one line: `pem:<cert DER b64>:<key block b64>` or `p12:<file b64>`), so
+  backups carry it and an older build skips it. The web view gets `EditorView::client_cert` (`pubkey`, the form, the
+  SHA-256 fingerprint, `needsPassword`, how many certificates were left out, whether import is offered); never the key.
+- **Connect** (`manager::connect_root`): a stored value that no longer parses fails the connect; `credentials::
+  client_cert_fields` adds **Private key password** to the prompt when a `local…` round signs with a key
+  (`StrongSwanValidator::local_rounds`, no `auth` = `pubkey`) and the key is encrypted (PKCS#12: always).
+  `Secrets::client_cert` turns into the frame lines `x509=` + `private=` or `pkcs12=` after the other secrets
+  (`Secrets::stdin_payload`).
+- **Root layer 12** (`helper::shared::framing`, `macos::strongswan`): the three new keys, each at most once (the
+  secrets section stays at most 64 KiB); `strongswan::client_cert` re-checks them with the same `core::client_cert`
+  parser (a certificate without its key, both forms, bad base64: **The imported client certificate is invalid**, no
+  run directory left). After Homebrew's copies (`stage_creds`) the credential goes in as `x509/mvpn-<id>.crt` (DER) +
+  `private/mvpn-<id>.pem`, or `pkcs12/mvpn-<id>.p12` (0600, directories 0700, an existing same-named copy replaced).
+  A PEM certificate is merged into the connection's `auth = pubkey` rounds without `certs` (`certs_block`, appended
+  like the DPD block). `keypass=` becomes `<dir>-mvpn-<id>-<n> { file = "<name>"  secret = "…" }` (`key_secrets`):
+  swanctl's `load_creds.c` decrypts a file of `<dir>` with the secrets whose section starts with `<dir>` and whose
+  `file` is its name; these never reach charon. Bound to the imported key, or (without one) to every key file staged
+  from Homebrew. The value is escaped like the PSK and masked in the log (`keypass` is in the masker since root layer
+  8). Because `--load-all --file F` reads the credentials next to F, `load_together` first copies the other active
+  connections' `mvpn-*` files next to its load file (`adopt_client_certs`), and down removes the connection's own
+  ones before it reloads the others (`remove_own_client_cert`).
+- **Windows:** RAS IKEv2 signs with a computer certificate from LocalMachine\My (`Auth::MachineCertificate`); the
+  key and its password stay in Windows' store (an administrator imports the `.p12` with Windows' own wizard, which asks
+  for the password). The editor shows a grey note (`ras_editor::machine_certificate_note`). The app turns the import
+  on for macOS only (`ConnectionsModel::set_client_cert_import`): elsewhere `ClientCertView::import` is false and
+  `import_client_cert` refuses.
 
 ### macOS DNS manager (root layer)
 

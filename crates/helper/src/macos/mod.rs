@@ -32,6 +32,9 @@
 //! keypass=<v>\n
 //! otp=<v>\n
 //! challenge=packed\n
+//! x509=<base64>\n            root layer 12, strongSwan: an imported client certificate (DER) and its key
+//! private=<base64>\n         (one PEM block), or a PKCS#12 file instead (see `strongswan::client_cert`)
+//! pkcs12=<base64>\n
 //! ```
 //!
 //! The config may contain lines such as `password=…`: only the length decides where it ends. Refusals (exit 1,
@@ -249,7 +252,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_10() {
-        assert_eq!(VERSION.trim(), "11");
+    fn version_is_12() {
+        assert_eq!(VERSION.trim(), "12");
     }
 }

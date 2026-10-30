@@ -154,6 +154,13 @@ impl AppState {
         vm.set_admin_actions(&|reason| admin.offered_action(reason));
         // The configs' server hosts for the search, as the last reload read them (no config is read here).
         vm.set_server_hosts(&self.manager.server_hosts());
+        // Certificates that expire within 30 days or have expired (read at the last reload, no config read here).
+        vm.set_certificate_expiry(
+            &self.manager.certificate_expiry(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
+        );
         vm.update = self.updates.view();
         vm.login_item = self.login_item.read().unwrap_or_else(PoisonError::into_inner).clone();
         vm.appearance = Some(macvpn_app_core::appearance::Appearance::load(self.prefs.as_ref()).raw_value());

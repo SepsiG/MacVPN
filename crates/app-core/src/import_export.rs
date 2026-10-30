@@ -13,6 +13,7 @@ use serde::Serialize;
 use std::io::Read;
 use std::path::Path;
 use uuid::Uuid;
+use zeroize::Zeroizing;
 
 /// The largest file read for an import (the editor's config limit).
 pub const MAX_IMPORT_BYTES: u64 = 1_048_576;
@@ -43,6 +44,19 @@ impl ImportReport {
         self.errors.extend(other.errors);
         self.notes.extend(other.notes);
     }
+}
+
+/// A file's bytes for **Import Client Certificate…** (a PKCS#12 file is binary), opened and checked as
+/// [`read_import_file`] does. At most `max + 1` bytes are read: a larger file comes back with `max + 1` bytes, so
+/// the caller's size check says it is too large. `None`: cannot be read.
+pub fn read_import_bytes(path: &Path, max: usize) -> Option<Zeroizing<Vec<u8>>> {
+    if !std::fs::metadata(path).ok()?.is_file() {
+        return None;
+    }
+    let (file, _) = fsx::open_regular(path, OpenFor::Read, Follow::Yes, true).ok()?;
+    let mut data = Zeroizing::new(Vec::with_capacity(max + 1));
+    file.take(max as u64 + 1).read_to_end(&mut data).ok()?;
+    Some(data)
 }
 
 /// The file's text (UTF-8, at most [`MAX_IMPORT_BYTES`]): a regular file, opened once and checked on the open
@@ -230,23 +244,30 @@ fn exported_text(deps: &EditorDeps, c: &Connection) -> Result<String, String> {
     Ok(String::from_utf8_lossy(&data).into_owned())
 }
 
-/// `None`: no key material, export at once; otherwise the question to ask first.
+/// `None`: no personal key material, export at once (a shared OpenVPN `tls-auth` / `tls-crypt` key alone is
+/// exported either way: [`exporter::OPENVPN_SHARED_BLOCKS`]); otherwise the question to ask first.
 pub fn export_warning(deps: &EditorDeps, c: &Connection) -> Result<Option<ExportWarning>, String> {
     if deps.manager.is_locked() {
         return Err(crate::vault_stores::locked_message());
     }
     let text = exported_text(deps, c)?;
-    let material = exporter::secret_material(&text, c.kind);
-    if material.is_empty() {
+    let personal = exporter::personal_material(&text, c.kind);
+    if personal.is_empty() {
         return Ok(None);
     }
-    Ok(Some(ExportWarning {
-        title: l10n::tr("The config contains private keys or credentials", &[]),
-        message: l10n::tr(
-            "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.",
-            &[Arg::Str(&material.join(", "))],
-        ),
-    }))
+    let mut message = l10n::tr(
+        "It contains: %@. Anyone who has these keys can connect as you. Export them only if the recipient needs them, and keep the file in a trusted place.",
+        &[Arg::Str(&personal.join(", "))],
+    );
+    let shared = exporter::shared_material(&text, c.kind);
+    if !shared.is_empty() {
+        message.push(' ');
+        message.push_str(&l10n::tr(
+            "Export Without Keys keeps %@: every user of the server has the same key, and the copy cannot connect without it.",
+            &[Arg::Str(&shared.join(", "))],
+        ));
+    }
+    Ok(Some(ExportWarning { title: l10n::tr("The config contains private keys or credentials", &[]), message }))
 }
 
 /// What the save panel shows and what is written.
@@ -275,12 +296,19 @@ pub fn export_plan(deps: &EditorDeps, c: &Connection, with_keys: bool) -> Result
         return Err(crate::vault_stores::locked_message());
     }
     let mut text = exported_text(deps, c)?;
-    if !with_keys && !exporter::secret_material(&text, c.kind).is_empty() {
+    if !with_keys && !exporter::personal_material(&text, c.kind).is_empty() {
         text = exporter::strip_secrets(&text, c.kind);
     }
     let included = exporter::secret_material(&text, c.kind);
+    let shared = exporter::shared_material(&text, c.kind);
     let message = if included.is_empty() {
         l10n::tr("Passwords and the PSK are not included in the export.", &[])
+    } else if exporter::personal_material(&text, c.kind).is_empty() {
+        // Only the server's shared TLS key stays in (G10 of the client-credential audit).
+        l10n::tr(
+            "Your private keys and credentials are not included. The shared TLS key (%@) is: every user of the server has the same one, and the copy needs it to connect. Passwords and the PSK stored in the vault are not included.",
+            &[Arg::Str(&shared.join(", "))],
+        )
     } else {
         l10n::tr(
             "The export INCLUDES the private keys and credentials from the config (%@). Passwords and the PSK stored in the vault are not included.",

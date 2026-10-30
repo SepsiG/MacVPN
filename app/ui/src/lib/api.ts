@@ -55,6 +55,9 @@ export type Row = RowState & {
   /// A failure whose text names an administrator step (WinVPN 2c): the failure banner offers its button. Absent on
   /// macOS.
   adminAction?: AdminAction;
+  /// A certificate in the config expires within 30 days or has expired ("Certificate expires in 12 days"). Absent
+  /// otherwise.
+  certificateWarning?: string;
 };
 
 /// The administrator steps an error offers (WinVPN 2c; each runs after a UAC confirmation).
@@ -376,6 +379,61 @@ export interface EditorView {
   platform?: EditorPlatformView;
   /// WireGuard: the key panel, derived by the backend from the draft's config text. Absent for the other kinds.
   wireguard?: WireGuardKeysView;
+  /// The config text with its inline secrets masked: shown read-only while "Show secrets" is off. Never edited or
+  /// sent back. Absent when there is nothing to mask.
+  maskedText?: string;
+  /// OpenVPN: show the "Private key password" field (the key or PKCS#12 needs one, or one is stored or typed).
+  keyPasswordUsed: boolean;
+  /// The config's certificates (OpenVPN, SSTP; IKEv2 from the swanctl folder). Absent when there are none.
+  certificates?: CertificatesView;
+  /// IKEv2: the client certificate panel (G2/G4). Absent for the other kinds.
+  clientCert?: ClientCertView;
+}
+
+/// [`EditorView.clientCert`]: an IKEv2 connection's client certificate (public facts only; the key never reaches the web view).
+export interface ClientCertView {
+  /// The draft's config signs with a key (`auth = pubkey`, or no `auth`): "Private key password" is shown.
+  pubkey: boolean;
+  /// The imported client certificate in the vault.
+  imported: ClientCertSummary | null;
+  /// The last import left this many certificates out (the CA, the chain).
+  ignored: number;
+  /// "Import Client Certificate…" is offered (macOS; Windows uses its own certificate store).
+  import: boolean;
+}
+
+export interface ClientCertSummary {
+  form: 'pem' | 'pkcs12';
+  /// SHA-256 of the certificate (PEM) or of the PKCS#12 file, upper-case hex pairs with colons.
+  sha256: string;
+  /// The key is encrypted (always for PKCS#12): the connection needs the private key password.
+  needsPassword: boolean;
+}
+
+/// [`EditorView.certificates`]: public data only (the PEM is the certificate, never a key).
+export interface CertificatesView {
+  certificates: CertificateView[];
+  /// A `<pkcs12>` whose certificates are encrypted (they need its password to be shown).
+  pkcs12Encrypted: boolean;
+}
+
+export interface CertificateView {
+  role: 'client' | 'ca' | 'chain';
+  /// `<cert>`, `<ca>`, `<pkcs12>`, … or a swanctl file name.
+  source: string;
+  subject: string;
+  issuer: string;
+  serial: string;
+  /// Unix seconds.
+  notBefore: number;
+  notAfter: number;
+  /// Upper-case hexadecimal pairs separated by `:`.
+  sha256: string;
+  keyType: string;
+  pem: string;
+  status: 'valid' | 'expiresSoon' | 'expired' | 'notYetValid';
+  /// "Expires in 12 days", "Expired", … (null while valid for more than 30 days).
+  note: string | null;
 }
 
 /// [`EditorView.wireguard`]: the config's keys. The public key is derived in the backend (never in the web view).
@@ -665,6 +723,10 @@ export const api = {
   /// "Copy" of the private / preshared key: the backend copies the draft's key through the secret clipboard
   /// (concealed, cleared a minute later); the web view sends no key.
   editorWireguardCopy: (id: string, key: WireGuardKeyLine) => invoke<void>('editor_wireguard_copy', { id, key }),
+  /// "Import Client Certificate…" (IKEv2): the backend's open panel, the files checked and stored in the vault there.
+  editorImportClientCert: (id: string) => invoke<EditorView>('editor_import_client_cert', { id }),
+  /// "Remove" of the imported client certificate.
+  editorRemoveClientCert: (id: string) => invoke<EditorView>('editor_remove_client_cert', { id }),
   createConnection: (kind: Kind) => invoke<void>('create_connection', { kind }),
   importFiles: () => invoke<Report | null>('import_files'),
   /// Files opened from Finder: their outcome, once.

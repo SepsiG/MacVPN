@@ -6,7 +6,7 @@
 // The Log tab's time filter and "Clear Log…" (confirmed after a cancelled question). The search field filters the
 // tree as typed (accents and case ignored), Up / Down / Return open a result, the
 // empty result names the query (in the window's language), Escape clears it and every row is back. A new WireGuard
-// connection's "Generate Key Pair" and its public key.
+// connection's "Generate Key Pair" and its public key. A new IKEv2 connection's client certificate panel.
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const waitFor = async (fn, ms = 8000) => {
@@ -268,7 +268,8 @@
     checks.deleted = !!(await waitFor(() => document.querySelector('.empty')));
     // WireGuard keys: a new WireGuard connection's "Generate Key Pair" writes a private key into the config and the
     // public key the backend derives appears (both 44 base64 characters, different); the private key field is
-    // masked; a second generation asks first (cancelled: the key stays). Nothing is copied (the real clipboard).
+    // masked, and so is the key in the config text until "Show secrets"; a second generation asks first
+    // (cancelled: the key stays). Nothing is copied (the real clipboard).
     // Then it is deleted unsaved.
     document.querySelector('.sidebar .toolbar button').click();
     (await waitFor(() => document.querySelector('.sidebar .menu button[data-kind=wireguard]'))).click();
@@ -276,11 +277,22 @@
     checks.wgPanel = !!generate && !document.querySelector('.wg-keys [data-public-key]') && !!document.querySelector('.wg-keys .no-key');
     generate?.click();
     const publicKey = await waitFor(() => document.querySelector('.wg-keys [data-public-key]')?.textContent);
-    const privateKey = (document.querySelector('textarea.config')?.value.match(/^PrivateKey = (\S+)$/m) ?? [])[1];
+    const masked = document.querySelector('.wg-keys input.privateKey');
+    const privateKey = masked?.value;
     const wgKey = /^[A-Za-z0-9+/]{43}=$/;
     checks.wgPublicKey = wgKey.test(publicKey ?? '') && wgKey.test(privateKey ?? '') && publicKey !== privateKey;
-    const masked = document.querySelector('.wg-keys input.privateKey');
-    checks.wgPrivateMasked = masked?.type === 'password' && masked.value === privateKey;
+    checks.wgPrivateMasked = masked?.type === 'password';
+    // The config text shows the key masked and read-only (G1 of the client-credential audit) until "Show secrets":
+    // then the real key, editable.
+    const hidden = await waitFor(() => document.querySelector('textarea.config.masked'));
+    checks.wgConfigMasked =
+      !!hidden?.readOnly && /^PrivateKey = \u2022{16}$/m.test(hidden.value) && !hidden.value.includes(privateKey ?? '-');
+    document.querySelector('.show-secrets input')?.click();
+    const plain = await waitFor(() => {
+      const area = document.querySelector('textarea.config');
+      return area && !area.classList.contains('masked') ? area : null;
+    });
+    checks.wgShowSecrets = !!plain && !plain.readOnly && plain.value.includes(`PrivateKey = ${privateKey}`);
     document.querySelector('.wg-keys .generate-key-pair')?.click();
     checks.wgReplaceAsked = !!(await waitFor(() => document.querySelector('[role=alertdialog]')));
     document.querySelector('.alert button.cancel')?.click();
@@ -289,6 +301,27 @@
     document.querySelector('.header button.icon.destructive').click();
     (await waitFor(() => document.querySelector('.alert button.destructive'))).click();
     checks.wgDeleted = !!(await waitFor(() => document.querySelector('.empty')));
+    // IKEv2 client certificate (G2/G4): a new IKEv2 connection (EAP template) has no client certificate panel and no
+    // key password field; with `auth = pubkey` typed, the panel ("Import Client Certificate…", nothing imported yet,
+    // no Remove) and the private key password field appear. The open panel itself is not driven. Deleted unsaved.
+    document.querySelector('.sidebar .toolbar button').click();
+    (await waitFor(() => document.querySelector('.sidebar .menu button[data-kind=strongswan]'))).click();
+    const swanText = await waitFor(() => document.querySelector('textarea.config')?.value.includes('auth = eap-mschapv2') && document.querySelector('textarea.config'));
+    const secretsBefore = document.querySelectorAll('.secret input[type=password]').length;
+    checks.certPanelHiddenForEap = !!swanText && !document.querySelector('.client-cert');
+    setValue(swanText, swanText.value.replace('auth = eap-mschapv2', 'auth = pubkey'));
+    const importCert = await waitFor(() => document.querySelector('.client-cert .import-cert'), windows ? 2000 : 8000);
+    if (windows) {
+      // WinVPN signs with a computer certificate from Windows' store: no panel, no key password, the grey note.
+      const note = await waitFor(() => document.querySelector('.platform-notes')?.textContent.includes('.p12'));
+      checks.certWindowsNote = !!note && !importCert && !document.querySelector('.client-cert') && document.querySelectorAll('.secret input[type=password]').length === secretsBefore;
+    } else {
+      checks.certPanel = !!importCert && !importCert.disabled && !!document.querySelector('.client-cert .no-cert') && !document.querySelector('.client-cert .remove-cert');
+      checks.certKeyPassword = (await waitFor(() => document.querySelectorAll('.secret input[type=password]').length === secretsBefore + 1)) === true;
+    }
+    document.querySelector('.header button.icon.destructive').click();
+    (await waitFor(() => document.querySelector('.alert button.destructive'))).click();
+    checks.certDeleted = !!(await waitFor(() => document.querySelector('.empty')));
     // The navigation allowlist: leaving the app's origin is cancelled. `about:blank` loads without the network,
     // so were it allowed, the page would be replaced and the result below would never be written.
     const origin = window.location.origin;

@@ -69,9 +69,13 @@ fn ikev2_shows_the_windows_summary_and_offers_the_ca() {
         let cert = EAP
             .replace("auth = eap-mschapv2\n      eap_id = alice", "auth = pubkey\n      certs = client.pem")
             .replace("remote_ts = 10.0.0.0/8", "remote_ts = 0.0.0.0/0");
-        let summary = editor_notes(&c, cert.as_bytes()).summary.unwrap();
+        let notes = editor_notes(&c, cert.as_bytes());
+        let summary = notes.summary.unwrap();
         assert!(summary.starts_with("On Windows: computer certificate · "), "{summary}");
         assert!(summary.ends_with(" · all traffic"), "{summary}");
+        // G2/G4: the client's key and its password belong in Windows' store (the note says how).
+        assert_eq!(notes.warnings.len(), 1);
+        assert!(notes.warnings[0].contains("Local Computer › Personal"), "{:?}", notes.warnings);
     });
     hu(|| {
         let c = Connection::new("Office VPN", VPNKind::Strongswan);

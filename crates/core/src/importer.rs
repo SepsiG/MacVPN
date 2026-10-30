@@ -97,7 +97,8 @@ pub struct PreparedImport {
     /// OpenVPN: secrets read from `auth-user-pass <file>` / `askpass <file>` (to the Keychain, never into the
     /// config) and the files that could not be read.
     pub credentials: ImportedCredentials,
-    /// OpenVPN: the config has an encrypted private key (it needs the "Private key password" field).
+    /// OpenVPN: the config has an encrypted private key, or a readable `<pkcs12>` that does not open with an empty
+    /// password (it needs the "Private key password" field).
     pub has_encrypted_key: bool,
     /// The exported metadata line (`# macvpn-meta: …`), removed from `config`; `None` when the file has none (an
     /// older export, or a config from elsewhere) or it is invalid (then it stays in the config as a comment).
@@ -382,7 +383,8 @@ pub fn prepare(file_name: &str, content: &str, base_directory: &Path) -> Result<
     if kind == VPNKind::Openvpn {
         let result = inline_openvpn_files(content, base_directory)?;
         let validation = OpenVPNValidator.validate_full(&result.config, &Default::default());
-        let has_encrypted_key = contains_encrypted_key(&result.config);
+        let has_encrypted_key =
+            contains_encrypted_key(&result.config) || crate::certificates::openvpn_pkcs12_protected(&result.config);
         return Ok(PreparedImport {
             kind,
             config: result.config,

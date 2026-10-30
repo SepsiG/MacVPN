@@ -32,7 +32,12 @@ pub fn editor_notes(connection: &Connection, config: &[u8]) -> PlatformNotes {
             if connection.kind == VPNKind::Strongswan {
                 notes.summary = Some(summary(&plan));
             }
+            let machine_certificate = plan.auth == Auth::MachineCertificate;
             notes.warnings = plan.warnings;
+            // G2/G4 of the client credential audit: the key and its password live in Windows' store, not in WinVPN.
+            if machine_certificate {
+                notes.warnings.push(machine_certificate_note());
+            }
         }
         // An invalid config is the validator's: the editor shows its issues as on macOS.
         Err(u) if u.invalid_config => {}
@@ -42,6 +47,15 @@ pub fn editor_notes(connection: &Connection, config: &[u8]) -> PlatformNotes {
         notes.reasons.push(cisco::unsupported());
     }
     notes
+}
+
+/// IKEv2 with `auth = pubkey` on Windows: the computer certificate is imported into Windows' own store (an
+/// administrator step of Windows itself, which asks for the private key's password); WinVPN keeps no client key.
+pub fn machine_certificate_note() -> String {
+    l10n::tr(
+        "Windows signs in with a computer certificate: an administrator imports the client's .p12 file into Local Computer › Personal (open the file and choose the computer's store; Windows asks for the key's password there).",
+        &[],
+    )
 }
 
 /// SSTP "No verification" (core's `plan_sstp` reason, the same key).

@@ -12,12 +12,21 @@
 //! names under `connections` / `secrets` / `pools` / `authorities` must therefore differ between the connections
 //! ([`first_collision`]), and two generated secrets charon could not tell apart ([`Owner::ambiguous`]) are refused.
 //! Down reloads the other active connections, which unloads this one's connection and secrets.
+//!
+//! **Root layer 12** (client credential audit G2/G4): the private key password (`keypass=`) becomes a
+//! `private-…` / `pkcs12-…` secret bound to the key file it opens ([`key_secrets`]), and a client certificate
+//! imported in the app arrives in the frame (`x509=` + `private=`, or `pkcs12=`): it is checked again with the
+//! app's own parser and written into this run directory as `mvpn-<id>.*` ([`stage_client_cert`]); a PEM
+//! certificate is named in the connection's `auth = pubkey` rounds that name none ([`certs_block`]). Because
+//! `--load-all` reads the credentials next to the load file, each load copies the other active connections'
+//! `mvpn-*` files next to it too ([`adopt_client_certs`]).
 
 use crate::macos::ctx::{Ctx, R, tr};
 use crate::macos::exec::{Cmd, EnvMode};
 use crate::macos::fsx;
 use crate::macos::paths::is_dir;
 use crate::macos::procs;
+use macvpn_core::client_cert::ClientCert;
 use macvpn_core::validators::StrongSwanValidator;
 use std::path::{Path, PathBuf};
 use zeroize::Zeroizing;
@@ -49,10 +58,27 @@ fn owner_lines(b: &mut Vec<u8>, ids: &[String]) {
     }
 }
 
+/// A key file the private key password is for: its credential directory (`private`, `rsa`, `ecdsa`, `pkcs8`,
+/// `pkcs12`, also the prefix of its secret's name) and its file name there.
+pub type KeyFile = (&'static str, String);
+
+/// The directories whose files swanctl opens with a `<dir>…` secret's passphrase (`load_creds.c`
+/// `decrypt_with_config`: the section name starts with the type, `file` is the name in that directory).
+pub const KEY_DIRS: [&str; 5] = ["private", "rsa", "ecdsa", "pkcs8", "pkcs12"];
+
 /// The `secrets {}` block appended to the config copy: `ike-mvpn-<id>` (the PSK) and `eap-mvpn-<id>` (the EAP
 /// user and password), unique per connection, each bound to `remote_ids` ([`StrongSwanValidator::remote_ids`];
-/// none: the PSK is charon's `%any`, as before).
-pub fn secrets_block(id: &str, user: &[u8], pass: &[u8], psk: &[u8], remote_ids: &[String]) -> Zeroizing<Vec<u8>> {
+/// none: the PSK is charon's `%any`, as before); root layer 12: the key password for each of `keys`
+/// ([`key_secrets`]).
+pub fn secrets_block(
+    id: &str,
+    user: &[u8],
+    pass: &[u8],
+    psk: &[u8],
+    remote_ids: &[String],
+    keypass: &[u8],
+    keys: &[KeyFile],
+) -> Zeroizing<Vec<u8>> {
     let mut b = Zeroizing::new(b"secrets {\n".to_vec());
     if !psk.is_empty() {
         b.extend_from_slice(format!("  ike-mvpn-{id} {{\n    secret = \"").as_bytes());
@@ -70,8 +96,173 @@ pub fn secrets_block(id: &str, user: &[u8], pass: &[u8], psk: &[u8], remote_ids:
         owner_lines(&mut b, remote_ids);
         b.extend_from_slice(b"  }\n");
     }
+    key_secrets(&mut b, id, keypass, keys);
     b.extend_from_slice(b"}\n");
     b
+}
+
+/// `<dir>-mvpn-<id>-<n> { file = "<name>"  secret = "<password>" }` for each key file (none without a password):
+/// swanctl decrypts that file with it while loading (`--noprompt`: a key without a matching secret is skipped).
+/// These secrets never reach charon (swanctl only uses them to open the key). The file names are plain names
+/// (`[A-Za-z0-9_.-]`, checked when staged); the value is escaped as the other secrets are.
+pub fn key_secrets(b: &mut Vec<u8>, id: &str, keypass: &[u8], keys: &[KeyFile]) {
+    if keypass.is_empty() {
+        return;
+    }
+    for (n, (dir, file)) in keys.iter().enumerate().filter(|(_, (d, f))| KEY_DIRS.contains(d) && is_name(f)) {
+        b.extend_from_slice(
+            format!("  {dir}-mvpn-{id}-{} {{\n    file = \"{file}\"\n    secret = \"", n + 1).as_bytes(),
+        );
+        b.extend_from_slice(&escape(keypass));
+        b.extend_from_slice(b"\"\n  }\n");
+    }
+}
+
+/// The key files staged into `run` (the copies of Homebrew's `etc/swanctl`, [`stage_creds`]), sorted, at most
+/// [`CRED_FILES_MAX`]: the files the editor's "Private key password" may be for.
+pub fn staged_key_files(run: &Path) -> Vec<KeyFile> {
+    let mut out = Vec::new();
+    for dir in KEY_DIRS {
+        let Ok(entries) = std::fs::read_dir(run.join(dir)) else { continue };
+        let mut names: Vec<String> = entries
+            .filter_map(Result::ok)
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| is_name(n) && !n.starts_with('.'))
+            .collect();
+        names.sort();
+        out.extend(names.into_iter().map(|n| (dir, n)));
+    }
+    out.truncate(CRED_FILES_MAX);
+    out
+}
+
+/// The client certificate of the `up` frame (root layer 12), checked with the app's own strict parser
+/// ([`macvpn_core::client_cert`]): `Ok(None)` without one, `Err` for a malformed one (a certificate without its key,
+/// both forms, bad base64, a block that is not a certificate or a key).
+pub fn client_cert(x509: &[u8], private: &[u8], pkcs12: &[u8]) -> Result<Option<ClientCert>, ()> {
+    fn text(v: &[u8]) -> Result<&str, ()> {
+        std::str::from_utf8(v).map_err(|_| ())
+    }
+    let stored = match (x509.is_empty(), private.is_empty(), pkcs12.is_empty()) {
+        (true, true, true) => return Ok(None),
+        (false, false, true) => Zeroizing::new(format!("pem:{}:{}", text(x509)?, text(private)?)),
+        (true, true, false) => Zeroizing::new(format!("p12:{}", text(pkcs12)?)),
+        _ => return Err(()),
+    };
+    ClientCert::from_stored(&stored).map(Some).ok_or(())
+}
+
+/// The run directory's names of a client certificate imported in the app (`mvpn-<id>` + an extension): unique per
+/// connection, so the copies of several connections can lie next to one load file.
+pub fn own_name(id: &str, ext: &str) -> String {
+    format!("mvpn-{id}.{ext}")
+}
+
+/// What [`stage_client_cert`] wrote: the key file (for [`key_secrets`]) and, for PEM, the certificate's name (for
+/// [`certs_block`]).
+#[derive(Debug, PartialEq, Eq)]
+pub struct StagedCert {
+    pub key: KeyFile,
+    pub cert: Option<String>,
+}
+
+/// A credential directory of `run` (0700): created if missing, refused if it is not a real directory.
+fn cred_dir(run: &Path, dir: &str) -> std::io::Result<PathBuf> {
+    use std::os::unix::fs::DirBuilderExt;
+    let to = run.join(dir);
+    if std::fs::symlink_metadata(&to).is_err() {
+        std::fs::DirBuilder::new().mode(0o700).create(&to)?;
+    }
+    if !is_real_dir(&to) {
+        return Err(std::io::Error::other("not a directory"));
+    }
+    fsx::chmod(&to, 0o700)?;
+    Ok(to)
+}
+
+/// Writes a new 0600 file `<run>/<dir>/<name>` (a same-named copy from Homebrew is replaced).
+fn put_cred(run: &Path, dir: &str, name: &str, data: &[u8]) -> std::io::Result<()> {
+    let to = cred_dir(run, dir)?.join(name);
+    fsx::remove_file(&to);
+    fsx::create_new(&to, data, 0o600)?;
+    fsx::chmod(&to, 0o600)
+}
+
+/// Writes the imported client certificate into `run`: PEM as `x509/mvpn-<id>.crt` (DER) and
+/// `private/mvpn-<id>.pem`, PKCS#12 as `pkcs12/mvpn-<id>.p12`. Removed with the run directory at down (and from
+/// it before down's reload, [`remove_own_client_cert`]).
+pub fn stage_client_cert(run: &Path, id: &str, cert: &ClientCert) -> std::io::Result<StagedCert> {
+    match cert {
+        ClientCert::Pem { cert, key, .. } => {
+            let (crt, pem) = (own_name(id, "crt"), own_name(id, "pem"));
+            put_cred(run, "x509", &crt, cert)?;
+            put_cred(run, "private", &pem, key.as_bytes())?;
+            Ok(StagedCert { key: ("private", pem), cert: Some(crt) })
+        }
+        ClientCert::Pkcs12 { der } => {
+            let p12 = own_name(id, "p12");
+            put_cred(run, "pkcs12", &p12, der)?;
+            Ok(StagedCert { key: ("pkcs12", p12), cert: None })
+        }
+    }
+}
+
+/// The directories an imported client certificate lies in.
+const OWN_DIRS: [&str; 3] = ["x509", "private", "pkcs12"];
+
+/// Removes this connection's imported client certificate from `run` (before down reloads the others: its key
+/// must not be loaded again).
+pub fn remove_own_client_cert(run: &Path, id: &str) {
+    for (dir, ext) in [("x509", "crt"), ("private", "pem"), ("pkcs12", "p12")] {
+        fsx::remove_file(&run.join(dir).join(own_name(id, ext)));
+    }
+}
+
+/// Copies the other active connections' imported client certificates (`mvpn-*` of [`OWN_DIRS`] in their run
+/// directories, root-only like this one) next to this run's load file, where `--load-all` looks for them; a
+/// name that exists here already is kept. At most [`CRED_FILES_MAX`] files.
+pub fn adopt_client_certs(run: &Path, others: &[PathBuf]) -> usize {
+    let mut n = 0;
+    for o in others.iter().filter(|o| o.as_path() != run) {
+        for dir in OWN_DIRS {
+            let Ok(entries) = std::fs::read_dir(o.join(dir)) else { continue };
+            for e in entries.filter_map(Result::ok) {
+                let Ok(name) = e.file_name().into_string() else { continue };
+                if !name.starts_with("mvpn-") || !is_name(&name) || n >= CRED_FILES_MAX {
+                    continue;
+                }
+                if std::fs::symlink_metadata(run.join(dir).join(&name)).is_ok() {
+                    continue;
+                }
+                let Some(data) = fsx::read_private(&e.path(), CRED_FILE_MAX).map(Zeroizing::new) else { continue };
+                if put_cred(run, dir, &name, &data).is_ok() {
+                    n += 1;
+                }
+            }
+        }
+    }
+    n
+}
+
+/// The section appended to the run copy so the `auth = pubkey` rounds of connection `conn` that name no
+/// certificate of their own use the imported one (`name`, in `x509/`); `None`: no such round. strongSwan's settings
+/// parser merges sections of the same name, so this only adds the key (as [`default_dpd_block`]).
+pub fn certs_block(config: &str, conn: &str, name: &str) -> Option<String> {
+    let rounds: Vec<String> = StrongSwanValidator::local_rounds(config)
+        .into_iter()
+        .filter(|r| r.conn == conn && r.is_pubkey() && !r.certs && is_name(&r.name))
+        .map(|r| r.name)
+        .collect();
+    if rounds.is_empty() || !is_name(name) {
+        return None;
+    }
+    let mut out = format!("\nconnections {{\n  {conn} {{\n");
+    for r in rounds {
+        out.push_str(&format!("    {r} {{\n      certs = {name}\n    }}\n"));
+    }
+    out.push_str("  }\n}\n");
+    Some(out)
 }
 
 /// Who a generated secret belongs to (its owners), kept in `<run>/owners` so a later connection can tell whether
@@ -329,6 +520,11 @@ fn load_together(ctx: &Ctx, swanctl: &Path, configs: &[PathBuf]) -> R<bool> {
     if ctx.dry() {
         return ctx.run_logged(&load_all_cmd(swanctl, &file));
     }
+    let adopted = adopt_client_certs(&run, configs);
+    if adopted > 0 {
+        ctx.log
+            .step(&tr("client certificates of the other strongSwan connections copied: %@", &[&adopted.to_string()]));
+    }
     let mut parts = Vec::new();
     for d in configs {
         // A config that cannot be read (its connection is going away) is left out.
@@ -399,8 +595,51 @@ pub fn up(ctx: &mut Ctx) -> R {
         let _ = fsx::append(&run.join("config"), block.as_bytes());
         ctx.log.step(&tr("dead peer detection added (dpd_delay = %@)", &[DEFAULT_DPD_DELAY]));
     }
+    // Root layer 12: an imported client certificate, checked again here.
+    let Ok(cert) = client_cert(&ctx.secrets.x509, &ctx.secrets.private, &ctx.secrets.pkcs12) else {
+        if !ctx.dry() {
+            fsx::remove_rf(&run);
+        }
+        return Err(ctx.die(tr("The imported client certificate is invalid", &[])));
+    };
+    // The CA / certificates / keys go next to the config, where `--load-all --file` reads them.
+    let mut keys: Vec<KeyFile> = Vec::new();
+    if !ctx.dry() {
+        if let Some(brew) = ctx.s.brew.clone() {
+            let src = cred_source(&brew);
+            match stage_creds(&brew, &run) {
+                Ok(n) => ctx.log.step(&tr(
+                    "strongSwan credentials copied from %@: %@ (skipped: %@)",
+                    &[&src.display().to_string(), &n.copied.to_string(), &n.skipped.to_string()],
+                )),
+                Err(_) => {
+                    fsx::remove_rf(&run);
+                    return Err(ctx.die(tr("Cannot create: %@", &[&run.display().to_string()])));
+                }
+            }
+        }
+        match &cert {
+            Some(c) => {
+                let Ok(staged) = stage_client_cert(&run, &ctx.id, c) else {
+                    fsx::remove_rf(&run);
+                    return Err(ctx.die(tr("Cannot create: %@", &[&run.display().to_string()])));
+                };
+                ctx.log.step(&tr("imported client certificate copied into the run directory", &[]));
+                if let Some(name) = &staged.cert
+                    && let Some(text) = fsx::read_private(&run.join("config"), LOAD_PART_MAX).map(Zeroizing::new)
+                    && let Some(block) = certs_block(&String::from_utf8_lossy(&text), &conn, name)
+                {
+                    let _ = fsx::append(&run.join("config"), block.as_bytes());
+                    ctx.log.step(&tr("certs = %@ added to the auth = pubkey rounds without certs", &[name]));
+                }
+                keys.push(staged.key);
+            }
+            None => keys = staged_key_files(&run),
+        }
+    }
+    let key_secrets = !ctx.secrets.keypass.is_empty() && !keys.is_empty();
     let mut owners = Vec::new();
-    if !ctx.secrets.psk.is_empty() || !ctx.secrets.pass.is_empty() {
+    if !ctx.secrets.psk.is_empty() || !ctx.secrets.pass.is_empty() || key_secrets {
         let text = fsx::read_private(&run.join("config"), LOAD_PART_MAX).map(Zeroizing::new).unwrap_or_default();
         let ids = StrongSwanValidator::remote_ids(&String::from_utf8_lossy(&text), &conn);
         if !ctx.secrets.psk.is_empty() {
@@ -409,7 +648,8 @@ pub fn up(ctx: &mut Ctx) -> R {
         if !ctx.secrets.pass.is_empty() {
             owners.push(Owner::Eap(ctx.secrets.user.to_vec(), ids.clone()));
         }
-        let block = secrets_block(&ctx.id, &ctx.secrets.user, &ctx.secrets.pass, &ctx.secrets.psk, &ids);
+        let s = &ctx.secrets;
+        let block = secrets_block(&ctx.id, &s.user, &s.pass, &s.psk, &ids, &s.keypass, &keys);
         let _ = fsx::append(&run.join("config"), &block);
         let _ = fsx::write_file(&run.join("owners"), owners_text(&owners).as_bytes(), 0o600);
         ctx.log.step(&tr("secrets block added (masked)", &[]));
@@ -423,22 +663,6 @@ pub fn up(ctx: &mut Ctx) -> R {
                     break;
                 }
                 ctx.sleep_ms(500)?;
-            }
-        }
-    }
-    // The CA / certificates / keys go next to the config, where `--load-all --file` reads them.
-    if !ctx.dry()
-        && let Some(brew) = ctx.s.brew.clone()
-    {
-        let src = cred_source(&brew);
-        match stage_creds(&brew, &run) {
-            Ok(n) => ctx.log.step(&tr(
-                "strongSwan credentials copied from %@: %@ (skipped: %@)",
-                &[&src.display().to_string(), &n.copied.to_string(), &n.skipped.to_string()],
-            )),
-            Err(_) => {
-                fsx::remove_rf(&run);
-                return Err(ctx.die(tr("Cannot create: %@", &[&run.display().to_string()])));
             }
         }
     }
@@ -495,6 +719,7 @@ fn unload(ctx: &Ctx, swanctl: &Path) -> R {
     let _guard = crate::macos::lock::acquire_shared(ctx, "strongswan")?;
     let run = ctx.run().to_path_buf();
     let _ = fsx::write_file(&run.join("unloaded"), b"", 0o600);
+    remove_own_client_cert(&run, &ctx.id);
     let others = active_others(&ctx.s.run_base, &run);
     if !others.is_empty() && run.join("conn").is_file() {
         ctx.log.step(&tr("reloading the other strongSwan connections", &[]));
@@ -681,7 +906,7 @@ mod tests {
 
     #[test]
     fn secrets_block_is_escaped_and_named_after_the_connection() {
-        let b = secrets_block(ID, b"al\"ice", b"p\\w", b"k\"y", &[]);
+        let b = secrets_block(ID, b"al\"ice", b"p\\w", b"k\"y", &[], b"", &[]);
         assert_eq!(
             String::from_utf8(b.to_vec()).unwrap(),
             format!(
@@ -689,7 +914,7 @@ mod tests {
             )
         );
         assert_eq!(
-            secrets_block(ID, b"", b"", b"psk", &[]).to_vec(),
+            secrets_block(ID, b"", b"", b"psk", &[], b"kp", &[]).to_vec(),
             format!("secrets {{\n  ike-mvpn-{ID} {{\n    secret = \"psk\"\n  }}\n}}\n").into_bytes()
         );
     }
@@ -697,13 +922,154 @@ mod tests {
     #[test]
     fn secrets_are_bound_to_the_concrete_remote_ids() {
         let ids = ["lab.example".to_string(), "C=CH, CN=vpn".to_string()];
-        let b = secrets_block(ID, b"labuser", b"pw", b"psk", &ids);
+        let b = secrets_block(ID, b"labuser", b"pw", b"psk", &ids, b"", &[("private", "k.pem".into())]);
         assert_eq!(
             String::from_utf8(b.to_vec()).unwrap(),
             format!(
                 "secrets {{\n  ike-mvpn-{ID} {{\n    secret = \"psk\"\n    id-r1 = \"lab.example\"\n    id-r2 = \"C=CH, CN=vpn\"\n  }}\n  eap-mvpn-{ID} {{\n    id = \"labuser\"\n    secret = \"pw\"\n    id-r1 = \"lab.example\"\n    id-r2 = \"C=CH, CN=vpn\"\n  }}\n}}\n"
             )
         );
+    }
+
+    #[test]
+    fn the_key_password_is_bound_to_each_key_file() {
+        let keys: Vec<KeyFile> = vec![
+            ("private", "client.pem".into()),
+            ("pkcs12", "c.p12".into()),
+            ("x509", "not-a-key.pem".into()),
+            ("private", "sp ace.pem".into()),
+        ];
+        let b = secrets_block(ID, b"", b"", b"", &[], b"k\"p\\", &keys);
+        assert_eq!(
+            String::from_utf8(b.to_vec()).unwrap(),
+            format!(
+                "secrets {{\n  private-mvpn-{ID}-1 {{\n    file = \"client.pem\"\n    secret = \"k\\\"p\\\\\"\n  }}\n  pkcs12-mvpn-{ID}-2 {{\n    file = \"c.p12\"\n    secret = \"k\\\"p\\\\\"\n  }}\n}}\n"
+            )
+        );
+        // No password: no key secret.
+        assert_eq!(secrets_block(ID, b"", b"", b"", &[], b"", &keys).as_slice(), b"secrets {\n}\n");
+        // The names stay unique per connection (no collision with another connection's sections).
+        let text = String::from_utf8(b.to_vec()).unwrap();
+        let names = StrongSwanValidator::section_names(&format!("{text}connections {{\n  a {{\n  }}\n}}\n"));
+        assert!(names.contains(&format!("secrets.private-mvpn-{ID}-1")), "{names:?}");
+    }
+
+    #[test]
+    fn the_frames_client_certificate_is_checked_again() {
+        use base64::Engine as _;
+        use macvpn_core::client_cert::fixtures;
+        let b64 = |d: &[u8]| base64::engine::general_purpose::STANDARD.encode(d);
+        let cert = b64(&fixtures::cert(false));
+        let key = b64(fixtures::pem("PRIVATE KEY", &fixtures::pkcs8()).as_bytes());
+        let p12 = b64(&fixtures::p12());
+        assert_eq!(client_cert(b"", b"", b""), Ok(None));
+        assert!(matches!(client_cert(cert.as_bytes(), key.as_bytes(), b""), Ok(Some(ClientCert::Pem { .. }))));
+        assert!(matches!(client_cert(b"", b"", p12.as_bytes()), Ok(Some(ClientCert::Pkcs12 { .. }))));
+        for (x, k, p) in [
+            (cert.as_bytes(), &b""[..], &b""[..]),
+            (b"", key.as_bytes(), b""),
+            (cert.as_bytes(), key.as_bytes(), p12.as_bytes()),
+            (key.as_bytes(), cert.as_bytes(), b""),
+            (b"!!", key.as_bytes(), b""),
+            (b"", b"", b"QUJD"),
+            (b"\xff", key.as_bytes(), b""),
+        ] {
+            assert_eq!(client_cert(x, k, p), Err(()));
+        }
+    }
+
+    #[test]
+    fn an_imported_certificate_is_staged_root_only_under_its_own_names() {
+        let run = tmp();
+        let pem = macvpn_core::client_cert::import(&[fixtures_pair().as_bytes()]).unwrap().cert;
+        // A same-named copy from Homebrew is replaced; an existing directory is kept.
+        std::fs::create_dir(run.join("x509")).unwrap();
+        std::fs::write(run.join("x509").join(own_name(ID, "crt")), b"OLD").unwrap();
+        let st = stage_client_cert(&run, ID, &pem).unwrap();
+        assert_eq!(st, StagedCert { key: ("private", own_name(ID, "pem")), cert: Some(own_name(ID, "crt")) });
+        let ClientCert::Pem { cert, key, .. } = &pem else { panic!() };
+        assert_eq!(&std::fs::read(run.join("x509").join(own_name(ID, "crt"))).unwrap(), cert);
+        assert_eq!(std::fs::read(run.join("private").join(own_name(ID, "pem"))).unwrap(), key.as_bytes());
+        for d in ["x509", "private"] {
+            assert_eq!(mode(&run.join(d)), 0o700);
+        }
+        assert_eq!(mode(&run.join("private").join(own_name(ID, "pem"))), 0o600);
+        let p12 = macvpn_core::client_cert::import(&[&macvpn_core::client_cert::fixtures::p12()]).unwrap().cert;
+        let st = stage_client_cert(&run, ID, &p12).unwrap();
+        assert_eq!(st, StagedCert { key: ("pkcs12", own_name(ID, "p12")), cert: None });
+        remove_own_client_cert(&run, ID);
+        for (d, e) in [("x509", "crt"), ("private", "pem"), ("pkcs12", "p12")] {
+            assert!(!run.join(d).join(own_name(ID, e)).exists(), "{d}");
+        }
+        // A symlinked credential directory is refused.
+        let other = tmp();
+        let run2 = tmp();
+        std::os::unix::fs::symlink(&other, run2.join("private")).unwrap();
+        assert!(stage_client_cert(&run2, ID, &pem).is_err());
+        assert_eq!(std::fs::read_dir(&other).unwrap().count(), 0);
+        for p in [&run, &other, &run2] {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
+
+    fn fixtures_pair() -> String {
+        macvpn_core::client_cert::fixtures::pem_pair()
+    }
+
+    #[test]
+    fn the_other_connections_certificates_are_copied_next_to_the_load_file() {
+        let (me, a, b) = (tmp(), tmp(), tmp());
+        let pem = macvpn_core::client_cert::import(&[fixtures_pair().as_bytes()]).unwrap().cert;
+        stage_client_cert(&a, "A", &pem).unwrap();
+        std::fs::create_dir(b.join("private")).unwrap();
+        std::fs::write(b.join("private/mvpn-B.pem"), b"B").unwrap();
+        std::fs::write(b.join("private/homebrew.key"), b"H").unwrap();
+        std::os::unix::fs::symlink("/etc/hosts", b.join("private/mvpn-link.pem")).unwrap();
+        std::fs::create_dir(me.join("private")).unwrap();
+        std::fs::write(me.join("private/mvpn-B.pem"), b"MINE").unwrap();
+        assert_eq!(adopt_client_certs(&me, &[a.clone(), b.clone(), me.clone()]), 2);
+        assert!(me.join("x509/mvpn-A.crt").is_file() && me.join("private/mvpn-A.pem").is_file());
+        assert_eq!(std::fs::read(me.join("private/mvpn-B.pem")).unwrap(), b"MINE", "an existing name is kept");
+        assert!(!me.join("private/homebrew.key").exists() && !me.join("private/mvpn-link.pem").exists());
+        assert_eq!(mode(&me.join("private/mvpn-A.pem")), 0o600);
+        for p in [&me, &a, &b] {
+            let _ = std::fs::remove_dir_all(p);
+        }
+    }
+
+    #[test]
+    fn the_staged_key_files_are_the_key_directories_plain_files() {
+        let run = tmp();
+        for d in ["private", "pkcs12", "x509"] {
+            std::fs::create_dir(run.join(d)).unwrap();
+        }
+        std::fs::write(run.join("private/b.key"), b"").unwrap();
+        std::fs::write(run.join("private/a.key"), b"").unwrap();
+        std::fs::write(run.join("private/.hidden"), b"").unwrap();
+        std::fs::create_dir(run.join("private/sub")).unwrap();
+        std::fs::write(run.join("pkcs12/c.p12"), b"").unwrap();
+        std::fs::write(run.join("x509/cert.pem"), b"").unwrap();
+        assert_eq!(
+            staged_key_files(&run),
+            vec![("private", "a.key".to_string()), ("private", "b.key".into()), ("pkcs12", "c.p12".into())]
+        );
+        let _ = std::fs::remove_dir_all(&run);
+    }
+
+    #[test]
+    fn the_imported_certificate_goes_into_the_pubkey_rounds_without_certs() {
+        let config = "connections {\n  lab {\n    local {\n      auth = pubkey\n    }\n    local-2 {\n      auth = eap-mschapv2\n    }\n    remote {\n      auth = pubkey\n    }\n    children {\n      net {\n      }\n    }\n  }\n  other {\n    local {\n    }\n    children {\n      x {\n      }\n    }\n  }\n}\n";
+        let block = certs_block(config, "lab", "mvpn-1.crt").unwrap();
+        assert_eq!(block, "\nconnections {\n  lab {\n    local {\n      certs = mvpn-1.crt\n    }\n  }\n}\n");
+        let merged = format!("{config}{block}");
+        use macvpn_core::validators::ConfigValidator;
+        assert!(StrongSwanValidator.validate(&merged).is_empty(), "the appended section is a valid config");
+        // A round that names its own certificate keeps it; no `auth` is pubkey.
+        let own = config
+            .replace("auth = pubkey\n    }\n    local-2", "auth = pubkey\n      certs = mine.pem\n    }\n    local-2");
+        assert_eq!(certs_block(&own, "lab", "mvpn-1.crt"), None);
+        assert!(certs_block(config, "other", "mvpn-1.crt").unwrap().contains("    local {\n      certs = mvpn-1.crt"));
+        assert_eq!(certs_block(config, "lab", "bad name"), None);
     }
 
     #[test]

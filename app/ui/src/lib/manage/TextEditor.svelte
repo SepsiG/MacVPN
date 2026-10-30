@@ -5,9 +5,16 @@
   // notes): the settings Windows cannot run as yellow notes above the config (not save errors: the config stays
   // valid for macOS), Windows' summary of the entry and the settings it ignores in grey under it, and **Trust This
   // CA in Windows…** with a PEM file the user picks.
+  // Inline secrets (keys, static keys, inline credentials, a strongSwan `secrets` section) are masked until "Show
+  // secrets" is ticked: the backend sends the masked text (`maskedText`), shown read-only; only the real text is
+  // ever edited and saved, so a mask can never be saved or half-edited. Under the config: the certificates
+  // (`Certificates`), and the key password only when the key needs one (`keyPasswordUsed`).
   import type { TextFields } from '../api';
+  import Certificates from './Certificates.svelte';
   import Icon from '../Icon.svelte';
   import { tr } from '../l10n.svelte';
+  import ClientCert from './ClientCert.svelte';
+  import { showsKeyPassword as keyPasswordShown, showsPanel } from './clientcert';
   import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
@@ -24,7 +31,14 @@
   const view = $derived(session.view);
   const showsUser = $derived(kind === 'openvpn' || kind === 'strongswan');
   const showsPsk = $derived(kind === 'strongswan');
-  const showsKeyPassword = $derived(kind === 'openvpn');
+  // OpenVPN: when the key or PKCS#12 needs one; IKEv2 when the config signs with a key (G2).
+  const showsKeyPassword = $derived(
+    kind === 'openvpn' ? (session.view?.keyPasswordUsed ?? false) : keyPasswordShown(kind, view?.clientCert),
+  );
+  /// "Show secrets": off for every editor that opens (the default is masked).
+  let showSecrets = $state(false);
+  /// The masked text while the secrets are hidden; null: the real text is shown (and editable).
+  const masked = $derived(showSecrets ? null : (view?.maskedText ?? null));
   /// A team catalog's connection: everything is read-only but the risky settings' checkbox (saved with "Save").
   const readOnly = $derived(view?.readOnly ?? null);
   const platform = $derived(view?.platform);
@@ -55,15 +69,37 @@
   {/if}
   <PlatformNotes {platform} part="reasons" />
   <input class="wide" type="text" placeholder={tr('Name')} aria-label={tr('Name')} disabled={readOnly !== null} bind:value={fields.name} />
-  <textarea
-    class="config"
-    class:invalid={(view?.issues.length ?? 0) > 0}
-    spellcheck="false"
-    autocapitalize="off"
-    autocomplete="off"
-    disabled={readOnly !== null}
-    bind:value={fields.text}
-  ></textarea>
+  {#if view?.maskedText !== undefined || showSecrets}
+    <div class="secrets-bar">
+      {#if masked !== null}<p class="note masked-note"><Icon name="lock" /><span>{tr('Secrets in the config are hidden. Tick Show secrets to edit the config.')}</span></p>{/if}
+      <label class="check show-secrets"><input type="checkbox" bind:checked={showSecrets} />{tr('Show secrets')}</label>
+    </div>
+  {/if}
+  {#if masked !== null}
+    <!-- Read-only and never bound: the masked text cannot reach the draft. -->
+    <textarea
+      class="config masked"
+      class:invalid={(view?.issues.length ?? 0) > 0}
+      spellcheck="false"
+      autocapitalize="off"
+      autocomplete="off"
+      readonly
+      aria-label={tr('Config')}
+      disabled={readOnly !== null}
+      value={masked}
+    ></textarea>
+  {:else}
+    <textarea
+      class="config"
+      class:invalid={(view?.issues.length ?? 0) > 0}
+      spellcheck="false"
+      autocapitalize="off"
+      autocomplete="off"
+      aria-label={tr('Config')}
+      disabled={readOnly !== null}
+      bind:value={fields.text}
+    ></textarea>
+  {/if}
   {#if view && view.issues.length > 0}
     <ul class="issues">
       {#each view.issues as issue, i (i)}
@@ -77,6 +113,17 @@
       readOnly={readOnly !== null}
       ongenerate={(which) => session.generateWireguardKey(which)}
       oncopy={(which) => session.copyWireguardKey(which)}
+    />
+  {/if}
+  {#if view?.certificates}
+    <Certificates certificates={view.certificates} />
+  {/if}
+  {#if showsPanel(kind, view?.clientCert)}
+    <ClientCert
+      cert={view.clientCert}
+      readOnly={readOnly !== null}
+      onimport={() => session.importClientCert()}
+      onremove={() => session.removeClientCert()}
     />
   {/if}
   {#if platform && (platform.summary || platform.warnings.length > 0 || platform.trustCa)}
@@ -105,14 +152,16 @@
           <SecretField
             label={tr('Private key password')}
             placeholder={tr('Private key password')}
+            removeLabel={tr('Remove saved key password')}
             stored={view?.hasStoredSecret.keyPassword ?? false}
             bind:value={fields.keyPassword}
           />
         {/if}
         {#if showsPsk}
           <SecretField
-            label={tr('Pre-shared key (PSK)')}
-            placeholder={tr('Pre-shared key (PSK)')}
+            label={tr('Shared secret (PSK)')}
+            placeholder={tr('Shared secret (PSK)')}
+            removeLabel={tr('Remove saved PSK')}
             stored={view?.hasStoredSecret.psk ?? false}
             bind:value={fields.psk}
           />
@@ -146,6 +195,29 @@
 </div>
 
 <style>
+  .secrets-bar {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+  }
+  .masked-note {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+  }
+  .masked-note :global(.icon) {
+    flex: none;
+    width: 12px;
+    height: 12px;
+  }
+  .show-secrets {
+    margin-left: auto;
+  }
+  .config.masked {
+    color: var(--secondary);
+  }
   .platform {
     display: flex;
     align-items: flex-start;

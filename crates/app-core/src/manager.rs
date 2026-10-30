@@ -643,6 +643,10 @@ pub struct ManagerSnapshot {
     pub folders: FolderSnapshot,
 }
 
+/// What [`ConnectionManager::reload`] reads from the configs, by row id: the server hosts, the platform's reasons
+/// it cannot connect, the earliest certificate expiry.
+type ConfigFacts = (HashMap<String, String>, HashMap<String, String>, HashMap<String, i64>);
+
 pub struct ConnectionManager {
     deps: Dependencies,
     inner: Mutex<Inner>,
@@ -662,6 +666,9 @@ pub struct ConnectionManager {
     /// The connections the platform cannot connect with their settings ([`Self::unsupported_reasons`]), by row
     /// id: read by [`Self::reload`] like [`Self::server_hosts`].
     unsupported: RwLock<Arc<HashMap<String, String>>>,
+    /// The earliest certificate expiry (`notAfter`, Unix seconds) of each managed connection's config
+    /// ([`Self::certificate_expiry`]), by row id: read by [`Self::reload`] like [`Self::server_hosts`].
+    certificate_expiry: RwLock<Arc<HashMap<String, i64>>>,
 }
 
 impl ConnectionManager {
@@ -679,6 +686,7 @@ impl ConnectionManager {
             saves_in_flight: Arc::default(),
             server_hosts: RwLock::default(),
             unsupported: RwLock::default(),
+            certificate_expiry: RwLock::default(),
         })
     }
 
@@ -699,6 +707,13 @@ impl ConnectionManager {
         HashMap::clone(&self.unsupported.read().unwrap_or_else(PoisonError::into_inner))
     }
 
+    /// The earliest `notAfter` (Unix seconds) of the certificates in each managed connection's config (OpenVPN
+    /// `<cert>`, `<ca>`, `<extra-certs>`, an unencrypted `<pkcs12>`; the SSTP CA), keyed by the row id, for the
+    /// row's expiry warning. What the last [`Self::reload`] read (no config is read here).
+    pub fn certificate_expiry(&self) -> HashMap<String, i64> {
+        HashMap::clone(&self.certificate_expiry.read().unwrap_or_else(PoisonError::into_inner))
+    }
+
     /// [`Self::unsupported_reasons`] of one row.
     pub fn unsupported_reason(&self, key: &str) -> Option<String> {
         self.unsupported.read().unwrap_or_else(PoisonError::into_inner).get(key).cloned()
@@ -708,10 +723,11 @@ impl ConnectionManager {
     /// cannot be read or names no host is left out), and with a [`NativeSupport`] the connections it cannot
     /// connect (a native kind's settings are in its meta: asked with an empty config). Called by [`Self::reload`]
     /// without any lock held.
-    fn read_config_facts(&self, connections: &[Connection]) -> (HashMap<String, String>, HashMap<String, String>) {
+    fn read_config_facts(&self, connections: &[Connection]) -> ConfigFacts {
         let support = self.hooks().native_support;
         let mut hosts = HashMap::new();
         let mut unsupported = HashMap::new();
+        let mut expiry = HashMap::new();
         for c in connections {
             let key = uuid_string(&c.id);
             if c.kind.is_native() {
@@ -724,11 +740,14 @@ impl ConnectionManager {
             if let Some(reason) = support.as_ref().and_then(|s| s.unsupported_reason(c, config.as_bytes())) {
                 unsupported.insert(key.clone(), reason);
             }
+            if let Some(not_after) = macvpn_core::certificates::of_config(c.kind, &config).earliest_expiry() {
+                expiry.insert(key.clone(), not_after);
+            }
             if let Some(host) = macvpn_core::importer::remote_host(c.kind, &config) {
                 hosts.insert(key, host);
             }
         }
-        (hosts, unsupported)
+        (hosts, unsupported, expiry)
     }
 
     /// The platform's answer which managed connections it cannot connect (read at every [`Self::reload`]; WinVPN
@@ -1050,9 +1069,10 @@ impl ConnectionManager {
         let folders = if list.is_ok() { self.load_folders() } else { None };
         // The search's server hosts, before the change is published (the view model built then has them).
         if let Ok(list) = &list {
-            let (hosts, unsupported) = self.read_config_facts(list);
+            let (hosts, unsupported, expiry) = self.read_config_facts(list);
             *self.server_hosts.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(hosts);
             *self.unsupported.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(unsupported);
+            *self.certificate_expiry.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(expiry);
         }
         self.mutate(|i| {
             if let Ok(list) = list {
@@ -1096,6 +1116,7 @@ impl ConnectionManager {
             .read(|i| i.ops.iter().filter(|(_, op)| matches!(op, Op::Connecting)).map(|(k, _)| k.clone()).collect());
         *self.server_hosts.write().unwrap_or_else(PoisonError::into_inner) = Arc::default();
         *self.unsupported.write().unwrap_or_else(PoisonError::into_inner) = Arc::default();
+        *self.certificate_expiry.write().unwrap_or_else(PoisonError::into_inner) = Arc::default();
         self.mutate(|i| {
             i.locked = true;
             // No pruning of the (empty) ranking until the full list is back.
@@ -1757,6 +1778,21 @@ impl ConnectionManager {
             return Err(reason);
         }
         let mut required = credentials::required_fields(c.kind, Some(&config));
+        // IKEv2 with an imported client certificate (G2/G4): its key password, asked when not saved.
+        let client_cert = (c.kind == VPNKind::Strongswan)
+            .then(|| self.deps.secrets.get(&c.id, SecretField::ClientCert).map(Zeroizing::new))
+            .flatten();
+        if let Some(stored) = &client_cert
+            && macvpn_core::client_cert::ClientCert::from_stored(stored).is_none()
+        {
+            return Err(l10n::tr("The imported client certificate cannot be read. Import it again.", &[]));
+        }
+        required.fields.extend(credentials::client_cert_fields(
+            c.kind,
+            &config,
+            client_cert.as_deref().map(|s| s.as_str()),
+        ));
+        drop(client_cert);
         // A team SSTP connection on its credential slot: the slot's user name goes into `user=` (asked when empty).
         let team_sstp =
             c.kind == VPNKind::Sstp && self.deps.secrets.credential_for(&c.id).is_some_and(|r| r.team.is_some());

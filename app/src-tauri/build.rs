@@ -33,6 +33,8 @@ const COMMANDS: &[&str] = &[
     "editor_choose_ca",
     "editor_wireguard_generate",
     "editor_wireguard_copy",
+    "editor_import_client_cert",
+    "editor_remove_client_cert",
     "create_connection",
     "import_files",
     "answer_question",

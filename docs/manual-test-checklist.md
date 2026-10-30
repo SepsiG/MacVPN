@@ -221,6 +221,45 @@ Kézzel megadott WireGuard-kapcsolat (**Új → WireGuard**). Ahol nincs „macO
 - [ ] (k11) A debug napló (**Csatlakozás hibakereső módban**), a napló fül és az értesítések egyikében sem szerepel a privát vagy az előre megosztott kulcs
 - [ ] (k12) Csapatkatalógus WireGuard-kapcsolata: a publikus kulcs látszik és másolható, a **Kulcspár generálása** tiltva
 
+### IKEv2 klienstanúsítvány és kulcsjelszó (2026-10-30, 2.0.7, G2/G4)
+
+macOS: 12-es root réteg; a labor (`ikev2-cert.swanctl.conf`, a `lab-client.p12`, a `lab-client.pem` és a kulcs a `scripts/vpn-lab/.state/` alatt, a `.p12` jelszava a `CREDENTIALS.txt`-ben). Előtte a `$(brew --prefix)/etc/swanctl/x509/` és `private/` labor-fájljai törölve (a CA maradjon az `x509ca/`-ban).
+
+- [ ] (c1) macOS: a 2.0.6-ról frissítve a Rendszerállapot „Frissítés szükséges (11 → 12)”; **Engedélyezés** után „Telepítve (verzió 12)”
+- [ ] (c2) macOS: IKEv2-config `local { auth = pubkey }` sorral (`certs` nélkül): a config alatt **Klienstanúsítvány** doboz („Nincs importált klienstanúsítvány…”), és a hitelesítésnél **Privát kulcs jelszava** mező; `auth = eap-mschapv2`-re írva mindkettő eltűnik
+- [ ] (c3) macOS: **Klienstanúsítvány importálása…** → a `lab-client.pem` és a kulcsa együtt kijelölve → „PEM-tanúsítvány és kulcs” + SHA-256 ujjlenyomat (egyezik: `openssl x509 -in lab-client.pem -noout -fingerprint -sha256`); egy CA-t is tartalmazó PEM-mel „A fájlokban lévő további 1 tanúsítvány (a CA, a lánc) nem lett importálva.”
+- [ ] (c4) macOS: csatlakozás `sudo swanctl --load-creds` és kézi másolás nélkül → Csatlakozva, „via: ipsec”; a naplóban „az importált klienstanúsítvány a futási könyvtárba másolva” és „certs = mvpn-<azonosító>.crt hozzáadva…”; `sudo ls -l /var/run/macvpn/<AZONOSÍTÓ>/private` → csak root olvashatja; bontás után a mappa eltűnik
+- [ ] (c5) macOS: a `lab-client.p12` importálva → „PKCS#12 fájl”, „A kulcsot jelszó védi…”; a `local` szakaszban `id = "<a tanúsítvány alanya>"`; mentett jelszó nélkül csatlakozva a **Hitelesítő adatok szükségesek** ablak csak a **Privát kulcs jelszava** mezőt kéri; jó jelszóval Csatlakozva; **Mentés a széfbe** után a következő csatlakozás nem kérdez
+- [ ] (c6) macOS: titkosított PEM-kulcs (`openssl pkcs8 -topk8 -v2 aes-256-cbc`) ugyanígy kéri a jelszót; rossz jelszóval a csatlakozás hibával végződik, a jelszó sem a naplóban (debug módban sem), sem az értesítésben
+- [ ] (c7) macOS: a Homebrew `private/` mappájában lévő titkosított kulcs (importálás nélkül) a **Privát kulcs jelszava** mezőben mentett jelszóval csatlakozik
+- [ ] (c8) macOS: két IKEv2-kapcsolat egyszerre, mindkettő importált tanúsítvánnyal (vagy az egyik EAP) → mindkettő Csatlakozva; az egyik bontása után a másik `sudo swanctl --rekey --ike <név> --reauth`-tal is él
+- [ ] (c9) macOS: **Eltávolítás** → „Eltávolítod a klienstanúsítványt?” → a doboz újra „Nincs importált…”; a kulcsjelszó megmarad; mentés-visszaállítás (**Mindent mentek** / visszaállítás) után az importált tanúsítvány is visszajön
+- [ ] (c10) macOS: hibás fájlok: egy `.txt`, egy csak tanúsítványt tartalmazó PEM, két kulcs, egy 16 KB-nál nagyobb fájl → a megfelelő hibaüzenet, a korábban importált tanúsítvány marad; csapatkatalógus IKEv2-kapcsolatánál a gombok tiltva
+- [ ] (c11) Windows: `auth = pubkey` IKEv2-confignál a szerkesztő alatt szürkén „A Windows számítógép-tanúsítvánnyal jelentkezik be: …”; nincs **Klienstanúsítvány importálása…** és nincs **Privát kulcs jelszava**
+
+### Kliens hitelesítő adatok: rejtett titkok, tanúsítványok, jelszómezők, export (2.0.7, macOS és Windows)
+
+Kell egy `.ovpn` `<ca>`, `<cert>`, `<key>`, `<tls-crypt>` blokkal (a labor OpenVPN-szerveréről), egy jelszavas és egy üres jelszavú PKCS#12 (`openssl pkcs12 -export … -passout pass:titok` / `-passout pass:`), egy WireGuard-kapcsolat kulccsal, egy IKEv2-kapcsolat `secrets { … }` szakasszal és egy 30 napon belül lejáró klienstanúsítvány (`openssl x509 -req … -days 10`). Ahol nincs „macOS:” vagy „Windows:” jelölés, mindkettőn ellenőrizd.
+
+- [ ] (t1) Az OpenVPN-kapcsolat szerkesztője megnyitáskor: a `<key>` és a `<tls-crypt>` blokk sorai `••••••••••••••••` jelként, a `<ca>` és a `<cert>` olvasható; a config csak olvasható, fölötte „A config titkai rejtve vannak. A szerkesztéshez jelöld be a Titkok megjelenítése lehetőséget.” és a **Titkok megjelenítése** négyzet
+- [ ] (t2) **Titkok megjelenítése** bejelölve → a valódi szöveg, szerkeszthető; egy sor módosítása, **Mentés**, a négyzet kikapcsolása → újra maszkolva; másik kapcsolatra váltás és vissza → újra rejtve nyílik
+- [ ] (t3) Mentés után exportálva (**Exportálás kulcsokkal**) a fájlban a valódi kulcsok vannak, sehol nincs `•`
+- [ ] (t4) WireGuard: a config `PrivateKey` és `PresharedKey` értéke maszkolva, a kulcspanel (Megjelenítés / Másolás) változatlanul működik; IKEv2: a `secrets` szakasz értékei maszkolva, a szakasznevek és a zárójelek látszanak
+- [ ] (t5) A config alatt a **Tanúsítványok** doboz: elöl a **Klienstanúsítvány**, utána a **CA-tanúsítvány**; kinyitva **Tulajdonos**, **Kibocsátó**, **Érvényes ettől** / **Érvényes eddig**, **Kulcstípus** (pl. „RSA 2048”), **Sorozatszám**, **SHA-256 ujjlenyomat**; az ujjlenyomat megegyezik az `openssl x509 -noout -fingerprint -sha256` kimenetével
+- [ ] (t6) Az ujjlenyomat **Másolás** és a **PEM másolása** gombja → a vágólapon az ujjlenyomat, illetve a teljes `-----BEGIN CERTIFICATE-----` blokk (privát kulcs sosem)
+- [ ] (t7) A 10 nap múlva lejáró klienstanúsítvánnyal: a doboz nyitva, sárga „10 nap múlva lejár”; a kapcsolat sora a listában és a fejléce „A tanúsítvány 10 nap múlva lejár”; lejárt tanúsítvánnyal piros „Lejárt” és „A tanúsítvány lejárt”
+- [ ] (t8) Az üres jelszavú PKCS#12 (`<pkcs12>`): nincs **Privát kulcs jelszava** mező, csatlakozáskor nem kér jelszót, a kapcsolat felépül; a doboz „A PKCS#12-fájl tanúsítványait a jelszava titkosítja, ezért itt nem jeleníthetők meg.”
+- [ ] (t9) A jelszavas PKCS#12: az import üzenete emlékeztet a **Privát kulcs jelszava** kitöltésére; a mező látszik; mentett jelszó nélkül csatlakozáskor a **Hitelesítő adatok szükségesek** ablak a **Privát kulcs jelszava** mezőt kéri; jó jelszóval felépül
+- [ ] (t10) Titkosítatlan `<key>`, mentett kulcsjelszó nélkül: nincs **Privát kulcs jelszava** mező; titkosított `<key>`: van; a mentett kulcsjelszónál a gomb „Mentett kulcsjelszó törlése”, a PSK-nál (IKEv2 PSK, L2TP, Cisco, rendszer VPN) „Mentett PSK törlése”, a jelszónál „Mentett jelszó törlése”
+- [ ] (t11) A PSK neve mindenhol „Közös kulcs (PSK)” / „Shared secret (PSK)”: IKEv2-, L2TP- és Cisco-szerkesztő, rendszer VPN, csatlakozáskori ablak, csapatkatalógus közzététele
+- [ ] (t12) Egy jelszómezőbe gépelve megjelenik a **Megjelenítés** gomb, rákattintva olvasható, **Elrejtés** → újra pontok; mentett, nem módosított mezőnél nincs **Megjelenítés**; a csatlakozáskori ablakban ugyanígy
+- [ ] (t13) Exportálás a `<key>` + `<tls-crypt>` configgal: a figyelmeztetés „Tartalmazza: <key>. …” és „Az Exportálás kulcsok nélkül ezt megtartja: <tls-crypt>. …”; **Exportálás kulcsok nélkül** → a fájlban nincs `<key>`, a `<tls-crypt>` benne van, a mentés üzenete „A privát kulcsaid és a hitelesítő adataid nem kerülnek bele. A közös TLS-kulcs (<tls-crypt>) igen: …”; a fájlt egy másik gépen importálva, a saját kulcsot hozzáadva a kapcsolat felépül
+- [ ] (t14) Csak `<tls-auth>` kulcsot tartalmazó config (felhasználónév/jelszó belépés): az export kérdés nélkül lefut, a `<tls-auth>` benne van
+- [ ] (t15) macOS: IKEv2 `certs = client.pem` / `cacerts = ca.pem` sorral, a fájlok a Homebrew `etc/swanctl/x509` és `x509ca` mappájában → a **Tanúsítványok** dobozban megjelennek a fájlnevekkel; Windows: az IKEv2-szerkesztőben nincs Tanúsítványok doboz
+- [ ] (t16) SSTP egyéni CA-fájllal: a CA a **Tanúsítványok** dobozban
+- [ ] (t17) A debug naplóban, a napló fülön és az értesítésekben egyik kulcs, jelszó vagy PKCS#12 jelszó sem szerepel
+- [ ] (t18) Mindez angolul is (**Show secrets**, **Certificates**, **Client certificate**, **Expires in 10 days**, **Certificate expires in 10 days**, **Remove saved key password**)
+
 ## Élő átjárók: UniFi, pfSense, OPNsense (2026-10-29, macOS és Windows)
 
 Valódi átjárón, amelyhez van admin-hozzáférés (a lépések: `docs/how-to.hu.md` 24. és `docs/winvpn-how-to.hu.md` 27. szakasz; a formátumokat a `Tests/Fixtures/{unifi,pfsense,opnsense}/` fixture-ök és a `vendor_profiles` tesztek már lefedik, itt a valódi kapcsolat a kérdés). Ahol nincs „macOS:” vagy „Windows:” jelölés, mindkettőn ellenőrizd. A kliens egy másik hálózaton legyen (pl. telefonos hotspot), ne az átjáró LAN-ján. Átjáró, firmware / UniFi Network **verzió: ___**

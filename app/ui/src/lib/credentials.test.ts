@@ -120,6 +120,13 @@ test('the view shows only the asked fields, the user name pre-filled', async () 
   assert.match(psk, /Shared secret \(PSK\)/);
 });
 
+test('a typed secret can be shown (G6); a user name or an empty field offers nothing', async () => {
+  const typed = await view({ values: { username: 'alice', password: 'x' }, armed: true });
+  assert.equal((typed.match(/<button class="show[^"]*" type="button" aria-pressed="false"[^>]*>Show<\/button>/g) ?? []).length, 1);
+  const empty = await view({ values: { username: 'alice' }, armed: true });
+  assert.doesNotMatch(empty, /class="show/);
+});
+
 test('the re-prompt shows the message', async () => {
   const html = await view({ values: {}, armed: true }, { message: 'Sign-in failed — check the username and password' });
   assert.match(html, /role="alert"[^>]*>.*Sign-in failed — check the username and password/s);

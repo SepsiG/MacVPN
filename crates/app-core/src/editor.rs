@@ -21,6 +21,9 @@
 
 use crate::deps::{Clock, ConnectionRepository, NativeProfiles, SecretField, SecretReader, SecretWriter, SystemVpn};
 use crate::manager::ConnectionManager;
+use macvpn_core::certificates::{self, ConfigCertificates, Role};
+use macvpn_core::client_cert;
+use macvpn_core::config_secrets;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::mfa;
 use macvpn_core::models::{
@@ -28,8 +31,10 @@ use macvpn_core::models::{
 };
 use macvpn_core::validators::openvpn::OpenVPNValidator;
 use macvpn_core::validators::sstp::{CertMode, SSTPConfig};
+use macvpn_core::validators::strongswan::StrongSwanValidator;
 use macvpn_core::vault::Entropy;
 use macvpn_core::wireguard_keys::{self, KeyLine};
+use macvpn_core::x509::{self, Validity};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeSet, HashSet};
 use std::sync::Arc;
@@ -620,6 +625,16 @@ pub struct Draft {
     /// "Managed by the team catalog “…”" (team catalog spec 6): the config, name and the other settings are
     /// read-only; only the risky-directive acknowledgement is saved.
     pub read_only: Option<String>,
+    /// IKEv2: the imported client certificate in the vault (its public facts; G4), and how many certificates the
+    /// last import left out.
+    pub client_cert: Option<client_cert::Summary>,
+    pub client_cert_ignored: usize,
+    /// The certificates of the draft's config (OpenVPN, SSTP; [`certificates::of_config`]), read again only when
+    /// the config text (or the SSTP CA) changes.
+    pub certificates: ConfigCertificates,
+    /// OpenVPN: the draft's private key needs a password ([`certificates::openvpn_key_needs_password`]), read with
+    /// [`Self::certificates`].
+    pub key_needs_password: bool,
 }
 
 /// The read-only reason of a team catalog's connection.
@@ -721,7 +736,11 @@ impl Draft {
         };
         // The text editor shows the issues with their line numbers, the SSTP form the same way after an import.
         let issues = import_issues.iter().map(ValidationIssue::display).collect();
-        Draft {
+        let client_cert = match &target {
+            Target::Connection(c) if c.kind == VPNKind::Strongswan => stored_client_cert(deps, &c.id),
+            _ => None,
+        };
+        let mut draft = Draft {
             target,
             original: fields.clone(),
             fields,
@@ -734,7 +753,27 @@ impl Draft {
             removed: false,
             credential,
             read_only,
-        }
+            client_cert,
+            client_cert_ignored: 0,
+            certificates: ConfigCertificates::default(),
+            key_needs_password: false,
+        };
+        draft.read_certificates();
+        draft
+    }
+
+    /// Reads [`Self::certificates`] and [`Self::key_needs_password`] from the fields (after a change of the config
+    /// text or the SSTP CA: a PKCS#12's MAC check is not repeated for every other edit).
+    fn read_certificates(&mut self) {
+        let (certificates, key_needs_password) = match (&self.fields, self.kind()) {
+            (EditorFields::Text(f), Some(VPNKind::Openvpn)) => {
+                (certificates::of_config(VPNKind::Openvpn, &f.text), certificates::openvpn_key_needs_password(&f.text))
+            }
+            (EditorFields::Sstp(f), _) => (certificates::of_config(VPNKind::Sstp, &f.config().serialized()), false),
+            _ => (ConfigCertificates::default(), false),
+        };
+        self.certificates = certificates;
+        self.key_needs_password = key_needs_password;
     }
 
     /// The link state of `target` as stored now (read without any lock of the caller held).
@@ -783,7 +822,15 @@ impl Draft {
         if !self.fields.same_type(&fields) {
             return Err("wrong editor type".into());
         }
+        let certificates_changed = match (&self.fields, &fields) {
+            (EditorFields::Text(a), EditorFields::Text(b)) => a.text != b.text,
+            (EditorFields::Sstp(a), EditorFields::Sstp(b)) => a.ca_pem != b.ca_pem,
+            _ => false,
+        };
         self.fields = fields;
+        if certificates_changed {
+            self.read_certificates();
+        }
         Ok(())
     }
 
@@ -865,9 +912,13 @@ impl Draft {
                 let risky = self.risky();
                 let acknowledged =
                     if self.acknowledges_risk(&risky) { Self::risky_names(&risky) } else { BTreeSet::new() };
-                // Only OpenVPN has a private key password; the other kinds clear it (as the Swift save).
-                let key_password =
-                    if c.kind == VPNKind::Openvpn { f.key_password.clone() } else { Some(String::new()) };
+                // OpenVPN and IKEv2 (a client certificate's key, G2) have a private key password; the other kinds
+                // clear it (as the Swift save).
+                let key_password = if matches!(c.kind, VPNKind::Openvpn | VPNKind::Strongswan) {
+                    f.key_password.clone()
+                } else {
+                    Some(String::new())
+                };
                 // A linked editor sends no username (an empty one); a typed one is refused by `save_text`.
                 let linked = self.credential.is_some();
                 let secrets = Secrets {
@@ -985,6 +1036,7 @@ impl Draft {
             Some(pem) => {
                 self.import_error = None;
                 f.ca_pem = pem;
+                self.read_certificates();
             }
             None => {
                 self.import_error = Some(l10n::tr(
@@ -1045,6 +1097,51 @@ impl Draft {
         }
     }
 
+    /// **Import Client Certificate…** (IKEv2, G4): the chosen files (`files`, each read whole, at most
+    /// [`client_cert::MAX_FILE_BYTES`]) checked by [`client_cert::import`] and stored in the vault at once (a
+    /// previous one is replaced). Refused for a read-only or removed editor and for anything but IKEv2.
+    pub fn import_client_cert(&mut self, deps: &EditorDeps, files: &[&[u8]]) -> Result<(), String> {
+        let id = self.client_cert_target()?;
+        let imported = client_cert::import(files)?;
+        deps.secret_writer.set(&imported.cert.stored(), &id, SecretField::ClientCert);
+        self.client_cert = stored_client_cert(deps, &id);
+        if self.client_cert.is_none() {
+            return Err(l10n::tr("The client certificate could not be stored.", &[]));
+        }
+        self.client_cert_ignored = imported.ignored_certificates;
+        Ok(())
+    }
+
+    /// "Remove" of the imported client certificate (the key password stays: it is the editor's own field).
+    pub fn remove_client_cert(&mut self, deps: &EditorDeps) -> Result<(), String> {
+        let id = self.client_cert_target()?;
+        deps.secret_writer.set("", &id, SecretField::ClientCert);
+        self.client_cert = stored_client_cert(deps, &id);
+        self.client_cert_ignored = 0;
+        Ok(())
+    }
+
+    fn client_cert_target(&self) -> Result<Uuid, String> {
+        if let Some(reason) = &self.read_only {
+            return Err(reason.clone());
+        }
+        match &self.target {
+            Target::Connection(c) if c.kind == VPNKind::Strongswan && !self.removed => Ok(c.id),
+            _ => Err("not an IKEv2 editor".into()),
+        }
+    }
+
+    /// IKEv2: the client certificate part of the view.
+    fn client_cert_view(&self) -> Option<ClientCertView> {
+        let (EditorFields::Text(f), Some(VPNKind::Strongswan)) = (&self.fields, self.kind()) else { return None };
+        Some(ClientCertView {
+            pubkey: StrongSwanValidator::uses_pubkey(&f.text),
+            imported: self.client_cert.clone(),
+            ignored: self.client_cert_ignored,
+            import: true,
+        })
+    }
+
     /// The editor's view for the UI.
     pub fn view(&self, id: &str) -> EditorView {
         let risky = self.risky();
@@ -1086,9 +1183,132 @@ impl Draft {
             credential: self.credential.clone(),
             read_only: self.read_only.clone(),
             wireguard: self.wireguard_keys(),
+            client_cert: self.client_cert_view(),
             platform: None,
+            masked_text: match (&self.fields, self.kind()) {
+                (EditorFields::Text(f), Some(kind)) => config_secrets::masked(kind, &f.text),
+                _ => None,
+            },
+            key_password_used: match (&self.fields, self.kind()) {
+                (EditorFields::Text(f), Some(VPNKind::Openvpn)) => {
+                    self.key_needs_password || self.stored.key_password || f.key_password.is_some()
+                }
+                _ => false,
+            },
+            certificates: (!self.certificates.certificates.is_empty() || self.certificates.pkcs12_encrypted)
+                .then(|| CertificatesView::of(&self.certificates)),
         }
     }
+}
+
+/// [`EditorView::certificates`]: the certificates of the config, the client certificate first.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificatesView {
+    pub certificates: Vec<CertificateView>,
+    /// A `<pkcs12>` whose certificates are encrypted: "The certificates in the PKCS#12 need its password to be
+    /// shown."
+    pub pkcs12_encrypted: bool,
+}
+
+impl CertificatesView {
+    pub fn of(certificates: &ConfigCertificates) -> CertificatesView {
+        CertificatesView {
+            certificates: certificates.certificates.iter().map(CertificateView::of).collect(),
+            pkcs12_encrypted: certificates.pkcs12_encrypted,
+        }
+    }
+
+    /// The validity of each certificate at `now` (Unix seconds): [`CertificateView::status`] and its note.
+    pub fn stamp(&mut self, now: i64) {
+        for c in &mut self.certificates {
+            c.stamp(now);
+        }
+    }
+}
+
+/// One certificate (public data only: the PEM is the certificate, never a key).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertificateView {
+    /// `client`, `ca` or `chain`.
+    pub role: &'static str,
+    /// Where it is: `<cert>`, `<ca>`, `<pkcs12>`, … or a swanctl file name.
+    pub source: String,
+    pub subject: String,
+    pub issuer: String,
+    pub serial: String,
+    /// Unix seconds.
+    pub not_before: i64,
+    pub not_after: i64,
+    /// Upper-case hexadecimal pairs separated by `:`.
+    pub sha256: String,
+    pub key_type: String,
+    /// The certificate as PEM ("Copy PEM").
+    pub pem: String,
+    /// `valid`, `expiresSoon`, `expired` or `notYetValid` ([`Self::stamp`]; `valid` until stamped).
+    pub status: &'static str,
+    /// The yellow or red note of a certificate that expires within 30 days, has expired, or is not valid yet.
+    pub note: Option<String>,
+}
+
+impl CertificateView {
+    fn of(c: &certificates::ConfigCertificate) -> CertificateView {
+        let cert = &c.certificate;
+        CertificateView {
+            role: match c.role {
+                Role::Client => "client",
+                Role::Ca => "ca",
+                Role::Chain => "chain",
+            },
+            source: c.source.clone(),
+            subject: cert.subject.clone(),
+            issuer: cert.issuer.clone(),
+            serial: cert.serial.clone(),
+            not_before: cert.not_before,
+            not_after: cert.not_after,
+            sha256: cert.sha256.clone(),
+            key_type: cert.key_type.clone(),
+            pem: x509::to_pem(&cert.der),
+            status: "valid",
+            note: None,
+        }
+    }
+
+    fn stamp(&mut self, now: i64) {
+        let validity = x509::validity(self.not_before, self.not_after, now);
+        self.status = match validity {
+            Validity::Valid => "valid",
+            Validity::ExpiresSoon { .. } => "expiresSoon",
+            Validity::Expired => "expired",
+            Validity::NotYetValid => "notYetValid",
+        };
+        self.note = certificate_note(validity);
+    }
+}
+
+/// The note of a certificate's validity in the editor: `None` while it is valid for more than 30 days.
+pub fn certificate_note(validity: Validity) -> Option<String> {
+    Some(match validity {
+        Validity::Valid => return None,
+        Validity::Expired => l10n::tr("Expired", &[]),
+        Validity::NotYetValid => l10n::tr("Not valid yet", &[]),
+        Validity::ExpiresSoon { days: 0 } => l10n::tr("Expires today", &[]),
+        Validity::ExpiresSoon { days: 1 } => l10n::tr("Expires tomorrow", &[]),
+        Validity::ExpiresSoon { days } => l10n::tr("Expires in %lld days", &[Arg::Int(days)]),
+    })
+}
+
+/// The warning of a connection row whose certificates expire within 30 days or have expired (the earliest
+/// `notAfter` of the config's certificates, at `now`); `None` otherwise.
+pub fn certificate_row_warning(not_after: i64, now: i64) -> Option<String> {
+    Some(match x509::validity(i64::MIN, not_after, now) {
+        Validity::Valid | Validity::NotYetValid => return None,
+        Validity::Expired => l10n::tr("Certificate expired", &[]),
+        Validity::ExpiresSoon { days: 0 } => l10n::tr("Certificate expires today", &[]),
+        Validity::ExpiresSoon { days: 1 } => l10n::tr("Certificate expires tomorrow", &[]),
+        Validity::ExpiresSoon { days } => l10n::tr("Certificate expires in %lld days", &[Arg::Int(days)]),
+    })
 }
 
 /// A risky directive of the config (the yellow panel's row).
@@ -1143,11 +1363,26 @@ pub struct EditorView {
     /// JSON for the other kinds.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub wireguard: Option<WireGuardKeysView>,
+    /// IKEv2: the client certificate panel (G2/G4). Absent from the JSON for the other kinds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_cert: Option<ClientCertView>,
     /// What the platform says about these settings (WinVPN 2c: Windows' reasons, the IKEv2 summary, the CA trust,
     /// the L2TP copy, the system VPN's PSK note); set by the Connections window
     /// ([`crate::connections::ConnectionsModel::set_native_platform`]). Absent from the JSON when `None` (MacVPN).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub platform: Option<EditorPlatformView>,
+    /// The config text with its inline secrets masked (client-credential audit G1;
+    /// [`config_secrets::masked`]): shown read-only while "Show secrets" is off. Never edited or saved: the draft
+    /// keeps the real text. Absent from the JSON when there is nothing to mask.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub masked_text: Option<String>,
+    /// OpenVPN: the "Private key password" field is shown (the key is encrypted, a PKCS#12 needs a password, or a
+    /// key password is stored or typed).
+    pub key_password_used: bool,
+    /// The config's certificates (OpenVPN, SSTP; IKEv2 from the swanctl folder where the app can read it). Absent
+    /// from the JSON when there are none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub certificates: Option<CertificatesView>,
 }
 
 /// [`EditorView::wireguard`]: the keys of the draft's config text. The private and preshared keys are the values
@@ -1175,6 +1410,26 @@ impl std::fmt::Debug for WireGuardKeysView {
             .field("preshared_key", &self.preshared_key.as_ref().map(|_| "<redacted>"))
             .finish()
     }
+}
+
+/// [`EditorView::client_cert`]: an IKEv2 connection's client certificate (public facts only, never the key).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientCertView {
+    /// The draft's config signs with a key (`auth = pubkey`, or no `auth`): "Private key password" is shown.
+    pub pubkey: bool,
+    /// The imported client certificate in the vault.
+    pub imported: Option<client_cert::Summary>,
+    /// The last import left this many certificates out (the CA, the chain).
+    pub ignored: usize,
+    /// The editor offers **Import Client Certificate…** (macOS; Windows uses the computer's certificate store).
+    pub import: bool,
+}
+
+/// The vault's client certificate of `id`, if it reads back.
+fn stored_client_cert(deps: &EditorDeps, id: &Uuid) -> Option<client_cert::Summary> {
+    let stored = Zeroizing::new(deps.secrets.get(id, SecretField::ClientCert)?);
+    client_cert::ClientCert::from_stored(&stored).map(|c| c.summary())
 }
 
 /// [`EditorView::platform`]: the platform's notes on the editor's draft (`PlatformNotes`), plus whether the system

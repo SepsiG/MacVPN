@@ -10,6 +10,13 @@ WinVPN is the Windows version of [MacVPN](user-guide.en.md): an app in the notif
 
 > **Language:** WinVPN follows the Windows display language and your preferred languages (Settings → Time & language → Language & region). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](winvpn-user-guide.hu.md) shows the Hungarian ones.
 
+## What's new in 2.0.7
+
+- **Secrets hidden in the config.** Private keys, static keys, inline credentials and a strongSwan `secrets` section are masked in the config editor until you tick **Show secrets**. See [3](#3-adding-connections-by-type).
+- **Certificate details.** The editor lists the config's certificates (subject, issuer, validity, key type, SHA-256 fingerprint with **Copy**), and a connection whose certificate expires within 30 days, or has expired, says so in its row. See [3.10](#310-certificates).
+- **Password fields.** **Show** reveals what you are typing; **Private key password** appears only when the key needs one; a password-protected PKCS#12 file's password is asked for when you connect. See [5.3](#53-credentials-asked-when-connecting).
+- **Export Without Keys keeps the shared TLS key** (`<tls-auth>`, `<tls-crypt>`), so the exported copy can connect. See [4](#4-import-and-export).
+
 ## What's new in 2.0
 
 2.0 is the first WinVPN that connects. It has every feature of MacVPN 2.0, with the Windows differences this guide names.
@@ -191,7 +198,9 @@ SSTP, L2TP and Cisco IPsec have a form instead of a text editor.
 
 **What Windows cannot do is shown, not hidden.** A connection whose settings the Windows VPN client cannot run (a Cisco IPsec connection, an IKEv2 config with an unsupported setting, SSTP with **No verification**) is greyed in the list with the reason, and its editor shows the same reason in a yellow note above the form. You can still edit, save, export and back it up: the same connection works in MacVPN.
 
-**Stored passwords are never shown.** A password field that has a stored value says **Saved — type to replace**. Leave it alone to keep the stored value, type to replace it, or click **Remove saved password** and save to delete it. The status line under the editor shows **Unsaved changes** or **Saved: <time>**.
+**Stored passwords are never shown.** A password field that has a stored value says **Saved — type to replace**. Leave it alone to keep the stored value, type to replace it, or click **Remove saved password** and save to delete it. The status line under the editor shows **Unsaved changes** or **Saved: <time>**. **Show** next to a password field reveals what you have just typed (a stored value is never shown). The remove button names what it deletes: **Remove saved password**, **Remove saved PSK** or **Remove saved key password**.
+
+**Secrets in the config are hidden.** Keys and passwords that are part of the config text (OpenVPN `<key>`, `<pkcs12>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<auth-user-pass>`, `<http-proxy-user-pass>`; WireGuard `PrivateKey` and `PresharedKey`; a strongSwan `secrets` section) show as `••••••••••••••••`, line by line, so they do not appear in a screen share or a screenshot. While they are hidden the config is read-only (**Secrets in the config are hidden. Tick Show secrets to edit the config.**): tick **Show secrets** to see and edit the real text. WinVPN always saves and exports the real text, never the dots. Each editor opens with the secrets hidden.
 
 If you switch connections or close the window with unsaved changes, the app asks: **Save**, **Discard** or **Cancel**.
 
@@ -203,7 +212,7 @@ The easiest way is to import the `.ovpn` file from your provider (**New → Impo
 
 - If the `.ovpn` refers to external files (for example `ca ca.crt`, `cert client.crt`, `key client.key`, `tls-auth ta.key`), the import reads them from next to the `.ovpn` and embeds them (into `<ca>…</ca>` blocks). So before importing, keep those files next to the `.ovpn`. If a file is missing, the import reports an error.
 - If the server asks for a username and password (an `auth-user-pass` line), fill in **Username** and **Password**, or leave them empty: WinVPN asks when you connect (see [5.3](#53-credentials-asked-when-connecting)).
-- If the private key is protected by a password (a password-protected PKCS#12 file, or an encrypted PEM key), enter it in **Private key password**. It is stored in the vault.
+- If the private key is protected by a password (a password-protected PKCS#12 file, or an encrypted PEM key), enter it in **Private key password**. The field appears only when the config's key is encrypted, when its PKCS#12 file does not open without a password, or when a key password is already saved. It is stored in the vault.
 - WinVPN sorts every directive into three tiers, like MacVPN (the full list is in [openvpn-directives.md](openvpn-directives.md)):
   - **Allowed** directives work as usual.
   - **Risky settings** (for example `user nobody`, server-side options, and every directive WinVPN does not know) are shown in a yellow **Risky settings** panel, each with a short reason. Tick **I acknowledge these settings and the security risks** to save. The acknowledgement covers exactly the risky directives present when you save: if you add another one later, you have to tick the box again.
@@ -237,7 +246,7 @@ IKEv2 configs use strongSwan `swanctl.conf` syntax, as in MacVPN, so the same co
 
 **On Windows** WinVPN translates the first connection of the config and its first child into an entry of the Windows IKEv2 client. Under the editor a grey line shows what Windows will use, for example **On Windows: EAP-MSCHAPv2 · AES-256, SHA-256, DH group 14; ESP AES-256, SHA-256 · split tunnel** (or **computer certificate**, **all traffic**).
 
-- **Sign-in:** `local { auth = eap-mschapv2 }` (or `eap` with an `eap_id`) with `remote { auth = pubkey }`, or a **computer certificate** (`local { auth = pubkey }`). The certificate files named in the config are not used: Windows takes the client certificate from the computer's **Personal** store, where an administrator imports it (see [3.7](#37-administrator-steps-for-native-vpns)). Without it: **No computer certificate for IKEv2 was found. An administrator must import it (see the user guide).**
+- **Sign-in:** `local { auth = eap-mschapv2 }` (or `eap` with an `eap_id`) with `remote { auth = pubkey }`, or a **computer certificate** (`local { auth = pubkey }`). The certificate files named in the config are not used: Windows takes the client certificate from the computer's **Personal** store, where an administrator imports it (see [3.7](#37-administrator-steps-for-native-vpns)). Without it: **No computer certificate for IKEv2 was found. An administrator must import it (see the user guide).** From 2.0.7 the editor says so under the config too (grey: **Windows signs in with a computer certificate: an administrator imports the client's .p12 file into Local Computer › Personal …**). The private key's password is entered in Windows' import, once; WinVPN never stores or asks for it, so the editor has no **Private key password** for IKEv2 and no **Import Client Certificate…** (that is MacVPN's, which loads the key itself).
 - **No pre-shared key:** a config with `local { auth = psk }` shows **Not supported on Windows: local auth = psk (the Windows IKEv2 client cannot sign in with a pre-shared key; use EAP-MSCHAPv2 or a computer certificate)**. Ask your VPN administrator for EAP access, or use L2TP/IPsec with the PSK.
 - **The server's certificate** is checked by Windows against the computer's **Trusted Root Certification Authorities**, and its name must match the address in `remote_addrs`. A company CA must be trusted there first: **Trust This CA in Windows…** under the editor, with the CA's PEM file (see [3.7](#37-administrator-steps-for-native-vpns)). If `remote { id = … }` differs from the address: **On Windows the server's identity must be its address: set remote_addrs to the name in the server certificate.**
 - **Routes:** `remote_ts = 0.0.0.0/0` (or no `remote_ts`) sends all traffic over the VPN; other `remote_ts` networks are used as routes (split tunnel).
@@ -247,7 +256,7 @@ IKEv2 configs use strongSwan `swanctl.conf` syntax, as in MacVPN, so the same co
 
 ### 3.4 L2TP/IPsec and Cisco IPsec
 
-You set up L2TP/IPsec in a form (**New → L2TP**): **Name**, **Server**, **Account name**, **Password**, **Pre-shared key (PSK)** and **Send all traffic over VPN**.
+You set up L2TP/IPsec in a form (**New → L2TP**): **Name**, **Server**, **Account name**, **Password**, **Shared secret (PSK)** and **Send all traffic over VPN**.
 
 - **Save** saves the connection (the password and the PSK go into the vault) and writes its Windows VPN entry at once: there is nothing to approve (**Saving writes the Windows VPN entry of this connection at once; there is nothing to approve. The password is not in it: WinVPN passes it when connecting.**). The entry is WinVPN's own and does not appear in Settings → VPN (see [3.8](#38-where-winvpn-keeps-the-native-vpns)).
 - **Behind NAT:** Windows refuses L2TP/IPsec to a server behind a NAT router until an administrator allows it once. The error then offers **Allow L2TP Behind NAT…** (see [3.7](#37-administrator-steps-for-native-vpns)).
@@ -311,6 +320,18 @@ To fix: see [7.7](#77-directive-not-allowed--forbidden-directive). A Windows lim
 
 ---
 
+### 3.10 Certificates
+
+The **Certificates** box under the config lists the connection's certificates, the client certificate first:
+
+- **OpenVPN:** `<cert>` (your certificate and its chain), `<ca>`, `<extra-certs>`, and the certificates of a `<pkcs12>` that are stored without encryption. OpenSSL usually encrypts them with the file's password; then the box says **The certificates in the PKCS#12 file are encrypted with its password, so they cannot be shown here.**
+- **SSTP:** the custom CA file.
+- **IKEv2:** WinVPN signs in with a computer certificate from the Windows certificate store, which is not listed here.
+
+Each certificate shows its **Subject**, **Issuer**, **Valid from** / **Valid until**, **Key type**, **Serial number**, **SHA-256 fingerprint** (with **Copy**) and where it is (**Source**). **Copy PEM** copies the certificate itself. Certificates are public, so both use the normal clipboard: send the fingerprint or the PEM to your administrator when they ask which certificate you have. A private key is never shown here.
+
+A certificate that expires within 30 days says **Expires in 12 days** (yellow); an expired one says **Expired** (red). The connection's row and header then show **Certificate expires in 12 days** or **Certificate expired**. An expired certificate is a common cause of a `TLS handshake failed` error: ask your administrator for a new one. WinVPN does not check the certificate's signature or chain; the VPN tool does that when it connects.
+
 ## 4. Import and export
 
 **Import.** Use **New → Import from File…** (you can select several files), or drag one or more files into the Connections window. Each file must be a regular UTF-8 text file of at most 1 MB. The type is detected from the extension and the content:
@@ -335,7 +356,7 @@ A file in a OneDrive folder that is only online is downloaded when WinVPN reads 
 **Export.** The export icon in the connection header (**Export… (passwords are never included)**) saves the config in its original format: `.ovpn`, WireGuard `.conf`, `.swanctl.conf`, `.sstp`, or `.mobileconfig` for L2TP and Cisco IPsec.
 
 - The password, PSK and username are **not** exported. The SSTP user name is part of the config, so it is in the `.sstp` export; the password is not.
-- **Private keys** that are part of the config (an OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<pkcs12>`, `<auth-user-pass>` or `<http-proxy-user-pass>` block, a WireGuard `PrivateKey` / `PresharedKey`, a strongSwan `secrets` section) trigger a warning (**The config contains private keys or credentials**) with three choices: **Export Without Keys** (the default), **Export With Keys**, or **Cancel**. Anyone who has the keys can connect as you.
+- **Private keys** that are part of the config (an OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<pkcs12>`, `<auth-user-pass>` or `<http-proxy-user-pass>` block, a WireGuard `PrivateKey` / `PresharedKey`, a strongSwan `secrets` section) trigger a warning (**The config contains private keys or credentials**) with three choices: **Export Without Keys** (the default: your personal keys are removed; the server's shared `<tls-auth>` / `<tls-crypt>` key stays, because every user of the server has the same one and the copy cannot connect without it), **Export With Keys**, or **Cancel**. Anyone who has the keys can connect as you. If the only key in the config is a shared `<tls-auth>` / `<tls-crypt>` key, WinVPN exports at once, without the question.
 - The exported file is readable only by you (and by SYSTEM).
 - **Folder and shared credential.** If the connection is in a folder or uses a shared credential, a text export starts with one comment line such as `# macvpn-meta: {"folder":["Work","Clients"],"credentialName":"Office AD"}`. It holds only these names, never a secret. On import, WinVPN recreates the missing folders and puts the connection there. A `credentialName` is never linked silently: WinVPN asks first and names the server (see [13.4](#134-import-and-export)).
 - These exports can be imported into WinVPN and MacVPN again. The `.mobileconfig` export of an L2TP or Cisco IPsec connection is a macOS profile: double-clicked on a Mac it installs the VPN there; Windows cannot use it, and there is no Windows-only export format. To move an L2TP connection to another PC, use a full backup (see [14](#14-backup-and-restore)) or a team catalog.
@@ -397,7 +418,7 @@ WinVPN handles one-time codes (OTP, TOTP, token PIN) and sign-in in the browser 
 If a connection needs a user name, password, shared secret (PSK) or private key password that is not saved in WinVPN, WinVPN asks for it in a small **Credentials needed** window before it connects. Nothing has to be set up for this.
 
 - **When it appears:**
-  - **OpenVPN:** the config has `auth-user-pass` without a file and without an inline `<auth-user-pass>` block, and the user name or password is not saved. An encrypted private key whose password is not saved.
+  - **OpenVPN:** the config has `auth-user-pass` without a file and without an inline `<auth-user-pass>` block, and the user name or password is not saved. An encrypted private key, or a `<pkcs12>` file that does not open without a password, whose password is not saved.
   - **IKEv2:** EAP sign-in (`auth = eap…` in the `local` section) and the user name or password is not saved.
   - **SSTP:** the password is not saved (the user name is in the connection's settings).
   - **L2TP/IPsec:** the account, the password or the shared secret is not saved.
@@ -407,7 +428,7 @@ If a connection needs a user name, password, shared secret (PSK) or private key 
 - **Wrong user name or password:** if the server rejects the sign-in (OpenVPN `AUTH_FAILED`, SSTP and IKEv2 with EAP: **Authentication failed (wrong user name or password)** / **Authentication failed (EAP)**), the window opens **once** more with **Sign-in failed — check the username and password** and the user name filled in. A second failure ends with the normal error and notification. L2TP/IPsec does not ask again (as in MacVPN); its error says the sign-in failed.
 - **Cancel** (or Escape, or closing the window) stops the connect without an error or a notification. Disconnecting while the window is open closes it. It expires after 2 minutes, which counts as Cancel.
 - **Like the code window,** it does not take the keyboard away from the app you are using: click the window or the "…: credentials needed" notification to type. It ignores input for about a second after it appears, and it has no default button: Enter does nothing, so click **Connect**. While it is open, the row shows **Waiting for authentication**.
-- **Known limitation:** the password of a private key in a PKCS#12 bundle (`<pkcs12>`) is not asked for, because WinVPN cannot tell whether the bundle has one. Save it in the connection's editor (**Private key password**).
+- **PKCS#12:** WinVPN asks for the **Private key password** of a `<pkcs12>` file only when the file does not open with an empty password (OpenVPN tries an empty one first). A file WinVPN cannot read is asked for too.
 - What you type goes to the VPN engine for this connect. WinVPN wipes its own copies after use; copies the system makes on the way (the web view and the app's internal messaging) cannot be wiped by WinVPN. What you type is never written to the log, and never appears on a command line. A control-API client only sees the state `waiting_for_credentials`, and `credentials_cancelled` if you cancel.
 
 ### 5.4 Paired apps (control API)

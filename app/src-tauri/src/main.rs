@@ -175,6 +175,13 @@ fn build_state(
     // The editors' notes on how the platform runs the settings, and its administrator steps (WinVPN 2c; none on
     // macOS).
     connections.set_native_platform(platform.native_support(), platform.admin_steps());
+    // IKEv2 client certificates imported in the app (G4): macOS' root layer 12 stages them; Windows signs with a
+    // computer certificate from its own store.
+    connections.set_client_cert_import(platform::imports_client_certificates());
+    // The IKEv2 editor's certificates from the swanctl folder (macOS: Homebrew's; none on Windows).
+    if let Some(folder) = platform::swanctl_folder() {
+        connections.set_swanctl_folder(folder);
+    }
     // The shared credentials live in the vault (the section answers "locked" while it is locked).
     connections.set_shared_credentials(SharedCredentials::new(storage.vault.clone()));
     let native_logs = Arc::new(NativeLogs::new(Box::new(move || {
@@ -628,6 +635,8 @@ fn main() {
             manage::editor_choose_ca,
             manage::editor_wireguard_generate,
             manage::editor_wireguard_copy,
+            manage::editor_import_client_cert,
+            manage::editor_remove_client_cert,
             manage::create_connection,
             manage::import_files,
             manage::answer_question,

@@ -7,3 +7,9 @@ export function secretFromInput(text: string, removed: boolean): SecretInput {
   if (text !== '') return text;
   return removed ? '' : null;
 }
+
+/// "Show" is offered only for text the user typed: a stored secret is never in the web view (the field is `null`
+/// then), and an empty field has nothing to show.
+export function canShowTyped(value: SecretInput): boolean {
+  return typeof value === 'string' && value !== '';
+}

@@ -82,3 +82,13 @@ pub fn claim_instance() -> bool {
 pub fn uses_app_menu() -> bool {
     true
 }
+
+pub fn imports_client_certificates() -> bool {
+    true
+}
+
+/// Homebrew's `etc/swanctl` (the folder the helper stages the IKEv2 certificates from).
+pub fn swanctl_folder() -> Option<std::path::PathBuf> {
+    macvpn_platform_mac::setup_checker::SetupChecker::installed_brew_prefix()
+        .map(|prefix| std::path::Path::new(&prefix).join("etc/swanctl"))
+}

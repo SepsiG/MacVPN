@@ -28,6 +28,8 @@
     "allow-editor-choose-ca",
     "allow-editor-wireguard-generate",
     "allow-editor-wireguard-copy",
+    "allow-editor-import-client-cert",
+    "allow-editor-remove-client-cert",
     "allow-create-connection",
     "allow-import-files",
     "allow-answer-question",

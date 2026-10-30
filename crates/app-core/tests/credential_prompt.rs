@@ -423,6 +423,49 @@ fn the_reprompt_does_not_ask_a_stored_key_password_again() {
     assert!(!w.fields()[0].contains(&KeyPassword));
 }
 
+/// G2/G4 (root layer 12): an IKEv2 connection with an imported PKCS#12 client certificate asks for the key password
+/// when none is saved, and sends the certificate after the secrets; with the password saved nothing is asked.
+#[test]
+fn an_imported_ikev2_client_certificate_asks_for_its_key_password() {
+    use macvpn_core::client_cert::{self, fixtures};
+    let f = Fixture::new(EN);
+    let c = Connection::new("IKE", VPNKind::Strongswan);
+    let config = "connections {\n  lab {\n    remote_addrs = vpn.example\n    local {\n      auth = pubkey\n    }\n    remote {\n      auth = pubkey\n    }\n    children {\n      net {\n        remote_ts = 0.0.0.0/0\n      }\n    }\n  }\n}\n";
+    f.store.save(&c, Some(config)).unwrap();
+    let cert = client_cert::import(&[&fixtures::p12()]).unwrap().cert;
+    f.secrets.set(&cert.stored(), &c.id, SecretField::ClientCert);
+    let m = manager(&f);
+    let w = window(&m, vec![Reply::Provide(vec![(KeyPassword, "p12pass")], false)]);
+    f.helper.respond("status", Ok(&status_json(&c, "connected")));
+    m.connect(&c, false);
+    assert_eq!(w.fields(), [vec![KeyPassword]]);
+    let lines = cert.frame_lines();
+    assert_eq!(up_stdins(&f, &c), [format!("keypass=p12pass\n{}", lines.as_str())]);
+
+    // Saved: not asked.
+    f.secrets.set("p12pass", &c.id, SecretField::KeyPassword);
+    m.disconnect(&c);
+    m.connect(&c, false);
+    assert_eq!(w.fields().len(), 1, "no second prompt");
+}
+
+/// A stored client certificate that no longer reads back fails the connect with its own message (no helper call).
+#[test]
+fn a_damaged_client_certificate_fails_before_the_helper() {
+    let f = Fixture::new(EN);
+    let c = Connection::new("IKE", VPNKind::Strongswan);
+    f.store.save(&c, Some(&macvpn_core::importer::template(VPNKind::Strongswan))).unwrap();
+    f.secrets.set("pem:broken", &c.id, SecretField::ClientCert);
+    let m = manager(&f);
+    let _w = window(&m, vec![]);
+    m.connect(&c, false);
+    assert!(up_stdins(&f, &c).is_empty());
+    assert_eq!(
+        m.state(&uuid_string(&c.id)),
+        ConnectionState::Failed("The imported client certificate cannot be read. Import it again.".into())
+    );
+}
+
 /// Root layer 8: strongSwan's EAP authentication failure is a sign-in failure too.
 #[test]
 fn an_ikev2_eap_failure_reprompts_once() {

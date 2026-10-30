@@ -455,6 +455,7 @@
                     }}>{tr('System Status')}</span
                   >{/if}</span
               >
+              {#if row.certificateWarning}<span class="cert-warning"><Icon name="warning" />{row.certificateWarning}</span>{/if}
               {#if row.catalog?.pendingRemoval}<span class="removal">{tr('Removed from the team catalog — disappears after you disconnect')}</span>{/if}
               {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
               <PublishedBadges published={row.published} />
@@ -589,6 +590,18 @@
 {/if}
 
 <style>
+  .cert-warning {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: var(--text-sm);
+    color: var(--state-busy-text);
+  }
+  .cert-warning :global(.icon) {
+    flex: none;
+    width: 11px;
+    height: 11px;
+  }
   .tree {
     display: flex;
     flex-direction: column;

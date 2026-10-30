@@ -9,6 +9,9 @@
 //! keypass=<v>\n
 //! otp=<v>\n               the MFA code, only for masking (it is already part of the password)
 //! challenge=packed\n      OpenVPN static challenge: the password is already in SCRV1 / concat form
+//! x509=<base64>\n          root layer 12, strongSwan: an imported client certificate (DER) …
+//! private=<base64>\n       … and its private key (one PEM block), or
+//! pkcs12=<base64>\n        … a PKCS#12 file (see `macos::strongswan::stage_client_cert`)
 //! ```
 //!
 //! Errors (see [`FrameError::message`]): no `config` header at the start → `Config not provided`; a malformed
@@ -45,6 +48,10 @@ pub struct Secrets {
     pub otp: Zeroizing<Vec<u8>>,
     /// OpenVPN static challenge: the password is already in SCRV1 / concat form.
     pub packed: bool,
+    /// Root layer 12: an imported client certificate, still base64 (`x509=`, `private=`, `pkcs12=`).
+    pub x509: Zeroizing<Vec<u8>>,
+    pub private: Zeroizing<Vec<u8>>,
+    pub pkcs12: Zeroizing<Vec<u8>>,
 }
 
 /// Why a framed stdin was refused.
@@ -148,7 +155,7 @@ impl Secrets {
             return Some(s);
         }
         let body = tail.strip_suffix(b"\n")?;
-        let mut seen = [false; 6];
+        let mut seen = [false; 9];
         for line in body.split(|&b| b == b'\n') {
             if line.contains(&0) {
                 return None;
@@ -172,8 +179,15 @@ impl Secrets {
             } else if line == b"challenge=packed" {
                 s.packed = true;
                 5
+            } else if let Some(v) = value(b"x509=") {
+                s.x509 = v;
+                6
+            } else if let Some(v) = value(b"private=") {
+                s.private = v;
+                7
             } else {
-                return None;
+                s.pkcs12 = value(b"pkcs12=")?;
+                8
             };
             if std::mem::replace(&mut seen[slot], true) {
                 return None;
@@ -225,6 +239,21 @@ mod tests {
         assert!(s.user.is_empty() && s.pass.is_empty() && !s.packed);
         let (_, s) = parse_framed(&frame(b"x", b"password=\n"), true).unwrap();
         assert!(s.pass.is_empty());
+    }
+
+    #[test]
+    fn the_client_certificate_lines_of_root_layer_12() {
+        let (_, s) = parse_framed(&frame(b"x", b"keypass=kp\nx509=QUJD\nprivate=REVG\n"), true).unwrap();
+        assert_eq!(
+            (s.x509.as_slice(), s.private.as_slice(), s.pkcs12.as_slice()),
+            (&b"QUJD"[..], &b"REVG"[..], &b""[..])
+        );
+        let (_, s) = parse_framed(&frame(b"x", b"pkcs12=UDEy\n"), true).unwrap();
+        assert_eq!(s.pkcs12.as_slice(), b"UDEy");
+        // Each at most once; never after `validate`'s config.
+        assert_eq!(err(&frame(b"x", b"x509=QQ==\nx509=QQ==\n"), true), FrameError::Invalid);
+        assert_eq!(err(&frame(b"x", b"pkcs12=QQ==\n"), false), FrameError::Invalid);
+        assert_eq!(err(&frame(b"x", b"x509\n"), true), FrameError::Invalid);
     }
 
     #[test]

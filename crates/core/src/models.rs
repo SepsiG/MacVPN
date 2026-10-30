@@ -171,13 +171,21 @@ pub enum SecretField {
     Username,
     Password,
     Psk,
-    /// The password of an OpenVPN private key (PKCS#12 / encrypted PEM).
+    /// The password of a private key: OpenVPN (PKCS#12 / encrypted PEM), IKEv2 (an imported client certificate's
+    /// key, or a key of Homebrew's `etc/swanctl`).
     KeyPassword,
+    /// IKEv2: the imported client certificate and its key (`client_cert`'s one-line stored form).
+    ClientCert,
 }
 
 impl SecretField {
-    pub const ALL: [SecretField; 4] =
-        [SecretField::Username, SecretField::Password, SecretField::Psk, SecretField::KeyPassword];
+    pub const ALL: [SecretField; 5] = [
+        SecretField::Username,
+        SecretField::Password,
+        SecretField::Psk,
+        SecretField::KeyPassword,
+        SecretField::ClientCert,
+    ];
 
     pub fn raw_value(self) -> &'static str {
         match self {
@@ -185,6 +193,7 @@ impl SecretField {
             SecretField::Password => "password",
             SecretField::Psk => "psk",
             SecretField::KeyPassword => "keypass",
+            SecretField::ClientCert => "clientcert",
         }
     }
 
@@ -464,6 +473,9 @@ pub struct Secrets {
     pub one_time_code: Option<String>,
     /// OpenVPN static challenge: `password` is already in SCRV1 / concat form (`challenge=packed`).
     pub challenge_packed: bool,
+    /// IKEv2: the imported client certificate (`client_cert`'s stored form), sent as the `x509=` / `private=` or
+    /// `pkcs12=` lines (root layer 12). Never typed, never prompted.
+    pub client_cert: Option<String>,
 }
 
 /// Wipes every value (the connect paths call it once the helper or the system VPN has them). No `Drop`:
@@ -471,9 +483,14 @@ pub struct Secrets {
 impl zeroize::Zeroize for Secrets {
     fn zeroize(&mut self) {
         let mut wiped = 0;
-        for value in
-            [&mut self.username, &mut self.password, &mut self.psk, &mut self.key_password, &mut self.one_time_code]
-        {
+        for value in [
+            &mut self.username,
+            &mut self.password,
+            &mut self.psk,
+            &mut self.key_password,
+            &mut self.one_time_code,
+            &mut self.client_cert,
+        ] {
             if let Some(v) = value.as_mut() {
                 wiped += usize::from(!v.is_empty());
                 v.zeroize();
@@ -510,6 +527,7 @@ impl std::fmt::Debug for Secrets {
             .field("key_password", &state(&self.key_password))
             .field("one_time_code", &state(&self.one_time_code))
             .field("challenge_packed", &self.challenge_packed)
+            .field("client_cert", &state(&self.client_cert))
             .finish()
     }
 }
@@ -542,7 +560,9 @@ impl Secrets {
         let is_kept = |c: &char| *c != '\n' && *c != '\r';
         // The exact size first, so the buffer is never reallocated (a reallocation would free an unwiped copy).
         let kept_len = |v: &str| v.chars().filter(is_kept).map(char::len_utf8).sum::<usize>();
+        let cert_lines = self.client_cert.as_deref().map(crate::client_cert::frame_lines_of_stored);
         let mut capacity = if self.challenge_packed { "challenge=packed\n".len() } else { 0 };
+        capacity += cert_lines.as_ref().map_or(0, |l| l.len());
         for (key, value) in fields {
             let n = value.as_deref().map_or(0, kept_len);
             if n > 0 {
@@ -561,6 +581,10 @@ impl Secrets {
         }
         if self.challenge_packed {
             out.push_str("challenge=packed\n");
+        }
+        // Base64 lines (no line break inside): appended as they are.
+        if let Some(lines) = &cert_lines {
+            out.push_str(lines);
         }
         out
     }

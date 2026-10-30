@@ -78,13 +78,14 @@ fn openvpn_encrypted_key_needs_the_key_password() {
     assert_eq!(required(VPNKind::Openvpn, legacy), vec![KeyPassword]);
 }
 
-/// A PKCS#12 block is not flagged by `importer::contains_encrypted_key` (its password may be empty): no prompt,
-/// the root layer decides.
+/// A PKCS#12 block is not flagged by `importer::contains_encrypted_key` (its password may be empty), but the
+/// prompt asks for its password when it does not open with an empty one or cannot be read (G6 of the
+/// client-credential audit; `certificates.rs` has the real files).
 #[test]
-fn openvpn_pkcs12_is_not_asked_for() {
+fn an_unreadable_openvpn_pkcs12_asks_for_its_password() {
     let config = "client\nremote vpn.example.com 1194\n<pkcs12>\nMIIAAA==\n</pkcs12>\n";
     assert!(!importer::contains_encrypted_key(config));
-    assert_eq!(required(VPNKind::Openvpn, config), vec![]);
+    assert_eq!(required(VPNKind::Openvpn, config), vec![KeyPassword]);
 }
 
 #[test]
@@ -290,4 +291,41 @@ fn only_the_key_block_counts_for_the_key_password() {
     assert_eq!(required(VPNKind::Openvpn, &in_cert), vec![]);
     let in_key = format!("client\nremote vpn.example.com 1194\n<key>\n{marker}\nAAAA\n</key>\n");
     assert_eq!(required(VPNKind::Openvpn, &in_key), vec![KeyPassword]);
+}
+
+/// G2: an IKEv2 connection that signs with a key asks for the key password when its imported client certificate
+/// needs one (an encrypted PEM key, any PKCS#12 file); EAP, an unencrypted key, no certificate or another kind
+/// ask nothing more.
+#[test]
+fn an_imported_client_certificate_needs_its_key_password() {
+    use macvpn_core::client_cert::{self, fixtures};
+    use macvpn_core::validators::StrongSwanValidator;
+    let pubkey = "connections {\n  lab {\n    local {\n      auth = pubkey\n    }\n    children {\n      net {\n      }\n    }\n  }\n}\n";
+    let no_auth = pubkey.replace("      auth = pubkey\n", "");
+    let eap = pubkey.replace("auth = pubkey", "auth = eap-mschapv2");
+    let p12 = client_cert::import(&[&fixtures::p12()]).unwrap().cert.stored();
+    let plain = client_cert::import(&[fixtures::pem_pair().as_bytes()]).unwrap().cert.stored();
+    let enc = format!(
+        "{}{}",
+        fixtures::pem("CERTIFICATE", &fixtures::cert(false)),
+        fixtures::pem("ENCRYPTED PRIVATE KEY", &fixtures::pkcs8())
+    );
+    let enc = client_cert::import(&[enc.as_bytes()]).unwrap().cert.stored();
+    let ask = |kind, config: &str, stored: Option<&str>| credentials::client_cert_fields(kind, config, stored);
+    assert_eq!(ask(VPNKind::Strongswan, pubkey, Some(&p12)), [KeyPassword]);
+    assert_eq!(ask(VPNKind::Strongswan, &no_auth, Some(&enc)), [KeyPassword], "no auth: swanctl's pubkey");
+    assert_eq!(ask(VPNKind::Strongswan, pubkey, Some(&plain)), []);
+    assert_eq!(ask(VPNKind::Strongswan, &eap, Some(&p12)), []);
+    assert_eq!(ask(VPNKind::Strongswan, pubkey, None), []);
+    assert_eq!(ask(VPNKind::Strongswan, pubkey, Some("junk")), []);
+    assert_eq!(ask(VPNKind::Openvpn, pubkey, Some(&p12)), []);
+    // The rounds as the validator reads them.
+    let rounds = StrongSwanValidator::local_rounds(&eap);
+    assert_eq!((rounds.len(), rounds[0].auth.as_deref(), rounds[0].is_pubkey()), (1, Some("eap-mschapv2"), false));
+    assert!(StrongSwanValidator::uses_pubkey(&no_auth) && !StrongSwanValidator::uses_pubkey(&eap));
+    for (auth, yes) in
+        [("rsa/pss", true), ("ecdsa-sha256", true), ("pubkey-sha384", true), ("psk", false), ("xauth", false)]
+    {
+        assert_eq!(StrongSwanValidator::uses_pubkey(&pubkey.replace("pubkey", auth)), yes, "{auth}");
+    }
 }

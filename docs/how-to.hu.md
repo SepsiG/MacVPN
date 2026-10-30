@@ -71,9 +71,9 @@ Menü → **Új kapcsolat / Import…** (vagy **Kapcsolatok kezelése…**). Ez 
 |---|---|---|---|
 | OpenVPN | `.ovpn` fájl; a hivatkozott fájlok (`ca.crt`, `client.key`, `.p12`, …) legyenek ugyanabban a mappában | **Új → OpenVPN** | **Felhasználónév**, **Jelszó**; titkosított kulcsnál **Privát kulcs jelszava**. Ha az import megkérdezi: **Használod a(z) … fájlban lévő hitelesítő adatokat ehhez a kapcsolathoz?**, a **Használat** gombbal a fájlból veszi át őket. Ha sárga **Kockázatos beállítások** panel jelenik meg, olvasd el, és mentés előtt jelöld be: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. |
 | WireGuard | `.conf` fájl | **Új → WireGuard** (sablon) | Semmi más: a kulcsok a configban vannak. |
-| IKEv2 (strongSwan) | `swanctl.conf` fájl | **Új → IKEv2** (sablon) | **Felhasználónév** (egyezzen az `eap_id`-val) és **Jelszó**, vagy **Pre-shared key (PSK)**. |
+| IKEv2 (strongSwan) | `swanctl.conf` fájl | **Új → IKEv2** (sablon) | **Felhasználónév** (egyezzen az `eap_id`-val) és **Jelszó**, vagy **Közös kulcs (PSK)**. |
 | SSTP | `.sstp` fájl | **Új → SSTP** (űrlap) | **Szerver**, **Port**, **Felhasználónév**, **Jelszó**, **Szervertanúsítvány**. |
-| L2TP / Cisco IPsec | nem lehet (`.mobileconfig` nem importálható) | **Új → L2TP** vagy **Új → Cisco IPsec** (űrlap) | **Szerver**, **Fióknév**, **Jelszó**, **Pre-shared key (PSK)**, Ciscónál **Csoportnév (group name)**. Kattints a **Mentés és profil telepítése** gombra, majd hagyd jóvá a profilt a **Rendszerbeállítások → Általános → Eszközkezelés** alatt. |
+| L2TP / Cisco IPsec | nem lehet (`.mobileconfig` nem importálható) | **Új → L2TP** vagy **Új → Cisco IPsec** (űrlap) | **Szerver**, **Fióknév**, **Jelszó**, **Közös kulcs (PSK)**, Ciscónál **Csoportnév (group name)**. Kattints a **Mentés és profil telepítése** gombra, majd hagyd jóvá a profilt a **Rendszerbeállítások → Általános → Eszközkezelés** alatt. |
 
 **A macOS-ben már beállított VPN-ek** maguktól megjelennek a listában, **Rendszer-VPN** jelöléssel. Ezeket indíthatod és bonthatod. Ha egy L2TP vagy Cisco IPsec rendszer VPN a MacVPN-ből nem csatlakozik, add meg a részletező nézetében a **Közös kulcs (PSK)** értékét (és ha kell, a jelszót), majd kattints a **Mentés** gombra.
 
@@ -415,7 +415,7 @@ Ezek az átjárók és tűzfalak olyan klienskonfigot adnak, amelyet a MacVPN v�
 3. A régebbi UniFi-verziók `comp-lzo` sort is exportáltak; ez importálható, de az újabb UniFi-szerverek már nem tömörítenek. Ha egy ilyen kapcsolat egy UniFi-frissítés után nem működik, tölts le friss fájlt (vagy töröld a `comp-lzo` sort).
 4. Egyes leírásokban a fájlban `user nobody` és `group nogroup` is van. A MacVPN ezeket a **Kockázatos beállítások** között mutatja (ha az OpenVPN lemond a root jogról, az újracsatlakozás elakadhat); töröld a két sort, nincs rájuk szükség.
 
-**L2TP/IPsec** (a USG / USG-Pro régi távoli felhasználós VPN-je, az újabb átjárók is tudják): **Új → L2TP**. **Szerver**: az átjáró nyilvános címe vagy DDNS-neve; **Fióknév** és **Jelszó**: a VPN-felhasználó (USG-n a RADIUS-felhasználó); **Pre-shared key (PSK)**: a szerver előre megosztott kulcsa. Tanúsítvány nem kell. A **Minden forgalom a VPN-en keresztül** maradjon bekapcsolva: a UniFi L2TP-szervere nem küld útvonalakat, és a Ubiquiti macOS-en ezt kéri. A Ubiquiti helyette a WireGuardot ajánlja.
+**L2TP/IPsec** (a USG / USG-Pro régi távoli felhasználós VPN-je, az újabb átjárók is tudják): **Új → L2TP**. **Szerver**: az átjáró nyilvános címe vagy DDNS-neve; **Fióknév** és **Jelszó**: a VPN-felhasználó (USG-n a RADIUS-felhasználó); **Közös kulcs (PSK)**: a szerver előre megosztott kulcsa. Tanúsítvány nem kell. A **Minden forgalom a VPN-en keresztül** maradjon bekapcsolva: a UniFi L2TP-szervere nem küld útvonalakat, és a Ubiquiti macOS-en ezt kéri. A Ubiquiti helyette a WireGuardot ajánlja.
 
 **A Teleport (WiFiman) nem támogatott.** Belül WireGuard, de a meghívólinkek a Ubiquiti felhőjén mennek át, és nincs nyilvános interfésze vagy exportálható konfigurációja, így külső app nem tudja használni. Használd a fenti WireGuard-szervert: ugyanazokon az átjárókon fut.
 
@@ -473,8 +473,8 @@ A `DNS` sorban a nevek keresési tartományok. Az `Address` és az `AllowedIPs` 
     }
   }
   ```
-- Az **EAP-TLS** (`auth = eap-tls`), a **tanúsítványos** (`auth = pubkey`, `certs = <fájl>`) és a **PSK-s** belépés (`auth = psk` mindkét oldalon, a kulcs a **Pre-shared key (PSK)** mezőbe) is működik.
-- **IKEv1 XAuth-tal és PSK-val** (a „Cisco-stílusú” mobil beállítás): **Új → Cisco IPsec**, **Szerver**, **Fióknév**, **Jelszó**, **Pre-shared key (PSK)** és **Csoportnév (group name)** (a Phase 1 azonosítója).
+- Az **EAP-TLS** (`auth = eap-tls`), a **tanúsítványos** (`auth = pubkey`, `certs = <fájl>`) és a **PSK-s** belépés (`auth = psk` mindkét oldalon, a kulcs a **Közös kulcs (PSK)** mezőbe) is működik.
+- **IKEv1 XAuth-tal és PSK-val** (a „Cisco-stílusú” mobil beállítás): **Új → Cisco IPsec**, **Szerver**, **Fióknév**, **Jelszó**, **Közös kulcs (PSK)** és **Csoportnév (group name)** (a Phase 1 azonosítója).
 
 ### OPNsense
 

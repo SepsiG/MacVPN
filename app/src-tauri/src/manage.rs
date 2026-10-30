@@ -193,6 +193,46 @@ pub async fn editor_wireguard_copy(window: Window, state: Shared<'_>, id: String
     .await?
 }
 
+/// **Import Client Certificate…** of an IKEv2 editor (G4): the open panel (several files: a certificate and its
+/// key), each file read here (at most 16 KB), checked in Rust and stored in the vault. The web view sends no file
+/// and no key, and gets back only the public summary. A cancelled panel changes nothing.
+#[tauri::command]
+pub async fn editor_import_client_cert(app: AppHandle, state: Shared<'_>, id: String) -> Result<EditorView, String> {
+    let c = managed(&state, &id)?;
+    if c.kind != VPNKind::Strongswan {
+        return Err("not an IKEv2 connection".into());
+    }
+    let paths = crate::dialogs::choose_files(&app, &state, MANAGE_WINDOW, true).await?;
+    let shared = state.inner().clone();
+    blocking(move || {
+        if paths.is_empty() {
+            return shared.connections.open_editor(&id);
+        }
+        if paths.len() > macvpn_core::client_cert::MAX_FILES {
+            return Err(l10n::tr("Choose a PKCS#12 file (.p12, .pfx) or a PEM certificate with its private key.", &[]));
+        }
+        let max = macvpn_core::client_cert::MAX_FILE_BYTES;
+        let mut files = Vec::with_capacity(paths.len());
+        for path in &paths {
+            let Some(data) = import_export::read_import_bytes(path, max) else {
+                return Err(l10n::tr("Cannot read the file", &[]));
+            };
+            files.push(data);
+        }
+        let files: Vec<&[u8]> = files.iter().map(|f| f.as_slice()).collect();
+        shared.connections.import_client_cert(&id, &files)
+    })
+    .await?
+}
+
+/// "Remove" of an IKEv2 editor's imported client certificate (deleted from the vault at once).
+#[tauri::command]
+pub async fn editor_remove_client_cert(state: Shared<'_>, id: String) -> Result<EditorView, String> {
+    managed(&state, &id)?;
+    let shared = state.inner().clone();
+    blocking(move || shared.connections.remove_client_cert(&id)).await?
+}
+
 // MARK: - Create, import, export, delete
 
 #[tauri::command]

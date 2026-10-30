@@ -112,6 +112,18 @@ pub fn uses_app_menu() -> bool {
     selected::uses_app_menu()
 }
 
+/// Whether IKEv2 editors offer **Import Client Certificate…** (G4): macOS' root layer 12 loads the imported key;
+/// Windows signs with a computer certificate from its own store.
+pub fn imports_client_certificates() -> bool {
+    selected::imports_client_certificates()
+}
+
+/// The swanctl folder whose `x509` / `x509ca` certificate files the IKEv2 editor shows (macOS: Homebrew's
+/// `etc/swanctl`; Windows: none, its IKEv2 uses the computer's certificate store).
+pub fn swanctl_folder() -> Option<std::path::PathBuf> {
+    selected::swanctl_folder()
+}
+
 /// The launch-at-login item over the system state (one per use, on the calling thread).
 pub fn login_items(env: &Environment) -> Box<dyn LoginItems> {
     get().login_items(&env.home, env.bundle.as_deref(), env.sandbox)

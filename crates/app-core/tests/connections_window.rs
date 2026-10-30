@@ -107,6 +107,80 @@ fn key_password_is_only_stored_for_openvpn() {
     assert_eq!(w.fx.secrets.get(&c.id, SecretField::KeyPassword), None);
 }
 
+// MARK: - IKEv2 client certificate (G2 / G4)
+
+const SWAN_PUBKEY: &str = "connections {\n  lab {\n    remote_addrs = vpn.example\n    local {\n      auth = pubkey\n    }\n    remote {\n      auth = pubkey\n    }\n    children {\n      net {\n        remote_ts = 0.0.0.0/0\n      }\n    }\n  }\n}\n";
+
+#[test]
+fn ikev2_keeps_the_key_password_and_imports_a_client_certificate_into_the_vault() {
+    use macvpn_core::client_cert::{self, fixtures};
+    let w = window();
+    let c = w.add("Lab", VPNKind::Strongswan, Some(SWAN_PUBKEY));
+    let view = w.model.open_editor(&key(&c)).unwrap();
+    let cert = view.client_cert.clone().expect("the client certificate panel");
+    assert!(cert.pubkey && cert.import && cert.imported.is_none());
+
+    // G2: the key password is stored for IKEv2 too.
+    let f = w.text(&c);
+    w.model.save_editor(&key(&c), EditorFields::Text(TextFields { key_password: Some("kp".into()), ..f })).unwrap();
+    assert_eq!(w.fx.secrets.get(&c.id, SecretField::KeyPassword).as_deref(), Some("kp"));
+
+    // G4: a PEM certificate with its key and a CA, as two files.
+    let ca = fixtures::pem("CERTIFICATE", &fixtures::cert(true));
+    let pair = fixtures::pem_pair();
+    let view = w.model.import_client_cert(&key(&c), &[pair.as_bytes(), ca.as_bytes()]).unwrap();
+    let cert = view.client_cert.clone().unwrap();
+    let summary = cert.imported.clone().unwrap();
+    assert_eq!((summary.form, summary.needs_password, cert.ignored), (client_cert::Form::Pem, false, 1));
+    let stored = w.fx.secrets.get(&c.id, SecretField::ClientCert).unwrap();
+    assert!(stored.starts_with("pem:") && !stored.contains('\n'));
+    assert!(!view.dirty, "stored at once, not a draft change");
+    // The web view gets the public summary only.
+    let json = serde_json::to_string(&view).unwrap();
+    assert!(json.contains("\"clientCert\"") && json.contains(&summary.sha256));
+    // (The certificate is public and may show; the key never.)
+    let key64 = stored.rsplit(':').next().unwrap();
+    assert!(!json.contains(&key64[..40]) && !json.contains("PRIVATE"));
+    // At connect the secrets carry it, as the frame lines.
+    let secrets = w.fx.secrets.secrets(&c.id);
+    assert_eq!(secrets.client_cert.as_deref(), Some(stored.as_str()));
+    assert!(secrets.stdin_payload().contains("\nx509="));
+
+    // The editor's "Certificates" section lists the imported client certificate first.
+    let listed = view.certificates.as_ref().expect("the certificates section");
+    let json = serde_json::to_value(listed).unwrap();
+    assert_eq!(json["certificates"][0]["source"], "Imported client certificate", "{json}");
+    assert_eq!(json["certificates"][0]["role"], "client");
+    assert_eq!(json["certificates"][0]["sha256"].as_str(), Some(summary.sha256.as_str()));
+    // A broken file leaves the stored one.
+    let err = w.model.import_client_cert(&key(&c), &[b"-----BEGIN CERTIFICATE-----\nAA\n"]).unwrap_err();
+    assert!(err.contains("PEM"), "{err}");
+    assert_eq!(w.fx.secrets.get(&c.id, SecretField::ClientCert).as_deref(), Some(stored.as_str()));
+
+    // A PKCS#12 file replaces it and needs the password; Remove deletes it.
+    let view = w.model.import_client_cert(&key(&c), &[&fixtures::p12()]).unwrap();
+    assert!(view.client_cert.unwrap().imported.unwrap().needs_password);
+    let view = w.model.remove_client_cert(&key(&c)).unwrap();
+    assert!(view.client_cert.unwrap().imported.is_none());
+    assert_eq!(w.fx.secrets.get(&c.id, SecretField::ClientCert), None);
+    assert_eq!(w.fx.secrets.get(&c.id, SecretField::KeyPassword).as_deref(), Some("kp"), "the password stays");
+}
+
+#[test]
+fn only_an_ikev2_editor_imports_a_client_certificate() {
+    let w = window();
+    let c = w.add("Office", VPNKind::Openvpn, Some(CLEAN));
+    w.model.open_editor(&key(&c)).unwrap();
+    let pair = macvpn_core::client_cert::fixtures::pem_pair();
+    assert!(w.model.import_client_cert(&key(&c), &[pair.as_bytes()]).is_err());
+    assert_eq!(w.fx.secrets.get(&c.id, SecretField::ClientCert), None);
+    assert!(w.model.open_editor(&key(&c)).unwrap().client_cert.is_none());
+    // An EAP config: no "Private key password" (pubkey false).
+    let eap = SWAN_PUBKEY.replacen("auth = pubkey", "auth = eap-mschapv2", 1);
+    let s = w.add("EAP", VPNKind::Strongswan, Some(&eap));
+    assert!(!w.model.open_editor(&key(&s)).unwrap().client_cert.unwrap().pubkey);
+}
+
 // MARK: - WireGuard keys
 
 const WG_PEER_KEY: &str = "3p7bfXt9wbTTW2HC7OQ1Nz+DQ8hbeGdNrfx+FG+IK08=";
@@ -827,6 +901,33 @@ fn export_warns_about_key_material() {
 
     let clean = w.add("Clean", VPNKind::Openvpn, Some(CLEAN));
     assert_eq!(import_export::export_warning(w.model.deps(), &clean).unwrap(), None);
+
+    // G10: the server's shared tls-crypt key stays in an export without keys (the copy can connect); the warning
+    // and the save panel say so.
+    let shared = format!("{CLEAN}<key>\nsecret\n</key>\n<tls-crypt>\nshared\n</tls-crypt>\n");
+    let c = w.add("Shared", VPNKind::Openvpn, Some(&shared));
+    let warning = import_export::export_warning(w.model.deps(), &c).unwrap().unwrap();
+    assert!(warning.message.starts_with("It contains: <key>. Anyone who has these keys"), "{}", warning.message);
+    assert!(warning.message.ends_with(
+        "Export Without Keys keeps <tls-crypt>: every user of the server has the same key, and the copy cannot connect without it."
+    ));
+    let without = import_export::export_plan(w.model.deps(), &c, false).unwrap();
+    let text = String::from_utf8(without.data).unwrap();
+    assert!(!text.contains("secret") && text.contains("<tls-crypt>\nshared\n</tls-crypt>"));
+    assert!(
+        without
+            .message
+            .starts_with("Your private keys and credentials are not included. The shared TLS key (<tls-crypt>) is:")
+    );
+    let with = import_export::export_plan(w.model.deps(), &c, true).unwrap();
+    assert!(with.message.contains("(<key>, <tls-crypt>)"), "{}", with.message);
+    // A shared key alone: no question (both choices would export the same).
+    let only = w.add("Only", VPNKind::Openvpn, Some(&format!("{CLEAN}<tls-auth>\nshared\n</tls-auth>\n")));
+    assert_eq!(import_export::export_warning(w.model.deps(), &only).unwrap(), None);
+    let plan = import_export::export_plan(w.model.deps(), &only, false).unwrap();
+    assert!(String::from_utf8(plan.data).unwrap().contains("<tls-auth>\nshared"));
+    assert!(plan.message.contains("The shared TLS key (<tls-auth>) is:"));
+
     let native = w.add("L2TP", VPNKind::L2tp, None);
     let plan = import_export::export_plan(w.model.deps(), &native, false).unwrap();
     assert_eq!(plan.file_name, "L2TP.mobileconfig");
@@ -1066,6 +1167,21 @@ fn macos_editors_have_no_platform_notes() {
     }
 }
 
+/// WinVPN: IKEv2 signs with a computer certificate from Windows' store, so the app turns the import off: the editor
+/// offers none and the import itself is refused (G4 on Windows). A native platform alone (macOS has one too) does not.
+#[test]
+fn a_platform_with_its_own_certificate_store_imports_no_client_certificate() {
+    let w = system_window("L2TP");
+    w.model.set_native_platform(Arc::new(WinLike), Arc::new(CaCheck::default()));
+    w.model.set_client_cert_import(false);
+    let ikev2 = w.add("IKE", VPNKind::Strongswan, Some(SWAN_PUBKEY));
+    let cert = w.model.open_editor(&key(&ikev2)).unwrap().client_cert.unwrap();
+    assert!(cert.pubkey && !cert.import);
+    let pair = macvpn_core::client_cert::fixtures::pem_pair();
+    assert!(w.model.import_client_cert(&key(&ikev2), &[pair.as_bytes()]).is_err());
+    assert_eq!(w.fx.secrets.get(&ikev2.id, SecretField::ClientCert), None);
+}
+
 /// The notes follow the draft (not the saved config): the IKEv2 reasons and warnings as typed, the L2TP server as
 /// edited; the flags per kind; the system VPN's PSK note.
 #[test]
@@ -1190,4 +1306,156 @@ fn the_native_profiles_follow_the_open_vault() {
     assert!(w.model.install_native_profiles().is_empty());
     assert_eq!(w.profiles.reconciled.lock().unwrap().len(), 2);
     assert_eq!(w.profiles.installs.lock().unwrap().len(), 2);
+}
+
+// MARK: - Client credentials (audit G1, G3, G6)
+
+const CERT_CA: &str = include_str!("../../core/tests/fixtures/certs/ca.pem");
+const CERT_CLIENT: &str = include_str!("../../core/tests/fixtures/certs/client-rsa.pem");
+/// `client-rsa.pem`'s notAfter (2036-10-26 22:48:40Z).
+const CLIENT_NOT_AFTER: i64 = 2_108_674_120;
+
+/// A window whose clock says `now` (Unix seconds).
+fn window_at(now: i64) -> Window {
+    let fx = Fixture::new(AppLanguage::En);
+    let manager = fx.manager();
+    let profiles = Arc::new(MobileconfigProfiles::default());
+    let deps = EditorDeps {
+        manager: manager.clone(),
+        store: fx.store.clone(),
+        secrets: fx.secrets.clone(),
+        secret_writer: fx.secrets.clone(),
+        profiles: profiles.clone(),
+        clock: clock_at(now as f64),
+    };
+    Window { model: Arc::new(ConnectionsModel::new(deps)), fx, profiles, manager }
+}
+
+#[test]
+fn the_config_text_is_masked_for_the_view_and_saved_as_it_is() {
+    let w = window();
+    let config = format!("{CLEAN}<key>\n-----BEGIN PRIVATE KEY-----\nKEYDATA\n-----END PRIVATE KEY-----\n</key>\n");
+    let c = w.add("Keyed", VPNKind::Openvpn, Some(&config));
+    let view = w.model.open_editor(&key(&c)).unwrap();
+    let masked = view.masked_text.clone().expect("a masked text");
+    assert!(!masked.contains("KEYDATA") && masked.contains(macvpn_core::config_secrets::MASK));
+    assert_eq!(masked.lines().count(), config.lines().count());
+    // The draft keeps the real text: an edit and a save write it, never the mask.
+    let EditorFields::Text(f) = view.fields.clone() else { panic!() };
+    assert_eq!(f.text, config);
+    let text = f.text.replace("dev tun", "dev tun\nverb 3");
+    let saved = w.model.save_editor(&key(&c), EditorFields::Text(TextFields { text: text.clone(), ..f })).unwrap();
+    assert!(saved.issues.is_empty(), "{:?}", saved.issues);
+    let stored = w.fx.store.load_config(&c.id).unwrap();
+    assert_eq!(stored, text);
+    assert!(!stored.contains(macvpn_core::config_secrets::MASK));
+    let json = serde_json::to_value(&saved).unwrap();
+    assert!(json["maskedText"].as_str().unwrap().contains("verb 3"));
+    // Nothing to mask: no masked text in the JSON at all.
+    let clean = w.add("Clean", VPNKind::Openvpn, Some(CLEAN));
+    let json = serde_json::to_value(w.model.open_editor(&key(&clean)).unwrap()).unwrap();
+    assert!(json.get("maskedText").is_none());
+    // WireGuard's keys too.
+    let wg = w.add("WG", VPNKind::Wireguard, Some("[Interface]\nPrivateKey = abc=\n"));
+    assert!(!w.model.open_editor(&key(&wg)).unwrap().masked_text.unwrap().contains("abc="));
+}
+
+#[test]
+fn the_key_password_field_follows_the_key() {
+    let w = window();
+    let plain = w.add("Plain", VPNKind::Openvpn, Some(&format!("{CLEAN}<key>\nK\n</key>\n")));
+    assert!(!w.model.open_editor(&key(&plain)).unwrap().key_password_used);
+    let encrypted = format!(
+        "{CLEAN}<key>\n-----BEGIN ENCRYPTED PRIVATE KEY-----\nK\n-----END ENCRYPTED PRIVATE KEY-----\n</key>\n"
+    );
+    let enc = w.add("Encrypted", VPNKind::Openvpn, Some(&encrypted));
+    assert!(w.model.open_editor(&key(&enc)).unwrap().key_password_used);
+    // Typing an encrypted key into a plain config shows the field at once.
+    let f = w.text(&plain);
+    let view =
+        w.model.update_editor(&key(&plain), EditorFields::Text(TextFields { text: encrypted.clone(), ..f })).unwrap();
+    assert!(view.key_password_used);
+    // A stored key password stays removable even when the key is not encrypted.
+    let stored = w.add("Stored", VPNKind::Openvpn, Some(CLEAN));
+    w.fx.secrets.set("kp", &stored.id, SecretField::KeyPassword);
+    assert!(w.model.open_editor(&key(&stored)).unwrap().key_password_used);
+    // Only OpenVPN has one.
+    let wg = w.add("WG", VPNKind::Wireguard, Some("[Interface]\n"));
+    assert!(!w.model.open_editor(&key(&wg)).unwrap().key_password_used);
+}
+
+#[test]
+fn the_editor_shows_the_configs_certificates_with_their_expiry() {
+    let w = window_at(CLIENT_NOT_AFTER - 10 * 86_400 - 60);
+    let config = format!("{CLEAN}<ca>\n{CERT_CA}</ca>\n<cert>\n{CERT_CLIENT}</cert>\n");
+    let c = w.add("Cert", VPNKind::Openvpn, Some(&config));
+    let view = w.model.open_editor(&key(&c)).unwrap();
+    let certs = view.certificates.clone().expect("certificates").certificates;
+    assert_eq!(certs.len(), 2);
+    assert_eq!((certs[0].role, certs[0].source.as_str()), ("client", "<cert>"));
+    assert_eq!(certs[0].subject, "CN=client one, OU=Lab, O=Example");
+    assert_eq!(certs[0].issuer, "CN=Cred Test CA, O=Example, C=HU");
+    assert_eq!(certs[0].key_type, "RSA 2048");
+    assert_eq!((certs[0].status, certs[0].note.as_deref()), ("expiresSoon", Some("Expires in 10 days")));
+    assert!(certs[0].pem.starts_with("-----BEGIN CERTIFICATE-----\nMII"));
+    assert_eq!((certs[1].role, certs[1].status, certs[1].note.clone()), ("ca", "valid", None));
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["certificates"]["certificates"][0]["notAfter"].as_i64(), Some(CLIENT_NOT_AFTER));
+    assert_eq!(json["certificates"]["certificates"][0]["status"], "expiresSoon");
+    // The row warns as well (the earliest expiry, read at the reload).
+    let expiry = w.manager.certificate_expiry();
+    assert_eq!(expiry.get(&key(&c)), Some(&CLIENT_NOT_AFTER));
+    let now = CLIENT_NOT_AFTER - 10 * 86_400 - 60;
+    assert_eq!(
+        macvpn_app_core::editor::certificate_row_warning(CLIENT_NOT_AFTER, now).as_deref(),
+        Some("Certificate expires in 10 days")
+    );
+    assert_eq!(
+        macvpn_app_core::editor::certificate_row_warning(CLIENT_NOT_AFTER, CLIENT_NOT_AFTER + 1).as_deref(),
+        Some("Certificate expired")
+    );
+    assert_eq!(
+        macvpn_app_core::editor::certificate_row_warning(CLIENT_NOT_AFTER, CLIENT_NOT_AFTER - 31 * 86_400),
+        None
+    );
+    // Removing the certificate from the text removes it from the view.
+    let EditorFields::Text(f) = view.fields else { panic!() };
+    let view = w.model.update_editor(&key(&c), EditorFields::Text(TextFields { text: CLEAN.into(), ..f })).unwrap();
+    assert!(view.certificates.is_none());
+}
+
+#[test]
+fn an_expired_sstp_ca_and_ikev2_certificates_from_the_swanctl_folder() {
+    let w = window_at(CLIENT_NOT_AFTER + 86_400);
+    // SSTP: the custom CA (valid until 2046).
+    let sstp = format!("server=vpn.example.com\nuser=bob\ncert=ca\n{}", {
+        let c = macvpn_core::validators::SSTPConfig {
+            server: "vpn.example.com".into(),
+            port: 443,
+            user: "bob".into(),
+            cert: macvpn_core::validators::sstp::CertMode::Ca,
+            route_all: true,
+            peer_dns: true,
+            ca_pem: CERT_CA.into(),
+        };
+        c.serialized()
+    });
+    let s = w.add("SSTP", VPNKind::Sstp, Some(&sstp));
+    let certs = w.model.open_editor(&key(&s)).unwrap().certificates.unwrap().certificates;
+    assert_eq!((certs[0].role, certs[0].status), ("ca", "valid"));
+    // IKEv2: the files `certs` and `cacerts` name, read from the swanctl folder.
+    let dir = std::env::temp_dir().join(format!("macvpn-swanctl-{}", uuid::Uuid::new_v4()));
+    std::fs::create_dir_all(dir.join("x509")).unwrap();
+    std::fs::create_dir_all(dir.join("x509ca")).unwrap();
+    std::fs::write(dir.join("x509/client.pem"), CERT_CLIENT).unwrap();
+    std::fs::write(dir.join("x509ca/ca.pem"), CERT_CA).unwrap();
+    let ike = "connections {\n  office {\n    local {\n      auth = pubkey\n      certs = client.pem\n    }\n    remote {\n      cacerts = ca.pem, missing.pem\n    }\n  }\n}\n";
+    let c = w.add("IKEv2", VPNKind::Strongswan, Some(ike));
+    assert!(w.model.open_editor(&key(&c)).unwrap().certificates.is_none(), "no folder set");
+    w.model.set_swanctl_folder(dir.clone());
+    let certs = w.model.open_editor(&key(&c)).unwrap().certificates.unwrap().certificates;
+    let rows: Vec<(&str, &str, &str)> = certs.iter().map(|c| (c.role, c.source.as_str(), c.status)).collect();
+    assert_eq!(rows, [("client", "client.pem", "expired"), ("ca", "ca.pem", "valid")]);
+    assert_eq!(certs[0].note.as_deref(), Some("Expired"));
+    let _ = std::fs::remove_dir_all(&dir);
 }

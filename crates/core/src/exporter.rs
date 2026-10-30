@@ -173,6 +173,10 @@ pub fn write_with_access_raced(
 pub const OPENVPN_SECRET_BLOCKS: [&str; 8] =
     ["key", "tls-auth", "tls-crypt", "tls-crypt-v2", "secret", "pkcs12", "auth-user-pass", "http-proxy-user-pass"];
 pub const WIREGUARD_SECRET_KEYS: [&str; 2] = ["PrivateKey", "PresharedKey"];
+/// The OpenVPN key blocks every client of a server shares (the server's `tls-auth` / `tls-crypt` key, made with
+/// `openvpn --genkey` on the server): not personal, and a copy cannot connect without them, so "Export Without
+/// Keys" keeps them (client-credential audit G10). `tls-crypt-v2` is different: each client has its own key.
+pub const OPENVPN_SHARED_BLOCKS: [&str; 2] = ["tls-auth", "tls-crypt"];
 
 /// The names of the key material in the config (e.g. `<key>`, `PrivateKey`, `secrets`), for the warning. Empty:
 /// nothing to strip. A native export has no secrets anyway.
@@ -198,8 +202,26 @@ pub fn secret_material(config: &str, kind: VPNKind) -> Vec<String> {
     }
 }
 
-/// The config without key material: OpenVPN key blocks removed, WireGuard key values emptied (the structure
-/// stays, the recipient fills in theirs), the strongSwan `secrets` section removed.
+/// The key material of [`secret_material`] that is personal: everything but the shared OpenVPN TLS keys
+/// ([`OPENVPN_SHARED_BLOCKS`]). Empty: nothing for "Export Without Keys" to strip.
+pub fn personal_material(config: &str, kind: VPNKind) -> Vec<String> {
+    let shared = shared_material(config, kind);
+    secret_material(config, kind).into_iter().filter(|m| !shared.contains(m)).collect()
+}
+
+/// The shared OpenVPN TLS keys of the config (`<tls-auth>`, `<tls-crypt>`), which "Export Without Keys" keeps.
+pub fn shared_material(config: &str, kind: VPNKind) -> Vec<String> {
+    if kind != VPNKind::Openvpn {
+        return Vec::new();
+    }
+    let opened: BTreeSet<String> = config.split('\n').filter_map(openvpn_block_tag).collect();
+    OPENVPN_SHARED_BLOCKS.iter().filter(|b| opened.contains(**b)).map(|b| format!("<{b}>")).collect()
+}
+
+/// The config without personal key material ("Export Without Keys"): the OpenVPN client key, PKCS#12,
+/// `tls-crypt-v2` client key, static key and inline credentials removed (the shared `tls-auth` / `tls-crypt` key
+/// stays: [`OPENVPN_SHARED_BLOCKS`]), WireGuard key values emptied (the structure stays, the recipient fills in
+/// theirs), the strongSwan `secrets` section removed.
 pub fn strip_secrets(config: &str, kind: VPNKind) -> String {
     let lines: Vec<&str> = config.split('\n').collect();
     match kind {
@@ -216,7 +238,9 @@ pub fn strip_secrets(config: &str, kind: VPNKind) -> String {
                     }
                     continue;
                 }
-                if let Some(tag) = openvpn_block_tag(line) {
+                if let Some(tag) = openvpn_block_tag(line)
+                    && !OPENVPN_SHARED_BLOCKS.contains(&tag.as_str())
+                {
                     skipping = Some(tag);
                     continue;
                 }
@@ -239,7 +263,7 @@ pub fn strip_secrets(config: &str, kind: VPNKind) -> String {
 }
 
 /// The opening tag (lower-cased) of an OpenVPN block holding a key, otherwise `None`.
-fn openvpn_block_tag(line: &str) -> Option<String> {
+pub(crate) fn openvpn_block_tag(line: &str) -> Option<String> {
     let t = line.trim_matches(swift_str::is_foundation_whitespace_or_newline).to_lowercase();
     if !swift_str::has_prefix(&t, "<") || !swift_str::has_suffix(&t, ">") || swift_str::has_prefix(&t, "</") {
         return None;
@@ -254,7 +278,7 @@ fn openvpn_block_tag(line: &str) -> Option<String> {
 
 /// The key (canonical spelling) of a `PrivateKey = …` / `PresharedKey = …` line, otherwise `None`.
 /// `require_value`: a line with an empty value (an already stripped key) does not count.
-fn wireguard_secret_key(line: &str, require_value: bool) -> Option<&'static str> {
+pub(crate) fn wireguard_secret_key(line: &str, require_value: bool) -> Option<&'static str> {
     let eq = swift_str::first_index(line, "=")?;
     if require_value
         && line[eq + swift_str::char_len_at(line, eq)..]
@@ -267,13 +291,20 @@ fn wireguard_secret_key(line: &str, require_value: bool) -> Option<&'static str>
     WIREGUARD_SECRET_KEYS.iter().copied().find(|k| swift_str::eq(&k.to_lowercase(), &key))
 }
 
-/// Removes the top-level `secrets { … }` section(s). Braces are counted outside quotes and `#` comments.
+/// Removes the top-level `secrets { … }` section(s).
 fn strongswan_strip<'a>(lines: &[&'a str]) -> (Vec<&'a str>, bool) {
+    let inside = strongswan_secret_lines(lines);
+    let out = lines.iter().zip(&inside).filter(|(_, inside)| !**inside).map(|(line, _)| *line).collect();
+    (out, inside.contains(&true))
+}
+
+/// Per line: it belongs to a top-level `secrets { … }` section (its first and last line included). Braces are
+/// counted outside quotes and `#` comments.
+pub(crate) fn strongswan_secret_lines(lines: &[&str]) -> Vec<bool> {
     static SECRETS: LazyLock<Regex> = LazyLock::new(|| Regex::new("^\\s*secrets\\s*\\{").expect("valid pattern"));
-    let mut out = Vec::new();
+    let mut out = Vec::with_capacity(lines.len());
     let mut depth = 0i64;
     let mut skipping = false;
-    let mut found = false;
     for line in lines {
         let start_depth = depth;
         let mut in_quote = false;
@@ -297,15 +328,11 @@ fn strongswan_strip<'a>(lines: &[&'a str]) -> (Vec<&'a str>, bool) {
         }
         if !skipping && start_depth == 0 && swift_str::matches(line, &SECRETS) {
             skipping = true;
-            found = true;
         }
-        if skipping {
-            if depth == 0 {
-                skipping = false;
-            }
-            continue;
+        out.push(skipping);
+        if skipping && depth == 0 {
+            skipping = false;
         }
-        out.push(*line);
     }
-    (out, found)
+    out
 }

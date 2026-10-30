@@ -44,7 +44,7 @@ export function inlineText(code: string): string {
 
 /// A stored team secret (opt-in).
 export function secretText(code: string): string {
-  return code === 'psk' ? tr('Pre-shared key (PSK)') : code === 'keypass' ? tr('Private key password') : tr('Secret');
+  return code === 'psk' ? tr('Shared secret (PSK)') : code === 'keypass' ? tr('Private key password') : tr('Secret');
 }
 
 /// Why a connection cannot be published.

@@ -87,6 +87,7 @@
           <span>{tr('Shared secret (PSK)')}</span>
           <SecretField
             label={tr('Shared secret (PSK)')}
+            removeLabel={tr('Remove saved PSK')}
             stored={view?.hasStoredSecret.psk ?? false}
             bind:value={fields.psk}
             disabled={removed}

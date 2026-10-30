@@ -34,6 +34,8 @@
   } = $props();
 
   const fields = $derived(orderedFields(prompt.fields));
+  /// "Show" of a typed secret (only what the user typed here: a stored value never reaches this window).
+  let shown = $state<Partial<Record<CredentialField, boolean>>>({});
 
   /// A field's label (the editors' texts).
   function label(field: CredentialField): string {
@@ -89,16 +91,23 @@
     {#each fields as field (field)}
       <label class="field">
         <span class="caption">{label(field)}</span>
-        <input
-          data-field={field}
-          type={isSecretField(field) ? 'password' : 'text'}
-          autocomplete="off"
-          autocapitalize="off"
-          spellcheck="false"
-          disabled={!armed}
-          value={values[field] ?? ''}
-          oninput={(e) => (values = { ...values, [field]: e.currentTarget.value })}
-        />
+        <span class="input">
+          <input
+            data-field={field}
+            type={isSecretField(field) && !(shown[field] && values[field]) ? 'password' : 'text'}
+            autocomplete="off"
+            autocapitalize="off"
+            spellcheck="false"
+            disabled={!armed}
+            value={values[field] ?? ''}
+            oninput={(e) => (values = { ...values, [field]: e.currentTarget.value })}
+          />
+          {#if isSecretField(field) && values[field]}
+            <button class="show" type="button" aria-pressed={shown[field] ?? false} onclick={() => (shown = { ...shown, [field]: !shown[field] })}
+              >{shown[field] ? tr('Hide') : tr('Show')}</button
+            >
+          {/if}
+        </span>
       </label>
     {/each}
   </div>
@@ -205,7 +214,21 @@
     gap: 4px;
   }
   .field input {
+    flex: 1;
+    min-width: 0;
     min-height: 28px;
+  }
+  .input {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .show {
+    flex: none;
+    min-height: 24px;
+    padding: 2px 10px;
+    border-radius: var(--radius-pill);
+    font-size: var(--text-sm);
   }
   .origin {
     overflow-wrap: anywhere;

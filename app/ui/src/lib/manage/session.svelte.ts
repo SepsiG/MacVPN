@@ -107,6 +107,18 @@ export class EditorSession {
     await api.editorWireguardCopy(this.id, key);
   }
 
+  /// "Import Client Certificate…" (IKEv2): the latest edits first, then the backend's panel and vault.
+  async importClientCert(): Promise<void> {
+    await this.flush();
+    this.#adopt(await api.editorImportClientCert(this.id));
+  }
+
+  /// "Remove" of the imported client certificate (from the vault at once).
+  async removeClientCert(): Promise<void> {
+    await this.flush();
+    this.#adopt(await api.editorRemoveClientCert(this.id));
+  }
+
   /// "Choose PEM File…" (SSTP): the panel, then the certificates into the form.
   async chooseCa(): Promise<void> {
     await this.flush();

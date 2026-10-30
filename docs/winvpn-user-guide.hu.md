@@ -10,6 +10,13 @@ A WinVPN a [MacVPN](user-guide.hu.md) windowsos változata: a tálca értesíté
 
 > **Nyelv:** a WinVPN a Windows megjelenítési nyelvét és az előnyben részesített nyelveidet követi (Gépház → Idő és nyelv → Nyelv és régió). Magyarul és angolul érhető el; ha a preferált nyelvek között egyik sincs, angolul jelenik meg. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](winvpn-user-guide.en.md) az angolokat.
 
+## Újdonságok a 2.0.7-ben
+
+- **Rejtett titkok a configban.** A privát kulcsok, a statikus kulcsok, a beágyazott hitelesítő adatok és a strongSwan `secrets` szakasz takarva látszik a config szerkesztőjében, amíg be nem jelölöd a **Titkok megjelenítése** négyzetet. Lásd [3](#3-kapcsolatok-felvétele-típusonként).
+- **Tanúsítványadatok.** A szerkesztő felsorolja a config tanúsítványait (tulajdonos, kibocsátó, érvényesség, kulcstípus, SHA-256 ujjlenyomat **Másolás** gombbal), és ha egy kapcsolat tanúsítványa 30 napon belül lejár vagy már lejárt, a sora jelzi. Lásd [3.10](#310-tanúsítványok).
+- **Jelszómezők.** A **Megjelenítés** gomb megmutatja, amit éppen beírsz; a **Privát kulcs jelszava** mező csak akkor látszik, ha a kulcsnak kell; a jelszavas PKCS#12 fájl jelszavát csatlakozáskor bekéri. Lásd [5.3](#53-hitelesítő-adatok-bekérése-csatlakozáskor).
+- **Az Exportálás kulcsok nélkül megtartja a közös TLS-kulcsot** (`<tls-auth>`, `<tls-crypt>`), így az exportált másolat tud csatlakozni. Lásd [4](#4-import-és-export).
+
 ## Újdonságok a 2.0-ban
 
 A 2.0 az első WinVPN, amely csatlakozni is tud. A MacVPN 2.0 minden funkciója megvan benne, az útmutatóban megnevezett windowsos eltérésekkel.
@@ -191,7 +198,9 @@ Az SSTP-nek, az L2TP-nek és a Cisco IPsec-nek szöveges szerkesztő helyett űr
 
 **Amit a Windows nem tud, az látszik, nem rejtett.** Az a kapcsolat, amelynek a beállításait a Windows VPN-kliense nem tudja futtatni (Cisco IPsec kapcsolat, nem támogatott beállítást tartalmazó IKEv2 config, **Nincs ellenőrzés** módú SSTP), a listában kiszürkítve, az okkal együtt látszik, és a szerkesztője ugyanezt az okot sárga megjegyzésben mutatja az űrlap fölött. Ettől még szerkesztheted, mentheted, exportálhatod és mentheted biztonsági mentésbe: ugyanez a kapcsolat a MacVPN-ben működik.
 
-**A mentett jelszavak sosem látszanak.** Ha egy jelszómezőnek van mentett értéke, a mezőben **Mentve – írj be újat a cseréhez** áll. Ha nem nyúlsz hozzá, a mentett érték marad; ha beírsz valamit, lecseréli; a **Mentett jelszó törlése** gombbal és mentéssel törölheted. A szerkesztő alatti állapotsor **Nem mentett változások** vagy **Mentve: <idő>** szöveget mutat.
+**A mentett jelszavak sosem látszanak.** Ha egy jelszómezőnek van mentett értéke, a mezőben **Mentve – írj be újat a cseréhez** áll. Ha nem nyúlsz hozzá, a mentett érték marad; ha beírsz valamit, lecseréli; a **Mentett jelszó törlése** gombbal és mentéssel törölheted. A szerkesztő alatti állapotsor **Nem mentett változások** vagy **Mentve: <idő>** szöveget mutat. A jelszómező melletti **Megjelenítés** gomb csak az éppen beírt szöveget mutatja meg (mentett értéket sosem). A törlőgomb megnevezi, mit töröl: **Mentett jelszó törlése**, **Mentett PSK törlése** vagy **Mentett kulcsjelszó törlése**.
+
+**A config titkai rejtve vannak.** A config szövegében lévő kulcsok és jelszavak (OpenVPN `<key>`, `<pkcs12>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<auth-user-pass>`, `<http-proxy-user-pass>`; WireGuard `PrivateKey` és `PresharedKey`; strongSwan `secrets` szakasz) soronként `••••••••••••••••` jelként látszanak, így képernyőmegosztáson és képernyőképen sem jelennek meg. Amíg rejtve vannak, a config csak olvasható (**A config titkai rejtve vannak. A szerkesztéshez jelöld be a Titkok megjelenítése lehetőséget.**): a valódi szöveg megtekintéséhez és szerkesztéséhez jelöld be a **Titkok megjelenítése** négyzetet. A WinVPN mindig a valódi szöveget menti és exportálja, sosem a pontokat. Minden szerkesztő rejtett titkokkal nyílik meg.
 
 Ha nem mentett változással váltasz kapcsolatot vagy zárod be az ablakot, az app rákérdez: **Mentés**, **Elvetés** vagy **Mégse**.
 
@@ -203,7 +212,7 @@ A legegyszerűbb, ha a szolgáltatótól kapott `.ovpn` fájlt importálod (**Ú
 
 - Ha a `.ovpn` külső fájlokra hivatkozik (például `ca ca.crt`, `cert client.crt`, `key client.key`, `tls-auth ta.key`), az import a `.ovpn` mellől beolvassa és beágyazza őket (`<ca>…</ca>` blokkokba). Ezért importálás előtt a fájlok legyenek a `.ovpn` mellett. Ha egy fájl hiányzik, az import hibát jelez.
 - Ha a szerver felhasználónevet és jelszót kér (`auth-user-pass` sor), töltsd ki a **Felhasználónév** és **Jelszó** mezőket, vagy hagyd üresen őket: a WinVPN csatlakozáskor megkérdezi (lásd [5.3](#53-hitelesítő-adatok-bekérése-csatlakozáskor)).
-- Ha a privát kulcs jelszóval védett (jelszavas PKCS#12 fájl, vagy titkosított PEM kulcs), add meg a **Privát kulcs jelszava** mezőben. A széfbe kerül.
+- Ha a privát kulcs jelszóval védett (jelszavas PKCS#12 fájl, vagy titkosított PEM kulcs), add meg a **Privát kulcs jelszava** mezőben. A mező csak akkor jelenik meg, ha a config kulcsa titkosított, ha a PKCS#12 fájlja jelszó nélkül nem nyílik meg, vagy ha már van mentett kulcsjelszó. A széfbe kerül.
 - A WinVPN a MacVPN-hez hasonlóan minden direktívát három szintbe sorol (a teljes lista: [openvpn-directives.md](openvpn-directives.md), angolul, magyar összefoglalóval):
   - Az **engedett** direktívák a megszokott módon működnek.
   - A **kockázatos beállítások** (például `user nobody`, szerveroldali opciók, és minden direktíva, amelyet a WinVPN nem ismer) egy sárga **Kockázatos beállítások** panelen jelennek meg, mindegyik rövid indoklással. Mentéshez jelöld be: **Tudomásul veszem a beállításokat és a biztonsági kockázatokat**. A tudomásulvétel pontosan a mentéskor jelen lévő kockázatos direktívákra szól: ha később újat adsz hozzá, újra be kell jelölnöd.
@@ -237,7 +246,7 @@ Az IKEv2 configot a MacVPN-hez hasonlóan strongSwan `swanctl.conf` szintaxisban
 
 **Windowson** a WinVPN a config első kapcsolatát és annak első gyerekét a Windows IKEv2-kliensének egy bejegyzésévé fordítja. A szerkesztő alatt egy szürke sor mutatja, mit használ majd a Windows, például: **Windowson: EAP-MSCHAPv2 · AES-256, SHA-256, DH-csoport 14; ESP AES-256, SHA-256 · osztott alagút** (vagy **számítógép-tanúsítvány**, **minden forgalom**).
 
-- **Bejelentkezés:** `local { auth = eap-mschapv2 }` (vagy `eap` egy `eap_id`-val) és `remote { auth = pubkey }`, vagy **számítógép-tanúsítvány** (`local { auth = pubkey }`). A configban megnevezett tanúsítványfájlokat a Windows nem használja: a kliens-tanúsítványt a számítógép **Személyes** tárolójából veszi, ahová egy rendszergazda importálja (lásd [3.7](#37-rendszergazdai-lépések-a-natív-vpn-ekhez)). Ha nincs ott: **Nem található számítógép-tanúsítvány az IKEv2-höz. Egy rendszergazdának kell importálnia (lásd a felhasználói útmutatót).**
+- **Bejelentkezés:** `local { auth = eap-mschapv2 }` (vagy `eap` egy `eap_id`-val) és `remote { auth = pubkey }`, vagy **számítógép-tanúsítvány** (`local { auth = pubkey }`). A configban megnevezett tanúsítványfájlokat a Windows nem használja: a kliens-tanúsítványt a számítógép **Személyes** tárolójából veszi, ahová egy rendszergazda importálja (lásd [3.7](#37-rendszergazdai-lépések-a-natív-vpn-ekhez)). Ha nincs ott: **Nem található számítógép-tanúsítvány az IKEv2-höz. Egy rendszergazdának kell importálnia (lásd a felhasználói útmutatót).** A 2.0.7-től a szerkesztő a config alatt is jelzi (szürkén: **A Windows számítógép-tanúsítvánnyal jelentkezik be: egy rendszergazda importálja a kliens .p12 fájlját a Helyi számítógép › Személyes tárolóba …**). A privát kulcs jelszavát a Windows importálásakor kell egyszer megadni; a WinVPN sosem tárolja és sosem kéri, ezért IKEv2-nél a szerkesztőben nincs **Privát kulcs jelszava** és **Klienstanúsítvány importálása…** (ez a MacVPN-é, amely maga tölti be a kulcsot).
 - **Előre megosztott kulcs nincs:** a `local { auth = psk }` confignál ez áll: **Windowson nem támogatott: local auth = psk (a Windows IKEv2-kliense nem tud előre megosztott kulccsal hitelesíteni; használj EAP-MSCHAPv2-t vagy számítógép-tanúsítványt)**. Kérj EAP-hozzáférést a VPN-rendszergazdától, vagy használd a PSK-t L2TP/IPsec-kel.
 - **A szerver tanúsítványát** a Windows a számítógép **Megbízható legfelső szintű hitelesítésszolgáltatói** alapján ellenőrzi, és a nevének egyeznie kell a `remote_addrs` címével. Egy céges CA-t előbb ott megbízhatóvá kell tenni: **A CA megbízhatóvá tétele a Windowsban…** a szerkesztő alatt, a CA PEM-fájljával (lásd [3.7](#37-rendszergazdai-lépések-a-natív-vpn-ekhez)). Ha a `remote { id = … }` eltér a címtől: **Windowson a szerver azonosítójának a címének kell lennie: a remote_addrs értéke a szervertanúsítványban szereplő név legyen.**
 - **Útvonalak:** a `remote_ts = 0.0.0.0/0` (vagy hiányzó `remote_ts`) minden forgalmat a VPN-re küld; a többi `remote_ts` hálózatból útvonal lesz (osztott alagút).
@@ -247,7 +256,7 @@ Az IKEv2 configot a MacVPN-hez hasonlóan strongSwan `swanctl.conf` szintaxisban
 
 ### 3.4 L2TP/IPsec és Cisco IPsec
 
-Az L2TP/IPsec beállítása űrlapon történik (**Új → L2TP**): **Név**, **Szerver**, **Fióknév**, **Jelszó**, **Pre-shared key (PSK)** és **Minden forgalom a VPN-en keresztül**.
+Az L2TP/IPsec beállítása űrlapon történik (**Új → L2TP**): **Név**, **Szerver**, **Fióknév**, **Jelszó**, **Közös kulcs (PSK)** és **Minden forgalom a VPN-en keresztül**.
 
 - A **Mentés** elmenti a kapcsolatot (a jelszó és a PSK a széfbe kerül), és azonnal megírja a Windows VPN-bejegyzését: nincs mit jóváhagyni (**Mentéskor a kapcsolat Windows VPN-bejegyzése azonnal elkészül, nincs mit jóváhagyni. A jelszó nincs benne: a WinVPN csatlakozáskor adja át.**). A bejegyzés a WinVPN sajátja, és nem jelenik meg a Gépház → VPN listában (lásd [3.8](#38-hol-tárolja-a-winvpn-a-natív-vpn-eket)).
 - **NAT mögött:** a Windows nem enged L2TP/IPsec kapcsolatot NAT-router mögötti szerverhez, amíg egy rendszergazda egyszer nem engedélyezi. Ilyenkor a hibaüzenet felkínálja: **L2TP engedélyezése NAT mögött…** (lásd [3.7](#37-rendszergazdai-lépések-a-natív-vpn-ekhez)).
@@ -311,6 +320,18 @@ Javítás: lásd [7.7](#77-nem-engedélyezett-direktíva--tiltott-direktíva). E
 
 ---
 
+### 3.10 Tanúsítványok
+
+A config alatti **Tanúsítványok** doboz a kapcsolat tanúsítványait sorolja fel, elöl a klienstanúsítvánnyal:
+
+- **OpenVPN:** `<cert>` (a saját tanúsítványod és a lánca), `<ca>`, `<extra-certs>`, valamint egy `<pkcs12>` titkosítás nélkül tárolt tanúsítványai. Az OpenSSL ezeket általában a fájl jelszavával titkosítja; ilyenkor a doboz ezt írja: **A PKCS#12-fájl tanúsítványait a jelszava titkosítja, ezért itt nem jeleníthetők meg.**
+- **SSTP:** az egyéni CA-fájl.
+- **IKEv2:** a WinVPN a Windows tanúsítványtárában lévő számítógép-tanúsítvánnyal jelentkezik be, ez itt nem szerepel.
+
+Minden tanúsítványnál látszik a **Tulajdonos**, a **Kibocsátó**, az **Érvényes ettől** / **Érvényes eddig**, a **Kulcstípus**, a **Sorozatszám**, az **SHA-256 ujjlenyomat** (**Másolás** gombbal) és a helye (**Forrás**). A **PEM másolása** magát a tanúsítványt másolja. A tanúsítvány nyilvános, ezért mindkettő a szokásos vágólapra kerül: az ujjlenyomatot vagy a PEM-et küldd el a rendszergazdának, ha megkérdezi, melyik tanúsítványod van. Privát kulcs itt sosem látszik.
+
+A 30 napon belül lejáró tanúsítványnál **12 nap múlva lejár** (sárga), a lejártnál **Lejárt** (piros) áll. Ilyenkor a kapcsolat sora és fejléce is jelzi: **A tanúsítvány 12 nap múlva lejár** vagy **A tanúsítvány lejárt**. A lejárt tanúsítvány gyakori oka a `TLS handshake failed` hibának: kérj újat a rendszergazdától. A WinVPN nem ellenőrzi a tanúsítvány aláírását és láncát; ezt a VPN-eszköz teszi meg csatlakozáskor.
+
 ## 4. Import és export
 
 **Import.** **Új → Import fájlból…** (több fájlt is kijelölhetsz), vagy húzz egy vagy több fájlt a Kapcsolatok ablakba. Minden fájl legfeljebb 1 MB-os, szabályos UTF-8 szövegfájl legyen. A típust a kiterjesztés és a tartalom alapján ismeri fel:
@@ -335,7 +356,7 @@ A OneDrive-mappában lévő, csak online elérhető fájlt a WinVPN olvasáskor 
 **Export.** A kapcsolat fejlécében az export ikon (**Exportálás… (jelszavak sosem kerülnek bele)**) az eredeti formátumban menti ki a configot: `.ovpn`, WireGuard `.conf`, `.swanctl.conf`, `.sstp`, L2TP és Cisco IPsec kapcsolatnál `.mobileconfig`.
 
 - A jelszó, a PSK és a felhasználónév **nem** kerül az exportba. Az SSTP felhasználónév a config része, ezért benne van a `.sstp` exportban; a jelszó nincs.
-- **Privát kulcsok:** ha a config része egy privát kulcs (OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<pkcs12>`, `<auth-user-pass>` vagy `<http-proxy-user-pass>` blokk, WireGuard `PrivateKey` / `PresharedKey`, strongSwan `secrets` szakasz), a WinVPN figyelmeztet (**A config privát kulcsokat vagy hitelesítő adatokat tartalmaz**), és három lehetőséget ad: **Exportálás kulcsok nélkül** (alapértelmezett), **Exportálás kulcsokkal**, vagy **Mégse**. Aki a kulcsokat birtokolja, a te nevedben csatlakozhat.
+- **Privát kulcsok:** ha a config része egy privát kulcs (OpenVPN `<key>`, `<tls-auth>`, `<tls-crypt>`, `<tls-crypt-v2>`, `<secret>`, `<pkcs12>`, `<auth-user-pass>` vagy `<http-proxy-user-pass>` blokk, WireGuard `PrivateKey` / `PresharedKey`, strongSwan `secrets` szakasz), a WinVPN figyelmeztet (**A config privát kulcsokat vagy hitelesítő adatokat tartalmaz**), és három lehetőséget ad: **Exportálás kulcsok nélkül** (alapértelmezett: a személyes kulcsaid kimaradnak; a szerver közös `<tls-auth>` / `<tls-crypt>` kulcsa megmarad, mert a szerver minden felhasználójának ugyanez, és a másolat nélküle nem tud csatlakozni), **Exportálás kulcsokkal**, vagy **Mégse**. Aki a kulcsokat birtokolja, a te nevedben csatlakozhat. Ha a configban csak közös `<tls-auth>` / `<tls-crypt>` kulcs van, a WinVPN kérdés nélkül exportál.
 - Az exportált fájlt csak te (és a SYSTEM) olvashatod.
 - **Mappa és közös hitelesítő adat.** Ha a kapcsolat mappában van, vagy közös hitelesítő adatot használ, a szöveges export egy megjegyzéssorral kezdődik, például `# macvpn-meta: {"folder":["Munka","Ügyfelek"],"credentialName":"Iroda AD"}`. Ebben csak ezek a nevek vannak, titok soha. Importáláskor a WinVPN létrehozza a hiányzó mappákat, és oda teszi a kapcsolatot. A `credentialName` sosem kapcsolódik csendben: a WinVPN előbb rákérdez, és megnevezi a szervert (lásd [13.4](#134-import-és-export)).
 - Ezek az exportok visszaimportálhatók a WinVPN-be és a MacVPN-be. Az L2TP- vagy Cisco IPsec-kapcsolat `.mobileconfig` exportja macOS-profil: Macen dupla kattintásra ott telepíti a VPN-t; a Windows nem tudja használni, és windowsos exportformátum nincs. Egy L2TP-kapcsolatot teljes biztonsági mentéssel (lásd [14.](#14-biztonsági-mentés-és-visszaállítás)) vagy csapatkatalógussal vihetsz át másik számítógépre.
@@ -397,7 +418,7 @@ A WinVPN a MacVPN-nel azonosan kezeli az egyszer használatos kódokat (OTP, TOT
 Ha egy kapcsolathoz felhasználónév, jelszó, közös kulcs (PSK) vagy privát kulcs jelszó kell, de nincs elmentve a WinVPN-ben, a WinVPN csatlakozás előtt bekéri egy kis **Hitelesítő adatok szükségesek** ablakban. Ehhez semmit nem kell beállítani.
 
 - **Mikor jelenik meg:**
-  - **OpenVPN:** a configban `auth-user-pass` van fájl és beágyazott `<auth-user-pass>` blokk nélkül, és nincs elmentve a felhasználónév vagy a jelszó. Titkosított privát kulcs, amelynek a jelszava nincs elmentve.
+  - **OpenVPN:** a configban `auth-user-pass` van fájl és beágyazott `<auth-user-pass>` blokk nélkül, és nincs elmentve a felhasználónév vagy a jelszó. Titkosított privát kulcs, vagy jelszó nélkül meg nem nyíló `<pkcs12>` fájl, amelynek a jelszava nincs elmentve.
   - **IKEv2:** EAP bejelentkezés (`auth = eap…` a `local` szakaszban), és nincs elmentve a felhasználónév vagy a jelszó.
   - **SSTP:** nincs elmentve a jelszó (a felhasználónév a kapcsolat beállításai között van).
   - **L2TP/IPsec:** nincs elmentve a fiók, a jelszó vagy a közös kulcs.
@@ -407,7 +428,7 @@ Ha egy kapcsolathoz felhasználónév, jelszó, közös kulcs (PSK) vagy privát
 - **Rossz felhasználónév vagy jelszó:** ha a szerver elutasítja a bejelentkezést (OpenVPN `AUTH_FAILED`, SSTP és EAP-s IKEv2: **Hitelesítési hiba (rossz felhasználónév vagy jelszó)** / **Hitelesítési hiba (EAP)**), az ablak **egyszer** újra megnyílik a **Sikertelen bejelentkezés — ellenőrizd a felhasználónevet és a jelszót** sorral, a felhasználónév kitöltve. A második hiba a szokásos hibával és értesítéssel ér véget. Az L2TP/IPsec nem kérdez újra (mint a MacVPN-ben); a hibaüzenete megmondja, hogy a bejelentkezés nem sikerült.
 - **Mégse** (vagy Escape, vagy az ablak bezárása) hiba és értesítés nélkül leállítja a csatlakozást. Ha nyitott ablak mellett bontasz, az ablak bezárul. 2 perc után lejár, ez Mégsének számít.
 - **Mint a kódbekérő,** nem veszi el a billentyűzetet a használt apptól: a gépeléshez kattints az ablakra vagy a „…: hitelesítő adatok szükségesek” értesítésre. Megjelenése után kb. egy másodpercig nem fogad bevitelt, és nincs alapértelmezett gombja: az Enter nem csinál semmit, a **Csatlakozás** gombra kell kattintani. Amíg nyitva van, a sor **Hitelesítésre vár** állapotú.
-- **Ismert korlát:** a PKCS#12 csomagban (`<pkcs12>`) lévő privát kulcs jelszavát nem kéri be, mert a WinVPN nem tudja eldönteni, van-e ilyen. Mentsd el a kapcsolat szerkesztőjében (**Privát kulcs jelszava**).
+- **PKCS#12:** egy `<pkcs12>` fájl **Privát kulcs jelszava** értékét a WinVPN csak akkor kéri be, ha a fájl üres jelszóval nem nyílik meg (az OpenVPN először üres jelszót próbál). Azt a fájlt is bekéri, amelyet a WinVPN nem tud beolvasni.
 - A beírt adat erre a csatlakozásra jut el a VPN-motorhoz. A WinVPN használat után törli a saját másolatait; a rendszer útközben készült másolatait (a webes nézet és az app belső üzenetküldése) a WinVPN nem tudja törölni. A beírt adat soha nem kerül a naplóba, és parancssorba sem. Egy vezérlő API kliens csak a `waiting_for_credentials` állapotot látja, és a `credentials_cancelled` hibát, ha megszakítod.
 
 ### 5.4 Párosított appok (vezérlő API)

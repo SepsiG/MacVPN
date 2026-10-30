@@ -258,7 +258,7 @@ fn deleting_an_unknown_connection_is_fine() {
 
 #[test]
 fn secret_fields_have_the_keychain_raw_values() {
-    assert_eq!(SecretField::ALL.map(SecretField::raw_value), ["username", "password", "psk", "keypass"]);
+    assert_eq!(SecretField::ALL.map(SecretField::raw_value), ["username", "password", "psk", "keypass", "clientcert"]);
     for field in SecretField::ALL {
         assert_eq!(SecretField::from_raw_value(field.raw_value()), Some(field));
     }

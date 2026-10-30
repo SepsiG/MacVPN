@@ -152,13 +152,31 @@ fn openvpn_secrets_are_detected_and_stripped() {
         exporter::secret_material(OVPN, VPNKind::Openvpn),
         ["<key>", "<tls-auth>", "<tls-crypt>", "<tls-crypt-v2>", "<secret>", "<pkcs12>"]
     );
+    assert_eq!(exporter::shared_material(OVPN, VPNKind::Openvpn), ["<tls-auth>", "<tls-crypt>"]);
+    assert_eq!(
+        exporter::personal_material(OVPN, VPNKind::Openvpn),
+        ["<key>", "<tls-crypt-v2>", "<secret>", "<pkcs12>"]
+    );
     let stripped = exporter::strip_secrets(OVPN, VPNKind::Openvpn);
-    assert!(!stripped.contains("SECRET"));
+    // G10: the personal keys go, the server's shared TLS keys stay (the copy can connect).
+    for gone in ["SECRET1", "SECRET4", "SECRET5", "SECRET6", "<key>", "<tls-crypt-v2>", "<secret>", "<pkcs12>"] {
+        assert!(!stripped.contains(gone), "{gone}");
+    }
+    assert!(
+        stripped.contains("<TLS-AUTH>\nSECRET2\n</TLS-AUTH>\nkey-direction 1\n<tls-crypt>\nSECRET3\n</tls-crypt>\n")
+    );
     assert!(stripped.contains("<ca>\n-----BEGIN CERTIFICATE-----\nMIIB"));
     assert!(stripped.contains("<cert>"));
-    assert!(stripped.ends_with("key-direction 1\nverb 3\n"));
-    assert!(exporter::secret_material(&stripped, VPNKind::Openvpn).is_empty());
+    assert!(stripped.ends_with("</tls-crypt>\nverb 3\n"));
+    assert_eq!(exporter::secret_material(&stripped, VPNKind::Openvpn), ["<tls-auth>", "<tls-crypt>"]);
+    assert!(exporter::personal_material(&stripped, VPNKind::Openvpn).is_empty());
     assert!(exporter::secret_material("client\nremote a 1\n<ca>\nx\n</ca>\n", VPNKind::Openvpn).is_empty());
+    // Only the shared key: nothing personal to strip.
+    let shared_only = "client\n<tls-crypt>\nK\n</tls-crypt>\n";
+    assert!(exporter::personal_material(shared_only, VPNKind::Openvpn).is_empty());
+    assert_eq!(exporter::strip_secrets(shared_only, VPNKind::Openvpn), shared_only);
+    // The other kinds have no shared keys.
+    assert!(exporter::shared_material("[Interface]\nPrivateKey = k\n", VPNKind::Wireguard).is_empty());
 }
 
 /// Inline credentials (`<auth-user-pass>`, `<http-proxy-user-pass>`, also inside `<connection>`) are flagged and stripped.

@@ -365,9 +365,13 @@ test('no secret goes through the web view clipboard: the backend copies keys and
   const writers = files.filter((f) => /navigator\.clipboard|execCommand\(\s*'copy'/.test(readFileSync(`${lib}/${f}`, 'utf8')));
   assert.deepEqual(
     writers.map((f) => f.split(/[\\/]/).pop()).sort(),
-    ['Fingerprint.svelte', 'WireGuardKeys.svelte'],
-    'only the public fingerprint and the WireGuard public key',
+    ['Certificates.svelte', 'Fingerprint.svelte', 'WireGuardKeys.svelte'],
+    'only the public fingerprint, the WireGuard public key and certificates',
   );
+  // Certificates (G3 of the client-credential audit): only the fingerprint and the certificate's PEM, both public.
+  const certs = readFileSync(`${lib}/manage/Certificates.svelte`, 'utf8');
+  assert.deepEqual(certs.match(/navigator\.clipboard\.writeText\([^)]*\)/g), ['navigator.clipboard.writeText(text)']);
+  assert.deepEqual(certs.match(/copy\(i, '[a-z]+', [^)]*\)/g), ["copy(i, 'fingerprint', c.sha256)", "copy(i, 'pem', c.pem)"]);
   // WireGuard: the web view writes only the public key; the private and preshared keys go through the backend.
   const wg = readFileSync(`${lib}/manage/WireGuardKeys.svelte`, 'utf8');
   assert.deepEqual(wg.match(/navigator\.clipboard\.writeText\([^)]*\)/g), ['navigator.clipboard.writeText(key)']);

@@ -101,6 +101,10 @@
       "hu": "%d eltávolítva",
       "scope": "core-rust"
     },
+    "%ld other certificates in the files (the CA, the chain) were not imported.": {
+      "hu": "A fájlokban lévő további %ld tanúsítvány (a CA, a lánc) nem lett importálva.",
+      "scope": "app"
+    },
     "%lld active": {
       "hu": "%lld aktív",
       "scope": "app"
@@ -259,6 +263,10 @@
       "hu": "Egy VPN-kapcsolat nem csatlakozott újra",
       "scope": "app"
     },
+    "A client certificate file may be 16 KB at most.": {
+      "hu": "Egy klienstanúsítvány-fájl legfeljebb 16 KB lehet.",
+      "scope": "core"
+    },
     "Another active strongSwan connection already defines %@": {
       "hu": "Egy másik aktív strongSwan-kapcsolat már definiálja ezt: %@",
       "scope": "mvpn",
@@ -333,12 +341,40 @@
         "windows"
       ]
     },
+    "CA certificate": {
+      "hu": "CA-tanúsítvány",
+      "scope": "app"
+    },
     "Callback step (not used by VPNs): %@": {
       "hu": "Visszahívási lépés (VPN-nél nem használt): %@",
       "scope": "platform",
       "only": [
         "windows"
       ]
+    },
+    "Certificate expired": {
+      "hu": "A tanúsítvány lejárt",
+      "scope": "app"
+    },
+    "Certificate expires in %lld days": {
+      "hu": "A tanúsítvány %lld nap múlva lejár",
+      "scope": "app"
+    },
+    "Certificate expires today": {
+      "hu": "A tanúsítvány ma lejár",
+      "scope": "app"
+    },
+    "Certificate expires tomorrow": {
+      "hu": "A tanúsítvány holnap lejár",
+      "scope": "app"
+    },
+    "Certificates": {
+      "hu": "Tanúsítványok",
+      "scope": "app"
+    },
+    "Choose a PKCS#12 file (.p12, .pfx) or a PEM certificate with its private key.": {
+      "hu": "Válassz egy PKCS#12 fájlt (.p12, .pfx), vagy egy PEM-tanúsítványt a privát kulcsával.",
+      "scope": "core"
     },
     "Clear Log": {
       "hu": "Napló törlése",
@@ -350,6 +386,14 @@
     },
     "Clear the log of %@?": {
       "hu": "Törlöd a naplót: %@?",
+      "scope": "app"
+    },
+    "Client certificate": {
+      "hu": "Klienstanúsítvány",
+      "scope": "app"
+    },
+    "Config": {
+      "hu": "Config",
       "scope": "app"
     },
     "Connected": {
@@ -377,12 +421,36 @@
       "hu": "Kimásolva. Egy perc múlva lekerül a vágólapról.",
       "scope": "app"
     },
+    "Copy PEM": {
+      "hu": "PEM másolása",
+      "scope": "app"
+    },
     "Could not clear the log": {
       "hu": "A napló nem törölhető",
       "scope": "app"
     },
     "Custom Range": {
       "hu": "Egyéni időszak",
+      "scope": "app"
+    },
+    "Expired": {
+      "hu": "Lejárt",
+      "scope": "app"
+    },
+    "Expires in %lld days": {
+      "hu": "%lld nap múlva lejár",
+      "scope": "app"
+    },
+    "Expires today": {
+      "hu": "Ma lejár",
+      "scope": "app"
+    },
+    "Expires tomorrow": {
+      "hu": "Holnap lejár",
+      "scope": "app"
+    },
+    "Export Without Keys keeps %@: every user of the server has the same key, and the copy cannot connect without it.": {
+      "hu": "Az Exportálás kulcsok nélkül ezt megtartja: %@. A szerver minden felhasználójának ugyanez a kulcsa, és a másolat nélküle nem tud csatlakozni.",
       "scope": "app"
     },
     "Generate Key Pair": {
@@ -401,20 +469,67 @@
       "hu": "Elrejtés",
       "scope": "app"
     },
+    "Import Client Certificate…": {
+      "hu": "Klienstanúsítvány importálása…",
+      "scope": "app"
+    },
+    "Import a PKCS#12 file on its own.": {
+      "hu": "A PKCS#12 fájlt önmagában importáld.",
+      "scope": "core"
+    },
+    "Imported client certificate": {
+      "hu": "Importált klienstanúsítvány",
+      "scope": "core"
+    },
     "Interface keys": {
       "hu": "Interface-kulcsok",
+      "scope": "app"
+    },
+    "Intermediate certificate": {
+      "hu": "Köztes tanúsítvány",
       "scope": "app"
     },
     "Invalid private key": {
       "hu": "Érvénytelen privát kulcs",
       "scope": "app"
     },
+    "Issuer": {
+      "hu": "Kibocsátó",
+      "scope": "app"
+    },
+    "Its key is deleted from the vault. Import it again to use it.": {
+      "hu": "A kulcsa törlődik a széfből. Ha újra használnád, importáld újra.",
+      "scope": "app"
+    },
+    "Key type": {
+      "hu": "Kulcstípus",
+      "scope": "app"
+    },
+    "No client certificate imported. MacVPN uses the certificates in Homebrew’s etc/swanctl folder.": {
+      "hu": "Nincs importált klienstanúsítvány. A MacVPN a Homebrew etc/swanctl mappájában lévő tanúsítványokat használja.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
     "Not set": {
       "hu": "Nincs megadva",
       "scope": "app"
     },
+    "Not valid yet": {
+      "hu": "Még nem érvényes",
+      "scope": "app"
+    },
     "Optional. The other side needs the same preshared key.": {
       "hu": "Nem kötelező. A másik oldalon ugyanezt az előre megosztott kulcsot kell megadni.",
+      "scope": "app"
+    },
+    "PEM certificate and key": {
+      "hu": "PEM-tanúsítvány és kulcs",
+      "scope": "app"
+    },
+    "PKCS#12 file": {
+      "hu": "PKCS#12 fájl",
       "scope": "app"
     },
     "Peer": {
@@ -437,6 +552,18 @@
       "hu": "A publikus kulcs kimásolva.",
       "scope": "app"
     },
+    "Remove saved PSK": {
+      "hu": "Mentett PSK törlése",
+      "scope": "app"
+    },
+    "Remove saved key password": {
+      "hu": "Mentett kulcsjelszó törlése",
+      "scope": "app"
+    },
+    "Remove the client certificate?": {
+      "hu": "Eltávolítod a klienstanúsítványt?",
+      "scope": "app"
+    },
     "Replace": {
       "hu": "Csere",
       "scope": "app"
@@ -449,12 +576,79 @@
       "hu": "Lecseréled a privát kulcsot?",
       "scope": "app"
     },
+    "SHA-256 fingerprint": {
+      "hu": "SHA-256 ujjlenyomat",
+      "scope": "app"
+    },
+    "Secrets in the config are hidden. Tick Show secrets to edit the config.": {
+      "hu": "A config titkai rejtve vannak. A szerkesztéshez jelöld be a Titkok megjelenítése lehetőséget.",
+      "scope": "app"
+    },
+    "Serial number": {
+      "hu": "Sorozatszám",
+      "scope": "app"
+    },
     "Set the public key on the other side, in the [Peer] section for this device.": {
       "hu": "A publikus kulcsot a másik oldalon kell beállítani, az ehhez az eszközhöz tartozó [Peer] szakaszban.",
       "scope": "app"
     },
     "Show": {
       "hu": "Megjelenítés",
+      "scope": "app"
+    },
+    "Show secrets": {
+      "hu": "Titkok megjelenítése",
+      "scope": "app"
+    },
+    "Subject": {
+      "hu": "Tulajdonos",
+      "scope": "app"
+    },
+    "The PEM text holds more than one client certificate: choose the certificate that belongs to the key.": {
+      "hu": "A PEM-szövegben több klienstanúsítvány van: azt válaszd, amelyik a kulcshoz tartozik.",
+      "scope": "core"
+    },
+    "The PEM text holds more than one private key.": {
+      "hu": "A PEM-szövegben több privát kulcs van.",
+      "scope": "core"
+    },
+    "The PEM text holds no certificate.": {
+      "hu": "A PEM-szövegben nincs tanúsítvány.",
+      "scope": "core"
+    },
+    "The PEM text holds no private key.": {
+      "hu": "A PEM-szövegben nincs privát kulcs.",
+      "scope": "core"
+    },
+    "The PEM text is damaged or holds a block that is not a certificate or a private key.": {
+      "hu": "A PEM-szöveg sérült, vagy olyan blokk van benne, amely nem tanúsítvány és nem privát kulcs.",
+      "scope": "core"
+    },
+    "The PKCS#12 file is damaged.": {
+      "hu": "A PKCS#12 fájl sérült.",
+      "scope": "core"
+    },
+    "The certificates in the PKCS#12 file are encrypted with its password, so they cannot be shown here.": {
+      "hu": "A PKCS#12-fájl tanúsítványait a jelszava titkosítja, ezért itt nem jeleníthetők meg.",
+      "scope": "app"
+    },
+    "The client certificate could not be stored.": {
+      "hu": "A klienstanúsítványt nem sikerült eltárolni.",
+      "scope": "core"
+    },
+    "The imported client certificate cannot be read. Import it again.": {
+      "hu": "Az importált klienstanúsítvány nem olvasható. Importáld újra.",
+      "scope": "core"
+    },
+    "The imported client certificate is invalid": {
+      "hu": "Az importált klienstanúsítvány érvénytelen",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "The key is protected by a password: save it below, or MacVPN asks for it when connecting.": {
+      "hu": "A kulcsot jelszó védi: mentsd el lent, vagy a MacVPN csatlakozáskor kéri.",
       "scope": "app"
     },
     "The other side must be updated with the new preshared key.": {
@@ -464,6 +658,47 @@
     "The other side must be updated with the new public key.": {
       "hu": "A másik oldalon is be kell állítani az új publikus kulcsot.",
       "scope": "app"
+    },
+    "This config does not sign in with a certificate (auth = pubkey): the imported certificate is not used.": {
+      "hu": "Ez a konfiguráció nem tanúsítvánnyal jelentkezik be (auth = pubkey): az importált tanúsítványt nem használja.",
+      "scope": "app"
+    },
+    "Used by the auth = pubkey rounds that name no certs of their own. Kept in the vault.": {
+      "hu": "Azok az auth = pubkey körök használják, amelyek nem adnak meg saját certs-et. A széfben tárolódik.",
+      "scope": "app"
+    },
+    "Valid from": {
+      "hu": "Érvényes ettől",
+      "scope": "app"
+    },
+    "Valid until": {
+      "hu": "Érvényes eddig",
+      "scope": "app"
+    },
+    "Windows signs in with a computer certificate: an administrator imports the client's .p12 file into Local Computer › Personal (open the file and choose the computer's store; Windows asks for the key's password there).": {
+      "hu": "A Windows számítógép-tanúsítvánnyal jelentkezik be: egy rendszergazda importálja a kliens .p12 fájlját a Helyi számítógép › Személyes tárolóba (nyisd meg a fájlt, és válaszd a számítógép tárolóját; a kulcs jelszavát ott kéri a Windows).",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "Your private keys and credentials are not included. The shared TLS key (%@) is: every user of the server has the same one, and the copy needs it to connect. Passwords and the PSK stored in the vault are not included.": {
+      "hu": "A privát kulcsaid és a hitelesítő adataid nem kerülnek bele. A közös TLS-kulcs (%@) igen: a szerver minden felhasználójának ugyanez, és a másolatnak szüksége van rá a csatlakozáshoz. A széfben tárolt jelszavak és a PSK nem kerülnek bele.",
+      "scope": "app"
+    },
+    "certs = %@ added to the auth = pubkey rounds without certs": {
+      "hu": "certs = %@ hozzáadva a certs nélküli auth = pubkey körökhöz",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "client certificates of the other strongSwan connections copied: %@": {
+      "hu": "a többi strongSwan-kapcsolat klienstanúsítványa átmásolva: %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
     },
     "dead peer detection added (dpd_delay = %@)": {
       "hu": "halott-társ észlelés hozzáadva (dpd_delay = %@)",
@@ -577,10 +812,7 @@
     },
     "Remove": {
       "hu": "Eltávolítás",
-      "scope": "app",
-      "only": [
-        "windows"
-      ]
+      "scope": "app"
     },
     "Remove WinVPN from This Account": {
       "hu": "WinVPN eltávolítása erről a fiókról",
@@ -649,6 +881,13 @@
       "scope": "platform",
       "only": [
         "windows"
+      ]
+    },
+    "imported client certificate copied into the run directory": {
+      "hu": "az importált klienstanúsítvány a futási könyvtárba másolva",
+      "scope": "mvpn",
+      "only": [
+        "macos"
       ]
     },
     "reloading the other strongSwan connections": {
