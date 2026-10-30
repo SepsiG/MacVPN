@@ -388,6 +388,9 @@ jobs:
     # Built on the release's target, Ubuntu 26.04: LinVPN's NM OpenVPN service (NetworkManager-openvpn 1.12.5) needs
     # libnm >= 1.52.2, and the binaries take the target's glibc. The runner image itself is older.
     container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Container tools (git for checkout, curl and certificates for the toolchain, sudo-less apt)
         run: |

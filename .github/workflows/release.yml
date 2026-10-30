@@ -226,6 +226,9 @@ jobs:
     # A kiadás célrendszerén, Ubuntu 26.04-en épül: a LinVPN NM OpenVPN szolgáltatásának (NetworkManager-openvpn
     # 1.12.5) libnm >= 1.52.2 kell, és a binárisok a célrendszer glibc-jét veszik fel. A runner image régebbi.
     container: ubuntu:26.04
+    defaults:
+      run:
+        shell: bash
     permissions:
       contents: read
     steps:
