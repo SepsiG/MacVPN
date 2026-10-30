@@ -359,6 +359,23 @@ What it implements:
   then starts System32's `msiexec.exe` elevated (one UAC prompt), hands the relauncher its PID and quits; the
   relauncher starts WinVPN again; logs and the one-time notice in `%LOCALAPPDATA%\WinVPN\updates`. The release source is `pure::update_check` (the GitHub
   repository ID, as in MacVPN's Info.plist).
+- **Over-the-shoulder UAC: the elevated step is another account.** On a standard user's account the UAC prompt
+  asks for an administrator's credentials and the elevated program runs as *that* administrator: its `HKCU`,
+  `%LOCALAPPDATA%`, `%TEMP%` and profile are the administrator's, and the signed-in user's private files (this user
+  and SYSTEM only) are closed to it. Every elevated step (`win::elevate`) therefore gets absolute paths on its
+  command line, never derives a per-user path or `HKCU` value itself (it touches only `HKLM`, `C:\ProgramData`,
+  the service manager and the machine's certificate store), and every file it crosses is opened to it on the file
+  itself, while the folders above stay private (every account has "Bypass traverse checking"): what it reads
+  (the OpenVPN MSI, WinVPN's update MSI, the CA certificate of **Trust This CA in Windows…**) is
+  `Protection::Shared` (`BUILTIN\Users` read; public, checked again by the step or re-hashed by the relauncher),
+  what it writes (msiexec's update log) `Protection::AdminsReadWrite` (Administrators read and write, never delete,
+  `WRITE_DAC` or `WRITE_OWNER`). The updater's relauncher refuses to answer `held` unless both files have exactly
+  these DACLs. 2.1.0 (OpenVPN MSI) and 2.1.1 (update MSI and log) left them private, so the elevated step failed
+  only on standard users' accounts. The tests prove the other account's rights without signing in as it:
+  `macvpn_winsys::file::access_for` runs the system's access check (`AuthzAccessCheck`) for an arbitrary SID
+  with the groups of an elevated administrator. The elevated steps: the update's `msiexec.exe` (`win::updater`), the
+  OpenVPN step (`WinVPN.exe --winvpn-openvpn-step`), the trust step (`WinVPN.exe --winvpn-trust-ca-step`) and
+  `reg.exe` for **Allow L2TP Behind NAT…** (no file); winget elevates its own installer from its own downloads.
 - **HTTPS (2b):** `win::curl_runner` runs System32's `curl.exe` (absolute path, environment `SystemRoot` + `PATH` =
   System32 only, no window, output caps, a time limit) for the update check, the updater, the OpenVPN download and
   the HTTPS catalog fetcher (`win::https`); the bearer token goes on curl's stdin (`--config -`), never in argv.

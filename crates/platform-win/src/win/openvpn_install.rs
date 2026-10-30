@@ -16,7 +16,7 @@
 //! pinned MSI stays the fallback and the minimum.
 
 use super::curl_runner::{MARGIN_SECS, http_client, windows_curl};
-use super::elevate::run_elevated;
+use super::elevate::{readable_by_the_elevated_step, run_elevated};
 use super::service_client::ServiceClient;
 use super::{registry, system};
 use crate::pure::engine::Reach;
@@ -317,7 +317,7 @@ fn install_msi(pick: &MsiPick) -> Result<StepResult, String> {
 }
 
 /// The downloaded MSI moved to `msi` and made ready for the elevated step: readable by the account the step runs
-/// as ([`readable_by_the_elevated_step`]), then held deny-write and checked ([`open_verified`] / [`open_official`]).
+/// as ([`readable_by_the_elevated_step`]: `BUILTIN\Users` read), then held deny-write and checked ([`open_verified`] / [`open_official`]).
 /// The held handle and the step that installs it.
 pub(crate) fn hand_over(downloaded: &Path, msi: &Path, pick: &MsiPick, sha256: &str) -> Result<(File, Step), String> {
     let _ = std::fs::remove_file(msi);
@@ -325,33 +325,17 @@ pub(crate) fn hand_over(downloaded: &Path, msi: &Path, pick: &MsiPick, sha256: &
         let _ = std::fs::remove_file(downloaded);
         return Err(oi::download_failed(&e.to_string()));
     }
+    // The elevated step need not run as this user: a standard user's UAC prompt asks for an administrator's
+    // credentials, and the step then runs as that administrator. The downloads folder and what is downloaded into
+    // it are private (this user and SYSTEM only), so that account could not open the MSI at all (2.1.0: "not
+    // signed by OpenVPN Inc."). The MSI alone is opened to it for reading: it is OpenVPN's public installer, nobody
+    // else can change it, and the elevated step's checks still decide.
     readable_by_the_elevated_step(msi).map_err(|e| oi::download_failed(&e.to_string()))?;
     let path = msi.to_str().ok_or_else(oi::installer_not_started)?.to_string();
     Ok(match pick {
         MsiPick::Pinned(_) => (open_verified(msi, sha256)?, Step::Msi { path }),
         MsiPick::Official(_) => (open_official(msi)?, Step::OfficialMsi { path }),
     })
-}
-
-/// The elevated step reads the MSI from this user's downloads folder, but it need not run as this user: a standard
-/// user's UAC prompt asks for an administrator's credentials, and the step then runs as that administrator. The
-/// folder and what is downloaded into it are private (this user and SYSTEM only), so that account could not open
-/// the MSI at all (2.1.0: "not signed by OpenVPN Inc."). The MSI alone gets [`Protection::Shared`] (`BUILTIN\Users`,
-/// which every interactive account is a member of, may read it; only this user and SYSTEM may change it): it is
-/// OpenVPN's public installer, and nobody else can change it, so the elevated step's checks still decide.
-fn readable_by_the_elevated_step(msi: &Path) -> io::Result<()> {
-    let f = wfile::open(
-        msi,
-        wfile::Open {
-            read: false,
-            write: true,
-            append: false,
-            disposition: wfile::Disposition::OpenExisting,
-            protection: None,
-            no_follow: true,
-        },
-    )?;
-    wfile::set_protection(&f, Protection::Shared, false)
 }
 
 /// The downloads folder as the curl flavour's `temp_base` (where a finished download is moved).

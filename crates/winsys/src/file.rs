@@ -35,6 +35,14 @@ pub enum Protection {
     /// Protected: SYSTEM and `BUILTIN\Administrators` full access, nobody else, whoever the owner is (the WinVPN
     /// Service's `C:\ProgramData\WinVPN`; created as SYSTEM, the owner is SYSTEM).
     Admins,
+    /// Protected: the owner and SYSTEM full access, `BUILTIN\Administrators` read and write (`FILE_GENERIC_READ |
+    /// FILE_GENERIC_WRITE`: never `DELETE`, `WRITE_DAC` or `WRITE_OWNER`), nobody else. A file of this user that an
+    /// elevated step must write (msiexec's update log): with over-the-shoulder UAC a standard user's prompt asks
+    /// for an administrator's credentials, and the elevated program runs as *that* account, which [`Private`]
+    /// leaves out. Files only; the folder above can stay private (every account has "Bypass traverse checking").
+    ///
+    /// [`Private`]: Protection::Private
+    AdminsReadWrite,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,6 +99,9 @@ pub struct Info {
 
 /// `BUILTIN\Users`' rights in [`Protection::Shared`].
 const USERS_READ: u32 = FILE_GENERIC_READ | FILE_GENERIC_EXECUTE;
+/// `BUILTIN\Administrators`' rights in [`Protection::AdminsReadWrite`]: read, write, append, attributes; no delete,
+/// no `WRITE_DAC`, no `WRITE_OWNER`.
+const ADMINS_READ_WRITE: u32 = FILE_GENERIC_READ | FILE_GENERIC_WRITE;
 
 fn descriptor(protection: Protection, dir: bool) -> io::Result<Box<Descriptor>> {
     descriptor_owned(Sid::current_user()?, protection, dir)
@@ -117,6 +128,17 @@ fn descriptor_owned(owner: Sid, protection: Protection, dir: bool) -> io::Result
         Protection::Admins => {
             let admins = Sid::builtin_administrators();
             Acl::new(&[Ace::Allow(&system, FILE_ALL_ACCESS), Ace::Allow(&admins, FILE_ALL_ACCESS)], flags)?
+        }
+        Protection::AdminsReadWrite => {
+            let admins = Sid::builtin_administrators();
+            Acl::new(
+                &[
+                    Ace::Allow(&owner, FILE_ALL_ACCESS),
+                    Ace::Allow(&system, FILE_ALL_ACCESS),
+                    Ace::Allow(&admins, ADMINS_READ_WRITE),
+                ],
+                flags,
+            )?
         }
     };
     Descriptor::new(owner, acl)
@@ -526,6 +548,122 @@ pub fn has_protection(file: &File, protection: Protection, dir: bool) -> io::Res
     })
 }
 
+/// The rights another account would be granted to the open file: `user` with exactly the enabled `groups` (nothing
+/// is looked up and nothing of this process' token is used), as the system's access check computes them
+/// (`AuthzAccessCheck` with `MAXIMUM_ALLOWED`: the DACL, and the owner's implicit `READ_CONTROL | WRITE_DAC` only
+/// when `user` owns the file). It proves who may open a file without signing in as them: an elevated administrator
+/// other than the file's owner (over-the-shoulder UAC) is `user` = any other SID, `groups` = Administrators, Users,
+/// Everyone, Authenticated Users, INTERACTIVE. Privileges (backup, restore) are not modelled. The handle needs
+/// `READ_CONTROL`.
+pub fn access_for(file: &File, user: &Sid, groups: &[Sid]) -> io::Result<u32> {
+    use windows_sys::Win32::Foundation::LUID;
+    use windows_sys::Win32::Security::Authorization::{
+        AUTHZ_ACCESS_REPLY, AUTHZ_ACCESS_REQUEST, AUTHZ_CLIENT_CONTEXT_HANDLE, AUTHZ_RESOURCE_MANAGER_HANDLE,
+        AUTHZ_RM_FLAG_NO_AUDIT, AUTHZ_SKIP_TOKEN_GROUPS, AuthzAccessCheck, AuthzAddSidsToContext, AuthzFreeContext,
+        AuthzFreeResourceManager, AuthzInitializeContextFromSid, AuthzInitializeResourceManager,
+    };
+    use windows_sys::Win32::Security::{GROUP_SECURITY_INFORMATION, SID_AND_ATTRIBUTES};
+    // winnt.h; not in the windows-sys features this crate enables.
+    const MAXIMUM_ALLOWED: u32 = 0x0200_0000;
+    const SE_GROUP_ENABLED: u32 = 0x0000_0004;
+
+    /// The Authz handles, freed on every path.
+    struct Handles {
+        rm: AUTHZ_RESOURCE_MANAGER_HANDLE,
+        contexts: Vec<AUTHZ_CLIENT_CONTEXT_HANDLE>,
+    }
+    impl Drop for Handles {
+        fn drop(&mut self) {
+            for &c in &self.contexts {
+                // SAFETY: a context AuthzInitializeContextFromSid / AuthzAddSidsToContext returned; freed once.
+                unsafe { AuthzFreeContext(c) };
+            }
+            if !self.rm.is_null() {
+                // SAFETY: the resource manager AuthzInitializeResourceManager returned; freed once, after its contexts.
+                unsafe { AuthzFreeResourceManager(self.rm) };
+            }
+        }
+    }
+
+    let mut sd: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
+    // SAFETY: the handle is open (borrowed from `file`); valid out pointer; on success `sd` is LocalAlloc'ed.
+    let err = unsafe {
+        GetSecurityInfo(
+            file.as_raw_handle(),
+            SE_FILE_OBJECT,
+            OWNER_SECURITY_INFORMATION | GROUP_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION,
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            std::ptr::null_mut(),
+            &mut sd,
+        )
+    };
+    if err != 0 {
+        return Err(io::Error::from_raw_os_error(err as i32));
+    }
+    let _sd = LocalBox(sd);
+    let mut h = Handles { rm: std::ptr::null_mut(), contexts: Vec::new() };
+    // SAFETY: no callbacks, no name; valid out pointer.
+    check(unsafe {
+        AuthzInitializeResourceManager(AUTHZ_RM_FLAG_NO_AUDIT, None, None, None, std::ptr::null(), &mut h.rm)
+    })?;
+    let mut base: AUTHZ_CLIENT_CONTEXT_HANDLE = std::ptr::null_mut();
+    // SAFETY: `user` is a valid SID alive across the call; `rm` is valid; no expiration, no dynamic groups; valid out
+    // pointer. AUTHZ_SKIP_TOKEN_GROUPS: the SID's groups are not looked up (only `groups` below count).
+    check(unsafe {
+        AuthzInitializeContextFromSid(
+            AUTHZ_SKIP_TOKEN_GROUPS,
+            user.as_psid(),
+            h.rm,
+            std::ptr::null(),
+            LUID { LowPart: 0, HighPart: 0 },
+            std::ptr::null(),
+            &mut base,
+        )
+    })?;
+    h.contexts.push(base);
+    let sids: Vec<SID_AND_ATTRIBUTES> =
+        groups.iter().map(|g| SID_AND_ATTRIBUTES { Sid: g.as_psid(), Attributes: SE_GROUP_ENABLED }).collect();
+    let mut context: AUTHZ_CLIENT_CONTEXT_HANDLE = std::ptr::null_mut();
+    // SAFETY: `base` is valid; `sids` and the SIDs it points to (in `groups`) live across the call; no restricted
+    // SIDs; valid out pointer.
+    check(unsafe { AuthzAddSidsToContext(base, sids.as_ptr(), sids.len() as u32, std::ptr::null(), 0, &mut context) })?;
+    h.contexts.push(context);
+    let request = AUTHZ_ACCESS_REQUEST {
+        DesiredAccess: MAXIMUM_ALLOWED,
+        PrincipalSelfSid: std::ptr::null_mut(),
+        ObjectTypeList: std::ptr::null_mut(),
+        ObjectTypeListLength: 0,
+        OptionalArguments: std::ptr::null_mut(),
+    };
+    let (mut granted, mut error) = (0u32, 0u32);
+    let mut reply = AUTHZ_ACCESS_REPLY {
+        ResultListLength: 1,
+        GrantedAccessMask: &mut granted,
+        SaclEvaluationResults: std::ptr::null_mut(),
+        Error: &mut error,
+    };
+    // SAFETY: `context` is valid; `request` and `reply` (and the two u32 it points to) live across the call; `sd` is
+    // the descriptor GetSecurityInfo returned (owner, group and DACL), alive until `_sd` drops; no extra descriptors,
+    // no audit event, no results handle.
+    check(unsafe {
+        AuthzAccessCheck(
+            0,
+            context,
+            &request,
+            std::ptr::null_mut(),
+            sd,
+            std::ptr::null(),
+            0,
+            &mut reply,
+            std::ptr::null_mut(),
+        )
+    })?;
+    // `error` is ERROR_ACCESS_DENIED when nothing at all is granted: the answer is then no rights.
+    Ok(if error == 0 { granted } else { 0 })
+}
+
 fn owner_and_protection(h: HANDLE) -> io::Result<(Sid, Option<Protection>)> {
     with_security(h, false, |owner, dacl, control| {
         let protected = control & SE_DACL_PROTECTED != 0;
@@ -534,10 +672,13 @@ fn owner_and_protection(h: HANDLE) -> io::Result<(Sid, Option<Protection>)> {
 }
 
 /// One of MacVPN's DACL shapes, exactly: protected, only explicit allow ACEs, and exactly the owner + SYSTEM
-/// (+ `BUILTIN\Users` read) entries, or SYSTEM + Administrators, each ACE matching one of them and each of them
-/// present. A DACL that fits two shapes is reported as the first of Private, Shared, Admins.
+/// (+ `BUILTIN\Users` read, or + `BUILTIN\Administrators` read and write) entries, or SYSTEM + Administrators, each
+/// ACE matching one of them and each of them present. A DACL that fits two shapes is reported as the first of
+/// Private, Shared, Admins, AdminsReadWrite.
 fn shape(owner: &Sid, protected: bool, aces: &[AceEntry]) -> Option<Protection> {
-    [Protection::Private, Protection::Shared, Protection::Admins].into_iter().find(|&p| fits(p, owner, protected, aces))
+    [Protection::Private, Protection::Shared, Protection::Admins, Protection::AdminsReadWrite]
+        .into_iter()
+        .find(|&p| fits(p, owner, protected, aces))
 }
 
 /// Whether `aces` (of a DACL owned by `owner`) are exactly `protection`'s entries (the flags are not looked at but
@@ -552,6 +693,9 @@ fn fits(protection: Protection, owner: &Sid, protected: bool, aces: &[AceEntry])
         Protection::Private => &[(owner, FILE_ALL_ACCESS), (&system, FILE_ALL_ACCESS)],
         Protection::Shared => &[(owner, FILE_ALL_ACCESS), (&system, FILE_ALL_ACCESS), (&users, USERS_READ)],
         Protection::Admins => &[(&system, FILE_ALL_ACCESS), (&admins, FILE_ALL_ACCESS)],
+        Protection::AdminsReadWrite => {
+            &[(owner, FILE_ALL_ACCESS), (&system, FILE_ALL_ACCESS), (&admins, ADMINS_READ_WRITE)]
+        }
     };
     let is = |a: &AceEntry, sid: &Sid, mask: u32| a.sid.as_ref() == Some(sid) && a.mask == mask;
     aces.len() == expected.len()
@@ -708,6 +852,57 @@ mod tests {
         )
         .unwrap();
         assert!(!fits(Protection::Admins, &system, true, &parse(&deny)));
+    }
+
+    #[test]
+    fn the_admins_read_write_shape_is_the_owner_system_and_administrators_without_delete_or_dac() {
+        let (me, system, admins, users) =
+            (Sid::current_user().unwrap(), Sid::local_system(), Sid::builtin_administrators(), Sid::builtin_users());
+        let acl = |admins_mask: u32| {
+            Acl::new(
+                &[
+                    Ace::Allow(&me, FILE_ALL_ACCESS),
+                    Ace::Allow(&system, FILE_ALL_ACCESS),
+                    Ace::Allow(&admins, admins_mask),
+                ],
+                0,
+            )
+            .unwrap()
+        };
+        let exact = parse(&acl(ADMINS_READ_WRITE));
+        assert_eq!(shape(&me, true, &exact), Some(Protection::AdminsReadWrite));
+        assert!(fits(Protection::AdminsReadWrite, &me, true, &exact));
+        assert!(!fits(Protection::AdminsReadWrite, &me, false, &exact), "not protected");
+        assert!(!fits(Protection::AdminsReadWrite, &users, true, &exact), "another owner");
+        // The rights the elevated step needs (msiexec truncates and writes its log) and nothing to take the file
+        // over: no delete, no DACL or owner change.
+        use windows_sys::Win32::Storage::FileSystem::{DELETE, FILE_APPEND_DATA, FILE_WRITE_DATA, WRITE_OWNER};
+        assert_eq!(ADMINS_READ_WRITE & (FILE_WRITE_DATA | FILE_APPEND_DATA), FILE_WRITE_DATA | FILE_APPEND_DATA);
+        assert_eq!(ADMINS_READ_WRITE & (DELETE | WRITE_DAC | WRITE_OWNER), 0);
+        // Full control for Administrators, read only, or an extra Users entry: not the shape.
+        assert_eq!(shape(&me, true, &parse(&acl(FILE_ALL_ACCESS))), None);
+        assert_eq!(shape(&me, true, &parse(&acl(FILE_GENERIC_READ))), None);
+        let extra = Acl::new(
+            &[
+                Ace::Allow(&me, FILE_ALL_ACCESS),
+                Ace::Allow(&system, FILE_ALL_ACCESS),
+                Ace::Allow(&admins, ADMINS_READ_WRITE),
+                Ace::Allow(&users, USERS_READ),
+            ],
+            0,
+        )
+        .unwrap();
+        assert_eq!(shape(&me, true, &parse(&extra)), None);
+        // Private and Shared are never read as it (and it as neither).
+        let private = Acl::new(&[Ace::Allow(&me, FILE_ALL_ACCESS), Ace::Allow(&system, FILE_ALL_ACCESS)], 0).unwrap();
+        assert!(!fits(Protection::AdminsReadWrite, &me, true, &parse(&private)));
+        assert!(!fits(Protection::Private, &me, true, &exact));
+        assert!(!fits(Protection::Shared, &me, true, &exact));
+        // The descriptor this crate builds is exactly the shape.
+        let d = descriptor_owned(me.clone(), Protection::AdminsReadWrite, false).unwrap();
+        let built = descriptor_aces(&d).unwrap();
+        assert_eq!(built.len(), 3);
+        assert!(built.iter().any(|a| a.sid == admins.to_string() && a.mask == ADMINS_READ_WRITE && a.flags == 0));
     }
 
     #[test]

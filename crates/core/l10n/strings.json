@@ -5297,6 +5297,13 @@
         "windows"
       ]
     },
+    "The update failed: Windows Installer could not open the update's package or its log (msiexec %@). Check for updates again, or install WinVPN from its release page.": {
+      "hu": "A frissítés nem sikerült: a Windows Installer nem tudta megnyitni a frissítés csomagját vagy naplóját (msiexec %@). Keress újra frissítést, vagy telepítsd a WinVPN-t a kiadási oldaláról.",
+      "scope": "core",
+      "only": [
+        "windows"
+      ]
+    },
     "The update is not signed by the MacVPN maintainer": {
       "hu": "A frissítést nem a MacVPN fejlesztője írta alá",
       "scope": "core"
@@ -6801,6 +6808,13 @@
     },
     "The CA is now trusted by Windows.": {
       "hu": "A Windows mostantól megbízik a CA-ban.",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "The administrator's account could not read the CA certificate WinVPN prepared, so it was not added.": {
+      "hu": "A rendszergazdai fiók nem tudta olvasni a WinVPN által előkészített CA-tanúsítványt, ezért nem adta hozzá.",
       "scope": "platform",
       "only": [
         "windows"

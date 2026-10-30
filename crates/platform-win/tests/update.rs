@@ -194,6 +194,26 @@ fn the_failure_notice_names_the_code_and_the_log_in_both_languages() {
     assert_eq!(none, "Ehhez a kiadáshoz nincs telepítő erre a számítógépre.");
 }
 
+/// 2.1.1 on a standard user's account: the elevated msiexec (an administrator's account) could not open its log
+/// (1622) or the package (1619). Its own text, without the (empty) log.
+#[test]
+fn a_package_or_log_msiexec_could_not_open_has_its_own_notice() {
+    for code in [1619, 1622] {
+        let n = Notice { run: "r1".into(), exit_code: code, log: r"C:\u\msiexec-1.6.0.log".into() };
+        let en = l10n::with_language(AppLanguage::En, || n.message()).unwrap();
+        assert_eq!(
+            en,
+            format!(
+                "The update failed: Windows Installer could not open the update's package or its log (msiexec {code}). \
+                 Check for updates again, or install WinVPN from its release page."
+            )
+        );
+        let hu = l10n::with_language(AppLanguage::Hu, || n.message()).unwrap();
+        assert!(hu.starts_with("A frissítés nem sikerült: a Windows Installer"), "{hu}");
+        assert!(hu.contains(&format!("(msiexec {code})")) && !hu.contains("msiexec-1.6.0.log"), "{hu}");
+    }
+}
+
 #[test]
 fn the_held_package_hashes_from_its_start() {
     let dir = scratch("hash");

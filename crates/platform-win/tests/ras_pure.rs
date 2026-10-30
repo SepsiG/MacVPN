@@ -626,6 +626,12 @@ fn the_admin_outcomes_say_what_happened() {
         assert_eq!(admin_steps::trust_outcome(Ok(there), Some(InRoot::Absent)), absent);
         assert_eq!(admin_steps::trust_outcome(Ok(TrustStep::NotRestricted.code()), None), unlimited);
         assert_eq!(admin_steps::trust_outcome(Err(1223), None), Err("Cancelled".into()));
+        // The step's account (an administrator other than the user) could not open the file: said so, not a code.
+        assert_eq!(
+            admin_steps::trust_outcome(Ok(TrustStep::NotReadable.code()), None),
+            Err("The administrator's account could not read the CA certificate WinVPN prepared, so it was not added."
+                .into())
+        );
         assert_eq!(admin_steps::trust_outcome(Ok(5), None), Err("WinVPN.exe ended with error 5.".into()));
         assert_eq!(admin_steps::trust_outcome(Err(2), None), Err("WinVPN.exe could not be started.".into()));
         // The codes round-trip; 0 is success, the others have bit 29 set (not an HRESULT or Win32 error).
@@ -636,6 +642,7 @@ fn the_admin_outcomes_say_what_happened() {
             TrustStep::Refused,
             TrustStep::StoreFailed,
             TrustStep::NotRestricted,
+            TrustStep::NotReadable,
         ] {
             assert_eq!(TrustStep::from_code(step.code()), Some(step));
             assert!(step.code() == 0 || step.code() & 0x2000_0000 != 0, "{step:?}");

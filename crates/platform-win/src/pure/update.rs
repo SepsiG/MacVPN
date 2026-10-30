@@ -333,13 +333,20 @@ impl Notice {
         matches!(self.exit_code, 0 | 3010)
     }
 
-    /// The launch notice of a failure, in the app's language; `None` for a success.
+    /// The launch notice of a failure, in the app's language; `None` for a success. msiexec could not open its log
+    /// (1622, `ERROR_INSTALL_LOG_FAILURE`) or the package (1619, `ERROR_INSTALL_PACKAGE_OPEN_FAILED`): its own text,
+    /// without the log (it is empty then). The elevated msiexec may be another account than the user (a standard
+    /// user's UAC prompt asks for an administrator's credentials), which the files must be open to (2.1.1).
     pub fn message(&self) -> Option<String> {
-        (!self.ok()).then(|| {
-            l10n::tr(
-                "The update failed (msiexec %@). Details: %@",
-                &[Arg::Str(&self.exit_code.to_string()), Arg::Str(&self.log)],
-            )
+        const PACKAGE_OPEN_FAILED: u32 = 1619;
+        const LOG_FAILURE: u32 = 1622;
+        let code = self.exit_code.to_string();
+        (!self.ok()).then(|| match self.exit_code {
+            PACKAGE_OPEN_FAILED | LOG_FAILURE => l10n::tr(
+                "The update failed: Windows Installer could not open the update's package or its log (msiexec %@). Check for updates again, or install WinVPN from its release page.",
+                &[Arg::Str(&code)],
+            ),
+            _ => l10n::tr("The update failed (msiexec %@). Details: %@", &[Arg::Str(&code), Arg::Str(&self.log)]),
         })
     }
 

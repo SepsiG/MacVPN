@@ -431,6 +431,25 @@ pub fn create_log_for_tests(path: &std::path::Path) -> std::io::Result<std::fs::
     win::updater::create_log(path)
 }
 
+/// Tests only: opens a downloaded MSI to the elevated msiexec (`BUILTIN\Users` read) and holds it, as the updater does
+/// before hashing and verifying it.
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn hold_for_msiexec_for_tests(path: &std::path::Path) -> std::io::Result<std::fs::File> {
+    win::updater::hold_for_msiexec(path)
+}
+
+/// Tests only: the relauncher's holds on the MSI and msiexec's log of `relaunch` in the updates folder `dir`
+/// (`Err`: the relauncher's refusal, nothing would be elevated).
+#[cfg(windows)]
+#[doc(hidden)]
+pub fn relauncher_holds_for_tests(
+    relaunch: &pure::update::Relaunch,
+    dir: &std::path::Path,
+) -> Result<(std::fs::File, std::fs::File), String> {
+    win::updater::hold_both(relaunch, dir)
+}
+
 /// Tests only: the relauncher's wait for process `pid` named `image`: `Some(exit code)`, or `None` when it is gone,
 /// another program or still running after `timeout`.
 #[cfg(windows)]

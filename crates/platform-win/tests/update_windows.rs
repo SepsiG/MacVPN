@@ -5,7 +5,9 @@
 #![cfg(windows)]
 
 use macvpn_platform_win::pure::update::{self as up, Notice};
-use std::path::PathBuf;
+use macvpn_winsys::file::Protection;
+use macvpn_winsys::sid::Sid;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, SystemTime};
 
@@ -71,6 +73,106 @@ fn the_msiexec_log_is_created_new_and_held_in_place() {
     assert!(macvpn_platform_win::create_log_for_tests(&log).is_err(), "a junction is refused");
     assert_eq!(std::fs::read_dir(&elsewhere).unwrap().count(), 0, "nothing is written through it");
     std::fs::remove_dir(&log).unwrap();
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// A folder only this user and SYSTEM can open, as the real `%LOCALAPPDATA%\WinVPN\updates`.
+fn private_scratch(name: &str) -> PathBuf {
+    let dir = std::env::temp_dir().join(format!("WinVPN-test-update-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    macvpn_winsys::file::create_dir(&dir, Some(Protection::Private)).unwrap();
+    dir
+}
+
+/// The rights an account other than this user would get (the system's access check, no sign-in): with `admin` an
+/// elevated administrator, as msiexec runs after a standard user's UAC prompt (over the shoulder: an
+/// administrator's credentials), else another standard user.
+fn granted_to_another(path: &Path, admin: bool) -> u32 {
+    let f = std::fs::File::open(path).unwrap();
+    let user = Sid::parse("S-1-5-21-1-2-3-1001").unwrap();
+    let mut groups =
+        vec![Sid::builtin_users(), Sid::interactive(), Sid::parse("S-1-1-0").unwrap(), Sid::parse("S-1-5-11").unwrap()];
+    if admin {
+        groups.push(Sid::builtin_administrators());
+    }
+    macvpn_winsys::file::access_for(&f, &user, &groups).unwrap()
+}
+
+const READ: u32 = 0x0012_0089; // FILE_GENERIC_READ
+const WRITE: u32 = 0x0012_0116; // FILE_GENERIC_WRITE
+const TAKE_OVER: u32 = 0x0001_0000 | 0x0004_0000 | 0x0008_0000; // DELETE, WRITE_DAC, WRITE_OWNER
+
+fn shape_of(path: &Path) -> Option<Protection> {
+    macvpn_winsys::file::info(&std::fs::File::open(path).unwrap()).unwrap().protection
+}
+
+/// 2.1.1 on a standard user's account: the elevated msiexec runs as the administrator whose credentials the UAC
+/// prompt asked for, and the log 2.1.1 created inherited the private updates folder's DACL (this user and SYSTEM):
+/// "error opening the installation log file". The log is now exactly `AdminsReadWrite`: that administrator may read
+/// and write it (msiexec truncates and writes it), never delete it or change its DACL; nobody else may open it.
+#[test]
+fn the_msiexec_log_is_writable_by_the_administrator_the_uac_prompt_runs_msiexec_as() {
+    let dir = private_scratch("log-acl");
+    let log = dir.join("msiexec-1.6.0.log");
+    // What 2.1.1 did: a file inheriting the private folder's DACL, which the elevated account cannot open.
+    std::fs::write(&log, b"").unwrap();
+    assert_eq!(granted_to_another(&log, true), 0, "2.1.1's log");
+    let held = macvpn_platform_win::create_log_for_tests(&log).unwrap();
+    assert_eq!(shape_of(&log), Some(Protection::AdminsReadWrite));
+    let admin = granted_to_another(&log, true);
+    assert_eq!(admin & (READ | WRITE), READ | WRITE, "{admin:#x}");
+    assert_eq!(admin & TAKE_OVER, 0, "{admin:#x}");
+    assert_eq!(granted_to_another(&log, false), 0, "another standard user");
+    drop(held);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The verified MSI in the private updates folder: opened to every account for reading (`Shared`: WinVPN's public,
+/// signed installer), changeable only by this user and SYSTEM, then held deny-write.
+#[test]
+fn the_msi_is_readable_by_the_administrator_the_uac_prompt_runs_msiexec_as() {
+    let dir = private_scratch("msi-acl");
+    let msi = dir.join("WinVPN-1.6.0-x64.msi");
+    std::fs::write(&msi, b"package").unwrap();
+    assert_eq!(granted_to_another(&msi, true), 0, "2.1.1's package");
+    let held = macvpn_platform_win::hold_for_msiexec_for_tests(&msi).unwrap();
+    assert_eq!(shape_of(&msi), Some(Protection::Shared));
+    for admin in [true, false] {
+        let g = granted_to_another(&msi, admin);
+        assert_eq!(g & READ, READ, "{g:#x}");
+        assert_eq!(g & (0x0002 | 0x0004 | TAKE_OVER), 0, "no write, append, delete or DACL change: {g:#x}");
+    }
+    assert!(std::fs::OpenOptions::new().write(true).open(&msi).is_err(), "still held deny-write");
+    drop(held);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+/// The elevated step's inputs are never private: the relauncher (the last check before the UAC prompt) holds the
+/// MSI and the log only with exactly the DACLs that open them to the elevated account, and refuses otherwise, so
+/// nothing is elevated that msiexec could not open.
+#[test]
+fn the_relauncher_refuses_a_package_or_log_the_elevated_msiexec_could_not_open() {
+    let dir = private_scratch("relauncher-acl");
+    let msi = dir.join("WinVPN-1.6.0-x64.msi");
+    let log = dir.join("msiexec-1.6.0.log");
+    std::fs::write(&msi, b"package").unwrap();
+    let sha256 = macvpn_core::update::sha256_hex(b"package");
+    let relaunch = up::Relaunch { target: dir.join("WinVPN.exe"), msi: msi.clone(), sha256, log: log.clone() };
+
+    // 2.1.1's files: both private by inheritance.
+    std::fs::write(&log, b"").unwrap();
+    let refused = macvpn_platform_win::relauncher_holds_for_tests(&relaunch, &dir).unwrap_err();
+    assert!(refused.contains("package"), "{refused}");
+    // The MSI opened to the installer, the log still private.
+    drop(macvpn_platform_win::hold_for_msiexec_for_tests(&msi).unwrap());
+    let refused = macvpn_platform_win::relauncher_holds_for_tests(&relaunch, &dir).unwrap_err();
+    assert!(refused.contains("log"), "{refused}");
+    // Both as the updater makes them: held.
+    let log_hold = macvpn_platform_win::create_log_for_tests(&log).unwrap();
+    let (held_msi, held_log) = macvpn_platform_win::relauncher_holds_for_tests(&relaunch, &dir).unwrap();
+    assert_eq!(granted_to_another(&msi, true) & READ, READ);
+    assert_eq!(granted_to_another(&log, true) & (READ | WRITE), READ | WRITE);
+    drop((held_msi, held_log, log_hold));
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

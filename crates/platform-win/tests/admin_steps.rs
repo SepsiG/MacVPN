@@ -58,6 +58,60 @@ fn the_staged_ca_file_is_held_against_changes_and_deleted() {
     assert_ne!(a, b);
 }
 
+/// The elevated trust step runs as the administrator whose credentials a standard user's UAC prompt asked for,
+/// another account: the staged certificate is exactly `Shared` (that account, like every other, may read it; only
+/// this user and SYSTEM may change it), whatever the folder's own permissions are.
+#[test]
+fn the_staged_ca_file_is_readable_by_the_administrator_the_uac_prompt_runs_the_step_as() {
+    use macvpn_winsys::file::{self, Protection};
+    use macvpn_winsys::sid::Sid;
+    let scratch = Scratch::new();
+    let private = scratch.0.join("private");
+    file::create_dir(&private, Some(Protection::Private)).unwrap();
+    let der = b"\x30\x03\x02\x01\x00".to_vec();
+    let (path, guard) = stage_ca_for_tests(&private, &der).unwrap();
+    let f = fs::File::open(&path).unwrap();
+    assert_eq!(file::info(&f).unwrap().protection, Some(Protection::Shared));
+    let other = Sid::parse("S-1-5-21-1-2-3-1001").unwrap();
+    let admin =
+        [Sid::builtin_administrators(), Sid::builtin_users(), Sid::interactive(), Sid::parse("S-1-1-0").unwrap()];
+    let granted = file::access_for(&f, &other, &admin).unwrap();
+    const READ: u32 = 0x0012_0089;
+    assert_eq!(granted & READ, READ, "{granted:#x}");
+    assert_eq!(granted & (0x0002 | 0x0004 | 0x0001_0000 | 0x0004_0000 | 0x0008_0000), 0, "{granted:#x}");
+    drop(f);
+    drop(guard);
+}
+
+/// A file the step's own account may not open (here: one only Administrators may read, while the tests run as a
+/// standard user, as the private folder left out the elevating administrator): its own code and text, never a
+/// refused CA, and the store is never touched.
+#[test]
+fn a_ca_file_the_elevated_step_may_not_open_is_not_readable_not_refused() {
+    use macvpn_winsys::file::{self, Protection};
+    let scratch = Scratch::new();
+    let path = scratch.0.join(format!("ca-{}.cer", "0".repeat(32)));
+    fs::write(&path, include_bytes!("fixtures/ca/ca.pem")).unwrap();
+    let open = file::Open {
+        read: false,
+        write: true,
+        append: false,
+        disposition: file::Disposition::OpenExisting,
+        protection: None,
+        no_follow: true,
+    };
+    let f = file::open(&path, open).unwrap();
+    file::set_protection(&f, Protection::Admins, false).unwrap();
+    drop(f);
+    if fs::File::open(&path).is_ok() {
+        eprintln!("running as an administrator: the Administrators-only file is readable, nothing to check");
+        return;
+    }
+    let args = admin_steps::trust_step_args(&path).unwrap();
+    let code = macvpn_platform_win::trust_ca_elevated_step(&args).unwrap();
+    assert_eq!(code, admin_steps::TrustStep::NotReadable.code());
+}
+
 #[test]
 fn the_ca_check_reads_the_computer_root_store() {
     let steps = admin_steps_for_tests();

@@ -351,7 +351,7 @@ Előfeltétel: a kiadott `WinVPN-2.0.0-x64.msi`; egy rendszergazdai fiók, egy n
 - [ ] Kézzel (GUI-val) telepített OpenVPN (`reg.exe delete HKLM\SOFTWARE\WinVPN /v OpenVpnInstalledByWinVpn /f` után) → a WinVPN használja; „Javítás”/„Frissítés” után is `OpenVPNServiceInteractive` `AUTO_START` és `RUNNING` marad
 - [ ] winget nélküli gépen (ha van ilyen) a hivatalos MSI egy UAC-kérdéssel települ; ha nincs ilyen gép: **nem tesztelt**
 - [ ] Hálózat nélkül **Telepítés** → hibaüzenet, semmi nem települ
-- [ ] Ha a telepítettnél újabb OpenVPN jelent meg: a sor „Frissítés elérhető: x → y”, a **Frissítés** egy UAC-kérdéssel telepíti, utána zöld az új verzióval (ha nincs újabb: **nem tesztelhető**)
+- [x] Ha a telepítettnél újabb OpenVPN jelent meg: a sor „Frissítés elérhető: x → y”, a **Frissítés** egy UAC-kérdéssel telepíti, utána zöld az új verzióval (ha nincs újabb: **nem tesztelhető**) — 2026-10-30, 2.1.1: 2.7.7 → 2.7.8 normál felhasználóként (winvpn-dev), egy rendszergazda UAC-jelszavával
 
 ### Illesztőprogram kapcsolatonként (CP1-ből)
 

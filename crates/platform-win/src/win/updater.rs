@@ -21,6 +21,16 @@
 //! records the outcome for the next launch and starts the new `WinVPN.exe`. The MSI's own ServiceControl stops and
 //! restarts the WinVPN Service.
 //!
+//! The elevated msiexec is another account on a standard user's computer (over-the-shoulder UAC: an
+//! administrator's credentials, that administrator's process; `win::elevate`). 2.1.1 left both files with the
+//! private folder's inherited DACL (this user and SYSTEM), so that msiexec could not even open its log ("error
+//! opening the installation log file", 1622) nor the package. The folder stays private; the files themselves are
+//! opened to it: the MSI [`Protection::Shared`] (`BUILTIN\Users` read: WinVPN's public, signed installer, re-hashed
+//! by the relauncher, changeable only by this user and SYSTEM) before it is held and hashed, the log
+//! [`Protection::AdminsReadWrite`] as it is created (Administrators read and write, never delete or `WRITE_DAC`).
+//! The relauncher refuses to answer `held` unless both have exactly these DACLs, so nothing is elevated that the
+//! administrator could not open.
+//!
 //! Same-user malware could hijack any UAC prompt the user approves; the deny-write handle is defence in depth, not a
 //! boundary (2a's threat model, question 1).
 
@@ -31,6 +41,7 @@ use macvpn_core::l10n;
 use macvpn_core::update::{Release, UpdateError};
 use macvpn_platform_api::curl::http::{CurlHttpClient, RESOURCE_TIMEOUT};
 use macvpn_platform_api::{UpdateOutcome, Updater, WINVPN};
+use macvpn_winsys::file::{self as wfile, Protection};
 #[cfg(debug_assertions)]
 use std::ffi::OsStr;
 use std::fs::{self, File, OpenOptions};
@@ -45,7 +56,8 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::Duration;
 use windows_sys::Win32::Foundation::{ERROR_CANCELLED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 use windows_sys::Win32::Storage::FileSystem::{
-    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_WRITE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+    READ_CONTROL, WRITE_DAC,
 };
 use windows_sys::Win32::System::Threading::{
     CREATE_NEW_PROCESS_GROUP, DETACHED_PROCESS, GetExitCodeProcess, GetProcessId, OpenProcess, PROCESS_NAME_WIN32,
@@ -109,6 +121,18 @@ pub(crate) fn hold(path: &Path) -> io::Result<File> {
     Ok(file)
 }
 
+/// The verified MSI as msiexec will open it: opened to the elevated account for reading
+/// ([`elevate::readable_by_the_elevated_step`], [`Protection::Shared`]), then held ([`hold`]) and checked through that
+/// handle to have exactly that DACL. The download flow hashes and verifies it through the returned handle.
+pub(crate) fn hold_for_msiexec(path: &Path) -> io::Result<File> {
+    elevate::readable_by_the_elevated_step(path)?;
+    let file = hold(path)?;
+    if !wfile::has_protection(&file, Protection::Shared, false)? {
+        return Err(io::Error::new(io::ErrorKind::PermissionDenied, "the package is not readable by the installer"));
+    }
+    Ok(file)
+}
+
 /// Opens msiexec's log for holding: read, share read and write (msiexec writes it), never delete (nobody renames or
 /// deletes it, nor renames a folder above it, while held), never through a reparse point; a regular file only.
 pub(crate) fn hold_log(path: &Path) -> io::Result<File> {
@@ -128,18 +152,26 @@ pub(crate) fn hold_log(path: &Path) -> io::Result<File> {
 
 /// Creates msiexec's log at `path` (in the private updates folder) and returns its hold ([`hold_log`]): a regular file
 /// left by an earlier attempt is removed first; anything else there (a folder, a junction, a link) stays and makes
-/// the creation fail. Created new, never through a reparse point; the write handle is closed only once the read
-/// hold is open, so the file is never unheld.
+/// the creation fail. Created new, never through a reparse point, and at once opened to the elevated msiexec
+/// ([`elevate::writable_by_the_elevated_step`]: Administrators read and write; it may be another account than this
+/// user); the write handle is closed only once the read hold is open, so the file is never unheld.
 pub(crate) fn create_log(path: &Path) -> io::Result<File> {
     if fs::symlink_metadata(path).is_ok_and(|m| m.file_type().is_file()) {
         fs::remove_file(path)?;
     }
     let created = OpenOptions::new()
         .write(true)
+        .access_mode(FILE_GENERIC_WRITE | READ_CONTROL | WRITE_DAC)
         .create_new(true)
         .share_mode(FILE_SHARE_READ | FILE_SHARE_WRITE)
         .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
         .open(path)?;
+    let opened = elevate::writable_by_the_elevated_step(&created);
+    if let Err(e) = opened {
+        drop(created);
+        let _ = fs::remove_file(path);
+        return Err(e);
+    }
     let held = hold_log(path)?;
     drop(created);
     Ok(held)
@@ -313,7 +345,7 @@ impl Updater for WinUpdater {
         let dir = updates_dir(home, self.sandbox);
         prepare(&dir)?;
         let verify = |asset: &str, version: &str, sha: &str, sig: &str| up::verify_trusted(asset, version, sha, sig);
-        let held = up::download_verified(&http(), release, std::env::consts::ARCH, &dir, &hold, &verify)?;
+        let held = up::download_verified(&http(), release, std::env::consts::ARCH, &dir, &hold_for_msiexec, &verify)?;
         stage(l10n::tr("Preparing the installation…", &[]));
         let log = dir.join(up::log_name(&release.version));
         stage(l10n::tr("Quitting and restarting…", &[]));
@@ -420,8 +452,10 @@ fn answer(line: &str) {
 }
 
 /// The MSI (`relaunch.msi`, re-opened deny-write and re-hashed against `relaunch.sha256`) and msiexec's log, both
-/// in `dir` (the relauncher's own folder, the updates folder), held.
-fn hold_both(relaunch: &up::Relaunch, dir: &Path) -> Result<(File, File), String> {
+/// in `dir` (the relauncher's own folder, the updates folder), held. Each must have exactly the DACL that opens it
+/// to the elevated msiexec, which may be another account (the MSI [`Protection::Shared`], the log
+/// [`Protection::AdminsReadWrite`]): otherwise msiexec would fail to open them (1619, 1622) after the UAC prompt.
+pub(crate) fn hold_both(relaunch: &up::Relaunch, dir: &Path) -> Result<(File, File), String> {
     if !up::in_folder(&relaunch.msi, dir) || !up::in_folder(&relaunch.log, dir) {
         return Err("the package or the log is not in the updates folder".into());
     }
@@ -430,7 +464,13 @@ fn hold_both(relaunch: &up::Relaunch, dir: &Path) -> Result<(File, File), String
     if sha256 != relaunch.sha256 {
         return Err("the package is not the verified one".into());
     }
+    if !wfile::has_protection(&msi, Protection::Shared, false).unwrap_or(false) {
+        return Err("the package is not readable by the installer's account".into());
+    }
     let log = hold_log(&relaunch.log).map_err(|e| format!("cannot hold the log ({e})"))?;
+    if !wfile::has_protection(&log, Protection::AdminsReadWrite, false).unwrap_or(false) {
+        return Err("the log is not writable by the installer's account".into());
+    }
     Ok((msi, log))
 }
 
@@ -497,7 +537,7 @@ pub(crate) fn test_install_msi(msi: &Path) -> Result<String, String> {
         let _ = fs::remove_file(&dest);
         fs::copy(msi, &dest).map_err(|e| e.to_string())?;
     }
-    let mut file = hold(&dest).map_err(|e| e.to_string())?;
+    let mut file = hold_for_msiexec(&dest).map_err(|e| e.to_string())?;
     let sha256 = up::hash(&mut file).map_err(|e| e.to_string())?;
     let held = HeldMsi { path: dest.clone(), file, sha256 };
     let program_files = system::known_folder(&FOLDERID_ProgramFiles).ok_or("no Program Files folder")?;

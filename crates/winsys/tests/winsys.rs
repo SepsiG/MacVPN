@@ -204,8 +204,73 @@ fn has_protection_names_the_shape_and_its_inheritance() {
     let open = tmp.0.join("open");
     fs::create_dir(&open).unwrap();
     let o = file::open_metadata(&open, false).unwrap();
-    for p in [Protection::Private, Protection::Shared, Protection::Admins] {
+    for p in [Protection::Private, Protection::Shared, Protection::Admins, Protection::AdminsReadWrite] {
         assert!(!file::has_protection(&o, p, true).unwrap(), "{p:?}");
+    }
+}
+
+/// Another account, as the system's access check sees it (no sign-in): an elevated administrator who does not own
+/// the file (over-the-shoulder UAC: a standard user's prompt, an administrator's credentials) or a standard user.
+fn another(admin: bool) -> (Sid, Vec<Sid>) {
+    let user = Sid::parse("S-1-5-21-1-2-3-1001").unwrap();
+    let mut groups = vec![
+        Sid::builtin_users(),
+        Sid::interactive(),
+        Sid::parse("S-1-1-0").unwrap(),  // Everyone
+        Sid::parse("S-1-5-11").unwrap(), // Authenticated Users
+    ];
+    if admin {
+        groups.push(Sid::builtin_administrators());
+    }
+    (user, groups)
+}
+
+fn granted_to_another(f: &fs::File, admin: bool) -> u32 {
+    let (user, groups) = another(admin);
+    file::access_for(f, &user, &groups).unwrap()
+}
+
+const READ: u32 = 0x0012_0089; // FILE_GENERIC_READ
+const WRITE: u32 = 0x0012_0116; // FILE_GENERIC_WRITE
+const DELETE: u32 = 0x0001_0000;
+const WRITE_DAC: u32 = 0x0004_0000;
+const WRITE_OWNER: u32 = 0x0008_0000;
+
+#[test]
+fn an_admins_read_write_file_lets_another_elevated_administrator_read_and_write_it_and_nothing_more() {
+    let tmp = Scratch::new();
+    let f = new_file(&tmp.0.join("log"), Some(Protection::AdminsReadWrite));
+    let info = file::info(&f).unwrap();
+    assert_eq!(info.owner, Sid::current_user().unwrap());
+    assert_eq!(info.protection, Some(Protection::AdminsReadWrite));
+    assert!(file::has_protection(&f, Protection::AdminsReadWrite, false).unwrap());
+    assert!(!file::has_protection(&f, Protection::Private, false).unwrap());
+    let admin = granted_to_another(&f, true);
+    assert_eq!(admin & (READ | WRITE), READ | WRITE, "{admin:#x}");
+    assert_eq!(admin & (DELETE | WRITE_DAC | WRITE_OWNER), 0, "{admin:#x}");
+    // A standard user other than the owner: nothing.
+    assert_eq!(granted_to_another(&f, false), 0);
+    // The owner keeps full control (the checks are exact, not "at least").
+    let me = Sid::current_user().unwrap();
+    assert_eq!(file::access_for(&f, &me, &[]).unwrap() & (READ | WRITE | DELETE), READ | WRITE | DELETE);
+}
+
+/// What 2.1.1's updater left in its private folder: an elevated administrator other than the user can neither read
+/// a Private file (the MSI) nor write it (msiexec's log); a Shared file only read.
+#[test]
+fn another_elevated_administrator_is_refused_a_private_file_and_may_only_read_a_shared_one() {
+    let tmp = Scratch::new();
+    let private = new_file(&tmp.0.join("p"), Some(Protection::Private));
+    assert_eq!(granted_to_another(&private, true), 0);
+    let dir = tmp.0.join("d");
+    file::create_dir(&dir, Some(Protection::Private)).unwrap();
+    let inherited = new_file(&dir.join("i"), None);
+    assert_eq!(granted_to_another(&inherited, true), 0);
+    let shared = new_file(&tmp.0.join("s"), Some(Protection::Shared));
+    for admin in [true, false] {
+        let g = granted_to_another(&shared, admin);
+        assert_eq!(g & READ, READ, "{g:#x}");
+        assert_eq!(g & (0x0002 | 0x0004 | DELETE | WRITE_DAC | WRITE_OWNER), 0, "{g:#x}"); // no write, append
     }
 }
 

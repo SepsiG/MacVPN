@@ -5,8 +5,9 @@
 //! AssumeUDPEncapsulationContextOnSendRule /t REG_DWORD /d 2 /f` (**Allow L2TP Behind NAT…**).
 //!
 //! The arguments are fixed words, plus, for the trust step, the path of the certificate file WinVPN itself wrote
-//! under a random name (`ca-<hex>.cer`) into the user's private temp folder and holds open against changes: no text
-//! a user, a config or a catalog supplies ever reaches an elevated command line. A path that does not have exactly
+//! under a random name (`ca-<hex>.cer`) into the user's temp folder (the file itself readable by `BUILTIN\Users`:
+//! the step runs as the administrator the UAC prompt asked for, who may be another account) and holds open against
+//! changes: no text a user, a config or a catalog supplies ever reaches an elevated command line. A path that does not have exactly
 //! that shape is refused rather than quoted (it never can: WinVPN builds it).
 //!
 //! The trust step (M-1 of the 2.0.0 security review) is WinVPN's own code, not `certutil -addstore Root`, which
@@ -107,15 +108,19 @@ pub enum TrustStep {
     StoreFailed,
     /// The store did not keep the usage property; the certificate was removed again.
     NotRestricted,
+    /// The step's own account may not open the file (access denied): nothing was checked. The step runs as the
+    /// administrator whose credentials a standard user's UAC prompt asked for, another account than the user's.
+    NotReadable,
 }
 
-const TRUST_STEP_CODES: [(TrustStep, u32); 6] = [
+const TRUST_STEP_CODES: [(TrustStep, u32); 7] = [
     (TrustStep::Added, 0),
     (TrustStep::AlreadyThere, 0x2000_0101),
     (TrustStep::Arguments, 0x2000_0102),
     (TrustStep::Refused, 0x2000_0103),
     (TrustStep::StoreFailed, 0x2000_0104),
     (TrustStep::NotRestricted, 0x2000_0105),
+    (TrustStep::NotReadable, 0x2000_0106),
 ];
 
 impl TrustStep {
@@ -210,6 +215,10 @@ pub fn trust_outcome(run: RunResult, after: Option<InRoot>) -> Result<String, St
         (Some(TrustStep::Added | TrustStep::AlreadyThere), Some(InRoot::Absent)) => Err(absent()),
         (Some(TrustStep::Added), Some(InRoot::Unrestricted)) | (Some(TrustStep::NotRestricted), _) => Err(unlimited()),
         (Some(TrustStep::Added | TrustStep::AlreadyThere), _) => Ok(done()),
+        (Some(TrustStep::NotReadable), _) => Err(l10n::tr(
+            "The administrator's account could not read the CA certificate WinVPN prepared, so it was not added.",
+            &[],
+        )),
         _ => Err(ended_with(WINVPN_EXE, code)),
     }
 }

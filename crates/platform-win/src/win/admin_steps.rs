@@ -3,8 +3,11 @@
 //! by the WinVPN Service (a standard user could otherwise make the computer trust any CA):
 //!
 //! - **Trust This CA in Windows…**: the PEM's first certificate (`pure::ca_trust`: a CA, valid now) is written to
-//!   a new `ca-<random>.cer` in the user's private temp folder, re-opened with `FILE_SHARE_READ` only and checked
-//!   byte for byte (nobody can change, rename or delete it while the handle is open), then this process' own
+//!   a new `ca-<random>.cer` in the user's temp folder, opened to every account for reading
+//!   (`Protection::Shared`: a standard user's UAC prompt runs the step as the administrator whose credentials it
+//!   asked for, another account, and a public certificate needs no secrecy), re-opened with `FILE_SHARE_READ` only
+//!   and checked byte for byte and for that DACL (nobody can change, rename or delete it while the handle is open),
+//!   then this process' own
 //!   `WinVPN.exe --winvpn-trust-ca-step "<file>"` runs elevated, only when administrators alone can change that
 //!   exe (an installed WinVPN): [`elevated_trust_main`] checks the file again and adds the CA to the computer's
 //!   Trusted Root store **for server and client authentication only** (`macvpn_winsys::cert_store::add_with_usage`
@@ -17,6 +20,10 @@
 //!
 //! `reg.exe` is found through the System known folder, never `PATH`; the arguments are fixed words and the file
 //! path WinVPN built (`pure::admin_steps`).
+//!
+//! Nothing elevated here derives a path or setting from its own profile: the elevated process is the administrator's
+//! (its `HKCU`, `%LOCALAPPDATA%` and `%TEMP%` are that account's, not the user's), so the CA file's absolute path is
+//! passed on the command line, and the steps touch only `HKLM` and the computer's certificate store.
 
 use super::elevate::run_elevated;
 use super::{registry, system};
@@ -24,11 +31,14 @@ use crate::pure::admin_steps::{self, CA_FILE_EXTENSION, CA_FILE_PREFIX, REG_EXE,
 use crate::pure::ca_trust::{self, CaCert};
 use macvpn_platform_api::{AdminSteps, CaSummary};
 use macvpn_winsys::cert_store::{self, Added, Location, Presence};
+use macvpn_winsys::file::{self as wfile, Protection};
 use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::os::windows::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
-use windows_sys::Win32::Storage::FileSystem::{FILE_FLAG_OPEN_REPARSE_POINT, FILE_SHARE_READ};
+use windows_sys::Win32::Storage::FileSystem::{
+    FILE_FLAG_OPEN_REPARSE_POINT, FILE_GENERIC_WRITE, FILE_SHARE_READ, READ_CONTROL, WRITE_DAC,
+};
 
 /// The Windows administrator steps. `trust_exe`: the program of the trust step (`None`: this process' own exe; tests
 /// name the installed `WinVPN.exe`).
@@ -109,6 +119,12 @@ pub(crate) fn elevated_trust_main(args: &[String]) -> Option<u32> {
 /// (the app holds it the same way: nobody writes it meanwhile), is a CA certificate valid now; then it is added
 /// with the TLS-only usage property.
 fn trust_step(path: &Path) -> TrustStep {
+    // The open below, alone: whether this account may read the file at all (never reported as a refused CA).
+    if let Err(e) = OpenOptions::new().read(true).share_mode(FILE_SHARE_READ).open(path)
+        && e.kind() == std::io::ErrorKind::PermissionDenied
+    {
+        return TrustStep::NotReadable;
+    }
     let der = OpenOptions::new()
         .read(true)
         .share_mode(FILE_SHARE_READ)
@@ -161,13 +177,19 @@ impl StagedCa {
         macvpn_winsys::random::fill(&mut random).map_err(|_| prepare_failed())?;
         let hex: String = random.iter().map(|b| format!("{b:02x}")).collect();
         let path = dir.join(format!("{CA_FILE_PREFIX}{hex}.{CA_FILE_EXTENSION}"));
-        // `create_new`: never an existing file or link; no sharing while it is written.
+        // `create_new`: never an existing file or link; no sharing while it is written. Opened at once to the elevated
+        // step, which may run as another account (Users read; only this user and SYSTEM may change it).
         let written = OpenOptions::new()
             .write(true)
+            .access_mode(FILE_GENERIC_WRITE | READ_CONTROL | WRITE_DAC)
             .create_new(true)
             .share_mode(0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
             .open(&path)
-            .and_then(|mut f| f.write_all(der).and_then(|()| f.sync_all()));
+            .and_then(|mut f| {
+                wfile::set_protection(&f, Protection::Shared, false)?;
+                f.write_all(der).and_then(|()| f.sync_all())
+            });
         if written.is_err() {
             let _ = std::fs::remove_file(&path);
             return Err(prepare_failed());
@@ -189,7 +211,8 @@ impl StagedCa {
         let mut back = Vec::new();
         let same = file.take(der.len() as u64 + 1).read_to_end(&mut back).is_ok() && back == der;
         let regular = file.metadata().is_ok_and(|m| m.is_file());
-        if !same || !regular {
+        let readable = wfile::has_protection(file, Protection::Shared, false).unwrap_or(false);
+        if !same || !regular || !readable {
             return Err(prepare_failed());
         }
         Ok(staged)

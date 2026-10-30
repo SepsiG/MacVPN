@@ -635,6 +635,7 @@ The WinVPN Service runs OpenVPN with system rights, so WinVPN only allows known,
 - **Only a WinVPN installed in Program Files can install OpenVPN Community.**: you run a development build; install WinVPN with its MSI.
 - **The OpenVPN installer could not be downloaded: …** / **The OpenVPN installer failed (…).**: the installation did not finish; nothing was changed. Try again later, or install OpenVPN Community from openvpn.net yourself.
 - **The administrator account could not read the downloaded OpenVPN installer.**: the account that confirmed the UAC prompt could not open the installer WinVPN downloaded for you; nothing was changed. Update WinVPN, or install OpenVPN Community from openvpn.net yourself.
+- **The update failed: Windows Installer could not open the update's package or its log (msiexec 1619 or 1622). Check for updates again, or install WinVPN from its release page.**: the administrator account that confirmed the UAC prompt could not open the installer or its log in your `%LOCALAPPDATA%\WinVPN\updates` folder (WinVPN 2.1.1 and earlier, on a standard user's account); the installed version stays. Update again, or download the MSI from the release page and run it.
 - **OpenVPN's Interactive Service could not be disabled.**: OpenVPN was installed, but the second administrator prompt was declined; OpenVPN works anyway.
 - **Updating WinVPN disconnects active VPN connections.**: shown before an update (see [8](#8-updates)).
 - **`cert` and `key` pointing to the same file** (a combined PEM file: certificate plus private key, possibly encrypted, also with Windows line ends): supported. WinVPN puts only the certificate blocks into `<cert>` and only the key into `<key>`, and asks for the **Private key password** when you connect.
@@ -642,6 +643,7 @@ The WinVPN Service runs OpenVPN with system rights, so WinVPN only allows known,
 ### 7.9 SSTP and IKEv2: certificate errors
 
 - **The server’s CA is not trusted by Windows. Use Trust This CA in Windows… in the editor.**: SSTP with **Custom CA file** before the CA was trusted (see [3.6](#36-sstp), [3.7](#37-administrator-steps-for-native-vpns)).
+- **The administrator's account could not read the CA certificate WinVPN prepared, so it was not added.**: the account that confirmed the UAC prompt of **Trust This CA in Windows…** could not open the certificate file WinVPN wrote into your temp folder; nothing was changed. Try again, or ask an administrator to import the CA with `certlm.msc`.
 - **The server’s certificate is not issued by a CA Windows trusts. Ask your VPN administrator.**: with **System CA** (or IKEv2): the issuing CA is not in the computer's trusted roots. Ask for the CA certificate and trust it, or use **Custom CA file**.
 - **The server’s certificate does not match the server address. Use the name in the certificate as the server address.**: connect by the name in the certificate, not by an IP address or another alias (IKEv2: `remote_addrs`).
 - **Windows could not check whether the server’s certificate was revoked (the revocation server is unreachable).**: the server's revocation list (CRL) cannot be reached from your network. Ask your VPN administrator.
