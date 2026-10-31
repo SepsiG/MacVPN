@@ -30,7 +30,7 @@ libc = "0.2.191"
 # GTK 3 and GLib as Tauri already brings them (no new crate in Cargo.lock), pinned exactly: the clipboard, window
 # sizes and the SIGTERM source on the GTK main loop.
 gtk = "=0.18.2"
-glib = "=0.18.5"
+glib = "=0.21.5"
 # The clipboard atom (`SELECTION_CLIPBOARD`), as Tauri already brings it.
 gdk = "=0.18.2"
 # D-Bus (LinVPN plan, "Resolved points"): Secret Service, notifications, the desktop portal, logind, the
