@@ -4,6 +4,10 @@
 //! - `appearance` (`appearance.js`): the menu's Settings – Dark, Light, Match System clicked in the popover; after
 //!   each, `prefers-color-scheme: dark` in the popover and in the Connections window (Match System: the value the
 //!   popover had before the first click).
+//! - `language` (`language.js`): the menu's Settings – the other language, the run's language, then Match System
+//!   clicked in the popover; after each, the popover's "Settings" and the Connections window's search field
+//!   ("Search connections") are in the expected language, so are the Connections window's native title and (macOS) the app menu's
+//!   Quit item, and the core's language is it; Match System gives the run's language back (`SMOKE_LANG`).
 //! - `engines` (`engines.js`): with a report that lacks one engine (macOS and Linux: `sstpc`, so SSTP; Windows:
 //!   OpenVPN Community), a seeded row of that kind in the popover says "Not installed: … – System Status", its switch is
 //!   disabled and the link opens System Status; the Connections window's New menu has no such item; a file of that
@@ -208,6 +212,7 @@ pub fn run(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
     state.manager.reload();
 
     appearance(app, state, dir);
+    language(app, state, dir);
     engines(app, state, dir);
     notices(app, state, dir);
     reconnect(app, state, dir);
@@ -352,6 +357,52 @@ fn appearance(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
         // Match System dropped the forced appearance: the later screenshots want it back.
         super::macos::appearance();
     }
+    say(verdict(&checks));
+}
+
+// MARK: Language
+
+fn language(app: &AppHandle, state: &Arc<AppState>, dir: &Path) {
+    use macvpn_core::l10n::AppLanguage;
+    let say = |line: String| eprintln!("MacVPN smoke: language-setting: {line}");
+    let menu = (crate::tray::MENU_WINDOW, "language.js");
+    let manage = (crate::manage::MANAGE_WINDOW, "language.js");
+    // The setting starts at Match System (the sandbox's preferences are empty): the run's language.
+    let run = AppLanguage::current();
+    let other = if run == AppLanguage::Hu { AppLanguage::En } else { AppLanguage::Hu };
+    let mut checks = vec![("startsAtSystem".to_string(), state.view_model().language_setting == Some("system"))];
+    let mut values = Vec::new();
+    for (setting, expected) in [(other.raw_value(), other), (run.raw_value(), run), ("system", run)] {
+        let vars = [
+            ("setting", js(setting)),
+            ("language", js(expected.raw_value())),
+            ("settings", js(&l10n::tr_in(expected, "Settings", &[]))),
+            ("search", js(&l10n::tr_in(expected, "Search connections", &[]))),
+        ];
+        let in_menu = phase(app, state, dir, menu, ("LANGUAGE", &format!("menu-{setting}")), &vars);
+        let in_manage = phase(app, state, dir, manage, ("LANGUAGE", &format!("manage-{setting}")), &vars);
+        let title = app.get_webview_window(crate::manage::MANAGE_WINDOW).and_then(|w| w.title().ok());
+        let title_ok = title.as_deref() == Some(l10n::tr_in(expected, "Connections", &[]).as_str());
+        let quit = crate::language::quit_item_text();
+        let quit_ok = quit.as_deref().is_none_or(|q| q == l10n::tr_in(expected, "Quit MacVPN", &[]));
+        values.push(format!(
+            "{setting}={}/{} title={} quit={}",
+            shown(&in_menu),
+            shown(&in_manage),
+            title.unwrap_or_default(),
+            quit.unwrap_or_else(|| "-".into())
+        ));
+        let name = |what: &str| format!("{what}-{setting}");
+        checks.push((name("menu"), passed(&in_menu)));
+        checks.push((name("window"), passed(&in_manage)));
+        checks.push((name("title"), title_ok));
+        checks.push((name("quit"), quit_ok));
+        checks.push((name("core"), AppLanguage::current() == expected));
+    }
+    let stored = macvpn_app_core::language::LanguageSetting::load(state.prefs.as_ref()).raw_value();
+    checks.push(("storedSystem".to_string(), stored == "system"));
+    say(format!("run={} {}", run.raw_value(), values.join(" ")));
+    let checks: Vec<(&str, bool)> = checks.iter().map(|(name, ok)| (name.as_str(), *ok)).collect();
     say(verdict(&checks));
 }
 

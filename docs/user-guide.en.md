@@ -6,7 +6,7 @@ MacVPN is a menu bar app for macOS 14 or later (Apple silicon or Intel). It mana
 
 For short step-by-step instructions, see the [How-to guide](how-to.en.md). This guide is the full reference. Developers who want another program on this Mac to bring MacVPN connections up and down (**Paired apps** in the Connections window) should read the [Control API guide](control-api.md).
 
-> **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
+> **Language:** MacVPN follows the macOS language setting (System Settings → General → Language & Region, or the language set for MacVPN). It is available in English and Hungarian. If neither is among your preferred languages, it uses English. To use another language than the system's, choose it in **Settings → Language**: **Match System** (the default), **English** or **Magyar**. The switch applies at once to the menu, every open window, the menu bar icon's tooltip, the app menu's Quit item, and the notifications and messages shown afterwards; no restart is needed. MacVPN remembers it across restarts. It is a setting of this Mac, not part of a backup. This guide uses the English labels; the [Hungarian guide](user-guide.hu.md) shows the Hungarian ones.
 
 ## What's new in 2.0.7
 
@@ -150,7 +150,7 @@ After launch, MacVPN appears as a shield icon in the menu bar. While one of its 
 Click the icon to open the menu. Each connection is a card with the coloured bubble of its type, its name, its type and state, and a switch (see [5](#5-connecting)); with many connections the list scrolls. Folders appear as rows you can open and close (see [12](#12-folders-and-colours)). Below the cards:
 
 - three tiles: **New Connection / Import…**, **Manage Connections…** and **System Status**;
-- the **Settings** group (click it to open or close it): **Appearance** (see [2.2](#22-appearance)), **Connection Notifications** (see [2.3](#23-connection-notifications)), **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Check for Updates Now** and **Launch at Login**; then the vault settings **Unlock automatically**, **Show “Lock Now”**, **Change Master Password…** and **New Recovery Key…** (see [11](#11-vault)), and **Back Up Everything…** and **Restore from Backup…** (see [14](#14-backup-and-restore));
+- the **Settings** group (click it to open or close it): **Appearance** (see [2.2](#22-appearance)), **Language** (**Match System**, **English** or **Magyar**; see the language note at the top), **Connection Notifications** (see [2.3](#23-connection-notifications)), **Check for Updates Automatically**, **Only Offer Updates Published at Least 24 Hours Ago**, **Check for Updates Now** and **Launch at Login**; then the vault settings **Unlock automatically**, **Show “Lock Now”**, **Change Master Password…** and **New Recovery Key…** (see [11](#11-vault)), and **Back Up Everything…** and **Restore from Backup…** (see [14](#14-backup-and-restore));
 - **Help** (opens this guide), **Lock Now** (when shown, see [11.4](#114-lock-now)) and **Quit MacVPN**.
 
 While the vault is locked, the menu shows only an **Unlock…** row, the number of active connections and **Quit MacVPN** (see [11.5](#115-the-locked-menu)). Before the vault exists, the row says **Set Up the Vault…**.

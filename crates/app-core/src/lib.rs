@@ -24,6 +24,7 @@ pub mod editor;
 pub mod failure_reason;
 pub mod folders;
 pub mod import_export;
+pub mod language;
 pub mod live;
 pub mod liveness;
 pub mod logs;

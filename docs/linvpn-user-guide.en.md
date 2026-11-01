@@ -6,7 +6,7 @@ LinVPN is the Linux version of [MacVPN](user-guide.en.md) and [WinVPN](winvpn-us
 
 Everything this guide does not mention works as in MacVPN: the vault, folders and colours, shared credentials, import and export, backup and restore, and team catalogs are described in the [MacVPN user guide](user-guide.en.md#11-vault). This guide follows the MacVPN guide's structure and says what is different on Linux.
 
-> **Language:** LinVPN follows your desktop's language (Settings → System → Region & Language; LinVPN reads the `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` variables the desktop sets). It is available in English and Hungarian; if neither is among your languages, it uses English. This guide uses the English labels; the [Hungarian guide](linvpn-user-guide.hu.md) shows the Hungarian ones.
+> **Language:** LinVPN follows your desktop's language (Settings → System → Region & Language; LinVPN reads the `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` and `LANG` variables the desktop sets). It is available in English and Hungarian; if neither is among your languages, it uses English. To use another language than the system's, choose it in **Settings → Language**: **Match System** (the default), **English** or **Magyar**. The switch applies at once to the panel, every open window, the tray icon's tooltip and its menu (**Open LinVPN**, **Quit LinVPN**), and the notifications and messages shown afterwards; no restart is needed. LinVPN remembers it across restarts. It is a setting of this user account, not part of a backup. This guide uses the English labels; the [Hungarian guide](linvpn-user-guide.hu.md) shows the Hungarian ones.
 
 ## Contents
 
@@ -129,6 +129,8 @@ LinVPN does not start by itself by default. Switch on **Launch at Login** in the
 ### 2.2 Appearance
 
 **Settings → Appearance** offers **Match System** (the default: LinVPN follows the desktop's light or dark style, Settings → Appearance, also when you change it while LinVPN runs), **Light** and **Dark**. The choice applies to the panel and every window at once.
+
+**Settings → Language** offers **Match System** (the default: the desktop's language), **English** and **Magyar**; see the language note at the top.
 
 ### 2.3 Notifications
 

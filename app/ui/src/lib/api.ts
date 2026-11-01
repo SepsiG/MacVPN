@@ -656,6 +656,8 @@ export interface ViewModel {
   loginItem: LoginItemView | null;
   /// The Appearance setting; absent until the app sets it.
   appearance?: 'system' | 'light' | 'dark';
+  /// The Language setting (`language` is the language it gives); absent until the app sets it.
+  languageSetting?: 'system' | 'en' | 'hu';
   /// The "Connection Notifications" switch; absent where notifications cannot be posted.
   connectionNotifications?: boolean;
   manage: ManageView;
@@ -712,6 +714,7 @@ export const api = {
   setUpdateOption: (option: 'autoCheck' | 'delayUpdates', on: boolean) => invoke<void>('set_update_option', { option, on }),
   setLaunchAtLogin: (on: boolean) => invoke<Notice | null>('set_launch_at_login', { on }),
   setAppearance: (mode: 'system' | 'light' | 'dark') => invoke<void>('set_appearance', { mode }),
+  setLanguageSetting: (language: 'system' | 'en' | 'hu') => invoke<void>('set_language', { language }),
   setConnectionNotifications: (on: boolean) => invoke<void>('set_connection_notifications', { on }),
   setAutoReconnect: (id: string, on: boolean) => invoke<void>('set_auto_reconnect', { id, on }),
   openLoginItemsSettings: () => invoke<void>('open_login_items_settings'),

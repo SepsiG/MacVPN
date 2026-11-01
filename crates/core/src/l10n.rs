@@ -23,6 +23,8 @@ pub enum AppLanguage {
 
 const NO_OVERRIDE: u8 = 0;
 static GLOBAL_OVERRIDE: AtomicU8 = AtomicU8::new(NO_OVERRIDE);
+/// The user's Language setting (the app's preference): `NO_OVERRIDE` follows the system.
+static CHOICE: AtomicU8 = AtomicU8::new(NO_OVERRIDE);
 static PREFERRED: RwLock<Vec<String>> = RwLock::new(Vec::new());
 
 thread_local! {
@@ -63,16 +65,42 @@ impl AppLanguage {
 
     /// Fixed language for processes that get it on the command line (`--lang`) — Swift `AppLanguage.override`.
     pub fn set_override(language: Option<AppLanguage>) {
-        let raw = match language {
-            None => NO_OVERRIDE,
-            Some(AppLanguage::En) => 1,
-            Some(AppLanguage::Hu) => 2,
-        };
-        GLOBAL_OVERRIDE.store(raw, Ordering::SeqCst);
+        GLOBAL_OVERRIDE.store(Self::to_raw(language), Ordering::SeqCst);
     }
 
     pub fn global_override() -> Option<AppLanguage> {
-        match GLOBAL_OVERRIDE.load(Ordering::SeqCst) {
+        Self::from_raw(GLOBAL_OVERRIDE.load(Ordering::SeqCst))
+    }
+
+    /// The app's Language setting: `Some` uses that language everywhere (every text built afterwards, the root
+    /// helper's `--lang` included), `None` follows the system's preferred languages. Set at launch from the stored
+    /// preference, before any text is built, and again when the user switches.
+    pub fn set_choice(language: Option<AppLanguage>) {
+        CHOICE.store(Self::to_raw(language), Ordering::SeqCst);
+    }
+
+    pub fn choice() -> Option<AppLanguage> {
+        Self::from_raw(CHOICE.load(Ordering::SeqCst))
+    }
+
+    /// The system's language: the preferred languages' rule, without any override or setting.
+    pub fn system() -> AppLanguage {
+        match PREFERRED.read() {
+            Ok(p) => Self::resolve(&p),
+            Err(_) => AppLanguage::En,
+        }
+    }
+
+    fn to_raw(language: Option<AppLanguage>) -> u8 {
+        match language {
+            None => NO_OVERRIDE,
+            Some(AppLanguage::En) => 1,
+            Some(AppLanguage::Hu) => 2,
+        }
+    }
+
+    fn from_raw(raw: u8) -> Option<AppLanguage> {
+        match raw {
             1 => Some(AppLanguage::En),
             2 => Some(AppLanguage::Hu),
             _ => None,
@@ -92,7 +120,8 @@ impl AppLanguage {
         }
     }
 
-    /// Thread override, else global override, else the preferred languages.
+    /// Thread override, else global override (`--lang`), else the Language setting ([`AppLanguage::set_choice`]),
+    /// else the preferred languages.
     pub fn current() -> AppLanguage {
         if let Some(l) = THREAD_OVERRIDE.with(Cell::get) {
             return l;
@@ -100,10 +129,10 @@ impl AppLanguage {
         if let Some(l) = Self::global_override() {
             return l;
         }
-        match PREFERRED.read() {
-            Ok(p) => Self::resolve(&p),
-            Err(_) => AppLanguage::En,
+        if let Some(l) = Self::choice() {
+            return l;
         }
+        Self::system()
     }
 }
 

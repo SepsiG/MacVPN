@@ -19,6 +19,7 @@ const COMMANDS: &[&str] = &[
     "set_update_option",
     "set_launch_at_login",
     "set_appearance",
+    "set_language",
     "set_connection_notifications",
     "set_auto_reconnect",
     "open_login_items_settings",

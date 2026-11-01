@@ -17,6 +17,8 @@ export const MACOS: Platform = { os: 'macos', product: 'MacVPN' };
 export interface PlatformReply {
   os: string;
   productName: string;
+  /// The UI language now (`en` / `hu`).
+  language?: string;
 }
 
 const OSES: readonly string[] = ['macos', 'windows', 'linux'] satisfies Os[];

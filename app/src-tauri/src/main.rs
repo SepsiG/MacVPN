@@ -24,6 +24,7 @@ mod dock;
 mod fit;
 mod folders;
 mod guard;
+mod language;
 mod manage;
 mod navigation;
 mod notifications;
@@ -515,6 +516,8 @@ fn system_terminate_request(app: &AppHandle) -> TerminateReply {
 fn install_menu(app: &AppHandle) -> tauri::Result<()> {
     let quit = MenuItemBuilder::with_id("quit", l10n::tr("Quit MacVPN", &[])).accelerator("CmdOrCtrl+Q").build(app)?;
     let app_menu = SubmenuBuilder::new(app, "MacVPN").item(&quit).build()?;
+    // Re-labelled when the Language setting changes.
+    language::remember_quit_item(quit.clone());
     let edit = SubmenuBuilder::new(app, "Edit")
         .undo()
         .redo()
@@ -571,6 +574,9 @@ fn main() {
     });
     let platform = platform::init(sandbox_home.is_some());
     platform.install_core_hooks();
+    // The Language setting (System / English / Magyar), before any text is built: the instance claim's message, the
+    // state, the windows, the tray and the app menu.
+    macvpn_app_core::language::LanguageSetting::restore(platform.preferences().as_ref());
     // Another instance of this product runs for this user: it got this launch's files.
     if !platform::claim_instance() {
         std::process::exit(0);
@@ -632,6 +638,7 @@ fn main() {
             commands::set_update_option,
             commands::set_launch_at_login,
             commands::set_appearance,
+            commands::set_language,
             commands::set_connection_notifications,
             commands::set_auto_reconnect,
             commands::open_login_items_settings,

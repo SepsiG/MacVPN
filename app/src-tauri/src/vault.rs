@@ -298,7 +298,7 @@ pub fn after_lock(state: &AppState) {
 
 // MARK: - Windows
 
-fn title(label: &str) -> String {
+pub fn title(label: &str) -> String {
     match label {
         CREATE_WINDOW => l10n::tr("Set Up the Vault", &[]),
         UNLOCK_WINDOW => l10n::tr("Unlock MacVPN", &[]),

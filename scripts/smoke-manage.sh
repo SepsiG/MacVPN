@@ -51,6 +51,10 @@
 #               reconnected, or with the switch off disconnected and shown "Not responding"); traffic.js – the live
 #               traffic line of a connected connection over the stand-in's growing counters, in its detail header and
 #               its popover card (totals, rates, the run's decimal separator, growing; gone once disconnected);
+#   language.js – the Language setting (with the 2.0 features): the other language, the run's language, then Match
+#               System clicked in the popover's Settings; each switches the popover ("Settings") and the open
+#               Connections window (its search field, its native title) at once, and the macOS app menu's Quit item;
+#               Match System gives SMOKE_LANG's language back;
 #   nm.js    – Linux only (LinVPN L-b; its connections are created in the vault for the step and deleted after it):
 #              System Status' NetworkManager rows from the driver's stand-in report (SSTP's plugin missing: Install runs
 #              the sandbox's install, no PackageKit, and the row turns green once the driver flips the stand-in); an
@@ -326,7 +330,7 @@ grep '^MacVPN smoke: backup' "$LOG" || true
 grep '^MacVPN smoke: catalog' "$LOG" || true
 grep '^MacVPN smoke: open' "$LOG" || true
 grep '^MacVPN smoke: publish' "$LOG" || true
-grep -E '^MacVPN smoke: (appearance|engines|notices|reconnect|traffic)' "$LOG" || true
+grep -E '^MacVPN smoke: (appearance|language-setting|engines|notices|reconnect|traffic)' "$LOG" || true
 fail() { echo "✗ $1"; sed 's/^/  app: /' "$LOG"; exit 1; }
 grep -q '^MacVPN smoke: done' "$LOG" || fail "the smoke run did not finish"
 LANGUAGE=$(sed -n 's/^MacVPN smoke: language //p' "$LOG")
@@ -551,7 +555,7 @@ grep -q '^MacVPN smoke: folders: store work=true colour=teal subfolders=0 item_i
 # The 2.0 features: the Appearance setting in the popover and the Connections window; a missing engine's row, New
 # menu and import, and the row back once installed; the connection notices and their switch; auto-reconnect; the
 # live traffic line.
-for SECTION in appearance engines notices reconnect traffic; do
+for SECTION in appearance language-setting engines notices reconnect traffic; do
   grep -q "^MacVPN smoke: $SECTION: ok$" "$LOG" || fail "$SECTION: $(grep "^MacVPN smoke: $SECTION: " "$LOG" | tail -1)"
 done
 grep -q '^MacVPN smoke: notice: Zz Notices' "$LOG" || fail "notices: nothing was recorded"
@@ -612,11 +616,11 @@ for _ in $(seq 1 20); do kill -0 "$PID" 2>/dev/null || break; sleep 1; done
 [ "$(name 66666666-7777-4888-9999-AAAAAAAAAAAA)" = "SYSTEM ASKED" ] || fail "the system's quit request did not ask"
 [ "$(name "$A")" = "SMOKE OK" ] || fail "the discarded change was saved"
 if [ "$SMOKE_OS" = windows ]; then
-  echo "✓ smoke test passed on Windows (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Explorer, publishing, appearance, missing engines, notices, auto-reconnect, live traffic, native VPNs (L2TP, IKEv2, SSTP, Cisco copy), menu corners (round=$CORNERS), quit flows, quit request; skipped: Dock, screenshots)${PLACEMENT_SKIPPED}"
+  echo "✓ smoke test passed on Windows (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Explorer, publishing, appearance, language setting, missing engines, notices, auto-reconnect, live traffic, native VPNs (L2TP, IKEv2, SSTP, Cisco copy), menu corners (round=$CORNERS), quit flows, quit request; skipped: Dock, screenshots)${PLACEMENT_SKIPPED}"
   exit 0
 fi
 if [ "$SMOKE_OS" = linux ]; then
-  echo "✓ smoke test passed on Linux (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status (NetworkManager rows), Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from the file manager, publishing, appearance, missing engines, notices, auto-reconnect, live traffic, NetworkManager rows (Install, Linux reasons, OpenVPN routing, L2TP plan record, Cisco, Log), quit flows, quit request (SIGTERM); skipped: Dock, menu shape, screenshots)${PLACEMENT_SKIPPED}"
+  echo "✓ smoke test passed on Linux (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status (NetworkManager rows), Update, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from the file manager, publishing, appearance, language setting, missing engines, notices, auto-reconnect, live traffic, NetworkManager rows (Install, Linux reasons, OpenVPN routing, L2TP plan record, Cisco, Log), quit flows, quit request (SIGTERM); skipped: Dock, menu shape, screenshots)${PLACEMENT_SKIPPED}"
   exit 0
 fi
-echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, appearance, missing engines, notices, auto-reconnect, live traffic, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"
+echo "✓ smoke test passed (${LANGUAGE}; vault create, migration, Lock Now, locked menu, unlock, recovery, password change, Connections, System Status, Update, Dock icon, MFA prompts, credential prompt, control API, live system list, folders, shared credentials, full backup and restore, team catalog subscription, files opened from Finder, publishing, appearance, language setting, missing engines, notices, auto-reconnect, live traffic, menu shape, quit flows, quit request)${PLACEMENT_SKIPPED}"

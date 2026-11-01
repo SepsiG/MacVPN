@@ -3100,6 +3100,10 @@
       "hu": "L2TP és Cisco IPsec ezek nélkül is működik.",
       "scope": "app"
     },
+    "Language": {
+      "hu": "Nyelv",
+      "scope": "app"
+    },
     "Last published %@": {
       "hu": "Legutóbb közzétéve: %@",
       "scope": "app"

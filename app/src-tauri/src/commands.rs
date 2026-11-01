@@ -44,6 +44,11 @@ pub fn window_title(name: &str) -> Result<&'static str, String> {
     }
 }
 
+/// [`window_title`] in the current language (the Language setting re-titles the open windows).
+pub fn translated_window_title(name: &str) -> Option<String> {
+    window_title(name).ok().map(|title| l10n::tr(title, &[]))
+}
+
 /// The two update switches of the menu.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpdateOption {
@@ -104,11 +109,18 @@ pub struct PlatformView {
     /// `macos`, `windows` or `linux`.
     pub os: &'static str,
     pub product_name: &'static str,
+    /// The UI language now (`en` / `hu`: the Language setting or the system's), for a new window's first render
+    /// (the view models that follow carry it too).
+    pub language: &'static str,
 }
 
 impl PlatformView {
     pub fn of(product: &Product) -> Self {
-        PlatformView { os: product.os.as_str(), product_name: product.name }
+        PlatformView {
+            os: product.os.as_str(),
+            product_name: product.name,
+            language: l10n::AppLanguage::current().raw_value(),
+        }
     }
 }
 
@@ -291,6 +303,15 @@ pub async fn set_appearance(app: AppHandle, state: Shared<'_>, mode: String) -> 
     a.store(state.prefs.as_ref());
     crate::appearance::apply(&app, a);
     state.publisher.mark();
+    Ok(())
+}
+
+/// The Language setting (`system` / `en` / `hu`): stored, then every window, the tray and the app menu switch at
+/// once.
+#[tauri::command]
+pub async fn set_language(app: AppHandle, state: Shared<'_>, language: String) -> Result<(), String> {
+    let setting = macvpn_app_core::language::LanguageSetting::parse(&language).ok_or("invalid language")?;
+    crate::language::switch(&app, state.inner(), setting);
     Ok(())
 }
 
@@ -593,13 +614,22 @@ mod tests {
     }
 
     #[test]
-    fn the_platform_view_names_the_os_and_the_product() {
-        let view = PlatformView::of(&macvpn_platform_api::MACVPN);
-        assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "macos", "productName": "MacVPN"}));
-        let view = PlatformView::of(&macvpn_platform_api::WINVPN);
-        assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "windows", "productName": "WinVPN"}));
-        let view = PlatformView::of(&macvpn_platform_api::LINVPN);
-        assert_eq!(serde_json::to_value(&view).unwrap(), serde_json::json!({"os": "linux", "productName": "LinVPN"}));
+    fn the_platform_view_names_the_os_the_product_and_the_language() {
+        let en = |p| l10n::with_language(l10n::AppLanguage::En, || serde_json::to_value(PlatformView::of(p)).unwrap());
+        assert_eq!(
+            en(&macvpn_platform_api::MACVPN),
+            serde_json::json!({"os": "macos", "productName": "MacVPN", "language": "en"})
+        );
+        assert_eq!(
+            en(&macvpn_platform_api::WINVPN),
+            serde_json::json!({"os": "windows", "productName": "WinVPN", "language": "en"})
+        );
+        assert_eq!(
+            en(&macvpn_platform_api::LINVPN),
+            serde_json::json!({"os": "linux", "productName": "LinVPN", "language": "en"})
+        );
+        let hu = l10n::with_language(l10n::AppLanguage::Hu, || PlatformView::of(&macvpn_platform_api::LINVPN));
+        assert_eq!(hu.language, "hu");
         let own = if cfg!(windows) {
             &macvpn_platform_api::WINVPN
         } else if cfg!(target_os = "linux") {

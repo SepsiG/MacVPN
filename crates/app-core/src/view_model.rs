@@ -321,6 +321,10 @@ pub struct ViewModel {
     /// the 1.4 view model is unchanged.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub appearance: Option<&'static str>,
+    /// The Language setting (`system` / `en` / `hu`; `language` is the language it gives); set by the app. Absent
+    /// from the JSON when `None`, so the 1.4 view model is unchanged.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub language_setting: Option<&'static str>,
     /// The "Connection Notifications" switch (only where notifications can be posted); set by the app. Absent from
     /// the JSON when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -599,6 +603,7 @@ impl ViewModel {
             update: UpdateView::default(),
             login_item: None,
             appearance: None,
+            language_setting: None,
             connection_notifications: None,
             manage: ManageView::default(),
             setup: SetupView::default(),

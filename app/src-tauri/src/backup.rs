@@ -143,6 +143,11 @@ pub fn window_title(name: &str) -> Result<&'static str, String> {
     }
 }
 
+/// [`window_title`] in the current language (the Language setting re-titles the open windows).
+pub fn translated_window_title(name: &str) -> Option<String> {
+    window_title(name).ok().map(|title| l10n::tr(title, &[]))
+}
+
 /// "Back up everything…" / "Restore from backup…" (the menu's Settings, the Connections window, and "Back up the
 /// current state first" in the restore window).
 #[tauri::command]

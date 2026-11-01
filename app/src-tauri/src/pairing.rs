@@ -74,7 +74,7 @@ pub fn sync(app: &AppHandle, state: &Arc<AppState>, pending: &[PairingView]) {
 fn open_window(app: &AppHandle, state: &AppState, pairing: &PairingView) -> Result<(), String> {
     let label = pairing_window_label(pairing.id);
     let window = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
-        .title(macvpn_core::l10n::tr("Allow an App to Control VPNs?", &[]))
+        .title(window_title())
         .inner_size(crate::fit::PAIRING.width, 470.0)
         .resizable(false)
         .minimizable(false)
@@ -110,6 +110,11 @@ pub fn on_window_event(window: &Window, event: &WindowEvent) {
     {
         state.control.pairing.deny(id);
     }
+}
+
+/// A pairing window's title (in the current language).
+pub fn window_title() -> String {
+    macvpn_core::l10n::tr("Allow an App to Control VPNs?", &[])
 }
 
 /// Whether a window label is a pairing window's.

@@ -6,7 +6,7 @@ A LinVPN a [MacVPN](user-guide.hu.md) és a [WinVPN](winvpn-user-guide.hu.md) li
 
 Amiről ez az útmutató nem ír, az ugyanúgy működik, mint a MacVPN-ben: a széfről, a mappákról és színekről, a közös hitelesítő adatokról, az importról és exportról, a mentésről és visszaállításról és a csapatkatalógusokról a [MacVPN felhasználói útmutatója](user-guide.hu.md#11-széf) szól. Ez az útmutató a MacVPN-útmutató felépítését követi, és azt írja le, ami Linuxon más.
 
-> **Nyelv:** a LinVPN az asztali környezet nyelvét követi (Beállítások → Rendszer → Terület és nyelv; a LinVPN az asztal által beállított `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` és `LANG` változót olvassa). Magyarul és angolul érhető el; ha a nyelveid között egyik sincs, angolul jelenik meg. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](linvpn-user-guide.en.md) az angolokat.
+> **Nyelv:** a LinVPN az asztali környezet nyelvét követi (Beállítások → Rendszer → Terület és nyelv; a LinVPN az asztal által beállított `LANGUAGE`, `LC_ALL`, `LC_MESSAGES` és `LANG` változót olvassa). Magyarul és angolul érhető el; ha a nyelveid között egyik sincs, angolul jelenik meg. Ha nem a rendszer nyelvét szeretnéd, válaszd ki a **Beállítások → Nyelv** pontban: **Rendszer szerint** (alapértelmezés), **English** vagy **Magyar**. A váltás azonnal érvényes a panelre, minden nyitott ablakra, a tálcaikon súgószövegére és menüjére (**LinVPN megnyitása**, **Kilépés a LinVPN-ből**), és az utána megjelenő értesítésekre és üzenetekre; nem kell újraindítani. A LinVPN újraindítás után is megjegyzi. Ez ennek a felhasználói fióknak a beállítása, nem része a biztonsági mentésnek. Ez az útmutató a magyar feliratokat használja, az [angol útmutató](linvpn-user-guide.en.md) az angolokat.
 
 ## Tartalom
 
@@ -129,6 +129,8 @@ A LinVPN alapból nem indul el magától. Ha minden bejelentkezéskor el szeretn
 ### 2.2 Megjelenés
 
 A **Beállítások → Megjelenés** pontban három lehetőség van: **Rendszer szerint** (alapértelmezés: a LinVPN az asztal világos vagy sötét stílusát követi, Beállítások → Megjelenés, akkor is, ha futás közben váltasz), **Világos** és **Sötét**. A választás azonnal érvényes a panelre és minden ablakra.
+
+A **Beállítások → Nyelv** pontban **Rendszer szerint** (alapértelmezés: az asztal nyelve), **English** és **Magyar** választható; lásd a nyelvről szóló megjegyzést az elején.
 
 ### 2.3 Értesítések
 

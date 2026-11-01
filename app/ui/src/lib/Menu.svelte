@@ -17,6 +17,7 @@
   import FolderRow from './folders/FolderRow.svelte';
   import { indentLevel, treeOf, visibleRows } from './folders/tree';
   import { versionLabel } from './format';
+  import { LANGUAGE_SETTINGS, languageLabel } from './language';
   import LockedMenu from './vault/LockedMenu.svelte';
   import { backupApi } from './vault/backupApi';
   import { isTeamRoot } from './catalog/status';
@@ -40,7 +41,7 @@
   let scrollable = $state(false);
   let settingsOpen = $state(false);
   const unlocked = $derived(vm?.vault.state === 'unlocked');
-  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null || !!vm.appearance || vm.connectionNotifications !== undefined || unlocked || vm.backupAvailable));
+  const hasSettings = $derived(!!vm && (vm.update.enabled || vm.loginItem !== null || !!vm.appearance || !!vm.languageSetting || vm.connectionNotifications !== undefined || unlocked || vm.backupAvailable));
   /// The vault is locked or not set up yet: the menu shows no connection (the backend sends none either).
   const vaultClosed = $derived(vm?.vault.state === 'locked' || vm?.vault.state === 'notCreated');
   /// "Unlock Automatically" is being turned off: the menu asks first.
@@ -294,6 +295,22 @@
               </div>
             </div>
           {/if}
+          {#if vm.languageSetting}
+            <div class="setting language">
+              <span>{tr('Language')}</span>
+              <div class="segmented small" role="radiogroup" aria-label={tr('Language')}>
+                {#each LANGUAGE_SETTINGS as setting (setting)}
+                  <button
+                    role="radio"
+                    aria-checked={vm.languageSetting === setting}
+                    class:on={vm.languageSetting === setting}
+                    lang={setting === 'system' ? undefined : setting}
+                    onclick={() => api.setLanguageSetting(setting).catch(console.error)}>{languageLabel(setting, tr('Match System'))}</button
+                  >
+                {/each}
+              </div>
+            </div>
+          {/if}
           {#if vm.connectionNotifications !== undefined}
             <label class="setting">
               <span>{tr('Connection Notifications')}</span>
@@ -317,7 +334,7 @@
             </label>
             <button class="setting action" disabled={vm.update.checking} onclick={() => checkNow().catch(console.error)}>
               <span>{vm.update.checking ? tr('Checking for Updates…') : tr('Check for Updates Now')}</span>
-              {#if vm.update.checking}<span class="spinner" aria-hidden="true"></span>{:else}<Icon name="refresh" />{/if}
+              <span class="refresh" class:spinning={vm.update.checking} aria-hidden="true"><Icon name="refresh" /></span>
             </button>
           {/if}
           {#if vm.loginItem}
@@ -751,14 +768,15 @@
   .small:hover {
     background: var(--fill-pressed);
   }
-  .spinner {
-    width: 12px;
-    height: 12px;
+  /* Check for Updates Now: while it checks, the refresh arrow itself turns in place. */
+  .refresh {
+    display: inline-flex;
     flex: none;
-    border: 2px solid var(--separator);
-    border-top-color: var(--secondary);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
+    align-items: center;
+    justify-content: center;
+  }
+  .refresh.spinning {
+    animation: spin 1s linear infinite;
   }
   @keyframes spin {
     to {

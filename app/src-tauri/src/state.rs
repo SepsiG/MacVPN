@@ -164,6 +164,7 @@ impl AppState {
         vm.update = self.updates.view();
         vm.login_item = self.login_item.read().unwrap_or_else(PoisonError::into_inner).clone();
         vm.appearance = Some(macvpn_app_core::appearance::Appearance::load(self.prefs.as_ref()).raw_value());
+        vm.language_setting = Some(macvpn_app_core::language::LanguageSetting::load(self.prefs.as_ref()).raw_value());
         vm.connection_notifications = crate::notifications::notices_possible(self)
             .then(|| macvpn_app_core::connection_notices::enabled(self.prefs.as_ref()));
         // "Reconnect Automatically" per managed connection (default on).
@@ -273,7 +274,8 @@ impl Publisher {
                 loop {
                     publisher.wait();
                     let vm = state.view_model();
-                    let shown = (vm.tray, vm.tray.tooltip());
+                    // The language too: a switch re-labels the tray (Linux: the SNI menu) even when idle.
+                    let shown = (vm.tray, vm.tray.tooltip(), vm.language);
                     if tray.as_ref() != Some(&shown) {
                         crate::tray::set_icon(&app, shown.0, shown.1.as_deref());
                         tray = Some(shown);
