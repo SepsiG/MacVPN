@@ -1,5 +1,7 @@
 # MacVPN
 
+<p align="center"><img src="docs/pics/macvpn-main.png" alt="MacVPN in the menu bar: connections in a folder, an OpenVPN connection with live traffic, and the main buttons" width="340"></p>
+
 [English](#english) | [Magyar](#magyar)
 
 ---
