@@ -769,13 +769,14 @@
     background: var(--fill-pressed);
   }
   /* Check for Updates Now: while it checks, the refresh arrow itself turns in place. */
-  .refresh {
+  /* `.setting .refresh`: stronger than `.setting span`, so the arrow keeps its own width at the row's end. */
+  .setting .refresh {
     display: inline-flex;
     flex: none;
     align-items: center;
     justify-content: center;
   }
-  .refresh.spinning {
+  .setting .refresh.spinning {
     animation: spin 1s linear infinite;
   }
   @keyframes spin {
