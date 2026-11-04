@@ -456,7 +456,8 @@ as `C:\Program Files\WinVPN\WinVPNService.exe` on Windows; root layer version in
 2.0.4: `mvpn traffic <id>` and strongSwan's virtual IP in `mvpn status`, see [Live traffic](#live-traffic); 12 in
 2.0.7: an IKEv2 client certificate in the `up` frame and the key password, see [IKEv2 client
 certificates](#ikev2-client-certificates-root-layer-12); 13 in 2.1.6: the read-only query daemon, see [The query
-daemon](#the-query-daemon-root-layer-13)).
+daemon](#the-query-daemon-root-layer-13); 14 in 2.1.7: DNS through SystemConfiguration preferences in one commit
+instead of networksetup processes, see [macOS DNS manager](#macos-dns-manager-root-layer)).
 
 - `src/shared/`: the logic every OS shares, with no `cfg`, no `unsafe` and no process or file I/O: the command
   line (`cli`), the framed stdin (`framing`), masking, the `respond` answer, the status JSON, the validation
@@ -1452,7 +1453,14 @@ persistent root-only ledger `/var/db/macvpn/dns/ledger` (directory 0700, file 06
 rename, never through a symlink, strict line format, one `flock`) holds the true originals per network service
 (captured only by the first owner) and the owners (connection id + servers/domains, newest last). The newest owner's
 DNS is in effect; the last owner's leaving restores the originals and deletes the ledger. Every set and restore is
-read back with `networksetup -getdnsservers/-getsearchdomains`, retried once and logged. **Reconcile** (owners whose
+read back, the services that did not take are set once more, and the result is logged. From root layer 14 the
+values are read and written in the SystemConfiguration preferences directly (`dns_sc.rs` over `sc_prefs.rs`): the
+DNS entity's `ServerAddresses` / `SearchDomains` of every service of a batch in one locked session, one commit and
+one apply (an empty list removes its key, other keys stay; the read-back opens a new session). The service list
+still comes from `networksetup -listallnetworkservices`; `networksetup` (`-setdnsservers/-setsearchdomains`,
+`-getdnsservers/-getsearchdomains`, as up to 13) remains the fallback for a whole batch the preferences cannot
+open, lock, commit or apply, and per service for a name not unique in the current set, a disabled service, and a
+service without an enabled DNS entity or with unexpected values. **Reconcile** (owners whose
 run directory is gone or whose engine is failed are dropped) runs at every `up`, `down`, `mvpn status` (non-blocking)
 and `mvpn dns-reconcile`, so a crash or a reboot while connected is repaired at the app's next status poll. strongSwan
 (charon's volatile dynamic-store DNS) and native VPNs are not touched. Test mode never runs the real `networksetup`

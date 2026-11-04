@@ -15,6 +15,9 @@
 //! longer runs (crash, kill, reboot), so DNS is restored even without a `down`. Every change is read back with
 //! `networksetup -get…`, set again once if it did not take, and the result is logged. Services added during a
 //! session are not touched; services removed in the meantime are skipped.
+//!
+//! From root layer 14 the root helper reads and writes the same preferences directly (`dns_sc`: one locked session,
+//! one commit per batch) and falls back to `networksetup` for whatever it cannot do with certainty.
 
 use crate::macos::exec::{Cmd, EnvMode};
 use crate::macos::fsx;
@@ -48,7 +51,9 @@ pub enum List {
     Domains,
 }
 
-/// The `networksetup` operations the manager needs (a fake in the tests).
+/// The `networksetup` operations the manager needs (a fake in the tests). The manager uses only
+/// [`Net::services`] and the batch operations; their defaults loop over the single ones (`networksetup`, the fake),
+/// the SystemConfiguration implementation (`dns_sc`, root layer 14) does a whole batch in one session.
 pub trait Net {
     /// The network services (`-listallnetworkservices`); `None` if they cannot be listed.
     fn services(&self) -> Option<Vec<String>>;
@@ -56,6 +61,34 @@ pub trait Net {
     fn get(&self, list: List, service: &str) -> Option<Vec<String>>;
     /// Sets the list (an empty list is sent as `Empty`).
     fn set(&self, list: List, service: &str, values: &[String]);
+
+    /// The servers and domains of each service, in order; `None` where either cannot be read.
+    fn get_many(&self, services: &[String]) -> Vec<Option<Dns>> {
+        services
+            .iter()
+            .map(|svc| match (self.get(List::Servers, svc), self.get(List::Domains, svc)) {
+                (Some(servers), Some(domains)) => Some(Dns { servers, domains }),
+                _ => None,
+            })
+            .collect()
+    }
+
+    /// Sets the servers and domains of each service, logging what runs.
+    fn set_many(&self, items: &[(String, Dns)], log: &Log) {
+        for (svc, d) in items {
+            log.cmd(&format!("networksetup -setdnsservers \"{svc}\" {}", words(&d.servers)));
+            self.set(List::Servers, svc, &d.servers);
+            log.cmd(&format!("networksetup -setsearchdomains \"{svc}\" {}", words(&d.domains)));
+            self.set(List::Domains, svc, &d.domains);
+        }
+    }
+
+    /// The second try of the services whose read-back differed after [`Net::set_many`]. Default: the same way
+    /// again; an implementation with a fallback retries through that (a fast path that did not take is not trusted
+    /// twice).
+    fn retry_many(&self, items: &[(String, Dns)], log: &Log) {
+        self.set_many(items, log)
+    }
 }
 
 /// DNS servers and search domains (empty = `Empty`).
@@ -123,7 +156,7 @@ pub fn is_search_domain(s: &str) -> bool {
         && b.iter().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'.' | b'-' | b'_'))
 }
 
-fn is_valid(list: List, v: &str) -> bool {
+pub(crate) fn is_valid(list: List, v: &str) -> bool {
     match list {
         List::Servers => crate::macos::hook_dns::is_dns(v),
         List::Domains => is_search_domain(v),
@@ -131,7 +164,7 @@ fn is_valid(list: List, v: &str) -> bool {
 }
 
 /// `a b c`, or `Empty`.
-fn words(v: &[String]) -> String {
+pub(crate) fn words(v: &[String]) -> String {
     if v.is_empty() { "Empty".into() } else { v.join(" ") }
 }
 
@@ -282,11 +315,14 @@ impl Net for NetworkSetup {
     }
 }
 
-/// The manager of this invocation: as root the fixed ledger directory and `/usr/sbin/networksetup`; in test mode
-/// only with `MVPN_NETWORKSETUP` (a fake), never the real tool.
+/// The manager of this invocation: as root the fixed ledger directory and the SystemConfiguration preferences
+/// (root layer 14, `dns_sc`) with `/usr/sbin/networksetup` as the fallback; in test mode only with
+/// `MVPN_NETWORKSETUP` (a fake), never the real tool nor the real preferences.
 pub fn manager(s: &Settings) -> Option<Manager> {
     let program = s.networksetup.clone()?;
-    Some(Manager::new(s.dns_base.clone(), Box::new(NetworkSetup { program })))
+    let ns = Box::new(NetworkSetup { program });
+    let net: Box<dyn Net> = if s.test_mode { ns } else { Box::new(crate::macos::dns_sc::ScNet::system(ns)) };
+    Some(Manager::new(s.dns_base.clone(), net))
 }
 
 /// An owner is alive while its run directory has a valid kind and its engine is not `failed` (as `status` sees it).
@@ -347,12 +383,10 @@ impl Manager {
         };
         if l.originals.is_empty() {
             // The first owner: what is set now is the original (no other MacVPN connection holds DNS).
-            for svc in &services {
-                match (self.net.get(List::Servers, svc), self.net.get(List::Domains, svc)) {
-                    (Some(servers), Some(domains)) => {
-                        l.originals.push(Original { service: svc.clone(), dns: Dns { servers, domains } })
-                    }
-                    _ => log.step(&tr("cannot read the DNS settings of %@, the service is left unchanged", &[svc])),
+            for (svc, found) in services.iter().zip(self.net.get_many(&services)) {
+                match found {
+                    Some(dns) => l.originals.push(Original { service: svc.clone(), dns }),
+                    None => log.step(&tr("cannot read the DNS settings of %@, the service is left unchanged", &[svc])),
                 }
             }
         }
@@ -468,15 +502,11 @@ impl Manager {
         if targets.is_empty() {
             return;
         }
-        for (svc, d) in targets {
-            self.set(svc, d, log);
-        }
+        self.net.set_many(targets, log);
         let mut bad = self.mismatched(targets);
         if !bad.is_empty() {
-            for (svc, d, _) in &bad {
-                self.set(svc, d, log);
-            }
             let again: Vec<(String, Dns)> = bad.iter().map(|(s, d, _)| (s.clone(), d.clone())).collect();
+            self.net.retry_many(&again, log);
             bad = self.mismatched(&again);
         }
         for (svc, want, found) in &bad {
@@ -496,21 +526,11 @@ impl Manager {
         }
     }
 
-    fn set(&self, svc: &str, d: &Dns, log: &Log) {
-        log.cmd(&format!("networksetup -setdnsservers \"{svc}\" {}", words(&d.servers)));
-        self.net.set(List::Servers, svc, &d.servers);
-        log.cmd(&format!("networksetup -setsearchdomains \"{svc}\" {}", words(&d.domains)));
-        self.net.set(List::Domains, svc, &d.domains);
-    }
-
     /// The targets whose read-back differs, with what was found (`None`: unreadable).
     fn mismatched(&self, targets: &[(String, Dns)]) -> Vec<(String, Dns, Option<Dns>)> {
         let mut bad = Vec::new();
-        for (svc, want) in targets {
-            let found = match (self.net.get(List::Servers, svc), self.net.get(List::Domains, svc)) {
-                (Some(servers), Some(domains)) => Some(Dns { servers, domains }),
-                _ => None,
-            };
+        let names: Vec<String> = targets.iter().map(|(s, _)| s.clone()).collect();
+        for ((svc, want), found) in targets.iter().zip(self.net.get_many(&names)) {
             if !found.as_ref().is_some_and(|f| same(want, f)) {
                 bad.push((svc.clone(), want.clone(), found));
             }
@@ -1141,6 +1161,55 @@ pub mod tests {
         assert_eq!(Ledger::salvage(&text.replace(HEADER, "x")), Ledger::default(), "not a ledger");
         let many: String = (0..SALVAGE_ENTRIES + 10).map(|i| format!("orig\tsvc {i}\tEmpty\tEmpty\n")).collect();
         assert_eq!(Ledger::salvage(&format!("{HEADER}\n{many}")).originals.len(), SALVAGE_ENTRIES);
+    }
+
+    /// Counts the batch operations (and their sizes) over a [`FakeNet`].
+    #[derive(Clone, Default)]
+    struct Counting {
+        net: FakeNet,
+        set_many: Rc<RefCell<Vec<usize>>>,
+        get_many: Rc<RefCell<Vec<usize>>>,
+    }
+
+    impl Net for Counting {
+        fn services(&self) -> Option<Vec<String>> {
+            self.net.services()
+        }
+        fn get(&self, _: List, _: &str) -> Option<Vec<String>> {
+            panic!("the manager reads only in batches")
+        }
+        fn set(&self, _: List, _: &str, _: &[String]) {
+            panic!("the manager writes only in batches")
+        }
+        fn get_many(&self, services: &[String]) -> Vec<Option<Dns>> {
+            self.get_many.borrow_mut().push(services.len());
+            self.net.get_many(services)
+        }
+        fn set_many(&self, items: &[(String, Dns)], log: &Log) {
+            self.set_many.borrow_mut().push(items.len());
+            self.net.set_many(items, log)
+        }
+    }
+
+    #[test]
+    fn the_manager_uses_one_batch_per_step_and_retries_only_the_mismatched() {
+        let t = T::new();
+        let c = Counting { net: t.net.clone(), ..Default::default() };
+        let m = Manager::new(t.m.dir.clone(), Box::new(c.clone()));
+        m.acquire(A, &vpn_a(), &t.log);
+        // The originals in one read, one write, one read-back.
+        assert_eq!(*c.get_many.borrow(), vec![2, 2]);
+        assert_eq!(*c.set_many.borrow(), vec![2]);
+        assert_eq!(t.net.of("Ethernet"), vpn_a());
+        c.get_many.borrow_mut().clear();
+        c.set_many.borrow_mut().clear();
+        // The first service's two sets are dropped: only it is set and read again.
+        t.net.0.drop_sets.set(2);
+        assert!(m.release(A, &t.log));
+        assert_eq!(*c.set_many.borrow(), vec![2, 1]);
+        assert_eq!(*c.get_many.borrow(), vec![2, 1]);
+        t.originals_back();
+        assert!(t.log_text().contains("original DNS restored and verified on 2 network service(s)"));
     }
 
     #[test]

@@ -106,14 +106,13 @@ pub fn parse_backup_line(line: &str) -> Option<(String, Vec<String>, Vec<String>
     Some((svc, words(dns), words(doms)))
 }
 
-/// The DNS manager of the hook: only as root (the fixed ledger and `/usr/sbin/networksetup`). The hook reads no
-/// other environment, so not as root (tests, or an openvpn that dropped its privileges) it never changes DNS.
+/// The DNS manager of the hook: only as root (the fixed ledger, the SystemConfiguration preferences with
+/// `/usr/sbin/networksetup` as the fallback, see `dns_sc`). The hook reads no other environment, so not as root
+/// (tests, or an openvpn that dropped its privileges) it never changes DNS.
 fn hook_manager() -> Option<Manager> {
     (crate::macos::sys::geteuid() == 0).then(|| {
-        Manager::new(
-            PathBuf::from(crate::macos::paths::DNS_BASE),
-            Box::new(NetworkSetup { program: PathBuf::from(crate::macos::paths::NETWORKSETUP) }),
-        )
+        let ns = Box::new(NetworkSetup { program: PathBuf::from(crate::macos::paths::NETWORKSETUP) });
+        Manager::new(PathBuf::from(crate::macos::paths::DNS_BASE), Box::new(crate::macos::dns_sc::ScNet::system(ns)))
     })
 }
 

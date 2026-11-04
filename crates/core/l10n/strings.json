@@ -6673,6 +6673,20 @@
         "macos"
       ]
     },
+    "DNS of %@ written: servers %@, search domains %@": {
+      "hu": "a(z) %@ DNS-e beírva: szerverek %@, keresési tartományok %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the DNS change through SystemConfiguration failed (%@); networksetup is used instead": {
+      "hu": "a DNS módosítása a SystemConfigurationön keresztül nem sikerült (%@); helyette a networksetup fut",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
     "the connection is no longer running: its DNS settings are released": {
       "hu": "a kapcsolat már nem fut: a DNS-beállításait felszabadítjuk",
       "scope": "mvpn",

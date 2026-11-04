@@ -68,6 +68,7 @@ macro_rules! err {
 
 mod ctx;
 mod dns;
+mod dns_sc;
 mod exec;
 mod fsx;
 mod hook_dns;
@@ -80,6 +81,7 @@ mod paths;
 mod procs;
 mod respond;
 mod run_dir;
+mod sc_prefs;
 mod serve;
 mod sstp;
 mod status;
@@ -266,7 +268,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_13() {
-        assert_eq!(VERSION.trim(), "13");
+    fn version_is_14() {
+        assert_eq!(VERSION.trim(), "14");
     }
 }

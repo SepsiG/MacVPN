@@ -44,6 +44,12 @@ zeroize = "1.9.1"
 [target.'cfg(unix)'.dependencies]
 libc = "0.2.191"
 
+# The DNS manager's SystemConfiguration preferences (src/macos/sc_prefs.rs): the versions the macOS platform crate
+# already uses (no new crate in Cargo.lock).
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10.1"
+core-foundation-sys = "0.8.7"
+
 # The root update step (src/linux): the kernel's randomness for its staging folder names.
 [target.'cfg(target_os = "linux")'.dependencies]
 macvpn-unixsys = { path = "../unixsys" }

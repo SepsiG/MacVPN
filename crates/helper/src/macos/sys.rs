@@ -1,4 +1,5 @@
-//! The only module with `unsafe` code: thin, audited wrappers around the libc calls `std` does not offer.
+//! Thin, audited wrappers around the libc calls `std` does not offer. With `sc_prefs` (the SystemConfiguration
+//! preferences of the DNS manager) the only modules with `unsafe` code.
 //!
 //! Every function here is a direct call with plain integer arguments or with buffers whose length is passed
 //! alongside; none of them keeps a pointer past the call. Everything else in the crate is safe Rust.
