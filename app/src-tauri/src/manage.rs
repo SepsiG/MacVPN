@@ -416,7 +416,12 @@ fn start_log_poller(app: &AppHandle, state: &Arc<AppState>) {
             std::thread::sleep(logs::POLL_INTERVAL);
             let event = {
                 let mut slot = state.log_feed.lock().unwrap_or_else(PoisonError::into_inner);
-                let Some((generation, feed)) = slot.as_mut() else { continue };
+                // No Log tab shown: the thread ends (no wake-ups twice a second for nothing). Cleared under the
+                // slot's lock, so a subscription that fills the slot meanwhile starts a new one.
+                let Some((generation, feed)) = slot.as_mut() else {
+                    state.log_poller.store(false, Ordering::SeqCst);
+                    return;
+                };
                 feed.poll().map(|chunk| LogEvent { generation: *generation, chunk })
             };
             if let Some(event) = event {

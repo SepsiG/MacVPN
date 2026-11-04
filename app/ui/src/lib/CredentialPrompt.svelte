@@ -1,11 +1,11 @@
 <script lang="ts">
-  // A credential prompt window (`cred-<id>`), like the MFA prompt windows: it does not take the focus when it
-  // appears, nothing but Cancel works in the first second after it became visible (the backend counts its own lock
+  // A credential prompt window (`cred-<id>`), like the MFA prompt windows: it takes the focus only after the first
+  // second after it became visible, in which nothing but Cancel works (the backend counts its own lock
   // from the page's ready signal and from ordering the window on screen, and refuses an earlier answer too), and
   // there is no default button. Escape and the close button cancel. The typed values leave the page only in the
   // answer and are cleared from the fields and the page's state right after it is sent. The window closes when
   // the prompt ends (answered, cancelled, expired, disconnected).
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { fitToContent } from './fit';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, onViewModel, type CredentialAction, type CredentialField, type ViewModel } from './api';
@@ -54,9 +54,12 @@
     let arm: ReturnType<typeof setTimeout> | undefined;
     if (id !== null) {
       api.credentialsReady(id).then(() => {
-        arm = setTimeout(() => {
+        arm = setTimeout(async () => {
           armed = true;
-          // The first empty field gets the caret (the window itself is not made key: no focus steal).
+          // The window takes the focus now (not earlier: a keystroke meant for another app must not land here), the
+          // first empty field the caret once the fields are enabled (after the DOM update): typing works without a
+          // click.
+          await Promise.all([api.credentialsFocus(id).catch(console.error), tick()]);
           const inputs = [...document.querySelectorAll<HTMLInputElement>('input[data-field]')];
           inputs.find((input) => input.value === '')?.focus();
         }, 1000);

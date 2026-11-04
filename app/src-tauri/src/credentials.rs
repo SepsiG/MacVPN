@@ -65,6 +65,14 @@ pub async fn credentials_ready(window: Window, state: Shared<'_>, id: u64) -> Re
     ready(&state.credential_broker, window.label(), id, Instant::now())
 }
 
+/// The window takes the focus (the page asks once its one-second input lock is over, so a keystroke meant for
+/// another app never lands in it): the fields can be typed in at once, without a click into the window.
+#[tauri::command]
+pub fn credentials_focus(window: Window, id: u64) -> Result<(), String> {
+    own_prompt(window.label(), id)?;
+    window.set_focus().map_err(|e| e.to_string())
+}
+
 fn ready(broker: &CredentialBroker, label: &str, id: u64, now: Instant) -> Result<(), String> {
     own_prompt(label, id)?;
     if broker.mark_loaded(id, now) { Ok(()) } else { Err("no such prompt".into()) }

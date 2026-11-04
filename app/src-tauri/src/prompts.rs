@@ -52,6 +52,16 @@ pub async fn prompt_ready(window: Window, state: Shared<'_>, id: u64) -> Result<
     if state.broker.mark_loaded(id, Instant::now()) { Ok(()) } else { Err("no such prompt".into()) }
 }
 
+/// The prompt window takes the focus (the page asks once its one-second input lock is over, so a keystroke meant
+/// for another app never lands in it): the code can be typed at once, without a click into the window.
+#[tauri::command]
+pub fn prompt_focus(window: Window, id: u64) -> Result<(), String> {
+    if prompt_id_of_label(window.label()) != Some(id) {
+        return Err("not this window's prompt".into());
+    }
+    window.set_focus().map_err(|e| e.to_string())
+}
+
 /// The default browser (macOS: `/usr/bin/open <https URL>`), validated again (https only, strict ASCII, so it
 /// cannot look like an option). The sandbox only logs it.
 fn open_web_auth_url(url: &str, sandbox: bool) -> Result<(), String> {

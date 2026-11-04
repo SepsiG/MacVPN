@@ -75,7 +75,18 @@
   onMount(() => {
     const unlisten = [onViewModel(apply)];
     api.viewModel().then(apply, console.error);
-    const timer = setInterval(() => (now = Date.now()), 1000);
+    // The rows' clock ("Connected 12:34", "Retrying in 2 min") ticks only while the window is shown: a hidden
+    // popover wakes nothing (the battery); it is set again at once when the window shows.
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const clock = () => {
+      clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState !== 'visible') return;
+      now = Date.now();
+      timer = setInterval(() => (now = Date.now()), 1000);
+    };
+    clock();
+    document.addEventListener('visibilitychange', clock);
     const stopTraffic = pollTraffic(
       () => !!vm?.rows.some((r) => r.state === 'connected'),
       (t) => (traffic = t),
@@ -88,6 +99,7 @@
     if (overlay) window.addEventListener('resize', measure);
     return () => {
       clearInterval(timer);
+      document.removeEventListener('visibilitychange', clock);
       stopTraffic();
       observer.disconnect();
       window.removeEventListener('resize', measure);

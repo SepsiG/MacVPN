@@ -68,8 +68,13 @@
     cancel.click();
     return;
   }
-  // The 1 s input lock: the fields take input once it passed.
+  // The 1 s input lock: the fields take input once it passed; then the window has the focus and the first empty
+  // field the caret (typing needs no click), else the prompt is cancelled (the smoke fails).
   await waitFor(() => !inputs()[0].disabled, 5000);
+  if (!(await waitFor(() => document.hasFocus() && document.activeElement === inputs()[0], 3000))) {
+    cancel.click();
+    return;
+  }
   setValue(inputs()[0], 'smoke-user');
   setValue(inputs()[1], 'smoke-pass-4711');
   await waitFor(() => !connect.disabled, 3000);

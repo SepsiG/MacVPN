@@ -173,8 +173,8 @@ fn poller_without_a_watcher_polls_every_5_seconds_while_a_window_is_open() {
         || now() < 20.0,
         || false,
         &clock,
-        || {
-            clock.advance(1.0);
+        |wait| {
+            clock.advance(wait.as_secs_f64());
             if now() >= 60.0 { Tick::Stopped } else { Tick::Elapsed }
         },
     );
@@ -193,8 +193,8 @@ fn poller_with_a_watcher_keeps_the_idle_pace_with_a_window_open() {
         || true,
         || true,
         &clock,
-        || {
-            clock.advance(1.0);
+        |wait| {
+            clock.advance(wait.as_secs_f64());
             if now() >= 65.0 { Tick::Stopped } else { Tick::Elapsed }
         },
     );

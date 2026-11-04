@@ -27,8 +27,12 @@ use std::time::Duration;
 use crate::platform;
 use crate::state::AppState;
 
-/// How often the driver looks at the planner's timers without an event.
+/// The shortest wait of the driver: a timer still due after a look (its probe could not be read) is looked at again
+/// this much later, as the earlier fixed one-second tick did.
 const TICK: Duration = Duration::from_secs(1);
+/// The longest wait without an event: the driver sleeps until the planner's next timer ([`Planner::next_due`]), at
+/// most this long. Events (a connect, a drop, a network change, a sleep or wake) end the wait at once.
+const MAX_WAIT: Duration = Duration::from_secs(30);
 
 pub enum Event {
     /// A connection left `disconnected`/`failed` for `connecting`.
@@ -55,6 +59,9 @@ pub enum Event {
     /// Ask the tunnels now (a smoke run; the planner's own schedule otherwise).
     #[cfg(debug_assertions)]
     LivenessNow,
+    /// The timers are looked at now (a smoke run moved the clock).
+    #[cfg(debug_assertions)]
+    Recheck,
 }
 
 /// Owned by `AppState` (created with it, so the lifecycle hooks registered before `connect_hooks` can send);
@@ -130,6 +137,7 @@ impl Reconnect {
     #[cfg(debug_assertions)]
     pub fn skew(&self, seconds: f64) {
         *self.skew.lock().unwrap_or_else(PoisonError::into_inner) += seconds;
+        self.send(Event::Recheck);
     }
 
     /// The driver's time.
@@ -226,7 +234,8 @@ fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
     let r = &state.reconnect;
     let mut shown: (Vec<String>, Vec<String>, Vec<String>, Vec<String>) = Default::default();
     loop {
-        match rx.recv_timeout(TICK) {
+        let wait = wait_until(r.planner().next_due(), r.now());
+        match rx.recv_timeout(wait) {
             Ok(e) => handle(state, e),
             Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
@@ -384,6 +393,20 @@ fn handle(state: &Arc<AppState>, e: Event) {
         Event::Down(key) => reconnect::set_lease_mark(state.prefs.as_ref(), &key, false),
         #[cfg(debug_assertions)]
         Event::LivenessNow => r.planner().liveness_soon(),
+        #[cfg(debug_assertions)]
+        Event::Recheck => {}
+    }
+}
+
+/// The driver's wait before its next look: until `next` (the planner's earliest timer), at most [`MAX_WAIT`]; a
+/// timer already due waits [`TICK`] (it was just looked at and stayed due).
+fn wait_until(next: Option<Date>, now: Date) -> Duration {
+    match next {
+        None => MAX_WAIT,
+        Some(at) => {
+            let left = at.time_interval_since(now);
+            if left > 0.0 { Duration::from_secs_f64(left).min(MAX_WAIT) } else { TICK }
+        }
     }
 }
 
@@ -467,6 +490,17 @@ mod tests {
     use macvpn_platform_api::Gateway;
     use std::io;
     use uuid::Uuid;
+
+    /// The driver sleeps until the next timer (at most 30 s), and a timer still due is looked at again a second later.
+    #[test]
+    fn the_driver_waits_until_the_next_timer() {
+        let now = Date::from_time_interval_since_1970(1_800_000_000.0);
+        assert_eq!(wait_until(None, now), MAX_WAIT);
+        assert_eq!(wait_until(Some(now.adding(4.5)), now), Duration::from_secs_f64(4.5));
+        assert_eq!(wait_until(Some(now.adding(600.0)), now), MAX_WAIT);
+        assert_eq!(wait_until(Some(now), now), TICK);
+        assert_eq!(wait_until(Some(now.adding(-3.0)), now), TICK);
+    }
 
     #[test]
     fn ikev2_liveness_is_watched_on_linux_only() {

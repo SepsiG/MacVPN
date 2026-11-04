@@ -1,6 +1,6 @@
 // Driven by scripts/smoke-manage.sh (MACVPN_SMOKE_DIR, debug build, sandbox only), in an MFA prompt window: the
-// window must fit its content (no scrolling); the mock code prompt is answered with 123456 once its field takes input (only if the server's text is labelled and
-// the field is secure), the mock web sign-in with "Open in Browser" (only if the ASCII host is shown). The
+// window must fit its content (no scrolling); the mock code prompt is answered with 123456 once its field takes input (only if the server's text is labelled,
+// the field is secure and, after the input lock, the window has the focus and the field the caret), the mock web sign-in with "Open in Browser" (only if the ASCII host is shown). The
 // backend logs the results; the sandbox does not open the URL.
 (async () => {
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -34,7 +34,9 @@
   await waitFor(() => !target.disabled);
   if (target.tagName === 'INPUT') {
     const labelled = !!document.querySelector('.prompt .caption') && document.querySelector('.prompt .text')?.textContent.includes('Smoke');
-    setValue(target, fitted && labelled && target.type === 'password' ? '123456' : 'wrong');
+    // Once the input lock is over, the window has the focus and the code field the caret (typing needs no click).
+    const focused = !!(await waitFor(() => document.hasFocus() && document.activeElement === target, 3000));
+    setValue(target, fitted && labelled && focused && target.type === 'password' ? '123456' : 'wrong');
     await sleep(200);
     document.querySelector('button.continue').click();
   } else if (fitted && document.querySelector('.prompt .host')?.textContent === 'sso.example.com') {

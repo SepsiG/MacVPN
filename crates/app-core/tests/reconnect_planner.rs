@@ -495,3 +495,49 @@ fn a_stop_outside_the_app_is_a_user_disconnect() {
     q.wake(t0().adding(2000.0), &[]);
     assert!(q.evaluate(t0().adding(2100.0), &home(), &on, false).is_empty());
 }
+
+// MARK: - The driver's wait
+
+/// Any of the timers the driver looks at is due at `t`.
+fn any_due(p: &Planner, t: Date) -> bool {
+    p.survivors_due(t) || p.due(t) || p.network_check_due(t) || p.offline_due(t) || p.liveness_due(t)
+}
+
+/// `next_due` is exactly when the first of the `*_due` checks turns true (nothing is due a moment before it), and
+/// `None` only when none ever does: the driver sleeping until it misses nothing.
+fn assert_next_due_matches(p: &Planner, what: &str) {
+    match p.next_due() {
+        // Long past: due at once (a liveness poll not yet timed).
+        Some(n) if n.time_interval_since(t0()) < -1.0e6 => assert!(any_due(p, t0()), "{what}: due at once"),
+        Some(n) => {
+            assert!(any_due(p, n), "{what}: something is due at next_due");
+            assert!(!any_due(p, n.adding(-0.01)), "{what}: nothing is due before next_due");
+        }
+        None => assert!(!any_due(p, t0().adding(1.0e6)), "{what}: nothing is ever due without a timer"),
+    }
+}
+
+#[test]
+fn next_due_is_the_first_timer_the_driver_must_look_at() {
+    let mut p = Planner::default();
+    assert_next_due_matches(&p, "fresh (the first liveness poll at once)");
+    p.liveness_checked(t0(), &[], &on);
+    assert_eq!(p.next_due(), Some(t0().adding(macvpn_app_core::liveness::POLL)), "idle: the 30 s liveness poll");
+    assert_next_due_matches(&p, "idle");
+
+    let mut p = slept_planner();
+    assert_next_due_matches(&p, "after a wake");
+    p.dropped("k", "Office VPN", t0().adding(1.0), FailureKind::ServerNotResponding);
+    assert_next_due_matches(&p, "a drop after the wake");
+    let _ = p.evaluate(t0().adding(5.0), &home(), &on, false);
+    assert_next_due_matches(&p, "an attempt in flight");
+    let _ = p.failed("k", t0().adding(8.0), FailureKind::ServerNotResponding);
+    assert_next_due_matches(&p, "the attempt failed (the next retry)");
+
+    let mut p = Planner::default();
+    p.liveness_checked(t0(), &[], &on);
+    p.network_changed(t0().adding(2.0));
+    assert_next_due_matches(&p, "a network change (the debounced check)");
+    p.sleep(&[], None);
+    assert_next_due_matches(&p, "asleep");
+}

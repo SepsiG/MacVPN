@@ -1,11 +1,11 @@
 <script lang="ts">
   // An MFA prompt window (the Swift `AuthPromptView`): the code prompt ("The VPN server says:" for the server's
   // text; a secure or a plain field by the echo flag) or the web sign-in confirmation (the ASCII host and the full
-  // URL). The window does not take the focus when it appears; nothing but Cancel works in the first second after it
-  // became visible; there is no default button ("Open in Browser" neither: only a click opens the URL, which the
+  // URL). The window does not take the focus when it appears, only after the first second after it became visible,
+  // in which nothing but Cancel works; there is no default button ("Open in Browser" neither: only a click opens the URL, which the
   // backend takes from its own validated copy). Return in the code field submits a valid code, Escape cancels. The
   // window closes when the prompt ends (answered, cancelled, expired).
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import { fitToContent } from './fit';
   import { getCurrentWindow } from '@tauri-apps/api/window';
   import { api, onViewModel, type PromptAction, type ViewModel } from './api';
@@ -43,8 +43,11 @@
     let arm: ReturnType<typeof setTimeout> | undefined;
     if (id !== null) {
       api.promptReady(id).then(() => {
-        arm = setTimeout(() => {
+        arm = setTimeout(async () => {
           armed = true;
+          // The window takes the focus now (not earlier: the lock above), the code field the caret once it is
+          // enabled (after the DOM update): typing works without a click.
+          await Promise.all([api.promptFocus(id).catch(console.error), tick()]);
           field?.focus();
         }, 1000);
       }, console.error);

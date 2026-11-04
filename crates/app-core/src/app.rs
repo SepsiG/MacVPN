@@ -18,9 +18,10 @@ pub const IDLE_POLL_INTERVAL: f64 = 30.0;
 /// The poll fallback of the live system VPN list: without a (trusted) change watcher, every 5 s while a MacVPN
 /// window (the menu popover, Connections, System Status, Update) is open.
 pub const WINDOW_POLL_INTERVAL: f64 = 5.0;
-/// The interval is re-evaluated this often: a new connect (`connecting` is active too) switches to the fast pace
-/// at once instead of waiting out the 30 s.
-pub const POLL_TICK: Duration = Duration::from_secs(1);
+/// The longest wait between two interval checks: the poller sleeps until the current interval ends, but at most
+/// this long (a window opened without a wake request moves to the 5 s pace within it). A new connect does not wait
+/// for it: the app wakes the poller when a connection becomes active ([`Poller::wake`]). Few wake-ups: the battery.
+pub const POLL_TICK: Duration = Duration::from_secs(5);
 
 /// `live`: a trusted watcher reports system VPN changes (the pace is then the same with a window open).
 pub fn poll_interval(has_active: bool, window_open: bool, live: bool) -> f64 {
@@ -45,7 +46,7 @@ pub enum Tick {
 }
 
 /// The status poller (the Swift `pollTask`): refresh, then wait until the current interval has passed since that
-/// refresh, re-checking the interval every [`POLL_TICK`]. The elapsed time is measured on the wall clock (like
+/// refresh, re-checking the interval at its end and at least every [`POLL_TICK`]. The elapsed time is measured on the wall clock (like
 /// Swift's `Date()`), so after the Mac sleeps the next tick refreshes at once – the wake refresh.
 pub struct Poller {
     stopped: AtomicBool,
@@ -91,7 +92,8 @@ impl Poller {
         if std::mem::take(&mut *woken) { Tick::Woken } else { Tick::Elapsed }
     }
 
-    /// The loop; returns when stopped. `tick` waits between two interval checks ([`Self::wait`] in the app).
+    /// The loop; returns when stopped. `tick` waits between two interval checks ([`Self::wait`] in the app) for
+    /// the time it is given: what is left of the interval, at most [`POLL_TICK`].
     /// `window_open` and `live` feed [`poll_interval`]'s poll fallback.
     pub fn run(
         &self,
@@ -100,7 +102,7 @@ impl Poller {
         window_open: impl Fn() -> bool,
         live: impl Fn() -> bool,
         clock: &dyn Clock,
-        mut tick: impl FnMut() -> Tick,
+        mut tick: impl FnMut(Duration) -> Tick,
     ) {
         while !self.is_stopped() {
             refresh();
@@ -109,10 +111,11 @@ impl Poller {
                 if self.is_stopped() {
                     return;
                 }
-                if clock.now().time_interval_since(started) >= poll_interval(has_active(), window_open(), live()) {
+                let left = poll_interval(has_active(), window_open(), live()) - clock.now().time_interval_since(started);
+                if left <= 0.0 {
                     break;
                 }
-                match tick() {
+                match tick(Duration::from_secs_f64(left).min(POLL_TICK)) {
                     Tick::Elapsed => {}
                     Tick::Woken => break,
                     Tick::Stopped => return,

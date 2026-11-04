@@ -652,6 +652,31 @@ impl Planner {
     }
 
     /// Something is due to be evaluated (the driver then probes the network and calls [`Self::evaluate`]).
+    /// The earliest of the planner's timers the driver has to look at (the surviving-tunnel check, a candidate's or
+    /// the slow tier's next attempt, the network check, the end of a wait for network, the liveness poll), in the states in which the `*_due`
+    /// checks can find them due; `None`: nothing is timed (only an event changes something). The driver sleeps
+    /// until then instead of looking every second.
+    pub fn next_due(&self) -> Option<Date> {
+        let liveness = (!self.asleep && !self.network_down && self.offline.is_empty() && self.check_at.is_none())
+            .then(|| self.liveness_at.unwrap_or(Date::from_time_interval_since_1970(0.0)));
+        let survivors = self.survivors_at.filter(|_| self.survivors_pending);
+        let candidates = self.candidates.values().filter(|c| !c.attempting && !c.held).filter_map(|c| c.next);
+        let slow = self
+            .slow
+            .iter()
+            .filter(|(k, s)| !s.ended && !self.candidates.contains_key(*k))
+            .filter_map(|(_, s)| s.next);
+        let check = self.check_at.filter(|_| !self.asleep);
+        let offline = self.offline.values().filter(|_| !self.asleep).map(|o| o.since.adding(OFFLINE_GRACE));
+        candidates
+            .chain(slow)
+            .chain(survivors)
+            .chain(check)
+            .chain(offline)
+            .chain(liveness)
+            .min_by(|a, b| a.time_interval_since(*b).total_cmp(&0.0))
+    }
+
     pub fn due(&self, now: Date) -> bool {
         self.candidates.values().any(|c| !c.attempting && !c.held && reached(now, c.next))
             || self.slow.iter().any(|(k, s)| !s.ended && !self.candidates.contains_key(k) && reached(now, s.next))

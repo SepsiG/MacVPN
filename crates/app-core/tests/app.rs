@@ -71,10 +71,11 @@ fn disconnect_and_quit_stops_managed_and_system_connections() {
 fn poll_interval_is_3s_active_30s_idle() {
     assert_eq!(poll_interval(true, false, true), 3.0);
     assert_eq!(poll_interval(false, false, true), 30.0);
-    assert_eq!(POLL_TICK, Duration::from_secs(1));
+    assert_eq!(POLL_TICK, Duration::from_secs(5));
 }
 
-/// Simulated time: every tick is one second. Returns the times (seconds from the start) of the refreshes.
+/// Simulated time: every tick waits as long as it is asked. Returns the times (seconds from the start) of the
+/// refreshes.
 fn simulate(active: impl Fn(f64) -> bool, seconds: f64, wake_at: &[f64]) -> Vec<f64> {
     let clock = ManualClock::new(Date::from_time_interval_since_1970(0.0));
     let poller = Poller::new();
@@ -86,8 +87,8 @@ fn simulate(active: impl Fn(f64) -> bool, seconds: f64, wake_at: &[f64]) -> Vec<
         || false,
         || true,
         &clock,
-        || {
-            clock.advance(1.0);
+        |wait| {
+            clock.advance(wait.as_secs_f64());
             if now() >= seconds {
                 return Tick::Stopped;
             }
@@ -107,16 +108,44 @@ fn active_polls_every_3_seconds() {
     assert_eq!(simulate(|_| true, 10.0, &[]), [0.0, 3.0, 6.0, 9.0]);
 }
 
-/// A connect started during an idle wait switches to the fast pace at the next 1-second check.
+/// A connect started during an idle wait without a wake request switches to the fast pace at the next check, at
+/// most [`POLL_TICK`] later (the app wakes the poller at once).
 #[test]
-fn a_new_connect_switches_to_the_fast_pace_at_once() {
-    assert_eq!(simulate(|t| t >= 10.0, 17.0, &[]), [0.0, 10.0, 13.0, 16.0]);
+fn a_new_connect_switches_to_the_fast_pace_at_the_next_check() {
+    assert_eq!(simulate(|t| t >= 7.0, 17.0, &[]), [0.0, 10.0, 13.0, 16.0]);
 }
 
 /// Opening the menu (or the Mac waking) refreshes at once.
 #[test]
 fn wake_refreshes_immediately() {
-    assert_eq!(simulate(|_| false, 40.0, &[7.0]), [0.0, 7.0, 37.0]);
+    assert_eq!(simulate(|_| false, 45.0, &[10.0]), [0.0, 10.0, 40.0]);
+}
+
+/// Each wait is what is left of the interval, at most `POLL_TICK`: an idle poller wakes every 5 s, not every second.
+#[test]
+fn the_poller_waits_out_the_interval_in_few_ticks() {
+    let clock = ManualClock::new(Date::from_time_interval_since_1970(0.0));
+    let poller = Poller::new();
+    let waits = RefCell::new(Vec::new());
+    let active = Cell::new(false);
+    poller.run(
+        || {},
+        || active.get(),
+        || false,
+        || true,
+        &clock,
+        |wait| {
+            waits.borrow_mut().push(wait.as_secs_f64());
+            // The first refresh 2 s late (a slow refresh): the rest of the interval is shorter.
+            let step = if waits.borrow().len() == 1 { 2.0 } else { wait.as_secs_f64() };
+            clock.advance(step);
+            if waits.borrow().len() == 8 {
+                active.set(true);
+            }
+            if waits.borrow().len() >= 10 { Tick::Stopped } else { Tick::Elapsed }
+        },
+    );
+    assert_eq!(waits.into_inner(), [5.0, 5.0, 5.0, 5.0, 5.0, 5.0, 3.0, 5.0, 3.0, 3.0]);
 }
 
 /// The wall clock jumping (the Mac slept) refreshes at the next tick.
@@ -132,7 +161,7 @@ fn clock_jump_after_sleep_refreshes() {
         || false,
         || true,
         &clock,
-        || {
+        |_| {
             ticks.set(ticks.get() + 1);
             match ticks.get() {
                 1 => {
@@ -174,7 +203,7 @@ fn poller_loop_refreshes_the_manager_until_stopped() {
         let (m, p) = (m.clone(), poller.clone());
         std::thread::spawn(move || {
             let clock = macvpn_app_core::deps::SystemClock;
-            p.run(|| m.refresh(), || m.has_active(), || false, || true, &clock, || p.wait(Duration::from_millis(10)));
+            p.run(|| m.refresh(), || m.has_active(), || false, || true, &clock, |_| p.wait(Duration::from_millis(10)));
         })
     };
     // Ordered by the recorded calls, not by fixed sleeps (a busy runner stretches those).

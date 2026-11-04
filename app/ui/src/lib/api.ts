@@ -785,11 +785,15 @@ export const api = {
     invoke<void>('answer_prompt', { id, action, response }),
   /// The page is loaded and shows the prompt: the backend's input lock counts from now (at the earliest).
   promptReady: (id: number) => invoke<void>('prompt_ready', { id }),
+  /// After the input lock: the window takes the focus (typing works without a click).
+  promptFocus: (id: number) => invoke<void>('prompt_focus', { id }),
   // Credential windows (only their own prompt): `connect` with exactly the asked fields, or `cancel` with none.
   answerCredentials: (id: number, action: CredentialAction, values: Partial<Record<CredentialField, string>>, save: boolean) =>
     invoke<void>('answer_credentials', { id, action, values, save }),
   /// The page is loaded and shows the prompt: the backend's input lock counts from now (at the earliest).
   credentialsReady: (id: number) => invoke<void>('credentials_ready', { id }),
+  /// After the input lock: the window takes the focus (typing works without a click).
+  credentialsFocus: (id: number) => invoke<void>('credentials_focus', { id }),
   // Pairing windows (only their own pairing): `null` denies.
   pairingAnswer: (id: number, allowed: string[] | null) => invoke<void>('pairing_answer', { id, allowed }),
   pairingReady: (id: number) => invoke<void>('pairing_ready', { id }),

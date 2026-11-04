@@ -43,7 +43,7 @@ mod tray;
 mod update_window;
 mod vault;
 
-use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, POLL_TICK, Poller, PreferenceStore};
+use macvpn_app_core::app::{LAUNCH_SEQUENCE, LaunchStep, Poller, PreferenceStore};
 use macvpn_app_core::backup::BackupService;
 use macvpn_app_core::catalog::{CatalogDeps, CatalogService};
 use macvpn_app_core::catalog_file::FileCatalogFetcher;
@@ -388,6 +388,20 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
         }
         LaunchStep::StartPolling => {
             let state = state.clone();
+            // A connection becoming active (a connect started, a system VPN came up) moves the poller to the fast
+            // pace at once: it waits out its interval otherwise. The listener only signals (it runs under the
+            // manager's lock). Only the step from inactive: a change within the active states (a refresh's own) must
+            // not wake the poller again.
+            let woken = state.clone();
+            let active: std::sync::Mutex<std::collections::HashSet<String>> = Default::default();
+            state.manager.add_state_listener(move |key, new| {
+                let mut active = active.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+                if !new.is_active() {
+                    active.remove(key);
+                } else if active.insert(key.to_string()) {
+                    woken.poller.wake();
+                }
+            });
             std::thread::Builder::new()
                 .name("macvpn-poll".into())
                 .spawn(move || {
@@ -402,7 +416,7 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                         window_open,
                         || state.live_trusted.load(Ordering::SeqCst),
                         &SystemClock,
-                        || state.poller.wait(POLL_TICK),
+                        |wait| state.poller.wait(wait),
                     );
                 })
                 .expect("poller thread");
@@ -684,8 +698,10 @@ fn main() {
             update_window::update_dismiss_notice,
             prompts::answer_prompt,
             prompts::prompt_ready,
+            prompts::prompt_focus,
             credentials::answer_credentials,
             credentials::credentials_ready,
+            credentials::credentials_focus,
             pairing::pairing_answer,
             pairing::pairing_ready,
             fit::fit_window,
