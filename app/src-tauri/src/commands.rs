@@ -649,7 +649,7 @@ mod tests {
     }
 
     /// Every command is granted exactly where it is used: the prompt, credential and pairing windows only signal and
-    /// answer their own prompt / pairing, fit their own height and read the view model; every window reads the
+    /// answer their own prompt / pairing (the prompt and credential windows also take the focus after the lock), fit their own height and read the view model; every window reads the
     /// platform (`get_platform`, for its texts); the menu, Connections, System Status and Update windows each get
     /// their own capability, and together everything else; nothing but listening to events from the core. The build list, the capabilities and `generate_handler!` name the same commands.
     #[test]
@@ -696,6 +696,7 @@ mod tests {
                 "allow-get-platform",
                 "allow-answer-credentials",
                 "allow-credentials-ready",
+                "allow-credentials-focus",
                 "allow-fit-window"
             ]
         );
@@ -722,6 +723,7 @@ mod tests {
                 "allow-get-platform",
                 "allow-answer-prompt",
                 "allow-prompt-ready",
+                "allow-prompt-focus",
                 "allow-fit-window"
             ]
         );
@@ -828,10 +830,12 @@ mod tests {
                 || [
                     "allow-answer-prompt",
                     "allow-prompt-ready",
+                    "allow-prompt-focus",
                     "allow-pairing-answer",
                     "allow-pairing-ready",
                     "allow-answer-credentials",
                     "allow-credentials-ready",
+                    "allow-credentials-focus",
                     "allow-fit-window",
                     "allow-backup-close-window",
                     "allow-backup-choose-destination",

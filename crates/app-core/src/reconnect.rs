@@ -661,11 +661,8 @@ impl Planner {
             .then(|| self.liveness_at.unwrap_or(Date::from_time_interval_since_1970(0.0)));
         let survivors = self.survivors_at.filter(|_| self.survivors_pending);
         let candidates = self.candidates.values().filter(|c| !c.attempting && !c.held).filter_map(|c| c.next);
-        let slow = self
-            .slow
-            .iter()
-            .filter(|(k, s)| !s.ended && !self.candidates.contains_key(*k))
-            .filter_map(|(_, s)| s.next);
+        let slow =
+            self.slow.iter().filter(|(k, s)| !s.ended && !self.candidates.contains_key(*k)).filter_map(|(_, s)| s.next);
         let check = self.check_at.filter(|_| !self.asleep);
         let offline = self.offline.values().filter(|_| !self.asleep).map(|o| o.since.adding(OFFLINE_GRACE));
         candidates

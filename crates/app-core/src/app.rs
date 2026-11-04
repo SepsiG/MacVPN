@@ -111,7 +111,8 @@ impl Poller {
                 if self.is_stopped() {
                     return;
                 }
-                let left = poll_interval(has_active(), window_open(), live()) - clock.now().time_interval_since(started);
+                let left =
+                    poll_interval(has_active(), window_open(), live()) - clock.now().time_interval_since(started);
                 if left <= 0.0 {
                     break;
                 }
