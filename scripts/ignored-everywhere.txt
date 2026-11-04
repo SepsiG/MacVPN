@@ -59,6 +59,9 @@ lab_win_sstp
 lab_win_sstp_refusals
 lab_win_wireguard
 lab_wireguard
+macos::dns_sc::tests::an_empty_list_removes_its_key
+macos::dns_sc::tests::one_commit_sets_the_lists_and_keeps_the_other_keys
+macos::dns_sc::tests::sc_reads_match_networksetup_on_this_mac
 only_our_phonebook_counts
 probe_the_default_gateway_answers_with_a_mac
 probe_the_network_snapshot
