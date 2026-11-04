@@ -43,7 +43,7 @@ SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=12
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=13
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"

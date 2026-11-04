@@ -38,6 +38,12 @@ pub trait NetworkProbe: Send + Sync {
     fn snapshot(&self) -> Result<NetworkSnapshot, PlatformError>;
     /// Calls `on_change` (on the watcher's thread) when addresses or routes change. Dropping the box stops it.
     fn watch(&self, on_change: Box<dyn Fn() + Send>) -> io::Result<Box<dyn Send>>;
+    /// Calls `on_change` when a network interface comes or goes (a tunnel's interface among them) until the
+    /// returned guard is dropped. `None`: no such watcher here (the app then keeps its fast pace while a connection
+    /// is up, as a drop is only seen by polling).
+    fn watch_interfaces(&self, _on_change: Box<dyn Fn() + Send>) -> io::Result<Option<Box<dyn Send>>> {
+        Ok(None)
+    }
 }
 
 /// No probe (tests, the sandbox, a platform without one): never reconnects.

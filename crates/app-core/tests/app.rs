@@ -69,8 +69,13 @@ fn disconnect_and_quit_stops_managed_and_system_connections() {
 
 #[test]
 fn poll_interval_is_3s_active_30s_idle() {
-    assert_eq!(poll_interval(true, false, true), 3.0);
-    assert_eq!(poll_interval(false, false, true), 30.0);
+    assert_eq!(poll_interval(true, false, true, false), 3.0);
+    assert_eq!(poll_interval(false, false, true, false), 30.0);
+    // Connected and settled with an interface watcher: 10 s while no window is shown, 3 s with one.
+    assert_eq!(poll_interval(true, false, true, true), 10.0);
+    assert_eq!(poll_interval(true, true, true, true), 3.0);
+    // Quiet means nothing without an active connection.
+    assert_eq!(poll_interval(false, false, true, true), 30.0);
     assert_eq!(POLL_TICK, Duration::from_secs(5));
 }
 
@@ -86,6 +91,7 @@ fn simulate(active: impl Fn(f64) -> bool, seconds: f64, wake_at: &[f64]) -> Vec<
         || active(now()),
         || false,
         || true,
+        || false,
         &clock,
         |wait| {
             clock.advance(wait.as_secs_f64());
@@ -133,6 +139,7 @@ fn the_poller_waits_out_the_interval_in_few_ticks() {
         || active.get(),
         || false,
         || true,
+        || false,
         &clock,
         |wait| {
             waits.borrow_mut().push(wait.as_secs_f64());
@@ -160,6 +167,7 @@ fn clock_jump_after_sleep_refreshes() {
         || false,
         || false,
         || true,
+        || false,
         &clock,
         |_| {
             ticks.set(ticks.get() + 1);
@@ -203,7 +211,15 @@ fn poller_loop_refreshes_the_manager_until_stopped() {
         let (m, p) = (m.clone(), poller.clone());
         std::thread::spawn(move || {
             let clock = macvpn_app_core::deps::SystemClock;
-            p.run(|| m.refresh(), || m.has_active(), || false, || true, &clock, |_| p.wait(Duration::from_millis(10)));
+            p.run(
+                || m.refresh(),
+                || m.has_active(),
+                || false,
+                || true,
+                || false,
+                &clock,
+                |_| p.wait(Duration::from_millis(10)),
+            );
         })
     };
     // Ordered by the recorded calls, not by fixed sleeps (a busy runner stretches those).

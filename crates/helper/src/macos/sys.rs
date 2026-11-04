@@ -239,6 +239,69 @@ pub fn exec_path(pid: i32) -> Option<String> {
     Some(String::from_utf8_lossy(&rest[..end]).into_owned())
 }
 
+/// `getpeereid`: the effective uid of the process on the other end of a connected Unix socket (`mvpn serve`'s peer
+/// check). `None` if the kernel does not tell.
+pub fn peer_uid(s: &std::os::unix::net::UnixStream) -> Option<u32> {
+    use std::os::fd::AsRawFd;
+    let (mut uid, mut gid): (libc::uid_t, libc::gid_t) = (0, 0);
+    // SAFETY: a valid descriptor owned by `s` and two valid out-parameters, all for the duration of the call.
+    let rc = unsafe { libc::getpeereid(s.as_raw_fd(), &mut uid, &mut gid) };
+    (rc == 0).then_some(uid)
+}
+
+/// `poll` for input on one descriptor: `true` once it is readable (for a listening socket: a connection is
+/// waiting), `false` after `timeout` or on an error. A signal does not end the wait early: it goes on for the rest.
+pub fn wait_readable(fd: &impl std::os::fd::AsRawFd, timeout: std::time::Duration) -> bool {
+    let end = std::time::Instant::now() + timeout;
+    loop {
+        let left = end.saturating_duration_since(std::time::Instant::now());
+        let ms = libc::c_int::try_from(left.as_millis()).unwrap_or(libc::c_int::MAX);
+        let mut p = libc::pollfd { fd: fd.as_raw_fd(), events: libc::POLLIN, revents: 0 };
+        // SAFETY: one valid `pollfd` and its count, for the duration of the call.
+        let rc = unsafe { libc::poll(&mut p, 1, ms) };
+        if rc > 0 {
+            return p.revents & libc::POLLIN != 0;
+        }
+        if rc == 0 || std::io::Error::last_os_error().raw_os_error() != Some(libc::EINTR) {
+            return false;
+        }
+    }
+}
+
+// libSystem's launchd API (`<launch.h>`); no crate binds it.
+unsafe extern "C" {
+    fn launch_activate_socket(
+        name: *const libc::c_char,
+        fds: *mut *mut libc::c_int,
+        cnt: *mut libc::size_t,
+    ) -> libc::c_int;
+}
+
+/// `launch_activate_socket(name)`: the sockets launchd created for this job's `Sockets` entry `name` (socket
+/// activation), each now owned by the caller. `Err(errno)`: not started by launchd, or no such entry.
+pub fn launch_sockets(name: &str) -> Result<Vec<std::os::fd::OwnedFd>, i32> {
+    use std::os::fd::FromRawFd;
+    let cname = CString::new(name).map_err(|_| libc::EINVAL)?;
+    let mut fds: *mut libc::c_int = std::ptr::null_mut();
+    let mut cnt: libc::size_t = 0;
+    // SAFETY: a NUL-terminated name and two valid out-parameters for the duration of the call.
+    let rc = unsafe { launch_activate_socket(cname.as_ptr(), &mut fds, &mut cnt) };
+    if rc != 0 {
+        return Err(rc);
+    }
+    if fds.is_null() {
+        return Ok(Vec::new());
+    }
+    // SAFETY: on success `fds` is a malloc'd array of `cnt` descriptors that launchd hands over to this process;
+    // each is wrapped once (and so closed once), then the array itself is freed with `free`, as `launch.h` says.
+    let owned = unsafe {
+        let v = std::slice::from_raw_parts(fds, cnt).iter().map(|&fd| std::os::fd::OwnedFd::from_raw_fd(fd)).collect();
+        libc::free(fds.cast());
+        v
+    };
+    Ok(owned)
+}
+
 /// Children must not inherit mvpn's own open descriptors (sudo closes the app's, but mvpn's log files, pipes and
 /// lock files would otherwise reach openvpn, the bridge, the hook and the tools). Marks every descriptor from 3 up
 /// to `getdtablesize()` close-on-exec in the child, after its standard streams are set up, right before `exec`.

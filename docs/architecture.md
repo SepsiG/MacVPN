@@ -429,6 +429,24 @@ lookup is per OS: macOS keeps `getpeereid` + `LOCAL_PEERPID` + `proc_pidpath`; L
 `/proc/<pid>/exe` (a target ending in ` (deleted)` cannot pair). `SUN_PATH_LEN` is 104 on macOS and 108 on Linux.
 `#![cfg(unix)]`: empty on Windows. Every `unsafe` block is a direct libc call with a `SAFETY` comment.
 
+### The query daemon (root layer 13)
+
+macOS only. While a tunnel is up the app polls `status` (every 3 s, or 10 s while every active connection is
+connected and no window is shown: `app_core::app::CONNECTED_POLL_INTERVAL`, with the interface watcher
+`platform-mac::net_watch::INTERFACE_KEYS` waking the poller when a `utun` comes or goes), `liveness` every 30 s and
+strongSwan's `traffic`. Through `sudo -n` each was a new `sudo` and `mvpn` process with PAM, a group lookup and some
+30 unified-log lines. Root layer 13 answers these three read-only questions in `mvpn serve`
+(`crates/helper/src/macos/serve.rs`): a LaunchDaemon (`/Library/LaunchDaemons/local.macvpn.mvpn-query.plist`,
+written and bootstrapped by `platform-mac::root_installer`) whose socket launchd creates as
+`/var/run/macvpn-query.sock` (owner the installing user, group 0, mode 0600) and activates on demand; the daemon
+exits after 60 s idle. Per connection: `getpeereid` must be that user or root; one request line of at most 128 bytes
+within 2 s (`status`, `liveness <UUID>`, `traffic <UUID>`); the answer is `<exit code>\n<stdout>` from the same
+`answer()` functions the command line uses (status' DNS reconcile and log housekeeping included). The internal
+subcommand is refused through sudo. The app (`platform-mac::mvpn_client::query_socket`) asks the socket first and
+falls back to `sudo -n` on any failure (an older root layer, the daemon not loaded, a timeout, a malformed answer);
+everything that changes state stays on sudo. `mvpn-mgmt` reads its management stream with a 2 s timeout unless it
+waits for the user (250 ms then: `Bridge::with_wait_hook`).
+
 ### helper
 
 `crates/helper` (package `macvpn-helper`, binary `mvpn`: installed as `/usr/local/libexec/macvpn/mvpn` on macOS and
@@ -437,7 +455,8 @@ as `C:\Program Files\WinVPN\WinVPNService.exe` on Windows; root layer version in
 `mvpn liveness <id>` for dead-tunnel detection, see [Dead tunnels](#dead-tunnels-and-the-live-network-switch); 11 in
 2.0.4: `mvpn traffic <id>` and strongSwan's virtual IP in `mvpn status`, see [Live traffic](#live-traffic); 12 in
 2.0.7: an IKEv2 client certificate in the `up` frame and the key password, see [IKEv2 client
-certificates](#ikev2-client-certificates-root-layer-12)).
+certificates](#ikev2-client-certificates-root-layer-12); 13 in 2.1.6: the read-only query daemon, see [The query
+daemon](#the-query-daemon-root-layer-13)).
 
 - `src/shared/`: the logic every OS shares, with no `cfg`, no `unsafe` and no process or file I/O: the command
   line (`cli`), the framed stdin (`framing`), masking, the `respond` answer, the status JSON, the validation

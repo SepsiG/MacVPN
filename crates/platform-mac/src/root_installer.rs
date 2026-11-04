@@ -3,10 +3,13 @@
 //!
 //! Root layer 7 is a single binary: the installer copies `mvpn` and `VERSION`, and removes the files of the
 //! earlier layers (`ovpn-dns`, `mvpn-validate`, `mvpn-mgmt`); the uninstaller removes the whole directory.
+//!
+//! Root layer 13 adds the query daemon (`mvpn serve`, the read-only `status` / `liveness` / `traffic` without
+//! `sudo`): a LaunchDaemon ([`query_daemon_plist`]) whose socket launchd creates for the installing user only.
 
 use crate::brew::shell_quote;
 use crate::command::{CommandError, CommandRunner, ProcessCommandRunner};
-use crate::mvpn_client::{EXECUTABLE, INSTALL_DIR, LOG_DIR};
+use crate::mvpn_client::{EXECUTABLE, INSTALL_DIR, LOG_DIR, QUERY_SOCKET};
 use crate::temp_dir::MessageError;
 use macvpn_core::l10n::{self, AppLanguage, Arg};
 use macvpn_core::swift_str;
@@ -20,6 +23,88 @@ use std::sync::LazyLock;
 pub const ROOT_FILES: [&str; 2] = ["mvpn", "VERSION"];
 /// The executables of root layers 1–6, replaced by the single `mvpn`; the installer deletes them.
 pub const OBSOLETE_ROOT_FILES: [&str; 3] = ["ovpn-dns", "mvpn-validate", "mvpn-mgmt"];
+
+/// Where the system's LaunchDaemons are.
+pub const LAUNCH_DAEMONS: &str = "/Library/LaunchDaemons";
+/// `launchctl`.
+pub const LAUNCHCTL: &str = "/bin/launchctl";
+
+/// The query daemon's launchd label: `<bundle id>.mvpn-query` (`local.macvpn.mvpn-query`).
+pub fn query_label() -> String {
+    format!("{}.mvpn-query", macvpn_platform_api::MACVPN.app_id)
+}
+
+/// The query daemon's plist (root layer 13), `uid` the installing user's (a number; the installer passes its
+/// checked shell variable). launchd creates the socket [`QUERY_SOCKET`] owned by that user, group 0, mode 0600 (384),
+/// so only that user and root can connect; `mvpn serve` starts on the first connection and ends itself when idle
+/// (no `RunAtLoad`, no `KeepAlive`).
+pub fn query_daemon_plist(uid: &str) -> String {
+    let label = query_label();
+    format!(
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>{label}</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>{EXECUTABLE}</string>
+    <string>serve</string>
+    <string>--uid</string>
+    <string>{uid}</string>
+  </array>
+  <key>Sockets</key>
+  <dict>
+    <key>Listeners</key>
+    <dict>
+      <key>SockPathName</key>
+      <string>{QUERY_SOCKET}</string>
+      <key>SockPathMode</key>
+      <integer>384</integer>
+      <key>SockPathOwner</key>
+      <integer>{uid}</integer>
+      <key>SockPathGroup</key>
+      <integer>0</integer>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#
+    )
+}
+
+/// The installer's query daemon step (root layer 13), after the root files and sudoers are in place: the running
+/// daemon (an earlier install's) is booted out and its socket removed; then, if the user's uid is a plain number
+/// ≥ 501 and `/Library/LaunchDaemons` is a real root-owned directory not writable by others, the plist is written
+/// (root:wheel 0644, `install` replaces a symlink rather than following it) and bootstrapped. Otherwise, or if
+/// launchd refuses, there is no daemon and the app keeps asking through `sudo`: never a reason to fail the install.
+fn query_daemon_install(user: &str) -> String {
+    let label = query_label();
+    let plist = query_daemon_plist("$QUERY_UID");
+    let user_q = shell_quote(user);
+    format!(
+        r#"LAUNCHCTL={LAUNCHCTL}
+DAEMONS={LAUNCH_DAEMONS}
+QUERY_PLIST="$DAEMONS/{label}.plist"
+"$LAUNCHCTL" bootout system/{label} 2>/dev/null || true
+rm -f -- {QUERY_SOCKET}
+QUERY_UID=$(/usr/bin/id -u -- {user_q} 2>/dev/null || true)
+if [[ "$QUERY_UID" =~ ^[0-9]{{1,10}}$ ]] && [ "$QUERY_UID" -ge 501 ] && [ -d "$DAEMONS" ] && [ ! -L "$DAEMONS" ] && ! unsafe_dir "$DAEMONS"; then
+  cat > "$STAGE/query.plist" <<QUERY_PLIST_END
+{plist}QUERY_PLIST_END
+  install -o root -g wheel -m 644 "$STAGE/query.plist" "$QUERY_PLIST"
+  # Közvetlenül a bootout után a launchd még bonthatja a régi feladatot: néhány próbálkozás.
+  for _ in 1 2 3; do
+    "$LAUNCHCTL" bootstrap system "$QUERY_PLIST" 2>/dev/null && break
+    sleep 1
+  done
+else
+  rm -f -- "$QUERY_PLIST"
+fi
+"#
+    )
+}
 
 #[derive(Debug)]
 pub enum InstallError {
@@ -90,6 +175,7 @@ fn check_user(user: &str) -> Result<(), InstallError> {
 ///    if any fails, the install stops before anything is replaced.
 /// 4. The new files are installed, the files of the earlier layers are removed.
 /// 5. sudoers: checked with `visudo -c -f`, then put in place.
+/// 6. The query daemon (root layer 13, see `query_daemon_install`): booted out, then written and bootstrapped.
 pub fn install_script(
     source_dir: &Path,
     user: &str,
@@ -129,6 +215,7 @@ pub fn install_script(
     let mvpn = shell_quote(EXECUTABLE);
     let down_loop = down_loop(user);
     let marker = shell_quote(&disconnect_failure_marker());
+    let query_daemon = query_daemon_install(user);
     Ok(format!(
         r#"#!/bin/bash
 set -euo pipefail
@@ -184,7 +271,7 @@ TMP=$(mktemp "$STAGE/sudoers.XXXXXX")
 printf '%s\n' {sudoers} > "$TMP"
 visudo -c -f "$TMP"
 install -o root -g wheel -m 440 "$TMP" /etc/sudoers.d/macvpn
-"#
+{query_daemon}"#
     ))
 }
 
@@ -308,6 +395,7 @@ pub fn uninstall_script(user: &str) -> Result<String, InstallError> {
     let down_loop = down_loop(user);
     let marker = shell_quote(&disconnect_failure_marker());
     let ui_dir = crate::mvpn_client::UI_STATE_DIR;
+    let label = query_label();
     Ok(format!(
         r#"#!/bin/bash
 set -uo pipefail
@@ -315,6 +403,7 @@ MVPN={mvpn}
 RUN_BASE=/var/run/macvpn
 PPP_OPTIONS=/etc/ppp/options
 PPP_MARKER={INSTALL_DIR}/.created-ppp-options
+LAUNCHCTL={LAUNCHCTL}
 {down_loop}# Ha bármelyik kapcsolat nem bontható, a root réteg marad (a mvpn kell a későbbi bontáshoz).
 if [ -n "$FAILED" ]; then
   echo {marker}"$FAILED" >&2
@@ -324,6 +413,9 @@ fi
 if [ -f "$PPP_MARKER" ] && [ ! -L "$PPP_MARKER" ] && [ -f "$PPP_OPTIONS" ] && [ ! -L "$PPP_OPTIONS" ] && [ ! -s "$PPP_OPTIONS" ]; then
   /bin/rm -f "$PPP_OPTIONS"
 fi
+# A lekérdező démon (root réteg 13): leállítva, a plist és a socket törölve.
+"$LAUNCHCTL" bootout system/{label} 2>/dev/null
+/bin/rm -f {LAUNCH_DAEMONS}/{label}.plist {QUERY_SOCKET}
 /bin/rm -f /etc/sudoers.d/macvpn
 /bin/rm -rf {INSTALL_DIR} /var/run/macvpn {ui_dir} {LOG_DIR}
 "#

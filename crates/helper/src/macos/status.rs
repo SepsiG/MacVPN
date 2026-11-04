@@ -167,6 +167,13 @@ fn housekeep(s: &Settings, d: &Path, id: &str, kind: &str) {
     crate::macos::lock::release_try(&lock);
 }
 
+/// What `mvpn status` prints (its exit code is always 0): DNS held by a connection that no longer runs is restored
+/// first (skipped if the DNS ledger is busy), then [`render`]. Shared by the command line and `mvpn serve`.
+pub fn answer(s: &Settings) -> String {
+    crate::macos::dns::reconcile(s, false);
+    render(s)
+}
+
 /// `status_all`
 pub fn render(s: &Settings) -> String {
     let mut names: Vec<String> = std::fs::read_dir(&s.run_base)

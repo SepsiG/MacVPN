@@ -90,28 +90,34 @@ fn openvpn(run: &Path) -> Option<Liveness> {
     parse_tunnel(&fsx::read_private(&f, 64)?)
 }
 
-/// `mvpn liveness <id>` (the ID is the CLI's second positional).
-pub fn main(ctx: &Ctx) -> i32 {
-    let raw = ctx.kind.as_str();
-    let Some(id) = parse_uuid(raw).filter(|_| is_uuid(raw)).map(|u| uuid_string(&u)) else {
-        return ctx.die(crate::macos::ctx::tr("Invalid ID", &[])).0;
+/// The connection ID of `liveness` / `traffic` in the root layer's spelling (upper case), if `raw` is a UUID.
+pub fn canonical_id(raw: &str) -> Option<String> {
+    parse_uuid(raw).filter(|_| is_uuid(raw)).map(|u| uuid_string(&u))
+}
+
+/// What `mvpn liveness <id>` prints on stdout, with its exit code (the ID is the CLI's second positional). Shared
+/// by the command line and `mvpn serve` (see `serve`), so both answer exactly the same.
+pub fn answer(ctx: &Ctx) -> (i32, String) {
+    let Some(id) = canonical_id(&ctx.kind) else {
+        return (ctx.die(crate::macos::ctx::tr("Invalid ID", &[])).0, String::new());
     };
     let run = ctx.s.run_base.join(&id);
     if !is_dir(&run) || is_symlink(&run) {
-        return 1;
+        return (1, String::new());
     }
     let facts = match fsx::cat(&run.join("kind")).as_str() {
         "wireguard" => wireguard(ctx, &run),
         "openvpn" => openvpn(&run),
         _ => None,
     };
-    match facts {
-        Some(l) => {
-            crate::macos::out_raw(&l.encode());
-            0
-        }
-        None => 1,
-    }
+    facts.map_or((1, String::new()), |l| (0, l.encode()))
+}
+
+/// `mvpn liveness <id>`.
+pub fn main(ctx: &Ctx) -> i32 {
+    let (code, out) = answer(ctx);
+    crate::macos::out_raw(&out);
+    code
 }
 
 #[cfg(test)]

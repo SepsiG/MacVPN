@@ -14,6 +14,10 @@ use std::time::Duration;
 
 /// With an active (or connecting) connection every 3 s, otherwise every 30 s.
 pub const ACTIVE_POLL_INTERVAL: f64 = 3.0;
+/// Connected and settled, no window shown, and the platform reports a tunnel's interface going away at once (a
+/// drop wakes the poller): every 10 s. Each refresh asks the root layer (`sudo mvpn status` on macOS), so the
+/// slower pace saves most of the work of a long connected session; nothing visible waits for it.
+pub const CONNECTED_POLL_INTERVAL: f64 = 10.0;
 pub const IDLE_POLL_INTERVAL: f64 = 30.0;
 /// The poll fallback of the live system VPN list: without a (trusted) change watcher, every 5 s while a MacVPN
 /// window (the menu popover, Connections, System Status, Update) is open.
@@ -24,8 +28,11 @@ pub const WINDOW_POLL_INTERVAL: f64 = 5.0;
 pub const POLL_TICK: Duration = Duration::from_secs(5);
 
 /// `live`: a trusted watcher reports system VPN changes (the pace is then the same with a window open).
-pub fn poll_interval(has_active: bool, window_open: bool, live: bool) -> f64 {
-    if has_active {
+/// `quiet`: every active connection is connected and an interface watcher runs (see [`CONNECTED_POLL_INTERVAL`]).
+pub fn poll_interval(has_active: bool, window_open: bool, live: bool, quiet: bool) -> f64 {
+    if has_active && quiet && !window_open {
+        CONNECTED_POLL_INTERVAL
+    } else if has_active {
         ACTIVE_POLL_INTERVAL
     } else if window_open && !live {
         WINDOW_POLL_INTERVAL
@@ -94,13 +101,15 @@ impl Poller {
 
     /// The loop; returns when stopped. `tick` waits between two interval checks ([`Self::wait`] in the app) for
     /// the time it is given: what is left of the interval, at most [`POLL_TICK`].
-    /// `window_open` and `live` feed [`poll_interval`]'s poll fallback.
+    /// `window_open` and `live` feed [`poll_interval`]'s poll fallback, `quiet` its connected pace.
+    #[allow(clippy::too_many_arguments)]
     pub fn run(
         &self,
         refresh: impl Fn(),
         has_active: impl Fn() -> bool,
         window_open: impl Fn() -> bool,
         live: impl Fn() -> bool,
+        quiet: impl Fn() -> bool,
         clock: &dyn Clock,
         mut tick: impl FnMut(Duration) -> Tick,
     ) {
@@ -111,8 +120,8 @@ impl Poller {
                 if self.is_stopped() {
                     return;
                 }
-                let left =
-                    poll_interval(has_active(), window_open(), live()) - clock.now().time_interval_since(started);
+                let interval = poll_interval(has_active(), window_open(), live(), quiet());
+                let left = interval - clock.now().time_interval_since(started);
                 if left <= 0.0 {
                     break;
                 }

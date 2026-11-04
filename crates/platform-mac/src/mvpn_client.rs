@@ -1,4 +1,10 @@
 //! The app side of the root helper (port of `MvpnClient.swift`): `sudo -n /usr/local/libexec/macvpn/mvpn …`.
+//!
+//! Root layer 13: the read-only questions the app polls (`status`, `liveness`, `traffic`) go first to the root
+//! layer's query daemon (`mvpn serve`, socket-activated by launchd on [`QUERY_SOCKET`]), so a connected tunnel no
+//! longer costs a `sudo` process every few seconds. On any failure there (no socket: an older root layer or the
+//! daemon not loaded; a timeout; a malformed answer) the same question goes through `sudo -n` as before. Everything
+//! that changes state stays on `sudo`.
 
 use crate::command::{CommandError, CommandResult, CommandRunner};
 use macvpn_core::fsx::FileOwner;
@@ -8,6 +14,7 @@ use macvpn_core::models::{Secrets, VPNKind, uuid_string};
 use macvpn_core::status::{RootStatus, StatusParseError, parse_status};
 use macvpn_core::swift_str;
 use std::path::{Path, PathBuf};
+use std::time::Duration;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
@@ -84,6 +91,12 @@ pub const LOG_DIR: &str = "/var/log/macvpn";
 /// MFA: the root helper's state files (`<id>.json`, the user's, 0600). The same literal as the helper's
 /// `paths::UI_BASE` (`crates/helper/tests/paths_agree.rs`).
 pub const UI_STATE_DIR: &str = "/var/run/macvpn-ui";
+/// Root layer 13: the query daemon's socket (launchd's, the installing user's 0600; see the installer).
+pub const QUERY_SOCKET: &str = "/var/run/macvpn-query.sock";
+/// The query daemon's connection: each read and write must finish within this.
+pub const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
+/// The longest answer read from the query daemon (the status of every connection fits many times over).
+pub const QUERY_ANSWER_MAX: u64 = 1 << 20;
 
 pub struct MvpnClient<'a> {
     /// `down` (and by default everything else).
@@ -94,11 +107,14 @@ pub struct MvpnClient<'a> {
     status_runner: &'a dyn CommandRunner,
     /// The language of `mvpn`'s messages. `None`: [`AppLanguage::current`] per call.
     language: Option<AppLanguage>,
+    /// The query daemon's socket for `status`, `liveness` and `traffic` ([`MvpnClient::with_query_socket`]).
+    /// `None` (the default, so tests with a fake runner never reach a real socket): always `sudo`.
+    query_socket: Option<PathBuf>,
 }
 
 impl<'a> MvpnClient<'a> {
     pub fn new(runner: &'a dyn CommandRunner) -> Self {
-        MvpnClient { runner, up_runner: runner, status_runner: runner, language: None }
+        MvpnClient { runner, up_runner: runner, status_runner: runner, language: None, query_socket: None }
     }
 
     pub fn with_runners(
@@ -112,6 +128,28 @@ impl<'a> MvpnClient<'a> {
             up_runner: up_runner.unwrap_or(runner),
             status_runner: status_runner.unwrap_or(runner),
             language,
+            query_socket: None,
+        }
+    }
+
+    /// Asks `status`, `liveness` and `traffic` on the query daemon's `socket` first (the app: [`QUERY_SOCKET`]),
+    /// falling back to `sudo` on any failure there.
+    pub fn with_query_socket(mut self, socket: Option<&Path>) -> Self {
+        self.query_socket = socket.map(Path::to_path_buf);
+        self
+    }
+
+    /// The query daemon's answer to `request` as the command line's result (its exit code and stdout; it has no
+    /// stderr). `None`: no daemon is configured, or it did not give a well-formed answer in time.
+    fn query(&self, request: &str) -> Option<CommandResult> {
+        query_socket(self.query_socket.as_deref()?, request)
+    }
+
+    /// `request` on the query daemon, else through `sudo` with the quick runner.
+    fn read_only(&self, args: &[String]) -> Result<CommandResult, ClientError> {
+        match self.query(&args.join(" ")) {
+            Some(result) => Ok(result),
+            None => self.sudo(args, None, Some(self.status_runner)),
         }
     }
 
@@ -189,7 +227,7 @@ impl<'a> MvpnClient<'a> {
     /// root layer (its usage error) or an answer of another form: nothing is decided then.
     pub fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
         let args = vec![macvpn_core::liveness::LIVENESS.to_string(), uuid_string(id)];
-        let result = self.sudo(&args, None, Some(self.status_runner)).ok()?;
+        let result = self.read_only(&args).ok()?;
         if result.exit_code != 0 {
             return None;
         }
@@ -200,7 +238,7 @@ impl<'a> MvpnClient<'a> {
     /// failure, also from an older root layer (its usage error) or an answer of another form: no traffic is shown.
     pub fn traffic(&self, id: &Uuid) -> Option<Vec<macvpn_core::traffic::ChildCount>> {
         let args = vec![macvpn_core::traffic::TRAFFIC.to_string(), uuid_string(id)];
-        let result = self.sudo(&args, None, Some(self.status_runner)).ok()?;
+        let result = self.read_only(&args).ok()?;
         if result.exit_code != 0 {
             return None;
         }
@@ -208,7 +246,7 @@ impl<'a> MvpnClient<'a> {
     }
 
     pub fn status(&self) -> Result<Vec<RootStatus>, ClientError> {
-        let result = self.sudo(&["status".to_string()], None, Some(self.status_runner))?;
+        let result = self.read_only(&["status".to_string()])?;
         let stdout = result.stdout.clone();
         check(result)?;
         parse_status(&stdout).map_err(ClientError::Status)
@@ -225,4 +263,37 @@ fn check(result: CommandResult) -> Result<(), ClientError> {
     } else {
         message.to_string()
     })))
+}
+
+/// One question to the query daemon on `socket` (`<request>\n`), its answer as the command line's result: connect,
+/// write, read to the end, each read and write within [`QUERY_TIMEOUT`], at most [`QUERY_ANSWER_MAX`] bytes. `None`
+/// on any failure (the caller then asks through `sudo`).
+pub fn query_socket(socket: &Path, request: &str) -> Option<CommandResult> {
+    use std::io::{Read, Write};
+    // A Unix socket connects (to launchd's listening socket) or fails at once; nothing to time out here.
+    let mut stream = std::os::unix::net::UnixStream::connect(socket).ok()?;
+    stream.set_read_timeout(Some(QUERY_TIMEOUT)).ok()?;
+    stream.set_write_timeout(Some(QUERY_TIMEOUT)).ok()?;
+    stream.write_all(format!("{request}\n").as_bytes()).ok()?;
+    let mut answer = Vec::new();
+    (&mut stream).take(QUERY_ANSWER_MAX + 1).read_to_end(&mut answer).ok()?;
+    if answer.len() as u64 > QUERY_ANSWER_MAX {
+        return None;
+    }
+    parse_query_answer(&answer)
+}
+
+/// The query daemon's answer, `<exit code>\n<stdout>`: the exit code 1–3 decimal digits (no sign, no leading zero),
+/// the stdout UTF-8. `None` for anything else (an empty answer: the daemon refused or went away).
+pub fn parse_query_answer(answer: &[u8]) -> Option<CommandResult> {
+    let newline = answer.iter().position(|&b| b == b'\n')?;
+    let (code, stdout) = (&answer[..newline], &answer[newline + 1..]);
+    let digits =
+        (1..=3).contains(&code.len()) && code.iter().all(u8::is_ascii_digit) && (code.len() == 1 || code[0] != b'0');
+    if !digits {
+        return None;
+    }
+    let exit_code = std::str::from_utf8(code).ok()?.parse().ok()?;
+    let stdout = String::from_utf8(stdout.to_vec()).ok()?;
+    Some(CommandResult { exit_code, stdout, stderr: String::new() })
 }

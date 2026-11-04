@@ -406,6 +406,25 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                 .name("macvpn-poll".into())
                 .spawn(move || {
                     let manager = state.manager.clone();
+                    // A network interface coming or going (a tunnel's `utun` among them) wakes the poller: a drop is
+                    // seen at once, so the poller may slow down while everything is connected and no window is
+                    // shown (`CONNECTED_POLL_INTERVAL`). Kept for the thread's life; none in the sandbox or where
+                    // the platform has no such watcher (the fast pace stays).
+                    let interfaces = if state.env.sandbox {
+                        None
+                    } else {
+                        let woken = state.clone();
+                        platform::get()
+                            .network()
+                            .watch_interfaces(Box::new(move || woken.poller.wake()))
+                            .unwrap_or_else(|e| {
+                                eprintln!(
+                                    "MacVPN: the interface watcher did not start ({e}); polling at the fast pace"
+                                );
+                                None
+                            })
+                    };
+                    let watched = interfaces.is_some();
                     state.poller.run(
                         || {
                             manager.refresh();
@@ -415,6 +434,7 @@ fn run_late_launch_step(app: &AppHandle, state: &Arc<AppState>, step: LaunchStep
                         || manager.has_active(),
                         window_open,
                         || state.live_trusted.load(Ordering::SeqCst),
+                        || watched && manager.active_settled(),
                         &SystemClock,
                         |wait| state.poller.wait(wait),
                     );

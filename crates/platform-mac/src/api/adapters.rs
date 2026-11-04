@@ -38,7 +38,8 @@ use zeroize::Zeroizing;
 
 // MARK: - The root layer and the native VPNs
 
-/// `sudo -n mvpn …` with the Swift app's time limits: `up` long, `status` / `respond` quick, the rest standard.
+/// `sudo -n mvpn …` with the Swift app's time limits: `up` long, `status` / `respond` quick, the rest standard;
+/// `status`, `liveness` and `traffic` first on the root layer's query daemon (root layer 13, see `mvpn_client`).
 pub struct Helper {
     standard: ProcessCommandRunner,
     up: ProcessCommandRunner,
@@ -59,6 +60,7 @@ impl Helper {
 
     fn client(&self) -> MvpnClient<'_> {
         MvpnClient::with_runners(&self.standard, Some(&self.up), Some(&self.quick), None)
+            .with_query_socket(Some(Path::new(crate::mvpn_client::QUERY_SOCKET)))
     }
 }
 
@@ -105,13 +107,13 @@ impl HelperClient for Helper {
         crate::mvpn_client::clear_log_in(Path::new(crate::mvpn_client::LOG_DIR), id, &owner, note)
     }
 
-    /// `sudo -n mvpn liveness <id>` (root layer 10).
+    /// `mvpn liveness <id>` (root layer 10), through the query daemon or `sudo -n`.
     fn liveness(&self, id: &Uuid) -> Option<macvpn_core::liveness::Liveness> {
         self.client().liveness(id)
     }
 
     /// OpenVPN, WireGuard, SSTP: the reported interface's counters (`utun` / `ppp`), read as the user. strongSwan
-    /// (no interface): `sudo -n mvpn traffic <id>` (root layer 11), its CHILD_SAs summed so a rekey never lowers the
+    /// (no interface): `mvpn traffic <id>` (root layer 11; the query daemon or `sudo -n`), its CHILD_SAs summed so a rekey never lowers the
     /// totals; an older root layer gives no data.
     fn traffic(&self, tunnel: &macvpn_platform_api::HelperTunnel<'_>) -> Option<macvpn_platform_api::TrafficReading> {
         if tunnel.kind != VPNKind::Strongswan {

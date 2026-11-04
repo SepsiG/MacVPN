@@ -11,7 +11,8 @@ use macvpn_platform_mac::brew::shell_quote;
 use macvpn_platform_mac::command::CommandResult;
 use macvpn_platform_mac::root_installer::{
     OBSOLETE_ROOT_FILES, ROOT_FILES, ROOT_INSTALL_TIMEOUT, ROOT_SHELL, apple_script, file_hashes, install_script,
-    install_with, root_install_runner, sudoers_lines, uninstall_script, uninstall_with, untrusted_mvpn_message,
+    install_with, query_daemon_plist, query_label, root_install_runner, sudoers_lines, uninstall_script,
+    uninstall_with, untrusted_mvpn_message,
 };
 use macvpn_platform_mac::testing::{FixedRunner, MockCommandRunner};
 use std::collections::BTreeMap;
@@ -47,6 +48,14 @@ fn script_contents() {
     assert!(s.contains("rm -f -- \"$DIR/ovpn-dns\" \"$DIR/mvpn-validate\" \"$DIR/mvpn-mgmt\"\n"));
     assert!(s.contains("visudo -c -f"));
     assert!(s.contains("install -o root -g wheel -m 440"));
+    // Root layer 13: the query daemon, after sudoers; its uid checked, its plist root:wheel 0644.
+    assert!(s.contains("\"$LAUNCHCTL\" bootout system/local.macvpn.mvpn-query 2>/dev/null || true\n"));
+    assert!(s.contains("QUERY_UID=$(/usr/bin/id -u -- 'alice' 2>/dev/null || true)\n"));
+    assert!(s.contains(r#"[[ "$QUERY_UID" =~ ^[0-9]{1,10}$ ]] && [ "$QUERY_UID" -ge 501 ]"#));
+    assert!(s.contains("install -o root -g wheel -m 644 \"$STAGE/query.plist\" \"$QUERY_PLIST\""));
+    assert!(s.contains("\"$LAUNCHCTL\" bootstrap system \"$QUERY_PLIST\""));
+    assert!(s.contains(&query_daemon_plist("$QUERY_UID")));
+    assert!(s.find("/etc/sudoers.d/macvpn").unwrap() < s.find("bootstrap system").unwrap());
     assert!(s.starts_with("#!/bin/bash\nset -euo pipefail\n"));
     assert!(s.contains("shasum -a 256"));
     // Every file is verified before anything is installed.
@@ -149,11 +158,64 @@ fn run_install_sandbox_full(
     old: Option<OldLayer>,
     via_osascript: bool,
 ) -> (i32, String, Scratch) {
+    run_install_sandbox_query(tamper, parent, old, via_osascript, QueryCase::Normal)
+}
+
+/// The query daemon's surroundings in the install sandbox.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum QueryCase {
+    /// The user's uid (the testing user's), a safe `Library/LaunchDaemons`.
+    Normal,
+    /// The user is not found (`id -u` fails); an earlier plist is there.
+    NoUser,
+    /// `Library/LaunchDaemons` is a symlink.
+    SymlinkDaemons,
+}
+
+/// A fake `launchctl` in the sandbox: records its arguments in `launchctl-calls` and prints `LAUNCHCTL <args>`.
+fn fake_launchctl(root: &Scratch) -> String {
+    let path = root.join("launchctl");
+    std::fs::write(
+        &path,
+        format!(
+            "#!/bin/bash\necho \"LAUNCHCTL $*\"\necho \"$*\" >> {}\n",
+            shell_quote(&root.join("launchctl-calls").to_string_lossy())
+        ),
+    )
+    .unwrap();
+    chmod(&path, 0o755);
+    shell_quote(&path.to_string_lossy())
+}
+
+fn launchctl_calls(root: &Scratch) -> Vec<String> {
+    std::fs::read_to_string(root.join("launchctl-calls")).unwrap_or_default().lines().map(str::to_string).collect()
+}
+
+fn run_install_sandbox_query(
+    tamper: bool,
+    parent: ParentState,
+    old: Option<OldLayer>,
+    via_osascript: bool,
+    query: QueryCase,
+) -> (i32, String, Scratch) {
     let src = make_root_source();
     let root = Scratch::new("macvpn-install");
     for d in ["usr", "var/run", "var/log", "etc/sudoers.d"] {
         std::fs::create_dir_all(root.join(d)).unwrap();
     }
+    let daemons = root.join("Library/LaunchDaemons");
+    if query == QueryCase::SymlinkDaemons {
+        std::fs::create_dir_all(root.join("Library/elsewhere")).unwrap();
+        std::os::unix::fs::symlink(root.join("Library/elsewhere"), &daemons).unwrap();
+    } else {
+        std::fs::create_dir_all(&daemons).unwrap();
+        chmod(&daemons, 0o755);
+    }
+    if query == QueryCase::NoUser {
+        std::fs::write(daemons.join(format!("{}.plist", query_label())), "old").unwrap();
+    }
+    let launchctl = fake_launchctl(&root);
+    let id_u = if query == QueryCase::NoUser { "/usr/bin/false" } else { "/usr/bin/id -u" };
     let local = root.join("usr/local");
     if parent == ParentState::Symlink {
         std::os::unix::fs::symlink(std::env::temp_dir(), &local).unwrap();
@@ -208,6 +270,9 @@ fn run_install_sandbox_full(
         .replace("/var/run/", &format!("{r}/var/run/"))
         .replace("/var/log/", &format!("{r}/var/log/"))
         .replace("/etc/sudoers.d/", &format!("{r}/etc/sudoers.d/"))
+        .replace("LAUNCHCTL=/bin/launchctl", &format!("LAUNCHCTL={launchctl}"))
+        .replace("DAEMONS=/Library/LaunchDaemons", &format!("DAEMONS={r}/Library/LaunchDaemons"))
+        .replace("/usr/bin/id -u -- 'bob'", id_u)
         .replace(r#"[ "$(stat -f %u "$1")" != 0 ]"#, &format!(r#"[ "$(stat -f %u "$1")" != {uid} ]"#))
         .replace(MVPN_OWNER_CHECK, &MVPN_OWNER_CHECK.replace("!= 0", &format!("!= {uid}")));
     if via_osascript {
@@ -245,6 +310,55 @@ fn install_sandbox_verifies_and_installs() {
         .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
         .collect();
     assert!(!leftovers.iter().any(|n| n.starts_with("macvpn-install.")), "{leftovers:?}");
+    // Root layer 13: the query daemon's plist (0644) for the user's uid, booted out and bootstrapped.
+    let plist_path = root.join(&format!("Library/LaunchDaemons/{}.plist", query_label()));
+    assert_eq!(mode(&plist_path), 0o644);
+    let plist = plist::Value::from_file(&plist_path).unwrap();
+    let plist = plist.as_dictionary().unwrap();
+    assert_eq!(plist["Label"].as_string(), Some("local.macvpn.mvpn-query"));
+    let args: Vec<&str> =
+        plist["ProgramArguments"].as_array().unwrap().iter().map(|v| v.as_string().unwrap()).collect();
+    let uid = getuid().to_string();
+    // (The sandbox's /usr/local.)
+    let mvpn = dir.join("mvpn").display().to_string();
+    assert_eq!(args, [mvpn.as_str(), "serve", "--uid", uid.as_str()]);
+    let sock = plist["Sockets"].as_dictionary().unwrap()["Listeners"].as_dictionary().unwrap();
+    assert_eq!(sock["SockPathOwner"].as_signed_integer(), Some(i64::from(getuid())));
+    assert_eq!(sock["SockPathGroup"].as_signed_integer(), Some(0));
+    assert_eq!(sock["SockPathMode"].as_signed_integer(), Some(0o600));
+    assert!(plist.get("RunAtLoad").is_none() && plist.get("KeepAlive").is_none());
+    assert_eq!(
+        launchctl_calls(&root),
+        ["bootout system/local.macvpn.mvpn-query".to_string(), format!("bootstrap system {}", plist_path.display())]
+    );
+}
+
+/// No uid for the user, or `/Library/LaunchDaemons` not a real root directory: no daemon (an earlier plist is
+/// removed), the install still succeeds and the app keeps asking through `sudo`.
+#[test]
+fn install_without_a_safe_query_daemon_still_succeeds() {
+    lang(AppLanguage::En);
+    for case in [QueryCase::NoUser, QueryCase::SymlinkDaemons] {
+        let (status, output, root) = run_install_sandbox_query(false, ParentState::Safe, None, false, case);
+        assert_eq!(status, 0, "{case:?}: {output}");
+        assert!(root.join("usr/local/libexec/macvpn/mvpn").exists(), "{case:?}");
+        assert!(!root.join(&format!("Library/LaunchDaemons/{}.plist", query_label())).exists(), "{case:?}");
+        assert!(!root.join(&format!("Library/elsewhere/{}.plist", query_label())).exists(), "{case:?}");
+        assert_eq!(launchctl_calls(&root), ["bootout system/local.macvpn.mvpn-query"], "{case:?}");
+    }
+}
+
+/// The query daemon's plist is well-formed and asks for the socket the app connects to.
+#[test]
+fn query_daemon_plist_is_valid() {
+    let dir = Scratch::new("macvpn-query-plist");
+    let path = dir.join("q.plist");
+    std::fs::write(&path, query_daemon_plist("501")).unwrap();
+    let out = Command::new("/usr/bin/plutil").arg("-lint").arg(&path).output().unwrap();
+    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stdout));
+    assert!(query_daemon_plist("501").contains("<string>/var/run/macvpn-query.sock</string>"));
+    assert_eq!(macvpn_platform_mac::mvpn_client::QUERY_SOCKET, "/var/run/macvpn-query.sock");
+    assert_eq!(query_label(), format!("{}.mvpn-query", macvpn_platform_api::MACVPN.app_id));
 }
 
 fn macvpn_platform_mac_is_executable(p: &Path) -> bool {
@@ -663,6 +777,7 @@ fn run_uninstall_sandbox_with(
         .replace("RUN_BASE=/var/run/macvpn", &format!("RUN_BASE={}", q(&run)))
         .replace("PPP_OPTIONS=/etc/ppp/options", &format!("PPP_OPTIONS={}", q(&ppp_options)))
         .replace("PPP_MARKER=/usr/local/libexec/macvpn/.created-ppp-options", &format!("PPP_MARKER={}", q(&marker)))
+        .replace("LAUNCHCTL=/bin/launchctl", &format!("LAUNCHCTL={}", fake_launchctl(&root)))
         .replace("/bin/rm", "echo RM");
     let path = root.join("u.sh");
     std::fs::write(&path, script).unwrap();
@@ -690,6 +805,13 @@ fn uninstall_sandbox_success() {
         output.contains("RM -rf /usr/local/libexec/macvpn /var/run/macvpn /var/run/macvpn-ui /var/log/macvpn"),
         "{output}"
     );
+    // Root layer 13: the query daemon is booted out, its plist and socket removed.
+    assert!(output.contains("LAUNCHCTL bootout system/local.macvpn.mvpn-query\n"), "{output}");
+    assert!(
+        output.contains("RM -f /Library/LaunchDaemons/local.macvpn.mvpn-query.plist /var/run/macvpn-query.sock\n"),
+        "{output}"
+    );
+    assert!(output.find("LAUNCHCTL bootout").unwrap() < output.find("RM -rf /usr/local/libexec/macvpn").unwrap());
 }
 
 /// /etc/ppp/options is deleted only with mvpn's marker, and only when empty.
@@ -719,6 +841,7 @@ fn uninstall_sandbox_failed_down_keeps_root_layer() {
     assert_eq!(calls.len(), 2);
     assert!(output.contains("Nem bontható kapcsolat: AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"), "{output}");
     assert!(!output.contains("RM"), "{output}");
+    assert!(!output.contains("LAUNCHCTL"), "the query daemon stays with the root layer: {output}");
 }
 
 #[test]

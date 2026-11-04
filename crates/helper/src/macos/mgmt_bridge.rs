@@ -204,6 +204,18 @@ fn connect(a: &BridgeArgs, is_root: bool) -> Option<UnixStream> {
     None
 }
 
+/// The management socket's read timeout while the bridge waits for the user (a prompt or a deadline is pending):
+/// the app's answer file (`mvpn respond`) and the deadline are polled at this pace.
+const WAITING_READ_TIMEOUT: Duration = Duration::from_millis(250);
+/// The read timeout otherwise, for the whole life of the tunnel: only OpenVPN's own lines matter then (they end a
+/// read at once); the run directory's trust and the 30 s housekeeping are checked at this pace. Fewer wake-ups.
+const IDLE_READ_TIMEOUT: Duration = Duration::from_secs(2);
+
+/// The bridge's idle hook ([`crate::shared::bridge::WaitHook`]) for the management socket.
+fn read_timeout(sock: &mut UnixStream, waiting: bool) {
+    let _ = sock.set_read_timeout(Some(if waiting { WAITING_READ_TIMEOUT } else { IDLE_READ_TIMEOUT }));
+}
+
 /// `mvpn-mgmt …` / `mvpn mgmt-bridge …`; returns the exit code.
 pub fn main(argv: &[String]) -> i32 {
     let fail = |s: &str| {
@@ -223,9 +235,10 @@ pub fn main(argv: &[String]) -> i32 {
     let _ = std::fs::remove_file(&creds_path);
     let Some(sock) = connect(&a, is_root) else { return fail("the management socket did not appear") };
     log("connected");
-    let _ = sock.set_read_timeout(Some(Duration::from_millis(250)));
+    let mut sock = sock;
+    read_timeout(&mut sock, false);
     let files = RootFiles { run: a.run.clone(), ui: a.ui.clone(), uid: a.uid, gid: a.gid, is_root, temp_counter: 0 };
-    Bridge::new(a, sock, files, creds).run();
+    Bridge::new(a, sock, files, creds).with_wait_hook(read_timeout).run();
     log("management connection closed");
     0
 }
@@ -233,6 +246,17 @@ pub fn main(argv: &[String]) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_read_timeout_is_short_only_while_waiting_for_the_user() {
+        let (mut sock, _peer) = UnixStream::pair().unwrap();
+        read_timeout(&mut sock, false);
+        assert_eq!(sock.read_timeout().unwrap(), Some(Duration::from_secs(2)));
+        read_timeout(&mut sock, true);
+        assert_eq!(sock.read_timeout().unwrap(), Some(Duration::from_millis(250)));
+        read_timeout(&mut sock, false);
+        assert_eq!(sock.read_timeout().unwrap(), Some(Duration::from_secs(2)));
+    }
 
     #[test]
     fn trusted_directories() {

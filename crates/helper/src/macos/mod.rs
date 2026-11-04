@@ -11,6 +11,8 @@
 //! mvpn dns-reconcile           (only that)
 //! mvpn liveness <id>           (root layer 10: the tunnel's liveness facts for dead-tunnel detection, see `liveness`)
 //! mvpn traffic <id>            (root layer 11: a strongSwan connection's CHILD_SA byte counters, see `traffic`)
+//! mvpn serve --uid <uid>       (root layer 13: status / liveness / traffic over launchd's socket, see `serve`;
+//!                               internal, launchd only)
 //! mvpn version
 //!   any of them: --lang <en|hu>
 //! mvpn validate …              (the old mvpn-validate, see `validate`; the config on stdin, no secrets)
@@ -78,6 +80,7 @@ mod paths;
 mod procs;
 mod respond;
 mod run_dir;
+mod serve;
 mod sstp;
 mod status;
 mod strongswan;
@@ -157,6 +160,18 @@ pub fn main() -> i32 {
             }
             return validate::main(&rest[1..]);
         }
+        Some("serve") => {
+            if refuse_via_sudo() {
+                return 2;
+            }
+            return serve::main(&rest[1..]);
+        }
+        Some("__serve-on") => {
+            if sys::geteuid() == 0 {
+                return 2;
+            }
+            return serve::test_main(&rest[1..]);
+        }
         Some("mask-stream") => {
             if refuse_via_sudo() {
                 return 2;
@@ -179,8 +194,7 @@ pub fn main() -> i32 {
         "status" => {
             // The app asks for the status at start (also after a reboot) and on every refresh: DNS held by a
             // connection that no longer runs is restored here (skipped if the DNS ledger is busy).
-            dns::reconcile(&ctx.s, false);
-            out_raw(&status::render(&ctx.s));
+            out_raw(&status::answer(&ctx.s));
             0
         }
         "dns-reconcile" => {
@@ -252,7 +266,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_12() {
-        assert_eq!(VERSION.trim(), "12");
+    fn version_is_13() {
+        assert_eq!(VERSION.trim(), "13");
     }
 }

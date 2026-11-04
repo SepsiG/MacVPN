@@ -399,4 +399,11 @@ impl NetworkProbe for MacNetwork {
         }
         net_watch::NetworkWatcher::start(on_change).map(|watcher| Box::new(watcher) as Box<dyn Send>)
     }
+
+    fn watch_interfaces(&self, on_change: Box<dyn Fn() + Send>) -> io::Result<Option<Box<dyn Send>>> {
+        if self.sandbox {
+            return Ok(None);
+        }
+        net_watch::NetworkWatcher::start_interfaces(on_change).map(|watcher| Some(Box::new(watcher) as Box<dyn Send>))
+    }
 }

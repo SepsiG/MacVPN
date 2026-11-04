@@ -139,6 +139,12 @@ pub trait BridgeFiles {
 /// How often the bridge calls [`BridgeFiles::housekeeping`].
 pub const HOUSEKEEPING_SECS: f64 = 30.0;
 
+/// The optional idle hook of the management stream ([`Bridge::with_wait_hook`]): called with `true` when the
+/// bridge starts waiting for the user's answer (a prompt or a deadline is pending: the app's answer file must be
+/// picked up quickly) and with `false` when it stops (only OpenVPN's own lines matter: the loop may sleep longer).
+/// The macOS backend switches the socket's read timeout with it; without a hook the stream keeps its own.
+pub type WaitHook<S> = fn(&mut S, bool);
+
 /// The bridge's state machine over the management stream `S`.
 pub struct Bridge<S: Read + Write, F: BridgeFiles> {
     a: BridgeArgs,
@@ -161,6 +167,9 @@ pub struct Bridge<S: Read + Write, F: BridgeFiles> {
     was_connected: bool,
     /// OpenVPN restarts the tunnel itself (reported once per restart).
     reconnecting: bool,
+    /// The stream's idle hook, and what it was last told.
+    wait_hook: Option<WaitHook<S>>,
+    told_waiting: Option<bool>,
 }
 
 impl<S: Read + Write, F: BridgeFiles> Drop for Bridge<S, F> {
@@ -194,6 +203,32 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             last_housekeeping: now(),
             was_connected: false,
             reconnecting: false,
+            wait_hook: None,
+            told_waiting: None,
+        }
+    }
+
+    /// Sets the stream's idle hook ([`WaitHook`]); the bridge calls it at the start and whenever
+    /// [`Bridge::waiting`] changes.
+    pub fn with_wait_hook(mut self, hook: WaitHook<S>) -> Self {
+        self.wait_hook = Some(hook);
+        self
+    }
+
+    /// The bridge waits for the user (a prompt is shown) or for a pending deadline (after the answer, until
+    /// CONNECTED): the app's answer (also a cancel) and the deadline are polled at the stream's short timeout then.
+    fn waiting(&self) -> bool {
+        !self.finished && (self.awaiting_user || self.deadline.is_some())
+    }
+
+    /// Tells the stream's idle hook when [`Bridge::waiting`] changed.
+    fn tell_wait_hook(&mut self) {
+        let waiting = self.waiting();
+        if let Some(hook) = self.wait_hook
+            && self.told_waiting != Some(waiting)
+        {
+            self.told_waiting = Some(waiting);
+            hook(&mut self.sock, waiting);
         }
     }
 
@@ -510,10 +545,12 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
 
 impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
     /// The bridge's loop: `state on`, then every management line, the app's answers and the deadline, until the
-    /// stream ends or the run directory is no longer safe. The backend sets a short read timeout on the stream
-    /// (`WouldBlock` / `TimedOut` only poll the answers and the deadline).
+    /// stream ends or the run directory is no longer safe. The backend sets a read timeout on the stream, short at
+    /// least while the bridge waits for the user (the idle hook, [`Bridge::with_wait_hook`]); `WouldBlock` /
+    /// `TimedOut` only poll the answers and the deadline.
     pub fn run(&mut self) {
         let _ = self.send(&ManagementCommand::StateOn);
+        self.tell_wait_hook();
         let mut buffer: Vec<u8> = Vec::new();
         let mut skipping = false;
         let mut chunk = [0u8; 4096];
@@ -566,6 +603,7 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
                 self.last_housekeeping = t;
                 self.files.housekeeping();
             }
+            self.tell_wait_hook();
         }
     }
 }
@@ -640,6 +678,8 @@ mod tests {
     struct Duplex {
         reads: std::collections::VecDeque<&'static str>,
         written: Vec<u8>,
+        /// What the idle hook was told, in order.
+        waits: Vec<bool>,
     }
 
     impl Read for Duplex {
@@ -715,7 +755,7 @@ mod tests {
         creds: (&str, &str, bool),
     ) -> (String, Files) {
         let a = BridgeArgs { id: ID.into(), run: "/run".into(), ui: "/ui".into(), uid: 501, gid: 20, max_wait: 420.0 };
-        let sock = Duplex { reads: reads.iter().copied().collect(), written: Vec::new() };
+        let sock = Duplex { reads: reads.iter().copied().collect(), written: Vec::new(), waits: Vec::new() };
         let files = Files { answers: answers.iter().copied().collect(), ..Files::default() };
         let creds = ManagementCredentials { username: creds.0.into(), password: creds.1.into(), packed: creds.2 };
         let mut b = Bridge::new(a, sock, files, Some(creds));
@@ -864,5 +904,35 @@ mod tests {
         assert_eq!(statuses(&f), ["wait", "cancelled"]);
         assert!(f.ui.last().unwrap().1.contains("\"cancelled\""), "{}", f.ui.last().unwrap().1);
         assert_eq!(f.stopped, 1);
+    }
+
+    /// The idle hook: told `false` at the start, `true` once a prompt is shown (until CONNECTED, also while the
+    /// answer is being checked), `false` again after CONNECTED; a final failure ends the waiting too.
+    #[test]
+    fn the_idle_hook_follows_the_wait_for_the_user() {
+        let a = BridgeArgs { id: ID.into(), run: "/run".into(), ui: "/ui".into(), uid: 501, gid: 20, max_wait: 420.0 };
+        let run = |reads: &[&'static str], answers: &[Option<&'static str>]| {
+            let sock = Duplex { reads: reads.iter().copied().collect(), written: Vec::new(), waits: Vec::new() };
+            let files = Files { answers: answers.iter().copied().collect(), ..Files::default() };
+            let creds = ManagementCredentials { username: "alice".into(), password: "pw".into(), packed: false };
+            let mut b =
+                Bridge::new(a.clone(), sock, files, Some(creds)).with_wait_hook(|s: &mut Duplex, w| s.waits.push(w));
+            b.run();
+            std::mem::take(&mut b.sock.waits)
+        };
+        let waits = run(
+            &[">PASSWORD:Need 'Auth' username/password SC:1,Enter the code\n", "", "", CONNECTED, ""],
+            &[None, Some("kind=static\nresponse=654321\n")],
+        );
+        assert_eq!(waits, [false, true, false]);
+        let waits = run(
+            &[">INFOMSG:WEB_AUTH::https://login.example.com/auth\n", ""],
+            &[None, Some("kind=cancel\nresponse=\n")],
+        );
+        assert_eq!(waits, [false, true, false]);
+        assert_eq!(run(&[">HOLD:Waiting for hold release:0\n", CONNECTED], &[]), [false]);
+        // Without a hook nothing is told (the Windows service's streams keep their own timeouts).
+        let (written, _) = exchange(&[CONNECTED], &[], ("alice", "pw", false));
+        assert_eq!(written, "state on\n");
     }
 }

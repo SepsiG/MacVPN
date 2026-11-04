@@ -156,7 +156,7 @@ fn poll_interval_table() {
         ((false, false, false), 30.0),
     ];
     for ((active, window, live), seconds) in table {
-        assert_eq!(poll_interval(active, window, live), seconds, "{active} {window} {live}");
+        assert_eq!(poll_interval(active, window, live, false), seconds, "{active} {window} {live}");
     }
 }
 
@@ -171,6 +171,7 @@ fn poller_without_a_watcher_polls_every_5_seconds_while_a_window_is_open() {
         || refreshes.borrow_mut().push(now()),
         || false,
         || now() < 20.0,
+        || false,
         || false,
         &clock,
         |wait| {
@@ -192,6 +193,7 @@ fn poller_with_a_watcher_keeps_the_idle_pace_with_a_window_open() {
         || false,
         || true,
         || true,
+        || false,
         &clock,
         |wait| {
             clock.advance(wait.as_secs_f64());

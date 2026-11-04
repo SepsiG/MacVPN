@@ -988,6 +988,12 @@ impl ConnectionManager {
         self.read(Inner::has_active)
     }
 
+    /// Every active connection is connected (none connecting, disconnecting or waiting for authentication): the
+    /// poller may slow down while no window is shown.
+    pub fn active_settled(&self) -> bool {
+        self.read(|i| i.states.values().filter(|s| s.is_active()).all(ConnectionState::is_connected))
+    }
+
     /// Live traffic of a native service: the platform's [`NativeController::traffic`] (`None` on macOS).
     pub fn native_traffic(&self, service_id: &str) -> Option<macvpn_platform_api::TrafficReading> {
         self.deps.native.traffic(service_id)

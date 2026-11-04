@@ -173,6 +173,18 @@ fn the_sandbox_has_no_network() {
     let platform = MacPlatform::new(true);
     assert!(matches!(platform.network().snapshot(), Err(PlatformError::Unsupported { .. })));
     assert!(platform.network().watch(Box::new(|| {})).is_ok());
+    assert!(platform.network().watch_interfaces(Box::new(|| {})).unwrap().is_none(), "no interface watcher");
+}
+
+#[test]
+fn the_interface_watcher_starts_and_stops_cleanly() {
+    for _ in 0..5 {
+        let watcher = NetworkWatcher::start_interfaces(|| {}).expect("watcher starts");
+        let started = Instant::now();
+        drop(watcher);
+        assert!(started.elapsed() < Duration::from_secs(5), "drop took {:?}", started.elapsed());
+    }
+    assert!(MacPlatform::new(false).network().watch_interfaces(Box::new(|| {})).unwrap().is_some());
 }
 
 #[test]

@@ -280,3 +280,147 @@ fn traffic_asks_with_the_id_only_and_an_older_root_layer_is_none() {
     mock.respond(line, CommandResult::stdout("bytes 1 2 3\n"));
     assert_eq!(client(&mock), None);
 }
+
+// MARK: - Root layer 13: the query daemon
+
+/// A stand-in query daemon on a socket in a temp directory: each connection's request line is recorded and
+/// answered with the next of `answers` (`None`: closed without an answer).
+struct FakeDaemon {
+    dir: std::path::PathBuf,
+    socket: std::path::PathBuf,
+    requests: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+}
+
+impl FakeDaemon {
+    fn start(answers: Vec<Option<&'static [u8]>>) -> FakeDaemon {
+        use std::io::{BufRead, Write};
+        // Short: a Unix socket path is at most 104 bytes.
+        let dir = std::env::temp_dir().join(format!("mvqc-{}", &Uuid::new_v4().to_string()[..8]));
+        std::fs::create_dir_all(&dir).unwrap();
+        let socket = dir.join("q.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&socket).unwrap();
+        let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let seen = requests.clone();
+        std::thread::spawn(move || {
+            for answer in answers {
+                let Ok((stream, _)) = listener.accept() else { return };
+                let mut line = String::new();
+                let _ = std::io::BufReader::new(&stream).read_line(&mut line);
+                seen.lock().unwrap().push(line);
+                if let Some(answer) = answer {
+                    let _ = (&stream).write_all(answer);
+                }
+            }
+        });
+        FakeDaemon { dir, socket, requests }
+    }
+
+    fn requests(&self) -> Vec<String> {
+        self.requests.lock().unwrap().clone()
+    }
+}
+
+impl Drop for FakeDaemon {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.dir);
+    }
+}
+
+fn client_with<'a>(mock: &'a MockCommandRunner, socket: &std::path::Path) -> MvpnClient<'a> {
+    MvpnClient::with_runners(mock, None, None, Some(AppLanguage::En)).with_query_socket(Some(socket))
+}
+
+#[test]
+fn the_query_answer_format() {
+    use macvpn_platform_mac::mvpn_client::parse_query_answer;
+    let r = parse_query_answer(b"0\n[]\n").unwrap();
+    assert_eq!((r.exit_code, r.stdout.as_str(), r.stderr.as_str()), (0, "[]\n", ""));
+    assert_eq!(parse_query_answer(b"1\n").unwrap().exit_code, 1);
+    assert_eq!(parse_query_answer(b"143\n").unwrap().exit_code, 143);
+    for bad in [&b""[..], b"0", b"\n[]", b"-1\n", b"01\n", b"1000\n", b" 0\n", b"0 \n", b"x\n", b"0\n\xff\n"] {
+        assert!(parse_query_answer(bad).is_none(), "{bad:?}");
+    }
+}
+
+/// The daemon answers: no `sudo`; the request is the command and the ID only (no `--lang`).
+#[test]
+fn status_liveness_and_traffic_are_asked_on_the_daemon_first() {
+    let id = "11111111-2222-3333-4444-555555555555";
+    let status = format!(
+        "0\n[{{\"id\":\"{}\",\"kind\":\"wireguard\",\"state\":\"connected\",\"iface\":\"utun5\",\"ip\":\"10.0.0.2\",\"since\":null}}]\n",
+        id.to_uppercase()
+    );
+    let status: &'static str = Box::leak(status.into_boxed_str());
+    let daemon = FakeDaemon::start(vec![
+        Some(status.as_bytes()),
+        Some(b"0\nwireguard 1\npeer 1700000000 10 20 25 1\n"),
+        Some(b"0\nstrongswan 1\nchild 7 12345 6789\n"),
+        Some(b"1\n"),
+    ]);
+    let mock = MockCommandRunner::new();
+    let client = client_with(&mock, &daemon.socket);
+    let list = client.status().unwrap();
+    assert_eq!(list.len(), 1);
+    assert_eq!(list[0].state, "connected");
+    assert!(client.liveness(&self::id()).is_some());
+    assert_eq!(client.traffic(&self::id()).unwrap().len(), 1);
+    // A nonzero exit is the command line's: liveness gives nothing, without asking sudo again.
+    assert_eq!(client.liveness(&self::id()), None);
+    assert!(mock.calls().is_empty(), "{:?}", mock.calls());
+    let upper = id.to_uppercase();
+    assert_eq!(
+        daemon.requests(),
+        [
+            "status\n".to_string(),
+            format!("liveness {upper}\n"),
+            format!("traffic {upper}\n"),
+            format!("liveness {upper}\n")
+        ]
+    );
+}
+
+/// A failed status on the daemon is the command line's failure (the daemon has no stderr: the generic message).
+#[test]
+fn a_failed_status_on_the_daemon_is_the_generic_error() {
+    let daemon = FakeDaemon::start(vec![Some(b"1\n")]);
+    let mock = MockCommandRunner::new();
+    let e = client_with(&mock, &daemon.socket).status().unwrap_err();
+    assert!(matches!(e, ClientError::Mvpn(_)));
+    assert_eq!(e.to_string(), "mvpn error (exit code: 1)");
+    assert!(mock.calls().is_empty());
+}
+
+/// No daemon (an older root layer, or not loaded), a refused question, a malformed answer: `sudo`, as before.
+#[test]
+fn without_a_good_answer_from_the_daemon_sudo_is_asked() {
+    let line = "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn status --lang en";
+    let missing = std::env::temp_dir().join(format!("mvqc-none-{}.sock", Uuid::new_v4()));
+    let mock = MockCommandRunner::new();
+    mock.respond(line, CommandResult::stdout("[]\n"));
+    assert_eq!(client_with(&mock, &missing).status().unwrap(), []);
+    assert_eq!(mock.calls().len(), 1);
+    let daemon = FakeDaemon::start(vec![None, Some(b"garbage"), Some(b"0\n\xff")]);
+    for _ in 0..3 {
+        let mock = MockCommandRunner::new();
+        mock.respond(line, CommandResult::stdout("[]\n"));
+        assert_eq!(client_with(&mock, &daemon.socket).status().unwrap(), []);
+        assert_eq!(mock.calls().iter().map(|c| c.command_line()).collect::<Vec<_>>(), [line]);
+    }
+    assert_eq!(daemon.requests().len(), 3);
+    // Not configured (tests, the default): never a socket.
+    let mock = MockCommandRunner::new();
+    MvpnClient::new(&mock).status().unwrap_err();
+    assert_eq!(mock.calls().len(), 1);
+}
+
+/// What changes state never goes to the daemon.
+#[test]
+fn down_and_respond_stay_on_sudo() {
+    let daemon = FakeDaemon::start(vec![]);
+    let mock = MockCommandRunner::new();
+    let client = client_with(&mock, &daemon.socket);
+    client.down(VPNKind::Openvpn, &id()).unwrap();
+    client.respond(&id(), AuthResponseKind::Crv1, "123456").unwrap();
+    assert_eq!(mock.calls().len(), 2);
+    assert!(daemon.requests().is_empty());
+}

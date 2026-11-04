@@ -38,8 +38,11 @@ use std::thread::JoinHandle;
 
 type Callback = Box<dyn Fn() + Send + 'static>;
 
-/// The dynamic store keys watched.
+/// The dynamic store keys watched for a network change.
 pub const WATCHED_KEYS: [&str; 2] = ["State:/Network/Global/IPv4", "State:/Network/Global/IPv6"];
+/// The key watched for an interface coming or going (the list of the network interfaces, the tunnels' `utunN`
+/// among them): a tunnel that went down is seen at once, without polling.
+pub const INTERFACE_KEYS: [&str; 1] = ["State:/Network/Interface"];
 
 /// Calls `on_change` (on the watcher's own thread) when the primary network's addresses or routes change.
 pub struct NetworkWatcher {
@@ -80,11 +83,22 @@ impl Drop for Control {
 }
 
 impl NetworkWatcher {
-    /// Starts the watcher thread. Fails (no panic) when SystemConfiguration refuses the store or its keys.
+    /// Starts the watcher thread for [`WATCHED_KEYS`]. Fails (no panic) when SystemConfiguration refuses the store
+    /// or its keys.
     pub fn start(on_change: impl Fn() + Send + 'static) -> io::Result<NetworkWatcher> {
+        Self::start_for(&WATCHED_KEYS, on_change)
+    }
+
+    /// Starts the watcher thread for [`INTERFACE_KEYS`].
+    pub fn start_interfaces(on_change: impl Fn() + Send + 'static) -> io::Result<NetworkWatcher> {
+        Self::start_for(&INTERFACE_KEYS, on_change)
+    }
+
+    fn start_for(keys: &'static [&'static str], on_change: impl Fn() + Send + 'static) -> io::Result<NetworkWatcher> {
         let callback: Callback = Box::new(on_change);
         let (tx, rx) = mpsc::channel::<io::Result<Control>>();
-        let thread = std::thread::Builder::new().name("macvpn-net-watch".into()).spawn(move || run(callback, tx))?;
+        let thread =
+            std::thread::Builder::new().name("macvpn-net-watch".into()).spawn(move || run(keys, callback, tx))?;
         match rx.recv() {
             Ok(Ok(control)) => Ok(NetworkWatcher { thread: Some(thread), control: Some(control) }),
             Ok(Err(e)) => {
@@ -179,7 +193,7 @@ impl Drop for Session {
     }
 }
 
-fn run(callback: Callback, ready: mpsc::Sender<io::Result<Control>>) {
+fn run(watched: &[&str], callback: Callback, ready: mpsc::Sender<io::Result<Control>>) {
     let fail = |what: &str| io::Error::other(format!("{what}: {}", last_error()));
     let name = CFString::new("MacVPN");
     // SAFETY: plain getter; the current thread's run loop lives as long as the thread.
@@ -207,7 +221,7 @@ fn run(callback: Callback, ready: mpsc::Sender<io::Result<Control>>) {
         let _ = ready.send(Err(fail("SCDynamicStoreCreate")));
         return;
     }
-    let keys: Vec<CFString> = WATCHED_KEYS.iter().map(|k| CFString::new(k)).collect();
+    let keys: Vec<CFString> = watched.iter().map(|k| CFString::new(k)).collect();
     let keys = CFArray::from_CFTypes(&keys);
     // SAFETY: a valid store and array (borrowed for the call: the store keeps its own copy); no patterns.
     if unsafe { SCDynamicStoreSetNotificationKeys(session.store, keys.as_concrete_TypeRef(), std::ptr::null()) } == 0 {
