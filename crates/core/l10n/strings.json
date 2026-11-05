@@ -7820,6 +7820,13 @@
         "macos"
       ]
     },
+    "the DNS step of OpenVPN cannot be prepared; the pushed DNS options are used": {
+      "hu": "az OpenVPN DNS-lépése nem készíthető elő; a szerver által küldött DNS-beállítások érvényesek",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
     "the DNS variables file of OpenVPN was refused": {
       "hu": "az OpenVPN DNS-változókat tartalmazó fájlja elutasítva",
       "scope": "mvpn",

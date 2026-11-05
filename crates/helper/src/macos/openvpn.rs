@@ -179,11 +179,26 @@ pub fn up(ctx: &mut Ctx) -> R {
         "openurl,webauth,crtext".into(),
     ];
     // OpenVPN 2.7: the same hook as `--dns-updown` too, so it gets `--dns … resolve-domains` (the Targeted mode
-    // and the fallback need them). Passing it is what keeps OpenVPN's own `dns-updown` script from running next to
-    // ours. 2.6 does not know the option (and would refuse to start), so it is passed only from 2.7 on.
+    // and the fallback need them). 2.6 does not know the option (and would refuse to start), so it is passed only
+    // from 2.7 on. OpenVPN runs `--dns-updown` as ONE program path (`argv_printf("%s")`, no argument splitting,
+    // unlike `--up`), so it gets a root-only wrapper in the run directory that calls the hook with its arguments.
     if !ctx.dry() && dns_updown_supported(openvpn_version(ctx, &ovpn)) {
-        args.push("--dns-updown".into());
-        args.push(hook);
+        let wrapper = run.join(DNS_UPDOWN_WRAPPER);
+        let script =
+            dns_updown_script(&ctx.s.hook_program().display().to_string(), &run.display().to_string(), &log_path);
+        match script {
+            Some(text)
+                if fsx::write_file(&wrapper, text.as_bytes(), 0o700).is_ok() && fsx::chmod(&wrapper, 0o700).is_ok() =>
+            {
+                args.push("--dns-updown".into());
+                args.push(wrapper.display().to_string());
+            }
+            _ => {
+                // Without `--dns-updown` (but with `--up`) OpenVPN runs no DNS script of its own, and the `--up`
+                // hook gets the pushed DNS as foreign options, as on 2.6.
+                ctx.log.step(&tr("the DNS step of OpenVPN cannot be prepared; the pushed DNS options are used", &[]));
+            }
+        }
     }
     // User name and password go through the bridge (root 0600 file, deleted by the bridge right after reading).
     if !ctx.secrets.user.is_empty() || !ctx.secrets.pass.is_empty() {
@@ -236,6 +251,19 @@ pub fn parse_version(out: &str) -> Option<(u32, u32)> {
     let major = parts.next()?.parse().ok()?;
     let minor = parts.next()?.parse().ok()?;
     Some((major, minor))
+}
+
+/// The `--dns-updown` wrapper's name in the run directory.
+pub const DNS_UPDOWN_WRAPPER: &str = "dns-updown.sh";
+
+/// The wrapper script: `exec <hook> hook ovpn-dns <run> <log>`, each path single-quoted. `None` for a path that
+/// is empty or holds a quote, a newline or a NUL (never the case for the helper's own paths).
+pub fn dns_updown_script(program: &str, run: &str, log: &str) -> Option<String> {
+    let ok = |p: &str| !p.is_empty() && !p.contains(['\'', '\n', '\r', '\0']);
+    if !ok(program) || !ok(run) || !ok(log) {
+        return None;
+    }
+    Some(format!("#!/bin/sh\nexec '{program}' hook ovpn-dns '{run}' '{log}'\n"))
 }
 
 /// `--dns-updown` exists from OpenVPN 2.7 on; an unknown version gets the 2.6 behaviour.
@@ -354,6 +382,20 @@ mod tests {
         assert_eq!(parse_version("OpenVPN 2.10_git"), Some((2, 10)));
         assert_eq!(parse_version("Options error: x"), None);
         assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn dns_updown_wrapper_quotes_the_paths_and_refuses_odd_ones() {
+        assert_eq!(
+            dns_updown_script("/usr/local/libexec/macvpn/mvpn", "/var/run/macvpn/X", "/var/log/macvpn/X.log")
+                .as_deref(),
+            Some(
+                "#!/bin/sh\nexec '/usr/local/libexec/macvpn/mvpn' hook ovpn-dns '/var/run/macvpn/X' '/var/log/macvpn/X.log'\n"
+            )
+        );
+        assert!(dns_updown_script("/a", "/b'c", "/d").is_none());
+        assert!(dns_updown_script("/a", "/b", "/d\nx").is_none());
+        assert!(dns_updown_script("/a", "/b", "").is_none());
     }
 
     #[test]
