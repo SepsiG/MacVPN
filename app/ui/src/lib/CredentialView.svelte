@@ -218,10 +218,16 @@
     min-width: 0;
     min-height: 28px;
   }
+  /* The shared grid's `1fr` column would grow to the input's natural width, pushing the Show button out of a
+     narrow window (a long label like "Felhasználónév" leaves less room): the column and the row may shrink. */
+  .credentials .field {
+    grid-template-columns: minmax(96px, 34%) minmax(0, 1fr);
+  }
   .input {
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
   }
   .show {
     flex: none;

@@ -45,12 +45,28 @@ export function pollTraffic(wanted: () => boolean, apply: (t: TrafficMap) => voi
       }, console.error)
       .finally(() => (busy = false));
   };
-  const handle = deps.setInterval(tick, TRAFFIC_INTERVAL);
-  const off = deps.onVisibility(tick);
+  // The timer runs only while the window is visible: a hidden window (the menu popover most of the time) is not
+  // woken once a second just to find it has nothing to do.
+  let handle: unknown = null;
+  const sync = () => {
+    if (stopped) return;
+    if (deps.visible() && handle === null) {
+      handle = deps.setInterval(tick, TRAFFIC_INTERVAL);
+    } else if (!deps.visible() && handle !== null) {
+      deps.clearInterval(handle);
+      handle = null;
+    }
+  };
+  const off = deps.onVisibility(() => {
+    sync();
+    tick();
+  });
+  sync();
   tick();
   return () => {
     stopped = true;
-    deps.clearInterval(handle);
+    if (handle !== null) deps.clearInterval(handle);
+    handle = null;
     off();
   };
 }

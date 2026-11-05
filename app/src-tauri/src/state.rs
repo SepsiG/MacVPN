@@ -256,10 +256,48 @@ pub fn setup_facts(r: &SetupReport) -> SetupFacts {
 
 /// Coalesces "something changed" notifications from any thread and publishes the latest view model (event
 /// `view-model`) and tray icon from one thread, so an older state never overtakes a newer one.
+///
+/// A view model equal to the one sent last is not sent again: every `view-model` event wakes each webview's web
+/// process, the hidden popover's too (WebKit resumes the throttled process, it renders, a display link runs), and
+/// the connected poll alone would do that every 10 s for nothing. The tray and the prompt windows follow every
+/// round as before. [`Publisher::mark_resend`] sends the next one even when unchanged (the menu being shown).
 #[derive(Default)]
 pub struct Publisher {
-    dirty: Mutex<bool>,
+    dirty: Mutex<Pending>,
     signal: Condvar,
+}
+
+#[derive(Default)]
+struct Pending {
+    dirty: bool,
+    resend: bool,
+}
+
+/// The value sent last ([`Publisher`]): [`Sent::is_new`] tells whether another one differs from it.
+struct Sent<T> {
+    last: Option<T>,
+}
+
+impl<T> Default for Sent<T> {
+    fn default() -> Self {
+        Sent { last: None }
+    }
+}
+
+impl<T: PartialEq + Clone> Sent<T> {
+    /// `next` differs from the value sent last (it is remembered as sent).
+    fn is_new(&mut self, next: &T) -> bool {
+        if self.last.as_ref() == Some(next) {
+            return false;
+        }
+        self.last = Some(next.clone());
+        true
+    }
+
+    /// The next value counts as new whatever it is.
+    fn forget(&mut self) {
+        self.last = None;
+    }
 }
 
 /// Changes within this window are published together.
@@ -267,18 +305,31 @@ const COALESCE: Duration = Duration::from_millis(30);
 
 impl Publisher {
     pub fn mark(&self) {
-        *self.dirty.lock().unwrap_or_else(PoisonError::into_inner) = true;
+        self.dirty.lock().unwrap_or_else(PoisonError::into_inner).dirty = true;
         self.signal.notify_one();
     }
 
-    fn wait(&self) {
-        let mut dirty = self.dirty.lock().unwrap_or_else(PoisonError::into_inner);
-        while !*dirty {
-            dirty = self.signal.wait(dirty).unwrap_or_else(PoisonError::into_inner);
+    /// [`Self::mark`], and the next view model is sent to the windows even when it equals the last one sent.
+    pub fn mark_resend(&self) {
+        {
+            let mut pending = self.dirty.lock().unwrap_or_else(PoisonError::into_inner);
+            pending.dirty = true;
+            pending.resend = true;
         }
-        drop(dirty);
+        self.signal.notify_one();
+    }
+
+    /// Waits for a change (then [`COALESCE`] more); `true`: a resend was asked for meanwhile.
+    fn wait(&self) -> bool {
+        let mut pending = self.dirty.lock().unwrap_or_else(PoisonError::into_inner);
+        while !pending.dirty {
+            pending = self.signal.wait(pending).unwrap_or_else(PoisonError::into_inner);
+        }
+        drop(pending);
         std::thread::sleep(COALESCE);
-        *self.dirty.lock().unwrap_or_else(PoisonError::into_inner) = false;
+        let mut pending = self.dirty.lock().unwrap_or_else(PoisonError::into_inner);
+        pending.dirty = false;
+        std::mem::take(&mut pending.resend)
     }
 
     pub fn spawn(app: AppHandle, state: Arc<AppState>) {
@@ -287,8 +338,11 @@ impl Publisher {
             .name("macvpn-publish".into())
             .spawn(move || {
                 let mut tray = None;
+                let mut sent = Sent::default();
                 loop {
-                    publisher.wait();
+                    if publisher.wait() {
+                        sent.forget();
+                    }
                     let vm = state.view_model();
                     // The language too: a switch re-labels the tray (Linux: the SNI menu) even when idle.
                     let shown = (vm.tray, vm.tray.tooltip(), vm.language);
@@ -300,9 +354,43 @@ impl Publisher {
                     crate::prompts::sync(&app, &state, &vm.prompts);
                     crate::pairing::sync(&app, &state, &vm.pairings);
                     crate::credentials::sync(&app, &state, &vm.credential_prompts);
-                    let _ = app.emit("view-model", &vm);
+                    // Only a changed one: the windows already show an equal one (each got the current one when
+                    // it opened, `get_view_model`).
+                    if sent.is_new(&vm) {
+                        let _ = app.emit("view-model", &vm);
+                    }
                 }
             })
             .expect("publisher thread");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The connected poll refreshes every 10 s; an unchanged view model must not be sent again (every send wakes
+    /// the hidden popover's web process: a throttle resume, a render, a display link).
+    #[test]
+    fn an_unchanged_view_model_is_not_sent_again() {
+        let mut sent = Sent::default();
+        assert!(sent.is_new(&1), "the first one is sent");
+        assert!(!sent.is_new(&1), "the same again is not");
+        assert!(sent.is_new(&2), "a change is sent");
+        assert!(!sent.is_new(&2));
+        sent.forget();
+        assert!(sent.is_new(&2), "after a forced resend the same one is sent once more");
+        assert!(!sent.is_new(&2));
+    }
+
+    #[test]
+    fn a_resend_request_reaches_the_publisher() {
+        let publisher = Publisher::default();
+        publisher.mark();
+        assert!(!publisher.wait(), "a plain change: only a new view model is sent");
+        publisher.mark_resend();
+        assert!(publisher.wait(), "a resend: the view model is sent even when unchanged");
+        publisher.mark();
+        assert!(!publisher.wait(), "the request is used up");
     }
 }

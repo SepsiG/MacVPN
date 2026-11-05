@@ -388,6 +388,77 @@ pub fn placement(icon_y: f64, monitor: Option<(PhysicalPosition<i32>, PhysicalSi
     }
 }
 
+/// macOS: the popover's place in points (the global coordinates every screen shares). With screens of different
+/// scales "physical" pixels mean something else on each: the icon's rect comes in the icon screen's pixels, a
+/// physical `set_position` is divided by the scale of the screen the popover was on last, and `monitor_from_point`
+/// takes points. So everything is converted to points first ([`popover_in_points`]). `None` elsewhere.
+#[cfg(target_os = "macos")]
+fn macos_popover(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    (position, size): (PhysicalPosition<f64>, PhysicalSize<f64>),
+) -> Option<(i32, i32, bool)> {
+    let monitors: Vec<ScreenInPixels> = app
+        .available_monitors()
+        .ok()?
+        .iter()
+        .map(|m| ScreenInPixels { origin: *m.position(), size: *m.size(), scale: m.scale_factor() })
+        .collect();
+    let scale = window.scale_factor().ok()?;
+    let frame = window.outer_size().ok()?;
+    let window_points = (f64::from(frame.width) / scale, f64::from(frame.height) / scale);
+    let (x, y, placement) = popover_in_points((position, size), &monitors, window_points)?;
+    Some((x, y, placement == Placement::Above))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn macos_popover(
+    _app: &AppHandle,
+    _window: &WebviewWindow,
+    _anchor: (PhysicalPosition<f64>, PhysicalSize<f64>),
+) -> Option<(i32, i32, bool)> {
+    None
+}
+
+/// A screen as tao reports it on macOS: its origin and size in its OWN pixels (points × its scale).
+#[derive(Clone, Copy, Debug)]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub struct ScreenInPixels {
+    pub origin: PhysicalPosition<i32>,
+    pub size: PhysicalSize<u32>,
+    pub scale: f64,
+}
+
+/// The popover's top-left in points ([`popover_position`] done in points): the icon's screen is the one whose
+/// point rect holds the icon's pixels divided by that screen's scale. `None` when no screen holds the icon.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn popover_in_points(
+    (position, size): (PhysicalPosition<f64>, PhysicalSize<f64>),
+    screens: &[ScreenInPixels],
+    window_points: (f64, f64),
+) -> Option<(i32, i32, Placement)> {
+    screens.iter().find_map(|s| {
+        if s.scale <= 0.0 {
+            return None;
+        }
+        let ox = f64::from(s.origin.x) / s.scale;
+        let oy = f64::from(s.origin.y) / s.scale;
+        let w = f64::from(s.size.width) / s.scale;
+        let h = f64::from(s.size.height) / s.scale;
+        let (ix, iy) = (position.x / s.scale, position.y / s.scale);
+        if !(ix >= ox && ix < ox + w && iy >= oy && iy < oy + h) {
+            return None;
+        }
+        let icon = (PhysicalPosition::new(ix, iy), PhysicalSize::new(size.width / s.scale, size.height / s.scale));
+        let screen = Some((
+            PhysicalPosition::new(ox.round() as i32, oy.round() as i32),
+            PhysicalSize::new(w.round() as u32, h.round() as u32),
+        ));
+        let (x, y) = popover_position(icon, window_points, screen);
+        Some((x, y, placement(iy, screen)))
+    })
+}
+
 /// Shows the popover at the tray icon ([`popover_position`]) and refreshes the state at once (the Swift menu's
 /// `.task { refresh() }`).
 pub fn show_menu(app: &AppHandle) {
@@ -402,6 +473,9 @@ pub(crate) fn show_menu_activated(app: &AppHandle, activation_token: Option<Stri
     let anchor = state.as_ref().and_then(|s| *s.tray_anchor.lock().unwrap_or_else(PoisonError::into_inner));
     if platform::present_menu_overlay(&window, activation_token.as_deref()) {
         MENU_ABOVE.store(false, Ordering::SeqCst);
+    } else if let Some((x, y, above)) = anchor.and_then(|a| macos_popover(app, &window, a)) {
+        MENU_ABOVE.store(above, Ordering::SeqCst);
+        let _ = window.set_position(tauri::LogicalPosition::new(x, y));
     } else if let (Some((position, size)), Ok(window_size)) = (anchor, window.outer_size()) {
         let monitor = app.monitor_from_point(position.x, position.y).ok().flatten().map(|m| (*m.position(), *m.size()));
         let (x, y) =
@@ -424,7 +498,8 @@ pub(crate) fn show_menu_activated(app: &AppHandle, activation_token: Option<Stri
         state.inner().clone().refresh_login_item();
         // An engine installed outside the app (Terminal, by hand) shows up without "Check Again".
         crate::system::recheck_if_incomplete(state.inner());
-        state.publisher.mark();
+        // Sent even when unchanged: the popover shows the current state whatever it missed while hidden.
+        state.publisher.mark_resend();
     }
 }
 
@@ -482,6 +557,31 @@ mod tests {
     fn above_a_taskbar_icon_and_kept_on_the_screen() {
         let icon = (PhysicalPosition::new(2400.0, 1552.0), PhysicalSize::new(48.0, 48.0));
         assert_eq!(popover_position(icon, (660.0, 720.0), monitor()), (1892, 830));
+    }
+
+    /// A 1440×900-point Retina screen (scale 2) at the origin and a 2560×1440 external screen (scale 1) to its
+    /// left, as tao reports them (origin and size in each screen's own pixels).
+    fn two_screens() -> Vec<ScreenInPixels> {
+        vec![
+            ScreenInPixels { origin: PhysicalPosition::new(0, 0), size: PhysicalSize::new(2880, 1800), scale: 2.0 },
+            ScreenInPixels { origin: PhysicalPosition::new(-2560, 0), size: PhysicalSize::new(2560, 1440), scale: 1.0 },
+        ]
+    }
+
+    #[test]
+    fn on_mixed_scale_screens_the_popover_is_placed_in_points_under_its_icon() {
+        // Icon on the Retina screen at point x 1200 (pixels 2400), 22 points wide.
+        let retina = (PhysicalPosition::new(2400.0, 0.0), PhysicalSize::new(44.0, 48.0));
+        assert_eq!(popover_in_points(retina, &two_screens(), (330.0, 360.0)), Some((1046, 26, Placement::Below)));
+        // Icon on the external screen at point x -400 (scale 1: pixels = points).
+        let external = (PhysicalPosition::new(-400.0, 0.0), PhysicalSize::new(22.0, 24.0));
+        assert_eq!(popover_in_points(external, &two_screens(), (330.0, 360.0)), Some((-554, 26, Placement::Below)));
+        // Near the external screen's left edge: kept 8 points inside it, not pushed onto the other screen.
+        let edge = (PhysicalPosition::new(-2550.0, 0.0), PhysicalSize::new(22.0, 24.0));
+        assert_eq!(popover_in_points(edge, &two_screens(), (330.0, 360.0)).map(|p| p.0), Some(-2552));
+        // No screen holds the icon: the caller falls back.
+        let lost = (PhysicalPosition::new(99999.0, 0.0), PhysicalSize::new(22.0, 24.0));
+        assert_eq!(popover_in_points(lost, &two_screens(), (330.0, 360.0)), None);
     }
 
     #[test]

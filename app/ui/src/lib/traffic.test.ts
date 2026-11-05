@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { TRAFFIC_INTERVAL, pollTraffic, type TrafficDeps, type TrafficMap } from './traffic.ts';
 
 function fake(answer: TrafficMap) {
-  const state = { visible: true, calls: 0, ticks: [] as (() => void)[], vis: [] as (() => void)[], cleared: false, ms: 0 };
+  const state = { visible: true, calls: 0, ticks: [] as (() => void)[], vis: [] as (() => void)[], cleared: false, ms: 0, running: 0 };
   const deps: TrafficDeps = {
     fetch: () => {
       state.calls++;
@@ -14,9 +14,13 @@ function fake(answer: TrafficMap) {
     setInterval: (f, ms) => {
       state.ticks.push(f);
       state.ms = ms;
-      return 1;
+      state.running++;
+      return state.ticks.length;
     },
-    clearInterval: () => (state.cleared = true),
+    clearInterval: () => {
+      state.cleared = true;
+      state.running--;
+    },
     onVisibility: (f) => {
       state.vis.push(f);
       return () => (state.vis = []);
@@ -47,17 +51,25 @@ test('a visible window with a connected row reads once a second', async () => {
   assert.equal(state.calls, 2, 'nothing after the stop');
 });
 
-test('a hidden window reads nothing, and reads at once when shown again', async () => {
+test('a hidden window reads nothing and runs no timer, and reads at once when shown again', async () => {
   const { state, deps } = fake(ROW);
   state.visible = false;
   pollTraffic(() => true, () => {}, deps);
-  state.ticks[0]();
   await flush();
   assert.equal(state.calls, 0);
+  assert.equal(state.running, 0, 'no timer while hidden');
   state.visible = true;
   state.vis[0]();
   await flush();
   assert.equal(state.calls, 1);
+  assert.equal(state.running, 1, 'the timer runs while shown');
+  state.visible = false;
+  state.vis[0]();
+  assert.equal(state.running, 0, 'and stops when hidden again');
+  state.visible = true;
+  state.vis[0]();
+  state.vis[0]();
+  assert.equal(state.running, 1, 'never two timers');
 });
 
 test('without a connected row nothing is read and the lines go', async () => {
