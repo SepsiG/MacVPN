@@ -276,7 +276,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_15() {
-        assert_eq!(VERSION.trim(), "15");
+    fn version_is_16() {
+        assert_eq!(VERSION.trim(), "16");
     }
 }
