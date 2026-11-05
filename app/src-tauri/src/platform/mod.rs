@@ -180,6 +180,12 @@ pub fn corner_position(work_area: (i32, i32, u32, u32), window: (u32, u32)) -> O
     selected::corner_position(work_area, window)
 }
 
+/// Whether the popover is placed in points (macOS: screens of different scales share points, not pixels; see
+/// `tray::popover_in_points`). Windows, Linux: no, their physical pixels are global.
+pub fn places_popover_in_points() -> bool {
+    selected::places_popover_in_points()
+}
+
 /// Whether IKEv2 tunnels report liveness (LinVPN: the IPsec SAs' counters through `linvpn-xfrmd`; macOS' strongSwan
 /// and Windows' RAS IKEv2 end a dead connection themselves).
 pub fn ikev2_reports_liveness() -> bool {

@@ -391,13 +391,16 @@ pub fn placement(icon_y: f64, monitor: Option<(PhysicalPosition<i32>, PhysicalSi
 /// macOS: the popover's place in points (the global coordinates every screen shares). With screens of different
 /// scales "physical" pixels mean something else on each: the icon's rect comes in the icon screen's pixels, a
 /// physical `set_position` is divided by the scale of the screen the popover was on last, and `monitor_from_point`
-/// takes points. So everything is converted to points first ([`popover_in_points`]). `None` elsewhere.
-#[cfg(target_os = "macos")]
+/// takes points. So everything is converted to points first ([`popover_in_points`]). `None` where
+/// [`platform::places_popover_in_points`] says no (Windows, Linux: their physical pixels are global).
 fn macos_popover(
     app: &AppHandle,
     window: &WebviewWindow,
     (position, size): (PhysicalPosition<f64>, PhysicalSize<f64>),
 ) -> Option<(i32, i32, bool)> {
+    if !platform::places_popover_in_points() {
+        return None;
+    }
     let monitors: Vec<ScreenInPixels> = app
         .available_monitors()
         .ok()?
@@ -411,18 +414,8 @@ fn macos_popover(
     Some((x, y, placement == Placement::Above))
 }
 
-#[cfg(not(target_os = "macos"))]
-fn macos_popover(
-    _app: &AppHandle,
-    _window: &WebviewWindow,
-    _anchor: (PhysicalPosition<f64>, PhysicalSize<f64>),
-) -> Option<(i32, i32, bool)> {
-    None
-}
-
 /// A screen as tao reports it on macOS: its origin and size in its OWN pixels (points × its scale).
 #[derive(Clone, Copy, Debug)]
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub struct ScreenInPixels {
     pub origin: PhysicalPosition<i32>,
     pub size: PhysicalSize<u32>,
@@ -431,7 +424,6 @@ pub struct ScreenInPixels {
 
 /// The popover's top-left in points ([`popover_position`] done in points): the icon's screen is the one whose
 /// point rect holds the icon's pixels divided by that screen's scale. `None` when no screen holds the icon.
-#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub fn popover_in_points(
     (position, size): (PhysicalPosition<f64>, PhysicalSize<f64>),
     screens: &[ScreenInPixels],

@@ -210,6 +210,10 @@ pub fn present_menu_overlay(_window: &tauri::WebviewWindow, _activation_token: O
 
 pub fn set_menu_card(_window: &tauri::WebviewWindow, _card: (f64, f64, f64, f64)) {}
 
+pub fn places_popover_in_points() -> bool {
+    false
+}
+
 /// The tray icon's rectangle gives the place.
 pub fn corner_position(_work_area: (i32, i32, u32, u32), _window: (u32, u32)) -> Option<(i32, i32)> {
     None

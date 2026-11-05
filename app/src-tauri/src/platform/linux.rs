@@ -291,6 +291,10 @@ fn apply_input_region(window: &gtk::ApplicationWindow) {
     gdk_window.input_shape_combine_region(&region, 0, 0);
 }
 
+pub fn places_popover_in_points() -> bool {
+    false
+}
+
 /// The work area's top-right corner (outside the overlay: the Xwayland fallback's explicit position).
 pub fn corner_position(work_area: (i32, i32, u32, u32), window: (u32, u32)) -> Option<(i32, i32)> {
     Some(panel_position(work_area, window))
