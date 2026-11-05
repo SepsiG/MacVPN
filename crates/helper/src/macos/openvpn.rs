@@ -153,7 +153,7 @@ pub fn up(ctx: &mut Ctx) -> R {
         "--up".into(),
         hook.clone(),
         "--down".into(),
-        hook,
+        hook.clone(),
         "--writepid".into(),
         run.join("pid").display().to_string(),
         "--log-append".into(),
@@ -178,6 +178,13 @@ pub fn up(ctx: &mut Ctx) -> R {
         "IV_SSO".into(),
         "openurl,webauth,crtext".into(),
     ];
+    // OpenVPN 2.7: the same hook as `--dns-updown` too, so it gets `--dns … resolve-domains` (the Targeted mode
+    // and the fallback need them). Passing it is what keeps OpenVPN's own `dns-updown` script from running next to
+    // ours. 2.6 does not know the option (and would refuse to start), so it is passed only from 2.7 on.
+    if !ctx.dry() && dns_updown_supported(openvpn_version(ctx, &ovpn)) {
+        args.push("--dns-updown".into());
+        args.push(hook);
+    }
     // User name and password go through the bridge (root 0600 file, deleted by the bridge right after reading).
     if !ctx.secrets.user.is_empty() || !ctx.secrets.pass.is_empty() {
         let mut creds = zeroize::Zeroizing::new(Vec::new());
@@ -220,6 +227,26 @@ pub fn up(ctx: &mut Ctx) -> R {
         return Ok(());
     }
     wait_connected(ctx, &olog)
+}
+
+/// `OpenVPN 2.7.8 aarch64-apple-darwin…` (the first line of `openvpn --version`) → `(2, 7)`.
+pub fn parse_version(out: &str) -> Option<(u32, u32)> {
+    let rest = out.lines().next()?.strip_prefix("OpenVPN ")?;
+    let mut parts = rest.split(|c: char| !c.is_ascii_digit());
+    let major = parts.next()?.parse().ok()?;
+    let minor = parts.next()?.parse().ok()?;
+    Some((major, minor))
+}
+
+/// `--dns-updown` exists from OpenVPN 2.7 on; an unknown version gets the 2.6 behaviour.
+pub fn dns_updown_supported(v: Option<(u32, u32)>) -> bool {
+    v.is_some_and(|v| v >= (2, 7))
+}
+
+/// `<openvpn> --version` (it exits 1 by design, so only the output counts), at most 1 MB read.
+fn openvpn_version(ctx: &Ctx, ovpn: &Path) -> Option<(u32, u32)> {
+    let (_, out) = crate::macos::exec::capture(&Cmd::new(ovpn).arg("--version"), ctx.env_mode(), 1 << 20)?;
+    parse_version(&String::from_utf8_lossy(&out))
 }
 
 /// The wait for `Initialization Sequence Completed`. While the bridge waits for authentication (`wait <unix time>`
@@ -311,4 +338,29 @@ pub fn down(ctx: &mut Ctx) -> R<bool> {
         return Ok(true);
     }
     Ok(cleanup(ctx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_parse() {
+        assert_eq!(
+            parse_version("OpenVPN 2.7.8 aarch64-apple-darwin25.0.0 [SSL (OpenSSL)]\nlibrary versions"),
+            Some((2, 7))
+        );
+        assert_eq!(parse_version("OpenVPN 2.6.14 x86_64-apple-darwin"), Some((2, 6)));
+        assert_eq!(parse_version("OpenVPN 2.10_git"), Some((2, 10)));
+        assert_eq!(parse_version("Options error: x"), None);
+        assert_eq!(parse_version(""), None);
+    }
+
+    #[test]
+    fn dns_updown_only_from_2_7() {
+        assert!(!dns_updown_supported(None));
+        assert!(!dns_updown_supported(Some((2, 6))));
+        assert!(dns_updown_supported(Some((2, 7))));
+        assert!(dns_updown_supported(Some((3, 0))));
+    }
 }

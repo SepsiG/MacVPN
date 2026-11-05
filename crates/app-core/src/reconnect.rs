@@ -933,6 +933,17 @@ impl Planner {
     /// The connected tunnels are to be asked (the driver then polls the helper and calls [`Self::liveness_checked`]):
     /// never asleep, without a network, while a connection waits for one or while a network change is being
     /// checked (the network rules come first).
+    /// The gate of the DNS re-check (macOS root layer 15, `crate::dns_check`): awake, online, no pending network
+    /// check (the liveness poll's gate without its own schedule).
+    pub fn dns_check_allowed(&self) -> bool {
+        !self.asleep && !self.network_down && self.offline.is_empty() && self.check_at.is_none()
+    }
+
+    /// When `key` last went through a live network switch (kept for [`SWITCH_WINDOW`]).
+    pub fn last_switch(&self, key: &str) -> Option<Date> {
+        self.switched.get(key).copied()
+    }
+
     pub fn liveness_due(&self, now: Date) -> bool {
         !self.asleep
             && !self.network_down

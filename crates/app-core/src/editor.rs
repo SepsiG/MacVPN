@@ -24,6 +24,7 @@ use crate::manager::ConnectionManager;
 use macvpn_core::certificates::{self, ConfigCertificates, Role};
 use macvpn_core::client_cert;
 use macvpn_core::config_secrets;
+use macvpn_core::dns_settings::{self, DnsMode, DnsSetting};
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::mfa;
 use macvpn_core::models::{
@@ -90,6 +91,48 @@ impl From<OtpFields> for OTPSetting {
     }
 }
 
+/// The connection's DNS settings in the editor (macOS root layer 15; OpenVPN, WireGuard and SSTP). The UI shows
+/// the section only on macOS; elsewhere it sends the values back unchanged (stored, never used).
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DnsFields {
+    /// `automatic`, `strict`, `full` or `targeted`.
+    pub mode: String,
+    pub servers: Vec<String>,
+    pub domains: Vec<String>,
+    pub override_vpn: bool,
+}
+
+impl From<&DnsSetting> for DnsFields {
+    fn from(s: &DnsSetting) -> Self {
+        DnsFields {
+            mode: s.mode.raw().to_string(),
+            servers: s.servers.clone(),
+            domains: s.domains.clone(),
+            override_vpn: s.override_vpn,
+        }
+    }
+}
+
+impl DnsFields {
+    /// The setting to store (blanks trimmed, empty entries dropped, domains normalized); the localized message of
+    /// the first problem otherwise.
+    pub fn setting(&self) -> Result<DnsSetting, String> {
+        let mode = DnsMode::from_raw(&self.mode).ok_or_else(|| l10n::tr("Unknown DNS mode", &[]))?;
+        let clean = |v: &[String]| -> Vec<String> {
+            v.iter().map(|x| x.trim().to_string()).filter(|x| !x.is_empty()).collect()
+        };
+        let domains = clean(&self.domains).iter().map(|d| dns_settings::normalize_domain(d)).collect();
+        let s = DnsSetting { mode, servers: clean(&self.servers), domains, override_vpn: self.override_vpn };
+        s.validate().map(|()| s)
+    }
+}
+
+/// The DNS fields of a connection whose kind the DNS manager handles (`None` for the other kinds).
+fn dns_fields(c: &Connection) -> Option<DnsFields> {
+    matches!(c.kind, VPNKind::Openvpn | VPNKind::Wireguard | VPNKind::Sstp).then(|| DnsFields::from(&c.dns))
+}
+
 /// A secret field as the editor sends it: `None` keeps the stored value (the field was not touched), `Some(v)`
 /// stores `v` (`Some("")`: "Remove saved password", deletes the Keychain item).
 pub type SecretInput = Option<String>;
@@ -109,6 +152,9 @@ pub struct TextFields {
     /// in it; ticking it stores exactly the current set.
     pub acknowledged: BTreeSet<String>,
     pub otp: OtpFields,
+    /// OpenVPN / WireGuard: the DNS settings (absent for strongSwan, or from an older UI: kept as stored).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns: Option<DnsFields>,
 }
 
 /// L2TP / Cisco IPsec.
@@ -148,6 +194,9 @@ pub struct SstpFields {
     pub ca_pem: String,
     pub password: SecretInput,
     pub otp: OtpFields,
+    /// The DNS settings (absent: kept as stored).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dns: Option<DnsFields>,
 }
 
 /// A system VPN's PSK / password kept in MacVPN's keychain (L2TP / Cisco IPsec) and its OTP setting.
@@ -330,7 +379,9 @@ impl EditorDeps {
 
 /// The list of problems; empty = saved. OpenVPN: `acknowledged` is the set acknowledged in the editor; every risky
 /// directive of the config must be in it, and exactly the config's risky set is stored (a risky directive added
-/// later needs a new acknowledgement). A `None` field of `secrets` keeps its stored value.
+/// later needs a new acknowledgement). A `None` field of `secrets` keeps its stored value; `dns` `None` keeps the
+/// stored DNS settings.
+#[allow(clippy::too_many_arguments)]
 pub fn save_text(
     deps: &EditorDeps,
     c: &Connection,
@@ -339,6 +390,7 @@ pub fn save_text(
     secrets: &Secrets,
     acknowledged: &BTreeSet<String>,
     otp: Option<OTPSetting>,
+    dns: Option<&DnsFields>,
 ) -> Vec<ValidationIssue> {
     let mut issues;
     let mut risky_names = Vec::new();
@@ -365,6 +417,13 @@ pub fn save_text(
     if let Some(error) = deps.linked_credential_error(&c.id, secrets) {
         issues.push(ValidationIssue::new(0, error));
     }
+    let dns = match dns.map(DnsFields::setting).transpose() {
+        Ok(d) => d,
+        Err(e) => {
+            issues.push(ValidationIssue::new(0, e));
+            None
+        }
+    };
     if !issues.is_empty() {
         return issues;
     }
@@ -373,6 +432,9 @@ pub fn save_text(
     updated.acknowledged_risky_directives = risky_names;
     if let Some(otp) = otp {
         updated.otp = otp;
+    }
+    if let Some(dns) = dns {
+        updated.dns = dns;
     }
     if let Err(e) = deps.store.save(&updated, Some(config)) {
         return vec![ValidationIssue::new(0, e.to_string())];
@@ -391,6 +453,7 @@ pub fn save_sstp(
     config: &SSTPConfig,
     password: Option<&str>,
     otp: OTPSetting,
+    dns: Option<&DnsFields>,
 ) -> Vec<ValidationIssue> {
     let effective = match password {
         Some(p) => p.to_string(),
@@ -407,7 +470,7 @@ pub fn save_sstp(
         key_password: Some(String::new()),
         ..Secrets::default()
     };
-    save_text(deps, c, name, &config.serialized(), &secrets, &BTreeSet::new(), Some(otp))
+    save_text(deps, c, name, &config.serialized(), &secrets, &BTreeSet::new(), Some(otp), dns)
 }
 
 /// Only the "code after the password" setting changed: `meta.json` is saved (no new profile for a native
@@ -709,6 +772,7 @@ impl Draft {
                         ca_pem: config.ca_pem,
                         password: None,
                         otp: c.otp.into(),
+                        dns: dns_fields(c),
                     })
                 } else {
                     EditorFields::Text(TextFields {
@@ -720,6 +784,7 @@ impl Draft {
                         key_password: None,
                         acknowledged: c.acknowledged_risky_directives.iter().cloned().collect(),
                         otp: c.otp.into(),
+                        dns: dns_fields(c),
                     })
                 };
                 (fields, stored)
@@ -928,7 +993,8 @@ impl Draft {
                     key_password: key_password.clone(),
                     ..Secrets::default()
                 };
-                let issues = save_text(deps, c, &f.name, &f.text, &secrets, &acknowledged, Some(f.otp.into()));
+                let issues =
+                    save_text(deps, c, &f.name, &f.text, &secrets, &acknowledged, Some(f.otp.into()), f.dns.as_ref());
                 self.issues = issues.iter().map(ValidationIssue::display).collect();
                 let ok = issues.is_empty();
                 if ok {
@@ -943,7 +1009,8 @@ impl Draft {
                 ok
             }
             (Target::Connection(c), EditorFields::Sstp(f)) => {
-                let issues = save_sstp(deps, c, &f.name, &f.config(), f.password.as_deref(), f.otp.into());
+                let issues =
+                    save_sstp(deps, c, &f.name, &f.config(), f.password.as_deref(), f.otp.into(), f.dns.as_ref());
                 // As the Swift form: the messages without line numbers.
                 self.issues = issues.into_iter().map(|i| i.message).collect();
                 let ok = self.issues.is_empty();
@@ -1204,6 +1271,11 @@ impl Draft {
             wireguard: self.wireguard_keys(),
             client_cert: self.client_cert_view(),
             platform: None,
+            dns_full_tunnel: match (&self.fields, self.kind()) {
+                (EditorFields::Text(f), Some(kind)) => dns_settings::full_tunnel_hint(kind, &f.text),
+                (EditorFields::Sstp(f), _) => Some(f.route_all),
+                _ => None,
+            },
             masked_text: match (&self.fields, self.kind()) {
                 (EditorFields::Text(f), Some(kind)) => config_secrets::masked(kind, &f.text),
                 _ => None,
@@ -1395,6 +1467,10 @@ pub struct EditorView {
     /// keeps the real text. Absent from the JSON when there is nothing to mask.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub masked_text: Option<String>,
+    /// OpenVPN / WireGuard / SSTP: whether the draft sends all traffic through the VPN
+    /// (`dns_settings::full_tunnel_hint`; `None`: the server decides). The DNS section hides Targeted when `true`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_full_tunnel: Option<bool>,
     /// OpenVPN: the "Private key password" field is shown (the key is encrypted, a PKCS#12 needs a password, or a
     /// key password is stored or typed).
     pub key_password_used: bool,

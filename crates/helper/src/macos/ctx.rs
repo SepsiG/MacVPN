@@ -261,9 +261,9 @@ impl Ctx {
         self.log.step(&tr("no running connection", &[]));
     }
 
-    /// This connection gives up DNS (the DNS manager restores the originals, or the DNS of the newest other
-    /// connection holding DNS). A `dns-backup` of an older root layer goes through the DNS hook
-    /// (`<libexec>/mvpn hook ovpn-dns <run> <log>` with `script_type=down`) as before.
+    /// This connection gives up DNS (the DNS manager removes its entries and restores the overrides, or hands
+    /// them to the newest other connection holding DNS). A `dns-backup` of an older root layer goes through the DNS
+    /// hook (`<libexec>/mvpn hook ovpn-dns <run> <log>` with `script_type=down`) as before.
     pub fn dns_restore(&self) {
         let run = self.run().to_path_buf();
         if crate::macos::paths::is_file(&run.join("dns-backup")) {
@@ -282,15 +282,19 @@ impl Ctx {
         if !self.dry()
             && let Some(m) = crate::macos::dns::manager(&self.s)
         {
-            m.release(&self.id, &self.log);
+            m.release(&self.id, &run, &self.log);
         }
     }
 
-    /// This connection takes DNS (WireGuard; OpenVPN and SSTP go through the DNS hook).
-    pub fn dns_set(&self, dns: &crate::macos::dns::Dns) {
+    /// This connection takes DNS with what the VPN sent (WireGuard; OpenVPN and SSTP go through the DNS hook) and
+    /// its own settings (`<run>/dns-request`).
+    pub fn dns_set(&self, pushed: &crate::macos::dns_plan::Pushed) {
         match crate::macos::dns::manager(&self.s) {
-            Some(m) => m.acquire(&self.id, dns, &self.log),
-            None => self.log.step(&tr("not running as root: DNS not changed", &[])),
+            Some(m) => {
+                m.acquire(&self.id, self.run(), pushed, &self.log);
+            }
+            None if !pushed.servers.is_empty() => self.log.step(&tr("not running as root: DNS not changed", &[])),
+            None => {}
         }
     }
 }

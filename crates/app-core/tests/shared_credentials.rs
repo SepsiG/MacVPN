@@ -363,13 +363,13 @@ fn the_editors_refuse_a_typed_username_or_password_for_a_linked_connection() {
     };
     let config = "client\nremote vpn.example.com 1194\nauth-user-pass\n";
     let typed = Secrets { password: Some("typed".into()), ..Secrets::default() };
-    let issues = editor::save_text(&deps, &one, "One", config, &typed, &BTreeSet::new(), None);
+    let issues = editor::save_text(&deps, &one, "One", config, &typed, &BTreeSet::new(), None, None);
     assert_eq!(issues.len(), 1);
     assert!(issues[0].message.contains("Office AD"), "{:?}", issues[0].message);
     assert_eq!(f.secrets.secrets(&two.id).password.as_deref(), Some("shared"));
     // A linked editor sends `None` for both (or an empty value): saved, the credential untouched.
     let untouched = Secrets { username: Some(String::new()), key_password: Some("kp".into()), ..Secrets::default() };
-    assert!(editor::save_text(&deps, &one, "One renamed", config, &untouched, &BTreeSet::new(), None).is_empty());
+    assert!(editor::save_text(&deps, &one, "One renamed", config, &untouched, &BTreeSet::new(), None, None).is_empty());
     assert_eq!(f.secrets.secrets(&one.id).key_password.as_deref(), Some("kp"));
     let s = f.secrets.secrets(&two.id);
     assert_eq!((s.username.as_deref(), s.password.as_deref()), (Some("alice"), Some("shared")));
@@ -550,4 +550,52 @@ fn l2tp_copy_keeps_server_account_and_secrets() {
     // Only a Cisco IPsec connection is copied.
     let l2tp = manager.connections().into_iter().find(|c| c.kind == VPNKind::L2tp).unwrap();
     assert!(editor::l2tp_copy_of(&ed, &l2tp, Some(&f.creds)).is_err());
+}
+
+/// The editor's DNS section (root layer 15): strict JSON, validated on save, stored in `meta.json` only.
+#[test]
+fn the_editors_dns_fields_are_strict_validated_and_saved() {
+    use macvpn_app_core::editor::{DnsFields, TextFields};
+    use macvpn_core::dns_settings::DnsMode;
+    // dns_fields_deserialize_strictly
+    let ok: DnsFields = serde_json::from_str(
+        r#"{"mode":"targeted","servers":["10.0.0.53"],"domains":["Corp.Example."],"overrideVpn":false}"#,
+    )
+    .unwrap();
+    assert!(
+        serde_json::from_str::<DnsFields>(r#"{"mode":"full","servers":[],"domains":[],"overrideVpn":false,"x":1}"#)
+            .is_err()
+    );
+    let text: TextFields = serde_json::from_value(serde_json::json!({
+        "name": "n", "text": "t", "username": "", "password": null, "psk": null, "keyPassword": null,
+        "acknowledged": [], "otp": {"enabled": false, "separator": "none"}
+    }))
+    .unwrap();
+    assert_eq!(text.dns, None, "an older UI sends none: kept as stored");
+
+    let f = Fixture::new();
+    let one = f.openvpn("One");
+    let deps = EditorDeps {
+        manager: f.manager(),
+        store: f.store.clone(),
+        secrets: f.secrets.clone(),
+        secret_writer: f.secrets.clone(),
+        profiles: Arc::new(MobileconfigProfiles::default()),
+        clock: clock_at(1_000_000.0),
+    };
+    let config = "client\nremote vpn.example.com 1194\nauth-user-pass\n";
+    let none = Secrets::default();
+    // invalid_dns_fields_are_refused_with_message
+    let bad = DnsFields { mode: "full".into(), servers: vec!["dns.example".into()], ..Default::default() };
+    let issues = editor::save_text(&deps, &one, "One", config, &none, &BTreeSet::new(), None, Some(&bad));
+    assert_eq!(issues.len(), 1);
+    assert!(issues[0].message.contains("dns.example"), "{:?}", issues[0].message);
+    let over = DnsFields { mode: "full".into(), override_vpn: true, ..Default::default() };
+    assert_eq!(editor::save_text(&deps, &one, "One", config, &none, &BTreeSet::new(), None, Some(&over)).len(), 1);
+    // A valid one is stored, the domain normalized.
+    assert!(editor::save_text(&deps, &one, "One", config, &none, &BTreeSet::new(), None, Some(&ok)).is_empty());
+    let saved = f.store.list().unwrap().into_iter().find(|c| c.id == one.id).unwrap();
+    assert_eq!(saved.dns.mode, DnsMode::Targeted);
+    assert_eq!(saved.dns.domains, ["corp.example"]);
+    assert_eq!(f.store.load_config(&one.id).unwrap(), config, "the config is untouched");
 }

@@ -182,6 +182,11 @@ pub struct RowView {
     /// days"; [`ViewModel::set_certificate_expiry`]). Absent from the JSON when `None`.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub certificate_warning: Option<String>,
+    /// macOS root layer 15: what the connection's DNS does when it is not simply the VPN's ("The VPN sent no DNS;
+    /// internal names will not resolve.", the fallback, a failing VPN DNS, an outdated root layer;
+    /// [`ViewModel::set_dns_notes`]). Absent from the JSON when `None`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub dns_note: Option<String>,
 }
 
 /// One row of the folder tree (spec 3), in display order: per folder its subfolders, then its items (pinned first,
@@ -580,6 +585,7 @@ impl ViewModel {
                     published: Vec::new(),
                     admin_action: None,
                     certificate_warning: None,
+                    dns_note: None,
                 }
             })
             .collect();
@@ -818,6 +824,13 @@ impl ViewModel {
         for row in &mut self.rows {
             row.certificate_warning =
                 expiry.get(&row.id).and_then(|not_after| crate::editor::certificate_row_warning(*not_after, now));
+        }
+    }
+
+    /// The DNS hints of the managed rows (`note`: by row id).
+    pub fn set_dns_notes(&mut self, note: &dyn Fn(&str) -> Option<String>) {
+        for row in self.rows.iter_mut().filter(|r| r.managed) {
+            row.dns_note = note(&row.id);
         }
     }
 

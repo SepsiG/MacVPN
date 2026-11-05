@@ -27,8 +27,8 @@
 //! Nothing here logs, and no error carries a config or a secret.
 
 use super::payload::{
-    CatalogConnection, CatalogFolder, CatalogPayload, CredentialSlot, InvalidCatalog, PAYLOAD_VERSION, PersonalField,
-    check_connection, personal_fields, validate_payload,
+    CatalogConnection, CatalogFolder, CatalogPayload, CredentialSlot, InvalidCatalog, PersonalField, check_connection,
+    payload_version, personal_fields, validate_payload,
 };
 use super::selection::{InlineSecret, PublishSelection, SSTP_SLOT_USER};
 use crate::models::{SecretField, VPNKind, parse_uuid, uuid_string};
@@ -231,6 +231,7 @@ fn draft_connection(
         config,
         native,
         otp: s.connection.otp,
+        dns: s.connection.dns.clone(),
         slot: None,
         secret_refs: BTreeMap::new(),
     };
@@ -310,7 +311,7 @@ fn finish(
         hashes.insert(f.id, folder_hash(f));
     }
     let payload = CatalogPayload {
-        version: PAYLOAD_VERSION,
+        version: payload_version(&connections),
         folders: d.folders,
         connections,
         credential_slots: slots.into_iter().map(|(id, name)| CredentialSlot { id, name }).collect(),

@@ -7679,6 +7679,307 @@
       "only": [
         "linux"
       ]
+    },
+    "Not a valid DNS server address: %@": {
+      "hu": "Nem érvényes DNS-szervercím: %@",
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
+    },
+    "At most %ld DNS servers can be set.": {
+      "hu": "Legfeljebb %ld DNS-szerver adható meg.",
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
+    },
+    "Not a valid domain: %@": {
+      "hu": "Nem érvényes tartomány: %@",
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
+    },
+    "At most %ld domains can be set.": {
+      "hu": "Legfeljebb %ld tartomány adható meg.",
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
+    },
+    "Using your own DNS instead of the VPN's needs at least one DNS server.": {
+      "hu": "Ha a saját DNS-t használod a VPN-é helyett, legalább egy DNS-szerver kell.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "a DNS setting was changed by the system meanwhile and is left as it is": {
+      "hu": "egy DNS-beállítást közben a rendszer módosított, az úgy marad",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "DNS could not be changed: %@": {
+      "hu": "a DNS nem módosítható: %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the local network's names stay on its DNS: %@": {
+      "hu": "a helyi hálózat nevei a saját DNS-én maradnak: %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "full tunnel: the Targeted mode acts as Automatic": {
+      "hu": "teljes alagút: a Célzott mód Automatikusként működik",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN sent no DNS; internal names will not resolve": {
+      "hu": "a VPN nem küldött DNS-t; a belső nevek nem oldódnak fel",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN's DNS does not resolve internet names (%@): only the VPN's domains use it now": {
+      "hu": "a VPN DNS-e nem oldja fel az internetes neveket (%@): most csak a VPN tartományai használják",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Strict DNS: the VPN's DNS does not answer (%@); DNS stays in the tunnel": {
+      "hu": "Szigorú DNS: a VPN DNS-e nem válaszol (%@); a DNS az alagútban marad",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN's DNS does not answer (%@); it stays in effect": {
+      "hu": "a VPN DNS-e nem válaszol (%@); érvényben marad",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN's DNS answers again: it is in effect for every name": {
+      "hu": "a VPN DNS-e újra válaszol: minden névre érvényes",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN's DNS is in effect (%@ servers, %@ domains), verified": {
+      "hu": "a VPN DNS-e érvényes (%@ szerver, %@ tartomány), ellenőrizve",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the VPN's DNS is set; the system has not confirmed it yet": {
+      "hu": "a VPN DNS-e beállítva; a rendszer még nem erősítette meg",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "Targeted DNS: no domain uses the VPN's DNS (the VPN sent none, none is set)": {
+      "hu": "Célzott DNS: egy tartomány sem használja a VPN DNS-ét (a VPN nem küldött, és nincs megadva)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "only the VPN's domains use the VPN's DNS (%@ servers, %@ domains)": {
+      "hu": "csak a VPN tartományai használják a VPN DNS-ét (%@ szerver, %@ tartomány)",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "DNS mode: %@": {
+      "hu": "DNS-mód: %@",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the original DNS is back": {
+      "hu": "az eredeti DNS visszaállt",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "the DNS variables file of OpenVPN was refused": {
+      "hu": "az OpenVPN DNS-változókat tartalmazó fájlja elutasítva",
+      "scope": "mvpn",
+      "only": [
+        "macos"
+      ]
+    },
+    "DNS": {
+      "hu": "DNS",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Automatic (recommended)": {
+      "hu": "Automatikus (ajánlott)",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Every name through the VPN's DNS; if it cannot resolve internet names, only the VPN's domains use it.": {
+      "hu": "Minden név a VPN DNS-én át; ha az internetes neveket nem oldja fel, csak a VPN tartományai használják.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Full": {
+      "hu": "Teljes",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Every name through the VPN's DNS, also when it does not work. The local network's own names stay local.": {
+      "hu": "Minden név a VPN DNS-én át, akkor is, ha nem működik. A helyi hálózat saját nevei helyben maradnak.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Targeted": {
+      "hu": "Célzott",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Only the VPN's domains use the VPN's DNS.": {
+      "hu": "Csak a VPN tartományai használják a VPN DNS-ét.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Strict": {
+      "hu": "Szigorú",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "DNS never leaves the tunnel, even if the VPN's DNS does not work.": {
+      "hu": "A DNS soha nem hagyja el az alagutat, akkor sem, ha a VPN DNS-e nem működik.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Own DNS servers": {
+      "hu": "Saját DNS-szerverek",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Own domains": {
+      "hu": "Saját tartományok",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Use these instead of the VPN's DNS": {
+      "hu": "Ezeket használd a VPN DNS-e helyett",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "If the server sends all traffic through the VPN, Targeted works like Automatic.": {
+      "hu": "Ha a szerver minden forgalmat a VPN-en át küld, a Célzott mód Automatikusként működik.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Unknown DNS mode": {
+      "hu": "Ismeretlen DNS-mód",
+      "scope": "core",
+      "only": [
+        "macos"
+      ]
+    },
+    "The VPN's DNS does not resolve internet names; only the VPN's domains use it now.": {
+      "hu": "A VPN DNS-e nem oldja fel az internetes neveket; most csak a VPN tartományai használják.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "The VPN sent no DNS; internal names will not resolve.": {
+      "hu": "A VPN nem küldött DNS-t; a belső nevek nem oldódnak fel.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Internet names are resolved by the local network's DNS meanwhile.": {
+      "hu": "Az internetes neveket addig a helyi hálózat DNS-e oldja fel.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "The VPN's DNS does not answer.": {
+      "hu": "A VPN DNS-e nem válaszol.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "%@: DNS": {
+      "hu": "%@: DNS",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "A VPN connection's DNS": {
+      "hu": "Egy VPN-kapcsolat DNS-e",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "The VPN's DNS works again; every name uses it.": {
+      "hu": "A VPN DNS-e újra működik; minden név azt használja.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
+    },
+    "Update the system component to use this connection's DNS settings.": {
+      "hu": "Frissítsd a rendszerkomponenst, hogy a kapcsolat DNS-beállításai érvényesüljenek.",
+      "scope": "app",
+      "only": [
+        "macos"
+      ]
     }
   },
   "version": 1

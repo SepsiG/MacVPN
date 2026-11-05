@@ -9,6 +9,7 @@ use crate::notify::{CONNECTION_KEY, NotificationContent};
 use crate::reconnect::Skip;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::ConnectionState;
+use macvpn_core::status::DnsState;
 use macvpn_platform_api::PreferenceStore;
 use std::collections::{HashMap, HashSet};
 
@@ -81,6 +82,23 @@ pub enum Notice {
         name: String,
         outcome: DeadOutcome,
     },
+    /// macOS root layer 15, Automatic mode: the VPN's DNS does not resolve internet names, so only the VPN's
+    /// domains use it now (`full_tunnel`: the connection sends all traffic through the VPN).
+    DnsFallback {
+        key: String,
+        name: String,
+        full_tunnel: bool,
+    },
+    /// Full / Strict: the VPN's DNS does not answer and stays in effect.
+    DnsFailing {
+        key: String,
+        name: String,
+    },
+    /// After a fallback: the VPN's DNS resolves every name again.
+    DnsRestored {
+        key: String,
+        name: String,
+    },
 }
 
 /// What happens to a dead tunnel.
@@ -102,6 +120,8 @@ pub enum DeadOutcome {
 pub struct NoticeTracker {
     last: HashMap<String, ConnectionState>,
     auto: HashSet<String>,
+    /// The DNS state last seen per connection (macOS root layer 15).
+    dns: HashMap<String, DnsState>,
 }
 
 fn is_connecting(state: &ConnectionState) -> bool {
@@ -129,6 +149,52 @@ impl NoticeTracker {
         }
         let (key, name) = (key.to_string(), name.to_string());
         Some(if self.auto.remove(&key) { Notice::Reconnected { key, name } } else { Notice::Connected { key, name } })
+    }
+}
+
+impl NoticeTracker {
+    /// The DNS state of a connected connection as the status poll or a `dns-check` reported it (`None`: not known,
+    /// or not connected any more: forgotten). A notice on entering the fallback (once), on a failing VPN DNS, and
+    /// on the return from a fallback; none for a VPN without DNS (the row shows that).
+    pub fn on_dns(&mut self, key: &str, name: &str, new: Option<DnsState>) -> Option<Notice> {
+        let Some(new) = new else {
+            self.dns.remove(key);
+            return None;
+        };
+        let old = self.dns.insert(key.to_string(), new);
+        let fallback = |s: Option<DnsState>| matches!(s, Some(DnsState::Fallback | DnsState::FallbackFullTunnel));
+        let (key, name) = (key.to_string(), name.to_string());
+        match new {
+            DnsState::Fallback | DnsState::FallbackFullTunnel if !fallback(old) => {
+                Some(Notice::DnsFallback { key, name, full_tunnel: new == DnsState::FallbackFullTunnel })
+            }
+            DnsState::Failing if old != Some(DnsState::Failing) => Some(Notice::DnsFailing { key, name }),
+            DnsState::Vpn if fallback(old) => Some(Notice::DnsRestored { key, name }),
+            _ => None,
+        }
+    }
+}
+
+impl NoticeTracker {
+    /// Forgets the DNS state of every connection not in `keys` (disconnected ones: a reconnect starts afresh).
+    pub fn retain_dns(&mut self, keys: &[String]) {
+        self.dns.retain(|k, _| keys.contains(k));
+    }
+}
+
+/// The text of a DNS state for the connection's row and its notice (lock-screen safe: no server, no address).
+pub fn dns_text(state: DnsState) -> Option<String> {
+    let only = || l10n::tr("The VPN's DNS does not resolve internet names; only the VPN's domains use it now.", &[]);
+    match state {
+        DnsState::None => Some(l10n::tr("The VPN sent no DNS; internal names will not resolve.", &[])),
+        DnsState::Fallback => Some(only()),
+        DnsState::FallbackFullTunnel => Some(format!(
+            "{} {}",
+            only(),
+            l10n::tr("Internet names are resolved by the local network's DNS meanwhile.", &[])
+        )),
+        DnsState::Failing => Some(l10n::tr("The VPN's DNS does not answer.", &[])),
+        DnsState::Vpn | DnsState::Targeted => None,
     }
 }
 
@@ -179,7 +245,10 @@ fn own_name(notice: &Notice) -> &str {
         | Notice::DisconnectedNoNetwork { name, .. }
         | Notice::NotResponding { name, .. }
         | Notice::KeepsTrying { name, .. }
-        | Notice::RetriesEnded { name, .. } => name.as_str(),
+        | Notice::RetriesEnded { name, .. }
+        | Notice::DnsFallback { name, .. }
+        | Notice::DnsFailing { name, .. }
+        | Notice::DnsRestored { name, .. } => name.as_str(),
         Notice::DisconnectedHere { .. } => "",
     }
 }
@@ -210,6 +279,12 @@ fn title(notice: &Notice, name: &str) -> String {
         (Notice::KeepsTrying { .. } | Notice::RetriesEnded { .. }, false) => l10n::tr("%@ could not reconnect", &n),
         (Notice::KeepsTrying { .. } | Notice::RetriesEnded { .. }, true) => {
             l10n::tr("A VPN connection could not reconnect", &[])
+        }
+        (Notice::DnsFallback { .. } | Notice::DnsFailing { .. } | Notice::DnsRestored { .. }, false) => {
+            l10n::tr("%@: DNS", &n)
+        }
+        (Notice::DnsFallback { .. } | Notice::DnsFailing { .. } | Notice::DnsRestored { .. }, true) => {
+            l10n::tr("A VPN connection's DNS", &[])
         }
     }
 }
@@ -260,6 +335,12 @@ pub fn content_named(notice: &Notice, name: &str, unique: String) -> Notificatio
         Notice::RetriesEnded { key, .. } => {
             (key, l10n::tr("It was tried for an hour. Connect it again when the server is back.", &[]))
         }
+        Notice::DnsFallback { key, full_tunnel, .. } => (
+            key,
+            dns_text(if *full_tunnel { DnsState::FallbackFullTunnel } else { DnsState::Fallback }).unwrap_or_default(),
+        ),
+        Notice::DnsFailing { key, .. } => (key, dns_text(DnsState::Failing).unwrap_or_default()),
+        Notice::DnsRestored { key, .. } => (key, l10n::tr("The VPN's DNS works again; every name uses it.", &[])),
     };
     NotificationContent { id: unique, title: title(notice, name), body, user_info: (CONNECTION_KEY, key.clone()) }
 }

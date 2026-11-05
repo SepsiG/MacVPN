@@ -99,6 +99,7 @@
       {#if traffic && row.state === 'connected'}<TrafficLine {traffic} size="md" />{/if}
       {#if row.heldBy.length > 0}<span class="held">{tr('Held by %@', row.heldBy.join(', '))}</span>{/if}
       {#if row.certificateWarning}<span class="cert-warning" role="note"><Icon name="warning" />{row.certificateWarning}</span>{/if}
+      {#if row.dnsNote}<span class="cert-warning" role="note"><Icon name="warning" />{row.dnsNote}</span>{/if}
     </div>
     <div class="actions">
       <button class:primary={!row.switchOn} onclick={toggle} disabled={!row.available || row.state === 'disconnecting'}>

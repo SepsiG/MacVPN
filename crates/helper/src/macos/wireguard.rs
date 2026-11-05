@@ -8,10 +8,12 @@
 
 use crate::macos::ctx::{Ctx, R, tr};
 use crate::macos::dns::{Dns, is_search_domain, log_over_limits};
+use crate::macos::dns_plan::Pushed;
 use crate::macos::exec::Cmd;
 use crate::macos::fsx;
 use crate::macos::hook_dns::is_dns;
 use crate::macos::paths::is_dir;
+use macvpn_core::netaddr::IpPrefix;
 
 /// `wg_iface`: `mv` + the first 8 hex digits of the id, lower case.
 pub fn iface_name(id: &str) -> String {
@@ -46,7 +48,10 @@ pub fn strip_dns(conf: &str) -> (String, Dns) {
         if interface && key.eq_ignore_ascii_case("dns") && stripped.contains('=') {
             for v in value.split([',', ' ', '\t', '\r', '\n']).filter(|v| !v.is_empty()) {
                 if is_dns(v) {
-                    dns.servers.push(v.to_string());
+                    // An address the DNS manager would refuse is dropped, never taken for a domain.
+                    if crate::macos::hook_dns::is_pushed_dns(v) {
+                        dns.servers.push(v.to_string());
+                    }
                 } else if is_search_domain(v.trim_end_matches('.')) {
                     dns.domains.push(v.trim_end_matches('.').to_string());
                 }
@@ -56,6 +61,24 @@ pub fn strip_dns(conf: &str) -> (String, Dns) {
         out.push_str(line);
     }
     (out, dns)
+}
+
+/// The `AllowedIPs` of every `[Peer]` (strictly parsed; anything else is skipped): the routed networks whose
+/// private reverse zones go to the VPN's DNS.
+pub fn allowed_ips(conf: &str) -> Vec<IpPrefix> {
+    let mut out = Vec::new();
+    let mut peer = false;
+    for line in conf.lines() {
+        let stripped = line.split('#').next().unwrap_or_default();
+        let (key, value) = stripped.split_once('=').unwrap_or((stripped, ""));
+        let key = key.trim_matches([' ', '\t', '\r']);
+        if key.starts_with('[') {
+            peer = key.eq_ignore_ascii_case("[peer]");
+        } else if peer && key.eq_ignore_ascii_case("allowedips") {
+            out.extend(value.split(',').filter_map(|v| IpPrefix::parse(v.trim())));
+        }
+    }
+    out
 }
 
 /// `up_wireguard`
@@ -93,13 +116,16 @@ pub fn up(ctx: &mut Ctx) -> R {
         let wg = ctx.find_tool("wg").unwrap_or_default();
         ctx.run_logged(&Cmd::new(wg).arg("show").arg(&iface))?;
     }
-    if !dns.servers.is_empty() && !ctx.dry() {
-        // The DNS manager's limits (M-2): an oversized list is refused whole, the original DNS stays.
-        if dns.within_limits() {
-            ctx.dns_set(&dns);
-        } else {
+    if !ctx.dry() {
+        // The DNS manager's limits (M-2): an oversized list is refused whole (the connection's own DNS may still
+        // apply); the manager also applies the DNS mode and own DNS when the config has no `DNS =`.
+        let routes = allowed_ips(&fsx::cat(&conf));
+        let mut pushed = Pushed { servers: dns.servers.clone(), search: dns.domains.clone(), resolve: vec![], routes };
+        if !dns.servers.is_empty() && !dns.within_limits() {
             log_over_limits(&dns, &ctx.log);
+            pushed = Pushed { routes: pushed.routes, ..Default::default() };
         }
+        ctx.dns_set(&pushed);
     }
     Ok(())
 }
@@ -132,6 +158,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn allowed_ips_feed_the_reverse_zones() {
+        let conf = "[Interface]\nAddress = 10.7.0.2/32\n[Peer]\nAllowedIPs = 10.7.0.0/16, 192.168.50.0/24 # lab\n\
+                    AllowedIPs = 0.0.0.0/0, bogus\n";
+        let r = allowed_ips(conf);
+        assert_eq!(r.len(), 3, "the Interface address is not a route; bogus is skipped");
+        let pushed = Pushed { servers: vec!["10.7.0.1".into()], routes: r, ..Default::default() };
+        let e = crate::macos::dns_plan::effective(&pushed, &Default::default());
+        assert_eq!(e.zones, ["7.10.in-addr.arpa", "50.168.192.in-addr.arpa"]);
+    }
+
+    #[test]
     fn interface_names() {
         assert_eq!(iface_name("0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0"), "mv0f1e2d3c");
         assert!(is_iface("mv12345678") && !is_iface("mv1234567") && !is_iface("mv1234567G"));
@@ -149,6 +186,10 @@ mod tests {
         );
         assert_eq!(dns.servers, vec!["10.0.0.53", "fd00::53"]);
         assert_eq!(dns.domains, vec!["corp.example", "b.corp.example"]);
+        // An address the DNS manager would refuse is dropped (never taken for a search domain).
+        let (_, odd) = strip_dns("[Interface]\nDNS = 010.0.0.53, 10.0.0.256, 10.0.0.53\n");
+        assert_eq!(odd.servers, vec!["10.0.0.53"]);
+        assert!(odd.domains.is_empty(), "{:?}", odd.domains);
         let (same, none) = strip_dns("[Interface]\nPrivateKey = k\n# DNS = 1.1.1.1\n");
         assert_eq!(same, "[Interface]\nPrivateKey = k\n# DNS = 1.1.1.1\n");
         assert!(none.servers.is_empty() && none.domains.is_empty());
@@ -156,7 +197,7 @@ mod tests {
 
     #[test]
     fn an_oversized_dns_line_is_over_the_managers_limits() {
-        use crate::macos::dns::{MAX_DOMAINS, MAX_SERVERS};
+        use crate::macos::dns_legacy::{MAX_DOMAINS, MAX_SERVERS};
         let doms: Vec<String> = (0..=MAX_DOMAINS).map(|i| format!("d{i}.corp.example")).collect();
         let conf = format!("[Interface]\nDNS = 10.0.0.53, {}\n", doms.join(", "));
         let (out, d) = strip_dns(&conf);

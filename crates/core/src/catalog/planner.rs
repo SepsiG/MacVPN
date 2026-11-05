@@ -182,6 +182,11 @@ pub fn meta_hash(c: &CatalogConnection, payload: &CatalogPayload) -> String {
     field(&mut h, c.color.map_or("", FolderColor::as_str).as_bytes());
     field(&mut h, &[u8::from(c.otp.enabled)]);
     field(&mut h, c.otp.separator.raw_value().as_bytes());
+    // The DNS settings only when set, so the hash of every catalog connection without them stays the same.
+    if !c.dns.is_default() {
+        field(&mut h, b"dns");
+        field(&mut h, c.dns.to_json().to_string().as_bytes());
+    }
     field(&mut h, opt_id(c.slot).as_bytes());
     for (f, secret) in &c.secret_refs {
         field(&mut h, f.raw_value().as_bytes());

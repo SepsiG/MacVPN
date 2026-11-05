@@ -1,29 +1,39 @@
 //! `mvpn serve --uid <uid>` (root layer 13): the read-only questions the app polls while a tunnel is up (`status`,
-//! `liveness <id>`, `traffic <id>`) answered over a Unix socket instead of a new `sudo -n mvpn …` each time (a
-//! `sudo` and an `mvpn` process, PAM, a group lookup and some 30 unified-log lines every few seconds).
+//! `liveness <id>`, `traffic <id>`, and from root layer 15 `dns-check <id>`) answered over a Unix socket instead
+//! of a new `sudo -n mvpn …` each time (a `sudo` and an `mvpn` process, PAM, a group lookup and some 30 unified-log
+//! lines every few seconds).
 //!
 //! - Started only by launchd (`/Library/LaunchDaemons/local.macvpn.mvpn-query.plist`, written by the installer):
 //!   launchd owns the listening socket `/var/run/macvpn-query.sock` (owner the installing user, group 0, 0600) and
 //!   starts this process on the first connection; it takes the socket with `launch_activate_socket`, serves the
-//!   connections one at a time and exits after [`IDLE`] without one (launchd starts it again on the next).
+//!   connections one at a time (a `dns-check`, whose probe takes seconds, on its own thread: [`MAX_CHECKS`]) and exits after [`IDLE`] without one (launchd starts it again on the next).
 //!   Not reachable through the sudoers rule (`refuse_via_sudo` in `main`).
 //! - Every connection: the peer ([`crate::macos::sys::peer_uid`]) must be `--uid` or root, else it is closed without
 //!   an answer. Then one request line of at most [`REQUEST_MAX`] bytes, read within [`IO_TIMEOUT`]: `status`,
-//!   `liveness <UUID>` or `traffic <UUID>` ([`Request::parse`], the CLI's UUID check). Anything else: closed.
+//!   `liveness <UUID>`, `traffic <UUID>` or `dns-check <UUID>` ([`Request::parse`], the CLI's UUID check).
+//!   Anything else: closed.
 //! - The answer ([`frame`]): the exit code as a decimal line, then exactly what the CLI prints on stdout for that
-//!   command; the same code runs (`status::answer`, `liveness::answer`, `traffic::answer`), the status' log
-//!   housekeeping and DNS reconcile included, and nothing else. Written within [`IO_TIMEOUT`]; then closed.
+//!   command; the same code runs (`status::answer`, `liveness::answer`, `traffic::answer`, `dns::check_answer`),
+//!   the status' log housekeeping and DNS reconcile included, and nothing else. Written within [`IO_TIMEOUT`];
+//!   then closed.
 //!
-//! No request reaches anything that changes state beyond what `mvpn status` already does; no answer holds more
-//! than the user's own `sudo mvpn status` / `liveness` / `traffic` prints. Nothing is logged.
+//! No request reaches anything that changes state beyond what `mvpn status` already does, with one documented
+//! extension (maintainer decision O4, root layer 15): `dns-check` sends one DNS query (the probe) to the running
+//! connection's own DNS servers and may re-publish **that connection's own** DNS layout (the Automatic mode's
+//! fallback and its return) — the same class of change as the DNS reconcile `status` already does. No answer
+//! holds more than the user's own `sudo mvpn status` / `liveness` / `traffic` / `dns-check` prints. Nothing is
+//! logged here (the DNS manager logs a layout change in the connection's own log, as `status`' reconcile does).
 
 use crate::macos::ctx::Ctx;
 use crate::macos::paths::Settings;
 use crate::shared::cli::{self, is_uuid};
 use macvpn_core::liveness::LIVENESS;
+use macvpn_core::status::DNS_CHECK;
 use macvpn_core::traffic::TRAFFIC;
 use std::io::{Read, Write};
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 /// The plist's `Sockets` key the listening socket is under.
@@ -34,13 +44,17 @@ pub const IDLE: Duration = Duration::from_secs(60);
 pub const IO_TIMEOUT: Duration = Duration::from_secs(2);
 /// The longest request line, `\n` included (`liveness <36-byte UUID>\n` is 46).
 pub const REQUEST_MAX: usize = 128;
+/// At most this many `dns-check`s at a time. Each runs on its own thread (its probe takes up to 9 s), so the loop
+/// keeps answering `status` / `liveness` meanwhile; one more is closed without an answer.
+pub const MAX_CHECKS: usize = 4;
 
-/// One of the three read-only questions.
+/// One of the four questions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
     Status,
     Liveness(String),
     Traffic(String),
+    DnsCheck(String),
 }
 
 impl Request {
@@ -58,6 +72,7 @@ impl Request {
             None if text == "status" => Some(Request::Status),
             Some((LIVENESS, id)) if is_uuid(id) => Some(Request::Liveness(id.to_string())),
             Some((TRAFFIC, id)) if is_uuid(id) => Some(Request::Traffic(id.to_string())),
+            Some((DNS_CHECK, id)) if is_uuid(id) => Some(Request::DnsCheck(id.to_string())),
             _ => None,
         }
     }
@@ -69,6 +84,7 @@ impl Request {
             Request::Status => (0, crate::macos::status::answer(&load())),
             Request::Liveness(id) => crate::macos::liveness::answer(&ctx(LIVENESS, id)),
             Request::Traffic(id) => crate::macos::traffic::answer(&ctx(TRAFFIC, id)),
+            Request::DnsCheck(id) => crate::macos::dns::check_answer(&ctx(DNS_CHECK, id)),
         }
     }
 }
@@ -111,12 +127,17 @@ pub fn serve_on(listener: &UnixListener, uid: u32, idle: Duration, load: &dyn Fn
     if listener.set_nonblocking(true).is_err() {
         return 1;
     }
+    let checks = Arc::new(AtomicUsize::new(0));
     loop {
         if !crate::macos::sys::wait_readable(listener, idle) {
-            return 0;
+            if checks.load(Ordering::SeqCst) == 0 {
+                return 0;
+            }
+            // A `dns-check` is still running: never cut it short (it may be changing the DNS).
+            continue;
         }
         match listener.accept() {
-            Ok((stream, _)) => handle(stream, uid, load),
+            Ok((stream, _)) => handle(stream, uid, load, &checks),
             Err(e)
                 if matches!(
                     e.kind(),
@@ -129,16 +150,37 @@ pub fn serve_on(listener: &UnixListener, uid: u32, idle: Duration, load: &dyn Fn
     }
 }
 
-/// One connection: the peer check, the request, the answer; any failure just closes it.
-fn handle(stream: UnixStream, uid: u32, load: &dyn Fn() -> Settings) {
+/// One connection: the peer check, the request, the answer; any failure just closes it. A `dns-check` is answered
+/// on its own thread (at most [`MAX_CHECKS`], counted in `checks`).
+fn handle(stream: UnixStream, uid: u32, load: &dyn Fn() -> Settings, checks: &Arc<AtomicUsize>) {
     // An accepted socket inherits the listener's O_NONBLOCK on macOS; the timeouts below need a blocking one.
     if stream.set_nonblocking(false).is_err() || !peer_allowed(crate::macos::sys::peer_uid(&stream), uid) {
         return;
     }
     let Some(request) = read_request(&stream).and_then(|line| Request::parse(&line)) else { return };
+    if matches!(request, Request::DnsCheck(_)) {
+        if checks.fetch_add(1, Ordering::SeqCst) >= MAX_CHECKS {
+            checks.fetch_sub(1, Ordering::SeqCst);
+            return;
+        }
+        let settings = load();
+        let done = checks.clone();
+        let spawned = std::thread::Builder::new().spawn(move || {
+            answer(&stream, &request, &move || settings.clone());
+            done.fetch_sub(1, Ordering::SeqCst);
+        });
+        if spawned.is_err() {
+            checks.fetch_sub(1, Ordering::SeqCst);
+        }
+        return;
+    }
+    answer(&stream, &request, load);
+}
+
+fn answer(stream: &UnixStream, request: &Request, load: &dyn Fn() -> Settings) {
     let (code, stdout) = request.answer(load);
     if stream.set_write_timeout(Some(IO_TIMEOUT)).is_ok() {
-        let _ = (&stream).write_all(&frame(code, &stdout));
+        let _ = (&*stream).write_all(&frame(code, &stdout));
     }
 }
 
@@ -184,8 +226,9 @@ mod tests {
     const ID: &str = "0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0";
 
     #[test]
-    fn only_the_three_questions_are_understood() {
+    fn only_the_four_questions_are_understood() {
         assert_eq!(Request::parse(b"status\n"), Some(Request::Status));
+        assert_eq!(Request::parse(format!("dns-check {ID}\n").as_bytes()), Some(Request::DnsCheck(ID.into())));
         assert_eq!(Request::parse(format!("liveness {ID}\n").as_bytes()), Some(Request::Liveness(ID.into())));
         let lower = ID.to_lowercase();
         assert_eq!(Request::parse(format!("traffic {lower}\n").as_bytes()), Some(Request::Traffic(lower)));
@@ -205,6 +248,9 @@ mod tests {
             "liveness ../../etc\n".into(),
             "liveness\n".into(),
             "traffic \n".into(),
+            "dns-check \n".into(),
+            format!("dns-check {ID} x\n"),
+            "dns-check ../x\n".into(),
             format!("status{}\n", " ".repeat(REQUEST_MAX)),
         ] {
             assert_eq!(Request::parse(bad.as_bytes()), None, "{bad:?}");
@@ -275,9 +321,65 @@ mod tests {
         assert_eq!(ask(b"down\n"), "");
         assert_eq!(ask(format!("liveness {ID}\n").as_bytes()), "1\n", "a wireguard run without its utun");
         assert_eq!(ask(format!("traffic {ID}\n").as_bytes()), "1\n", "not strongSwan");
+        assert_eq!(ask(format!("dns-check {ID}\n").as_bytes()), "1\n", "no DNS session");
+        let session = "mode=automatic\ntunnel=split\nlayout=vpn-local\nprobe=ok\nfails=0\nwarn=\n\
+                       servers=10.8.0.1\nsearch=\nresolve=\nzones=\nsince=1\n";
+        let f = run.join(ID).join("dns-session");
+        std::fs::write(&f, session).unwrap();
+        std::fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+        assert_eq!(ask(format!("dns-check {ID}\n").as_bytes()), "0\nvpn\n", "the session's state");
         let started = Instant::now();
         assert_eq!(server.join().unwrap(), 0);
         assert!(started.elapsed() >= Duration::from_millis(1000));
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A `dns-check` probes on its own thread: the loop answers `status` meanwhile.
+    #[test]
+    fn a_dns_check_does_not_hold_up_the_other_questions() {
+        let base = std::env::temp_dir().join(format!("mvq-{}", &uuid::Uuid::new_v4().to_string()[..8]));
+        let run = base.join("run");
+        std::fs::create_dir_all(run.join(ID)).unwrap();
+        std::fs::write(run.join(ID).join("kind"), "wireguard\n").unwrap();
+        let session = "mode=automatic\ntunnel=split\nlayout=vpn-local\nprobe=ok\nfails=0\nwarn=\n\
+                       servers=10.8.0.1\nsearch=\nresolve=\nzones=\nsince=1\n";
+        let f = run.join(ID).join("dns-session");
+        std::fs::write(&f, session).unwrap();
+        std::fs::set_permissions(&f, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+        let t = TestEnv {
+            run_base: Some(run.display().to_string()),
+            wg_run: Some(base.join("no-wg").display().to_string()),
+            log_base: Some(base.join("no-log").display().to_string()),
+            dns_base: Some(base.join("dns").display().to_string()),
+            dynstore: Some(base.join("dyn").display().to_string()),
+            dns_probe: Some("slow-ok".into()),
+            brew: Some(base.join("no-brew").display().to_string()),
+            ..TestEnv::default()
+        };
+        let settings = Settings::resolve(true, t, String::new());
+        let sock = base.join("q.sock");
+        let listener = UnixListener::bind(&sock).unwrap();
+        let me = crate::macos::sys::geteuid();
+        let server = std::thread::spawn(move || {
+            let load = move || settings.clone();
+            serve_on(&listener, me, Duration::from_millis(300), &load)
+        });
+        let ask = move |request: String| {
+            let mut c = UnixStream::connect(&sock).unwrap();
+            c.write_all(request.as_bytes()).unwrap();
+            let mut answer = Vec::new();
+            c.read_to_end(&mut answer).unwrap();
+            String::from_utf8(answer).unwrap()
+        };
+        let ask2 = ask.clone();
+        let check = std::thread::spawn(move || ask2(format!("dns-check {ID}\n")));
+        std::thread::sleep(Duration::from_millis(200));
+        let started = Instant::now();
+        assert!(ask("status\n".into()).starts_with("0\n"));
+        assert!(started.elapsed() < Duration::from_millis(700), "status waited for the probe");
+        assert_eq!(check.join().unwrap(), "0\nvpn\n");
+        // The loop ends only after the check finished (idle 300 ms < the 1 s probe).
+        assert_eq!(server.join().unwrap(), 0);
         let _ = std::fs::remove_dir_all(&base);
     }
 

@@ -416,6 +416,9 @@ struct Inner {
     locked: bool,
     /// The tunnel interface the helper last reported for a connected root-backed connection (live traffic).
     ifaces: HashMap<String, String>,
+    /// The DNS state the root layer last reported for a connected connection (macOS root layer 15: `mvpn status`'s
+    /// `dns` key, or a `dns-check` answer).
+    dns_states: HashMap<String, macvpn_core::status::DnsState>,
     /// When a native service (managed or a system VPN) was seen to connect: only a connect this app saw (a service
     /// already up at the first refresh has no time).
     native_since: HashMap<String, Date>,
@@ -911,6 +914,21 @@ impl ConnectionManager {
 
     fn lock(&self) -> MutexGuard<'_, Inner> {
         self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The DNS state the root layer last reported for the connected connection `key` (macOS root layer 15);
+    /// `None`: not known (not connected, an older root layer, another platform).
+    pub fn dns_state(&self, key: &str) -> Option<macvpn_core::status::DnsState> {
+        self.read(|i| i.dns_states.get(key).copied())
+    }
+
+    /// A `dns-check` answer for `key`: kept until the next status poll reports the connection again.
+    pub fn set_dns_state(&self, key: &str, state: macvpn_core::status::DnsState) {
+        self.mutate(|i| {
+            if i.states.get(key).is_some_and(ConnectionState::is_connected) {
+                i.dns_states.insert(key.to_string(), state);
+            }
+        });
     }
 
     fn read<R>(&self, f: impl FnOnce(&Inner) -> R) -> R {
@@ -1550,6 +1568,10 @@ impl ConnectionManager {
                         Some(iface) if !iface.is_empty() => i.ifaces.insert(key.clone(), iface),
                         _ => i.ifaces.remove(&key),
                     };
+                    match reported.filter(|r| r.state == "connected").and_then(|r| r.dns) {
+                        Some(dns) => i.dns_states.insert(key.clone(), dns),
+                        None => i.dns_states.remove(&key),
+                    };
                     reported.map_or(ConnectionState::Disconnected, |r| r.connection_state())
                 };
                 // Stopped outside the app (LinVPN: GNOME's menu, `nmcli connection down`): off, as a disconnect of
@@ -1896,7 +1918,19 @@ impl ConnectionManager {
             let watch = (c.kind == VPNKind::Openvpn).then(|| self.start_auth_watch(c));
             let accept_risky =
                 if c.kind == VPNKind::Openvpn { c.acknowledged_risky_directives.clone() } else { Vec::new() };
-            let up = self.deps.helper.up(c.kind, &c.id, sent.as_bytes(), &prepared, debug, &accept_risky);
+            // The connection's DNS settings (macOS root layer 15) for the kinds the DNS manager handles.
+            let dns = matches!(c.kind, VPNKind::Openvpn | VPNKind::Wireguard | VPNKind::Sstp)
+                .then(|| c.dns.request())
+                .flatten();
+            let up = self.deps.helper.up_with_dns(
+                c.kind,
+                &c.id,
+                sent.as_bytes(),
+                &prepared,
+                debug,
+                &accept_risky,
+                dns.as_ref(),
+            );
             drop(sent);
             drop(prepared);
             if let Some(watch) = watch {

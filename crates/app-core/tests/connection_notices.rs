@@ -339,3 +339,72 @@ fn the_switch_field_is_absent_until_the_app_sets_it() {
     let json = serde_json::to_value(&vm).unwrap();
     assert_eq!(json.get("connectionNotifications").and_then(|v| v.as_bool()), Some(false));
 }
+
+mod dns {
+    use macvpn_app_core::connection_notices::{Notice, NoticeTracker, content, dns_text};
+    use macvpn_core::status::DnsState;
+
+    #[test]
+    fn fallback_notice_on_entering_fallback_only_once() {
+        let mut t = NoticeTracker::default();
+        assert_eq!(t.on_dns("k", "Office", Some(DnsState::Vpn)), None);
+        assert!(matches!(
+            t.on_dns("k", "Office", Some(DnsState::Fallback)),
+            Some(Notice::DnsFallback { full_tunnel: false, .. })
+        ));
+        assert_eq!(t.on_dns("k", "Office", Some(DnsState::Fallback)), None, "only once");
+        // A fallback found at connect is notified too.
+        assert!(t.on_dns("j", "Lab", Some(DnsState::FallbackFullTunnel)).is_some());
+    }
+
+    #[test]
+    fn full_tunnel_fallback_text_mentions_the_local_network() {
+        let n = Notice::DnsFallback { key: "k".into(), name: "Office".into(), full_tunnel: true };
+        let body = content(&n, "u".into()).body;
+        assert!(body.contains("local network's DNS"), "{body}");
+        let n = Notice::DnsFallback { key: "k".into(), name: "Office".into(), full_tunnel: false };
+        assert!(!content(&n, "u".into()).body.contains("local network's DNS"));
+    }
+
+    #[test]
+    fn failing_notice_for_strict_and_full() {
+        let mut t = NoticeTracker::default();
+        t.on_dns("k", "Office", Some(DnsState::Vpn));
+        assert!(matches!(t.on_dns("k", "Office", Some(DnsState::Failing)), Some(Notice::DnsFailing { .. })));
+        assert_eq!(t.on_dns("k", "Office", Some(DnsState::Failing)), None);
+        assert_eq!(t.on_dns("k", "Office", Some(DnsState::Vpn)), None, "no restore notice without a fallback");
+    }
+
+    #[test]
+    fn restored_notice_only_after_a_fallback_notice() {
+        let mut t = NoticeTracker::default();
+        t.on_dns("k", "Office", Some(DnsState::Fallback));
+        assert!(matches!(t.on_dns("k", "Office", Some(DnsState::Vpn)), Some(Notice::DnsRestored { .. })));
+        // Disconnected (unknown) and back: no stale restore.
+        t.on_dns("k", "Office", Some(DnsState::Fallback));
+        assert_eq!(t.on_dns("k", "Office", None), None);
+        assert_eq!(t.on_dns("k", "Office", Some(DnsState::Vpn)), None);
+    }
+
+    #[test]
+    fn no_notice_for_none_but_row_hint() {
+        let mut t = NoticeTracker::default();
+        assert_eq!(t.on_dns("k", "Office", Some(DnsState::None)), None);
+        assert!(dns_text(DnsState::None).unwrap().contains("The VPN sent no DNS"));
+        assert_eq!(dns_text(DnsState::Vpn), None);
+        assert_eq!(dns_text(DnsState::Targeted), None);
+    }
+
+    #[test]
+    fn texts_are_lock_screen_safe() {
+        for n in [
+            Notice::DnsFallback { key: "k".into(), name: "Office".into(), full_tunnel: true },
+            Notice::DnsFailing { key: "k".into(), name: "Office".into() },
+            Notice::DnsRestored { key: "k".into(), name: "Office".into() },
+        ] {
+            let c = content(&n, "u".into());
+            assert!(c.title.contains("Office"), "{}", c.title);
+            assert!(!c.body.chars().any(|ch| ch.is_ascii_digit()), "no address: {}", c.body);
+        }
+    }
+}

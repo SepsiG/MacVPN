@@ -4,8 +4,8 @@
 use macvpn_core::catalog::payload::{
     CatalogCollection, CatalogConnection, CatalogFolder, CatalogPayload, CredentialSlot, InvalidCatalog,
     MAX_CATALOG_CONFIG_BYTES, MAX_CATALOG_CONNECTIONS, MAX_CATALOG_FOLDERS, MAX_CONNECTION_NAME_CHARACTERS,
-    MAX_CREDENTIAL_SLOTS, MAX_SHARED_SECRETS, PAYLOAD_VERSION, PersonalField, decode_payload, encode_payload,
-    personal_fields, validate_payload,
+    MAX_CREDENTIAL_SLOTS, MAX_SHARED_SECRETS, PAYLOAD_VERSION, PAYLOAD_VERSION_DNS, PersonalField, decode_payload,
+    encode_payload, personal_fields, validate_payload,
 };
 use macvpn_core::importer;
 use macvpn_core::models::{NativeSettings, OTPSeparator, OTPSetting, SecretField, VPNKind};
@@ -34,6 +34,7 @@ fn connection(n: u128, name: &str, kind: VPNKind, config: &str) -> CatalogConnec
         config: Zeroizing::new(config.into()),
         native: None,
         otp: OTPSetting::default(),
+        dns: Default::default(),
         slot: None,
         secret_refs: BTreeMap::new(),
     }
@@ -190,8 +191,8 @@ fn broken_json_is_malformed() {
 
 #[test]
 fn a_newer_payload_version_is_reported() {
-    let text = json_of(&empty()).replacen("\"version\":1", "\"version\":2", 1);
-    assert_eq!(decode_payload(text.as_bytes()).err(), Some(InvalidCatalog::NewerVersion(2)));
+    let text = json_of(&empty()).replacen("\"version\":1", "\"version\":3", 1);
+    assert_eq!(decode_payload(text.as_bytes()).err(), Some(InvalidCatalog::NewerVersion(3)));
     let text = json_of(&empty()).replacen("\"version\":1", "\"version\":0", 1);
     assert_eq!(decode_payload(text.as_bytes()).err(), Some(InvalidCatalog::Malformed));
 }
@@ -487,5 +488,39 @@ fn the_otp_object_is_strict() {
     ] {
         let one = text.replacen(otp, bad, 1);
         assert_eq!(decode_payload(one.as_bytes()).err(), Some(InvalidCatalog::Malformed), "{bad}");
+    }
+}
+
+/// O5: the publisher's DNS settings are catalog-owned; written only when set, read strictly.
+#[test]
+fn dns_settings_travel_in_the_catalog_only_when_set() {
+    use macvpn_core::dns_settings::{DnsMode, DnsSetting};
+    let p = sample();
+    assert!(!json_of(&p).contains("\"dns\""), "a catalog without DNS settings is unchanged");
+    assert!(json_of(&p).contains("\"version\":1"));
+    let mut p = sample();
+    p.connections[0].dns =
+        DnsSetting { mode: DnsMode::Targeted, domains: vec!["corp.example".into()], ..Default::default() };
+    p.version = PAYLOAD_VERSION_DNS;
+    let text = json_of(&p);
+    assert!(text.contains("\"dns\":{"), "{text}");
+    // An app before the DNS settings reads version 1 only: it reports "made by a newer MacVPN", never damaged.
+    assert!(text.contains("\"version\":2"), "{text}");
+    assert_eq!(decode_payload(text.as_bytes()).unwrap(), p);
+    // DNS settings in a version 1 payload: not the format.
+    let v1 = text.replacen("\"version\":2", "\"version\":1", 1);
+    assert_eq!(decode_payload(v1.as_bytes()).err(), Some(InvalidCatalog::Malformed));
+    p.version = PAYLOAD_VERSION;
+    assert_eq!(validate_payload(&p).err(), Some(InvalidCatalog::Malformed));
+    // Version 2 without any DNS settings reads too.
+    let plain = json_of(&sample()).replacen("\"version\":1", "\"version\":2", 1);
+    assert_eq!(decode_payload(plain.as_bytes()).unwrap().version, PAYLOAD_VERSION_DNS);
+    for (from, to) in [
+        ("\"mode\":\"targeted\"", "\"mode\":\"sometimes\""),
+        ("\"corp.example\"", "\"bad domain\""),
+        ("\"override\":false", "\"override\":false,\"x\":1"),
+    ] {
+        let bad = text.replacen(from, to, 1);
+        assert!(decode_payload(bad.as_bytes()).is_err(), "{bad}");
     }
 }

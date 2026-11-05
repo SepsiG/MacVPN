@@ -1,9 +1,10 @@
 //! The privileged helper (on macOS the root layer `mvpn`), its UI state files and the 1.1 secrets.
 
+use macvpn_core::dns_settings::DnsRequest;
 use macvpn_core::log::{FileLogSource, LogSource};
 use macvpn_core::mfa::{AuthResponseKind, AuthUIState};
 use macvpn_core::models::{SecretField, Secrets, VPNKind};
-use macvpn_core::status::RootStatus;
+use macvpn_core::status::{DnsState, RootStatus};
 use std::path::PathBuf;
 use uuid::Uuid;
 
@@ -22,6 +23,36 @@ pub trait HelperClient: Send + Sync {
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), String>;
+    /// [`Self::up`] with the connection's DNS settings (macOS root layer 15; `None`: the default, nothing is sent).
+    /// Default: the settings are ignored (Linux and Windows set DNS their own way).
+    #[allow(clippy::too_many_arguments)]
+    fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        _dns: Option<&DnsRequest>,
+    ) -> Result<(), String> {
+        self.up(kind, id, config, secrets, debug, accept_risky)
+    }
+    /// Whether [`Self::up_with_dns`] can deliver the DNS settings (macOS: the installed root layer is 15 or newer).
+    /// Default: no.
+    fn dns_supported(&self) -> bool {
+        false
+    }
+    /// The connection's DNS settings would apply here, but the installed helper is too old for them (macOS: root
+    /// layer < 15; the app shows the update hint). Default: no (the settings do not apply on this platform).
+    fn dns_update_needed(&self) -> bool {
+        false
+    }
+    /// `dns-check <id>` (macOS root layer 15, through the query daemon): probes the connection's DNS again and
+    /// returns its state. `None`: not known (an older root layer, nothing running, any error). Default: none.
+    fn dns_check(&self, _id: &Uuid) -> Option<DnsState> {
+        None
+    }
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String>;
     /// `mvpn respond openvpn <id>` (MFA answer to the management bridge).
     fn respond(&self, id: &Uuid, kind: AuthResponseKind, response: &str) -> Result<(), String>;

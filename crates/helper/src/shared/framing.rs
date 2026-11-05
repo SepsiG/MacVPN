@@ -12,6 +12,10 @@
 //! x509=<base64>\n          root layer 12, strongSwan: an imported client certificate (DER) …
 //! private=<base64>\n       … and its private key (one PEM block), or
 //! pkcs12=<base64>\n        … a PKCS#12 file (see `macos::strongswan::stage_client_cert`)
+//! dns-mode=<m>\n           root layer 15: the connection's DNS settings (`macvpn_core::dns_settings::DnsRequest`):
+//! dns-servers=<a,b>\n       mode automatic|strict|full|targeted, own servers (IP literals), own domains
+//! dns-domains=<a,b>\n       (lower-case), dns-override=0|1 (only with servers). Not secret, not masked; an
+//! dns-override=1\n          invalid line or an invalid whole refuses the frame. WinVPN's service ignores them.
 //! ```
 //!
 //! Errors (see [`FrameError::message`]): no `config` header at the start → `Config not provided`; a malformed
@@ -30,6 +34,7 @@
 use crate::shared::l10n::tr;
 use crate::shared::limits::{SECRETS_MAX, SRC_MAX, STDIN_MAX};
 use crate::shared::mask::Masker;
+use macvpn_core::dns_settings::{DnsRequest, FRAME_KEYS};
 use std::io::Read;
 use zeroize::Zeroizing;
 
@@ -52,6 +57,8 @@ pub struct Secrets {
     pub x509: Zeroizing<Vec<u8>>,
     pub private: Zeroizing<Vec<u8>>,
     pub pkcs12: Zeroizing<Vec<u8>>,
+    /// Root layer 15: the connection's DNS settings (the default when the app sent no `dns-*` line).
+    pub dns: DnsRequest,
 }
 
 /// Why a framed stdin was refused.
@@ -155,7 +162,7 @@ impl Secrets {
             return Some(s);
         }
         let body = tail.strip_suffix(b"\n")?;
-        let mut seen = [false; 9];
+        let mut seen = [false; 9 + FRAME_KEYS.len()];
         for line in body.split(|&b| b == b'\n') {
             if line.contains(&0) {
                 return None;
@@ -185,15 +192,24 @@ impl Secrets {
             } else if let Some(v) = value(b"private=") {
                 s.private = v;
                 7
-            } else {
-                s.pkcs12 = value(b"pkcs12=")?;
+            } else if let Some(v) = value(b"pkcs12=") {
+                s.pkcs12 = v;
                 8
+            } else {
+                // Root layer 15: a `dns-*` line, checked by the shared rule of the app's editor.
+                let (key, v) = std::str::from_utf8(line).ok()?.split_once('=')?;
+                let i = FRAME_KEYS.iter().position(|k| *k == key)?;
+                if !s.dns.accept(key, v) {
+                    return None;
+                }
+                9 + i
             };
             if std::mem::replace(&mut seen[slot], true) {
                 return None;
             }
         }
-        Some(s)
+        // The whole request too (`override` only with servers, the limits).
+        s.dns.valid().then_some(s)
     }
 
     /// The bash `mask`: password, PSK, key password and code.
@@ -425,6 +441,51 @@ mod tests {
         let mut big = frame(b"x", b"");
         big.extend(std::iter::repeat_n(b'#', SECRETS_MAX as usize + 10));
         assert_eq!(read_framed(&mut big.as_slice(), true).err(), Some(FrameError::Invalid));
+    }
+
+    #[test]
+    fn dns_lines_are_parsed_once_each() {
+        let data = frame(
+            b"x",
+            b"password=p\ndns-mode=targeted\ndns-servers=10.0.0.53,fd00::53\ndns-domains=corp.example\ndns-override=1\n",
+        );
+        let (_, s) = parse_framed(&data, true).unwrap();
+        assert_eq!(s.pass.as_slice(), b"p");
+        assert_eq!(s.dns.mode, macvpn_core::dns_settings::DnsMode::Targeted);
+        assert_eq!(s.dns.servers, ["10.0.0.53", "fd00::53"]);
+        assert_eq!(s.dns.domains, ["corp.example"]);
+        assert!(s.dns.override_vpn);
+        let (_, s) = parse_framed(&frame(b"x", b""), true).unwrap();
+        assert_eq!(s.dns, DnsRequest::default(), "no lines: the default");
+        assert_eq!(err(&frame(b"x", b"dns-mode=full\ndns-mode=full\n"), true), FrameError::Invalid);
+    }
+
+    #[test]
+    fn dns_lines_invalid_refuse_the_frame() {
+        for bad in [
+            &b"dns-mode=sometimes\n"[..],
+            b"dns-servers=10.0.0.1;touch /tmp/x\n",
+            b"dns-servers=\n",
+            b"dns-domains=Corp.Example\n",
+            b"dns-override=1\n",
+            b"dns-override=yes\ndns-servers=10.0.0.1\n",
+            b"dns-other=1\n",
+            b"dns-mode\n",
+            b"dns-domains=\xff\n",
+        ] {
+            assert_eq!(err(&frame(b"x", bad), true), FrameError::Invalid, "{:?}", String::from_utf8_lossy(bad));
+        }
+    }
+
+    #[test]
+    fn dns_lines_are_not_masked() {
+        let (_, s) = parse_framed(&frame(b"x", b"password=pw\ndns-servers=10.0.0.53\n"), true).unwrap();
+        assert_eq!(s.masker().line(b"pw 10.0.0.53"), b"*** 10.0.0.53".to_vec());
+    }
+
+    #[test]
+    fn validate_still_takes_no_tail() {
+        assert_eq!(err(&frame(b"x", b"dns-mode=full\n"), false), FrameError::Invalid);
     }
 
     #[test]

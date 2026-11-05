@@ -1319,3 +1319,23 @@ fn linux_ignored_names_keep_their_argument_checks() {
         assert_eq!((r.issues.len(), r.risky.len()), (0, 0), "{os:?}");
     }
 }
+
+/// Root layer 15's hook reads the routed networks and OpenVPN 2.7's `--dns` variables: a config cannot set them.
+#[test]
+fn the_dns_hooks_route_and_dns_names_are_denied() {
+    en();
+    for name in [
+        "dns_vars_file",
+        "DNS_VARS_FILE",
+        "dns_server_1_address_1",
+        "dns_search_domain_1",
+        "route_network_1",
+        "Route_Netmask_1",
+        "route_ipv6_network_1",
+    ] {
+        assert!(OpenVPNValidator::is_denied_setenv_name(name), "{name}");
+        assert_eq!(lines(&sr_check(&format!("setenv {name} 1"), &[]).issues), [3], "{name}");
+    }
+    assert!(!OpenVPNValidator::is_denied_setenv_name("DNSNAME"));
+    assert!(!OpenVPNValidator::is_denied_setenv_name("ROUTER"));
+}

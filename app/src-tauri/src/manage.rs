@@ -585,6 +585,16 @@ mod tests {
         }
     }
 
+    #[test]
+    fn editor_fields_with_dns_round_trip() {
+        let sstp = r#"{"type":"sstp","name":"","server":"","port":443,"user":"","cert":"system","routeAll":true,"peerDns":true,"caPem":"","password":null,"otp":{"enabled":false,"separator":"none"},"dns":{"mode":"strict","servers":["10.0.0.53"],"domains":[],"overrideVpn":true}}"#;
+        let f: EditorFields = serde_json::from_str(sstp).unwrap();
+        let again: EditorFields = serde_json::from_str(&serde_json::to_string(&f).unwrap()).unwrap();
+        assert_eq!(f, again);
+        let bad = sstp.replace(r#""overrideVpn":true"#, r#""overrideVpn":true,"script":"x""#);
+        assert!(serde_json::from_str::<EditorFields>(&bad).is_err(), "the DNS object is strict too");
+    }
+
     /// G-3: the system's VPN settings open after deleting a native connection only where the user removes the
     /// profile there (macOS), never in the sandbox; WinVPN removes its RAS entry itself.
     #[test]

@@ -15,6 +15,9 @@ pub struct StatusLine {
     pub ip: String,
     /// The start time (Unix seconds, digits); `None`: `null`.
     pub since: Option<String>,
+    /// Root layer 15 (macOS): the connection's DNS state (`vpn|targeted|fallback|fallback-full|failing|none`),
+    /// rendered as a last `"dns"` key only when set, so the output without it stays byte-identical to 1.4.
+    pub dns: Option<&'static str>,
 }
 
 fn json_str(v: &str) -> String {
@@ -35,6 +38,10 @@ pub fn render(states: &[StatusLine]) -> String {
             json_str(&st.ip),
             st.since.as_deref().unwrap_or("null")
         ));
+        if let Some(dns) = st.dns {
+            out.truncate(out.len() - 1);
+            out.push_str(&format!(",\"dns\":\"{dns}\"}}"));
+        }
         sep = ",";
     }
     out.push_str("]\n");
@@ -66,7 +73,18 @@ pub(crate) mod tests {
             iface: iface.into(),
             ip: ip.into(),
             since: since.map(String::from),
+            dns: None,
         }
+    }
+
+    #[test]
+    fn dns_key_rendered_when_set() {
+        let mut l = line("0F1E2D3C-4B5A-6978-8796-A5B4C3D2E1F0", "openvpn", "utun7", "10.8.0.2", Some("1700000000"));
+        l.dns = Some("fallback");
+        let out = render(&[l]);
+        assert!(out.ends_with(",\"since\":1700000000,\"dns\":\"fallback\"}]\n"), "{out}");
+        let parsed = macvpn_core::status::parse_status(&out).unwrap();
+        assert_eq!(parsed[0].dns, Some(macvpn_core::status::DnsState::Fallback));
     }
 
     #[test]

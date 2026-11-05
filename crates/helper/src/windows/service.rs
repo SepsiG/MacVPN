@@ -339,6 +339,7 @@ impl<H: Host> Service<H> {
                     iface,
                     ip,
                     since: st.and_then(|s| s.since).map(|n| n.to_string()),
+                    dns: None,
                     id,
                 }
             })

@@ -265,6 +265,7 @@ fn build_state(
         backup,
         open_files: open_files::OpenFilesApp::default(),
         notices: Default::default(),
+        dns_schedule: Default::default(),
         reconnect: reconnect::Reconnect::new(storage.connections.clone()),
         traffic: traffic::TrafficApp::default(),
     })

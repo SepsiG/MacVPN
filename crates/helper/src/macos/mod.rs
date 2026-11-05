@@ -11,6 +11,7 @@
 //! mvpn dns-reconcile           (only that)
 //! mvpn liveness <id>           (root layer 10: the tunnel's liveness facts for dead-tunnel detection, see `liveness`)
 //! mvpn traffic <id>            (root layer 11: a strongSwan connection's CHILD_SA byte counters, see `traffic`)
+//! mvpn dns-check <id>          (root layer 15: probes the connection's DNS again and prints its state, see `dns`)
 //! mvpn serve --uid <uid>       (root layer 13: status / liveness / traffic over launchd's socket, see `serve`;
 //!                               internal, launchd only)
 //! mvpn version
@@ -68,7 +69,12 @@ macro_rules! err {
 
 mod ctx;
 mod dns;
+mod dns_legacy;
+mod dns_plan;
+mod dns_probe;
 mod dns_sc;
+mod dns_session;
+mod dns_store;
 mod exec;
 mod fsx;
 mod hook_dns;
@@ -82,6 +88,7 @@ mod procs;
 mod respond;
 mod run_dir;
 mod sc_prefs;
+mod sc_store;
 mod serve;
 mod sstp;
 mod status;
@@ -204,6 +211,7 @@ pub fn main() -> i32 {
             0
         }
         macvpn_core::liveness::LIVENESS => liveness::main(&ctx),
+        macvpn_core::status::DNS_CHECK => dns::check_main(&ctx),
         macvpn_core::traffic::TRAFFIC => traffic::main(&ctx),
         "respond" => {
             if ctx.kind != "openvpn" {
@@ -268,7 +276,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn version_is_14() {
-        assert_eq!(VERSION.trim(), "14");
+    fn version_is_15() {
+        assert_eq!(VERSION.trim(), "15");
     }
 }

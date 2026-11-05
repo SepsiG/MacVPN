@@ -6,10 +6,12 @@
   import type { SstpFields } from '../api';
   import Certificates from './Certificates.svelte';
   import Icon from '../Icon.svelte';
-  import { tr } from '../l10n.svelte';
+  import { i18n, tr } from '../l10n.svelte';
   import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
+  import DnsFields from './DnsFields.svelte';
+  import { visible as dnsVisible } from './dnsFields';
   import PlatformNotes from './PlatformNotes.svelte';
   import TrustCa from './TrustCa.svelte';
   import SecretField from './SecretField.svelte';
@@ -110,6 +112,12 @@
       <label class="check"><input type="checkbox" bind:checked={fields.routeAll} />{tr('Send all traffic over VPN')}</label>
       <label class="check"><input type="checkbox" bind:checked={fields.peerDns} />{tr("Use the server's DNS")}</label>
     </section>
+    {#if fields.dns && dnsVisible(i18n.platform.os, 'sstp', fields.dns)}
+      <section>
+        <h2>{tr('DNS')}</h2>
+        <DnsFields bind:dns={fields.dns} fullTunnel={view?.dnsFullTunnel} />
+      </section>
+    {/if}
   </fieldset>
   <section>
     {#if view && view.issues.length > 0}

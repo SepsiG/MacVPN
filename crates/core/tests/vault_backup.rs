@@ -1300,6 +1300,7 @@ mod catalogs {
             config: z(CONFIG),
             native: None,
             otp: Default::default(),
+            dns: Default::default(),
             slot: None,
             secret_refs: BTreeMap::new(),
         };
@@ -1790,4 +1791,23 @@ mod catalogs {
         // One credential named "Team AD": the slot did not create another.
         assert_eq!(vault.credentials().unwrap().iter().filter(|c| c.name.starts_with("Team AD")).count(), 1);
     }
+}
+
+/// Root layer 15: a connection's DNS settings travel in the backup whole (the backup carries `meta.json`).
+#[test]
+fn backup_restore_keeps_dns() {
+    use macvpn_core::dns_settings::{DnsMode, DnsSetting};
+    let tmp = TempDir::new();
+    let mut vault = new_vault(&tmp, "dns");
+    let mut c = connection(id(7), "Lab");
+    c.dns = DnsSetting {
+        mode: DnsMode::Strict,
+        servers: vec!["10.0.0.53".into()],
+        domains: vec!["lab.example".into()],
+        override_vpn: true,
+    };
+    vault.save_connection(&c, Some("remote lab.example 1194\n")).unwrap();
+    let back = backup::open(&sealed(&collect(&vault)), PASSWORD).unwrap();
+    let restored = back.connections.iter().find(|x| x.connection.id == c.id).unwrap();
+    assert_eq!(restored.connection.dns, c.dns);
 }

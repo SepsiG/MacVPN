@@ -243,6 +243,7 @@ impl HelperClient for FakeHelper {
                 iface: Some("utun99".into()),
                 ip: Some("10.99.0.2".into()),
                 since: Some(*since),
+                dns: None,
             })
             .collect())
     }
@@ -1673,6 +1674,7 @@ impl SmokeCatalog {
             config: zeroize::Zeroizing::new(format!("client\ndev tun\n{CATALOG_CONFIG_LINE}\n{extra}")),
             native: None,
             otp: Default::default(),
+            dns: Default::default(),
             slot: None,
             secret_refs: Default::default(),
         };

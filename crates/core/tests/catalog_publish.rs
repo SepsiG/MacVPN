@@ -7,7 +7,8 @@ use common::TempDir;
 use macvpn_core::catalog::ids::{CatalogItemKind, local_id};
 use macvpn_core::catalog::keys::{AdminKey, TeamKey};
 use macvpn_core::catalog::payload::{
-    CatalogConnection, CatalogPayload, InvalidCatalog, PAYLOAD_VERSION, PersonalField, encode_payload,
+    CatalogConnection, CatalogPayload, InvalidCatalog, PAYLOAD_VERSION, PAYLOAD_VERSION_DNS, PersonalField,
+    encode_payload,
 };
 use macvpn_core::catalog::planner::plan_apply;
 use macvpn_core::catalog::publish::{BuildError, build_payload, changed_since_publish, preview};
@@ -406,6 +407,7 @@ fn system_vpns_and_catalog_connections_cannot_be_selected() {
             config: Zeroizing::new(OPENVPN.into()),
             native: None,
             otp: Default::default(),
+            dns: Default::default(),
             slot: None,
             secret_refs: BTreeMap::new(),
         }],
@@ -466,4 +468,21 @@ fn changed_since_publish_marks_what_the_catalog_would_carry_differently() {
     vault.delete_connection(&f.elsewhere).unwrap();
     vault.delete_connection(&f.loose).unwrap();
     assert!(changed_since_publish(&vault, &published).unwrap().contains(&f.loose));
+}
+
+/// A catalog carries the newer payload version only when a connection has DNS settings (older apps then say "update
+/// the app" instead of refusing it as damaged).
+#[test]
+fn the_payload_version_rises_only_with_dns_settings() {
+    use macvpn_core::dns_settings::{DnsMode, DnsSetting};
+    let f = fixture();
+    let built = build(&f.vault, &select(&[], &[f.loose]));
+    assert_eq!(built.payload.version, PAYLOAD_VERSION);
+    let mut vault = f.vault;
+    let mut c = Connection::with_id(id(3), "Loose", VPNKind::Openvpn, now());
+    c.dns = DnsSetting { mode: DnsMode::Strict, ..Default::default() };
+    vault.save_connection(&c, Some(OPENVPN)).unwrap();
+    let built = build(&vault, &select(&[], &[f.loose]));
+    assert_eq!(built.payload.version, PAYLOAD_VERSION_DNS);
+    assert!(json(&built.payload).contains("\"version\":2"));
 }

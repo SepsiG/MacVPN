@@ -250,6 +250,7 @@ fn run(state: &Arc<AppState>, rx: &Receiver<Event>) {
         }
         network_loss(state, now);
         liveness(state, now);
+        dns_checks(state, now);
         // Decided outside a returning call (a drop that started the slow tier).
         let queued = r.planner().take_actions();
         queued.into_iter().for_each(|a| act(state, a));
@@ -319,6 +320,57 @@ fn liveness(state: &Arc<AppState>, now: Date) {
     // The planner decides with the time of the answers (the polls take a moment).
     let actions = r.planner().liveness_checked(r.now(), &polled, &enabled);
     actions.into_iter().for_each(|a| act(state, a));
+}
+
+/// macOS root layer 15: the connected connections' DNS is probed again when due (`dns-check` through the query
+/// daemon, see `macvpn_app_core::dns_check`), and a change of their DNS state (from the status poll or a check) is
+/// notified. Rides on this loop's wake-ups (the liveness poll); other platforms report no DNS state, so nothing
+/// happens there.
+fn dns_checks(state: &Arc<AppState>, now: Date) {
+    use macvpn_app_core::dns_check::Connected;
+    let r = &state.reconnect;
+    let allowed = r.planner().dns_check_allowed();
+    let connected: Vec<(Connected, String)> = connected_keys(state)
+        .into_iter()
+        .filter_map(|key| managed(state, &key).map(|c| (key, c)))
+        .filter(|(_, c)| matches!(c.kind, VPNKind::Openvpn | VPNKind::Wireguard | VPNKind::Sstp))
+        .map(|(key, c)| {
+            let switched_at = r.planner().last_switch(&key).map(|d| d.time_interval_since_1970());
+            (Connected { state: state.manager.dns_state(&key), switched_at, key }, c.name)
+        })
+        .collect();
+    let list: Vec<Connected> = connected.iter().map(|(c, _)| c.clone()).collect();
+    let due = state.dns_schedule.lock().unwrap_or_else(PoisonError::into_inner).due(
+        now.time_interval_since_1970(),
+        allowed,
+        &list,
+    );
+    for key in &due {
+        // Asked without any lock held (one UDP probe in the root layer, bounded by its timeouts).
+        let answer = managed(state, key).and_then(|c| state.helper.dns_check(&c.id));
+        let done = r.now().time_interval_since_1970();
+        state.dns_schedule.lock().unwrap_or_else(PoisonError::into_inner).done(key, done);
+        if let Some(a) = answer {
+            state.manager.set_dns_state(key, a);
+        }
+    }
+    let mut changed = false;
+    let keys: Vec<String> = list.iter().map(|c| c.key.clone()).collect();
+    for (c, name) in &connected {
+        let found = state.notices.lock().unwrap_or_else(PoisonError::into_inner).on_dns(
+            &c.key,
+            name,
+            state.manager.dns_state(&c.key),
+        );
+        if let Some(n) = found {
+            crate::notifications::notice(state, &n);
+            changed = true;
+        }
+    }
+    state.notices.lock().unwrap_or_else(PoisonError::into_inner).retain_dns(&keys);
+    if changed || !due.is_empty() {
+        state.publisher.mark();
+    }
 }
 
 fn handle(state: &Arc<AppState>, e: Event) {

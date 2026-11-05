@@ -267,9 +267,19 @@ fn up(ctx: &mut Ctx, input: Result<framing::Framed, framing::FrameError>) -> R {
     ctx.check_term()?;
     run_dir::prepare(ctx, &config)?;
     drop(config);
+    // Root layer 15: the connection's DNS settings, for the hook, WireGuard, SSTP and the after-connect pass.
+    if let Some(run) = ctx.run.clone()
+        && let Err(e) = crate::macos::dns_session::write_request(&run, &ctx.secrets.dns)
+    {
+        return Err(ctx.die(tr("Cannot write: %@", &[&format!("{}: {e}", crate::macos::dns_session::REQUEST)])));
+    }
     ctx.check_term()?;
     snapshot(ctx, &tr("before", &[]))?;
     up_kind(ctx)?;
+    // Root layer 15: with the routes in, the DNS mode is decided for real (tunnel, probe); never fails `up`.
+    if !ctx.dry() {
+        crate::macos::dns::after_connect(ctx);
+    }
     ctx.up_done = true;
     snapshot(ctx, &tr("after", &[]))?;
     ctx.log.step(&tr("connection established", &[]));

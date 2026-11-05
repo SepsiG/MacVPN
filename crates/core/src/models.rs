@@ -4,6 +4,7 @@
 //! rules of the Swift `Decodable` implementations are reproduced exactly (see `tests/compat_swift.rs`).
 
 use crate::date::Date;
+use crate::dns_settings::DnsSetting;
 use crate::l10n::{self, Arg};
 use serde_json::{Map, Value};
 use uuid::Uuid;
@@ -308,6 +309,9 @@ pub struct Connection {
     pub acknowledged_risky_directives: Vec<String>,
     /// MFA: one-time code appended to the password when connecting. Missing (older `meta.json`): off.
     pub otp: OTPSetting,
+    /// DNS mode and own DNS (macOS, root layer 15). Missing (older `meta.json`) or unreadable: the default
+    /// (Automatic, nothing own); written only when not the default, so older files stay byte-identical.
+    pub dns: DnsSetting,
 }
 
 impl Connection {
@@ -327,6 +331,7 @@ impl Connection {
             native: None,
             acknowledged_risky_directives: Vec::new(),
             otp: OTPSetting::default(),
+            dns: DnsSetting::default(),
         }
     }
 
@@ -352,6 +357,11 @@ impl Connection {
             None | Some(Value::Null) => OTPSetting::default(),
             Some(v) => OTPSetting::from_json(v).unwrap_or_default(),
         };
+        // Lenient as `otp`: a value of the wrong shape means the default.
+        let dns = match obj.get("dns") {
+            None | Some(Value::Null) => DnsSetting::default(),
+            Some(v) => DnsSetting::from_json(v).unwrap_or_default(),
+        };
         Ok(Connection {
             id,
             name,
@@ -362,6 +372,7 @@ impl Connection {
             native,
             acknowledged_risky_directives: acknowledged,
             otp,
+            dns,
         })
     }
 
@@ -386,6 +397,9 @@ impl Connection {
             Value::Array(self.acknowledged_risky_directives.iter().cloned().map(Value::String).collect()),
         );
         m.insert("otp".into(), self.otp.to_json());
+        if !self.dns.is_default() {
+            m.insert("dns".into(), self.dns.to_json());
+        }
         Value::Object(m)
     }
 }

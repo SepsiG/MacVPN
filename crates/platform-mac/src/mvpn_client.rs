@@ -7,6 +7,7 @@
 //! that changes state stays on `sudo`.
 
 use crate::command::{CommandError, CommandResult, CommandRunner};
+use macvpn_core::dns_settings::DnsRequest;
 use macvpn_core::fsx::FileOwner;
 use macvpn_core::l10n::{self, AppLanguage, Arg};
 use macvpn_core::mfa::{AuthResponseKind, MFAError};
@@ -95,6 +96,9 @@ pub const UI_STATE_DIR: &str = "/var/run/macvpn-ui";
 pub const QUERY_SOCKET: &str = "/var/run/macvpn-query.sock";
 /// The query daemon's connection: each read and write must finish within this.
 pub const QUERY_TIMEOUT: Duration = Duration::from_secs(2);
+/// `dns-check`'s wait on the query daemon: its probe takes up to 9 s (3 servers × 2 sends × 1.5 s), then the DNS
+/// lock and configd's confirmation.
+pub const DNS_CHECK_TIMEOUT: Duration = Duration::from_secs(20);
 /// The longest answer read from the query daemon (the status of every connection fits many times over).
 pub const QUERY_ANSWER_MAX: u64 = 1 << 20;
 
@@ -110,11 +114,30 @@ pub struct MvpnClient<'a> {
     /// The query daemon's socket for `status`, `liveness` and `traffic` ([`MvpnClient::with_query_socket`]).
     /// `None` (the default, so tests with a fake runner never reach a real socket): always `sudo`.
     query_socket: Option<PathBuf>,
+    /// The installed root layer's version ([`MvpnClient::with_root_version`]); `None`: unknown, counted as older
+    /// than [`DNS_ROOT_LAYER`].
+    root_version: Option<u32>,
+}
+
+/// The first root layer that takes the `dns-*` lines of `up` and answers `dns-check`.
+pub const DNS_ROOT_LAYER: u32 = 15;
+
+/// The installed root layer's version (`<INSTALL_DIR>/VERSION`, as the setup check reads it); `None` when missing
+/// or not a number.
+pub fn installed_root_version(read: impl Fn(&str) -> Option<String>) -> Option<u32> {
+    read(&format!("{INSTALL_DIR}/VERSION"))?.trim().parse().ok()
 }
 
 impl<'a> MvpnClient<'a> {
     pub fn new(runner: &'a dyn CommandRunner) -> Self {
-        MvpnClient { runner, up_runner: runner, status_runner: runner, language: None, query_socket: None }
+        MvpnClient {
+            runner,
+            up_runner: runner,
+            status_runner: runner,
+            language: None,
+            query_socket: None,
+            root_version: None,
+        }
     }
 
     pub fn with_runners(
@@ -129,7 +152,20 @@ impl<'a> MvpnClient<'a> {
             status_runner: status_runner.unwrap_or(runner),
             language,
             query_socket: None,
+            root_version: None,
         }
+    }
+
+    /// The installed root layer's version: the `dns-*` lines of `up` go only to [`DNS_ROOT_LAYER`] or newer (an
+    /// older one refuses the whole frame as `Invalid input`).
+    pub fn with_root_version(mut self, version: Option<u32>) -> Self {
+        self.root_version = version;
+        self
+    }
+
+    /// The root layer takes the DNS settings.
+    pub fn dns_supported(&self) -> bool {
+        self.root_version.is_some_and(|v| v >= DNS_ROOT_LAYER)
     }
 
     /// Asks `status`, `liveness` and `traffic` on the query daemon's `socket` first (the app: [`QUERY_SOCKET`]),
@@ -196,8 +232,26 @@ impl<'a> MvpnClient<'a> {
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), ClientError> {
+        self.up_with_dns(kind, id, config, secrets, debug, accept_risky, None)
+    }
+
+    /// [`MvpnClient::up`] with the connection's DNS settings (root layer 15): the `dns-*` lines follow the secrets,
+    /// only when the installed root layer takes them ([`MvpnClient::dns_supported`]); otherwise the connection
+    /// connects with the old DNS behaviour (maintainer decision O6) and the app shows the update hint.
+    #[allow(clippy::too_many_arguments)]
+    pub fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        dns: Option<&DnsRequest>,
+    ) -> Result<(), ClientError> {
         let args = Self::up_arguments(kind, id, debug, accept_risky);
-        let payload = Self::up_stdin(config, secrets);
+        let dns = dns.filter(|_| self.dns_supported());
+        let payload = macvpn_core::helper_args::up_stdin_with_dns(config, secrets, dns);
         let language = self.language.unwrap_or_else(AppLanguage::current);
         check(self.up_runner.run_bytes("/usr/bin/sudo", &Self::sudo_arguments(&args, language), &payload)?)
     }
@@ -232,6 +286,28 @@ impl<'a> MvpnClient<'a> {
             return None;
         }
         macvpn_core::liveness::Liveness::parse(result.stdout.as_bytes())
+    }
+
+    /// `mvpn dns-check <id>` (root layer 15, through the query daemon): probes the connection's DNS again and
+    /// returns its state. `None` on any failure, also from an older root layer (its usage error) or an answer of
+    /// another form.
+    ///
+    /// The daemon gets [`DNS_CHECK_TIMEOUT`]; only when it cannot be reached at all does the question go through
+    /// `sudo`. A daemon that took the question but gave no answer in time is not asked again (the probe would run
+    /// twice and count one broken DNS as two failures): `None`, the next check comes on schedule.
+    pub fn dns_check(&self, id: &Uuid) -> Option<macvpn_core::status::DnsState> {
+        let args = vec![macvpn_core::status::DNS_CHECK.to_string(), uuid_string(id)];
+        let via_daemon =
+            self.query_socket.as_deref().map(|socket| query_socket_within(socket, &args.join(" "), DNS_CHECK_TIMEOUT));
+        let result = match via_daemon {
+            Some(Ok(result)) => result,
+            Some(Err(QueryFailure::NoAnswer)) => return None,
+            Some(Err(QueryFailure::Unreachable)) | None => self.sudo(&args, None, Some(self.status_runner)).ok()?,
+        };
+        if result.exit_code != 0 {
+            return None;
+        }
+        macvpn_core::status::DnsState::from_raw(result.stdout.trim_end_matches('\n'))
     }
 
     /// `mvpn traffic <id>` (root layer 11): a strongSwan connection's CHILD_SA byte counters. `None` on any
@@ -269,18 +345,33 @@ fn check(result: CommandResult) -> Result<(), ClientError> {
 /// write, read to the end, each read and write within [`QUERY_TIMEOUT`], at most [`QUERY_ANSWER_MAX`] bytes. `None`
 /// on any failure (the caller then asks through `sudo`).
 pub fn query_socket(socket: &Path, request: &str) -> Option<CommandResult> {
+    query_socket_within(socket, request, QUERY_TIMEOUT).ok()
+}
+
+/// Why the query daemon gave no answer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QueryFailure {
+    /// No connection (no socket: an older root layer, or the daemon not loaded): nothing was asked.
+    Unreachable,
+    /// Connected, but no well-formed answer in time: the question may have been acted on.
+    NoAnswer,
+}
+
+/// [`query_socket`] with each read and write within `timeout`.
+pub fn query_socket_within(socket: &Path, request: &str, timeout: Duration) -> Result<CommandResult, QueryFailure> {
     use std::io::{Read, Write};
     // A Unix socket connects (to launchd's listening socket) or fails at once; nothing to time out here.
-    let mut stream = std::os::unix::net::UnixStream::connect(socket).ok()?;
-    stream.set_read_timeout(Some(QUERY_TIMEOUT)).ok()?;
-    stream.set_write_timeout(Some(QUERY_TIMEOUT)).ok()?;
-    stream.write_all(format!("{request}\n").as_bytes()).ok()?;
+    let mut stream = std::os::unix::net::UnixStream::connect(socket).map_err(|_| QueryFailure::Unreachable)?;
+    let no_answer = |_| QueryFailure::NoAnswer;
+    stream.set_read_timeout(Some(timeout)).map_err(no_answer)?;
+    stream.set_write_timeout(Some(timeout)).map_err(no_answer)?;
+    stream.write_all(format!("{request}\n").as_bytes()).map_err(no_answer)?;
     let mut answer = Vec::new();
-    (&mut stream).take(QUERY_ANSWER_MAX + 1).read_to_end(&mut answer).ok()?;
+    (&mut stream).take(QUERY_ANSWER_MAX + 1).read_to_end(&mut answer).map_err(no_answer)?;
     if answer.len() as u64 > QUERY_ANSWER_MAX {
-        return None;
+        return Err(QueryFailure::NoAnswer);
     }
-    parse_query_answer(&answer)
+    parse_query_answer(&answer).ok_or(QueryFailure::NoAnswer)
 }
 
 /// The query daemon's answer, `<exit code>\n<stdout>`: the exit code 1–3 decimal digits (no sign, no leading zero),

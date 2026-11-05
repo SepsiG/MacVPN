@@ -12,7 +12,7 @@
 //! set or not found there, a disabled service, a service without a DNS entity or with a disabled one, and a read
 //! whose values are not the expected strings.
 
-use crate::macos::dns::{Dns, List, Net, is_valid, words};
+use crate::macos::dns_legacy::{Dns, List, Net, is_valid, words};
 use crate::macos::log::Log;
 use crate::macos::sc_prefs::{self, Protocol};
 use crate::shared::l10n::tr;
@@ -189,7 +189,7 @@ impl Net for ScNet {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::macos::dns::tests::{FakeNet, dns};
+    use crate::macos::dns_legacy::tests::{FakeNet, dns};
 
     const WIFI: &str = "11111111-1111-1111-1111-111111111111";
     const ETH: &str = "22222222-2222-2222-2222-222222222222";
@@ -450,7 +450,7 @@ mod tests {
     #[test]
     #[ignore = "reads this Mac's network services"]
     fn sc_reads_match_networksetup_on_this_mac() {
-        let ns = crate::macos::dns::NetworkSetup { program: crate::macos::paths::NETWORKSETUP.into() };
+        let ns = crate::macos::dns_legacy::NetworkSetup { program: crate::macos::paths::NETWORKSETUP.into() };
         let services = ns.services().unwrap();
         let sc = ScNet { prefs_id: None, apply: false, fallback: Box::new(FakeNet::default()) };
         let a = sc.get_many(&services);

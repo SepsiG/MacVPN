@@ -68,10 +68,21 @@ fn serve_answers_like_the_command_line_and_exits_when_idle() {
     let status = ask(&sock, b"status\n");
     assert!(status.starts_with("0\n[{\"id\":\"0F1E2D3C-"), "{status}");
     assert_eq!(status, cli(&env, &["status"]));
-    for verb in ["liveness", "traffic"] {
+    for verb in ["liveness", "traffic", "dns-check"] {
         assert_eq!(ask(&sock, format!("{verb} {ID}\n").as_bytes()), cli(&env, &[verb, ID]), "{verb}");
         assert_eq!(ask(&sock, format!("{verb} {ID}\n").as_bytes()), "1\n", "{verb}");
     }
+    // dns-check (root layer 15) with a DNS session: its state, as on the command line.
+    let session = base.join("run").join(ID).join("dns-session");
+    std::fs::write(
+        &session,
+        "mode=strict\ntunnel=full\nlayout=vpn\nprobe=failed\nfails=2\nwarn=failing\nservers=10.8.0.1\n\
+         search=\nresolve=\nzones=\nsince=1\n",
+    )
+    .unwrap();
+    std::fs::set_permissions(&session, std::os::unix::fs::PermissionsExt::from_mode(0o600)).unwrap();
+    assert_eq!(ask(&sock, format!("dns-check {ID}\n").as_bytes()), "0\nfailing\n");
+    assert_eq!(ask(&sock, format!("dns-check {ID}\n").as_bytes()), cli(&env, &["dns-check", ID]));
     // Nothing that changes state, nothing malformed: closed without an answer.
     for bad in [format!("down wireguard {ID}\n"), "version\n".into(), "status".into(), "x".repeat(300)] {
         assert_eq!(ask(&sock, bad.as_bytes()), "", "{bad:?}");

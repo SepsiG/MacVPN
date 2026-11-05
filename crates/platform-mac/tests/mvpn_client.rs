@@ -293,6 +293,11 @@ struct FakeDaemon {
 
 impl FakeDaemon {
     fn start(answers: Vec<Option<&'static [u8]>>) -> FakeDaemon {
+        Self::start_delayed(answers, std::time::Duration::ZERO)
+    }
+
+    /// Each answer after `delay` (a probe takes its time).
+    fn start_delayed(answers: Vec<Option<&'static [u8]>>, delay: std::time::Duration) -> FakeDaemon {
         use std::io::{BufRead, Write};
         // Short: a Unix socket path is at most 104 bytes.
         let dir = std::env::temp_dir().join(format!("mvqc-{}", &Uuid::new_v4().to_string()[..8]));
@@ -307,6 +312,7 @@ impl FakeDaemon {
                 let mut line = String::new();
                 let _ = std::io::BufReader::new(&stream).read_line(&mut line);
                 seen.lock().unwrap().push(line);
+                std::thread::sleep(delay);
                 if let Some(answer) = answer {
                     let _ = (&stream).write_all(answer);
                 }
@@ -423,4 +429,60 @@ fn down_and_respond_stay_on_sudo() {
     client.respond(&id(), AuthResponseKind::Crv1, "123456").unwrap();
     assert_eq!(mock.calls().len(), 2);
     assert!(daemon.requests().is_empty());
+}
+
+#[test]
+fn dns_lines_only_for_root_15_or_newer() {
+    use macvpn_core::dns_settings::{DnsMode, DnsRequest};
+    let dns = DnsRequest { mode: DnsMode::Strict, ..Default::default() };
+    for (version, sent) in [(None, false), (Some(14), false), (Some(15), true), (Some(16), true)] {
+        let mock = MockCommandRunner::new();
+        let client = MvpnClient::new(&mock).with_root_version(version);
+        assert_eq!(client.dns_supported(), sent);
+        client.up_with_dns(VPNKind::Openvpn, &id(), b"x", &Secrets::default(), false, &[], Some(&dns)).unwrap();
+        let stdin = mock.calls()[0].stdin.clone().unwrap_or_default();
+        assert_eq!(stdin.ends_with("dns-mode=strict\n"), sent, "{version:?}: {stdin:?}");
+    }
+    let read = |v: &'static str| move |_: &str| Some(v.to_string());
+    assert_eq!(macvpn_platform_mac::mvpn_client::installed_root_version(read("15\n")), Some(15));
+    assert_eq!(macvpn_platform_mac::mvpn_client::installed_root_version(read("x")), None);
+}
+
+#[test]
+fn dns_check_reads_the_state_line() {
+    use macvpn_core::status::DnsState;
+    let mock = MockCommandRunner::new();
+    let client = MvpnClient::new(&mock);
+    // No answer configured: the mock's default (exit 0, empty) is not a state.
+    assert_eq!(client.dns_check(&id()), None);
+    let line = mock.calls()[0].command_line();
+    assert!(line.contains("mvpn dns-check 11111111-2222-3333-4444-555555555555"), "{line}");
+    mock.respond(&line, CommandResult { exit_code: 0, stdout: "fallback-full\n".into(), stderr: String::new() });
+    assert_eq!(client.dns_check(&id()), Some(DnsState::FallbackFullTunnel));
+    mock.respond(&line, CommandResult { exit_code: 1, stdout: String::new(), stderr: String::new() });
+    assert_eq!(client.dns_check(&id()), None);
+}
+
+/// `dns-check` probes (up to 9 s in the root layer): it waits longer than the other questions, and a daemon that took
+/// the question but gave no answer is never asked again through `sudo` (that would probe a second time).
+#[test]
+fn dns_check_waits_for_the_probe_and_is_not_repeated_through_sudo() {
+    use macvpn_core::status::DnsState;
+    let daemon = FakeDaemon::start_delayed(vec![Some(b"0\nfallback\n")], std::time::Duration::from_millis(2500));
+    let mock = MockCommandRunner::new();
+    assert_eq!(client_with(&mock, &daemon.socket).dns_check(&id()), Some(DnsState::Fallback));
+    assert!(mock.calls().is_empty());
+    assert_eq!(daemon.requests().len(), 1);
+    let daemon = FakeDaemon::start(vec![None]);
+    let mock = MockCommandRunner::new();
+    assert_eq!(client_with(&mock, &daemon.socket).dns_check(&id()), None);
+    assert!(mock.calls().is_empty(), "no second probe through sudo");
+    // No daemon to reach (an older install, or not loaded): sudo.
+    let missing = std::env::temp_dir().join(format!("mvqc-missing-{}.sock", Uuid::new_v4()));
+    let mock = MockCommandRunner::new();
+    let line =
+        "/usr/bin/sudo -n /usr/local/libexec/macvpn/mvpn dns-check 11111111-2222-3333-4444-555555555555 --lang en";
+    mock.respond(line, CommandResult::stdout("vpn\n"));
+    assert_eq!(client_with(&mock, &missing).dns_check(&id()), Some(DnsState::Vpn));
+    assert_eq!(mock.calls().iter().map(|c| c.command_line()).collect::<Vec<_>>(), [line]);
 }

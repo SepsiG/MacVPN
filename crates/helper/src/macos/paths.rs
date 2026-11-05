@@ -50,6 +50,10 @@ pub struct Settings {
     pub dns_base: PathBuf,
     /// `networksetup`; in test mode only a fake (`MVPN_NETWORKSETUP`), otherwise the DNS is never changed.
     pub networksetup: Option<PathBuf>,
+    /// Test mode only: the fake dynamic store's directory (`MVPN_DYNSTORE`); as root the real store is used.
+    pub dynstore: Option<PathBuf>,
+    /// Test mode only: the DNS probe's fixed result (`MVPN_DNS_PROBE=ok|fail`); as root the probe asks the server.
+    pub dns_probe: Option<String>,
     /// The user the connection belongs to (`SUDO_USER` as root, the caller in test mode); unvalidated.
     pub target_user: String,
     pub wg_run: PathBuf,
@@ -105,6 +109,8 @@ impl Settings {
             } else {
                 Some(PathBuf::from(NETWORKSETUP))
             },
+            dynstore: if test_mode { test.dynstore.as_deref().map(PathBuf::from) } else { None },
+            dns_probe: if test_mode { test.dns_probe.clone() } else { None },
             target_user,
             wg_run: pick(&test.wg_run, WG_RUN),
             lock_tries: test.lock_tries.unwrap_or(LOCK_TRIES),

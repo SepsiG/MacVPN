@@ -19,6 +19,8 @@
   import CredentialSelector from './CredentialSelector.svelte';
   import type { EditorSession } from './session.svelte';
   import OtpFields from './OtpFields.svelte';
+  import DnsFields from './DnsFields.svelte';
+  import { visible as dnsVisible } from './dnsFields';
   import OpenVpnRouting from './OpenVpnRouting.svelte';
   import { visible as routingVisible } from './openvpnRouting';
   import PlatformNotes from './PlatformNotes.svelte';
@@ -198,6 +200,12 @@
           </p>
         {/if}
       </fieldset>
+      {#if fields.dns && dnsVisible(i18n.platform.os, kind, fields.dns)}
+        <fieldset>
+          <legend>{tr('DNS')}</legend>
+          <DnsFields bind:dns={fields.dns} fullTunnel={view?.dnsFullTunnel} />
+        </fieldset>
+      {/if}
     </fieldset>
   {/if}
   <div class="footer">

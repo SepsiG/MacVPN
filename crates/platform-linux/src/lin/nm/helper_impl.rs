@@ -282,6 +282,7 @@ impl HelperClient for Engine {
                 iface: r.iface,
                 ip: r.ip,
                 since: Some(r.since),
+                dns: None,
             })
             .collect())
     }

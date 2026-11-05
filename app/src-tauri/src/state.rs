@@ -92,6 +92,8 @@ pub struct AppState {
     pub open_files: crate::open_files::OpenFilesApp,
     /// The last state seen per managed connection, for the "connected" / "reconnected" notices.
     pub notices: Mutex<macvpn_app_core::connection_notices::NoticeTracker>,
+    /// When each connected connection's DNS is probed again (macOS root layer 15, `crate::reconnect`).
+    pub dns_schedule: Mutex<macvpn_app_core::dns_check::DnsSchedule>,
     /// Auto-reconnect (decision 4): the planner, its driver's events and the network watcher.
     pub reconnect: crate::reconnect::Reconnect,
     /// The live traffic sessions (`crate::traffic`).
@@ -161,6 +163,20 @@ impl AppState {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_or(0, |d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX)),
         );
+        // macOS root layer 15: the connection's DNS state (fallback, failing, no DNS), or the update hint when its
+        // DNS settings cannot reach an older root layer (maintainer decision O6: it connects the old way).
+        let dns_update_needed = std::cell::OnceCell::new();
+        vm.set_dns_notes(&|id| {
+            if let Some(text) = self.manager.dns_state(id).and_then(macvpn_app_core::connection_notices::dns_text) {
+                return Some(text);
+            }
+            let Some(macvpn_app_core::ConnectionItem::Managed(c)) = self.manager.item(id) else { return None };
+            use macvpn_core::models::VPNKind;
+            let handled = matches!(c.kind, VPNKind::Openvpn | VPNKind::Wireguard | VPNKind::Sstp);
+            (handled && !c.dns.is_default() && *dns_update_needed.get_or_init(|| self.helper.dns_update_needed())).then(
+                || macvpn_core::l10n::tr("Update the system component to use this connection's DNS settings.", &[]),
+            )
+        });
         vm.update = self.updates.view();
         vm.login_item = self.login_item.read().unwrap_or_else(PoisonError::into_inner).clone();
         vm.appearance = Some(macvpn_app_core::appearance::Appearance::load(self.prefs.as_ref()).raw_value());

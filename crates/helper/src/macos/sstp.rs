@@ -371,8 +371,10 @@ fn connected(ctx: &mut Ctx, iface: &str, ip: &str, p: &SstpParams) -> R {
             return Err(fail(ctx, tr("Setting the routes failed", &[])));
         }
     }
-    if p.peer_dns == "yes" {
-        let dns = pppd_log_fields(&run, "dns");
+    // The DNS step runs in every case (root layer 15): without `usepeerdns` no server's DNS is passed, and the
+    // connection's own DNS settings (`<run>/dns-request`) may still apply.
+    {
+        let dns = if p.peer_dns == "yes" { pppd_log_fields(&run, "dns") } else { Vec::new() };
         let log = ctx.log.path().map(Path::to_path_buf).unwrap_or_default();
         ctx.log.cmd(&format!(
             "{} hook ovpn-dns {} {} (DNS: {})",

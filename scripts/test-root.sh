@@ -43,7 +43,7 @@ SH=/usr/bin/env   # "$SH" "$MVPN" … = a bináris közvetlen futtatása
 export MVPN_MGMT="$MVPN"
 VALIDATE=("$MVPN" validate)
 OD_SH=("$MVPN" hook ovpn-dns); OD_SELF=("$MVPN" hook ovpn-dns); OD_P=("$MVPN" hook ovpn-dns)
-VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=14
+VERSION_FILE="$PWD/crates/helper/VERSION"; EXPECT_VERSION=15
 # A hamis ovpn-dns elé: `mvpn hook ovpn-dns <run> <log>` → <könyvtár>/ovpn-dns <run> <log>.
 hook_shim() {
   printf '#!/bin/bash\n[ "$1 $2" = "hook ovpn-dns" ] || exit 99\nshift 2\nexec "$(dirname "$0")/ovpn-dns" "$@"\n' >"$1/mvpn"
@@ -128,6 +128,12 @@ OUT=$(env PATH=/nonexistent IFS=x LC_ALL=hu_HU.UTF-8 LANG=hu_HU.UTF-8 BASH_ENV="
 OUT=$(env -i FOO=bar DYLD_FAKE=1 script_type=check-env dev=utun3 ifconfig_local=10.8.0.2 foreign_option_1=x foreign_option_3=y \
   "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1 | tr '\n' ' ')
 [ "$OUT" = "LC_ALL PATH dev foreign_option_1 ifconfig_local script_type " ] && ok "hook: környezet-allowlist" || nok "hook: környezet-allowlist ($OUT)"
+# Root layer 15: the routed networks and OpenVPN 2.7's --dns variables are on the allowlist too (and nothing else).
+OUT=$(env -i FOO=bar script_type=check-env route_network_1=10.1.0.0 route_netmask_1=255.255.0.0 route_ipv6_network_1=fd00::/64 \
+  dns_server_1_address_1=10.8.0.1 dns_search_domain_1=corp.example dns_vars_file=/x route_gateway_1=10.0.0.1 \
+  "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1 | tr '\n' ' ')
+[ "$OUT" = "LC_ALL PATH dns_search_domain_1 dns_server_1_address_1 dns_vars_file route_ipv6_network_1 route_netmask_1 route_network_1 script_type " ] \
+  && ok "hook: környezet-allowlist (útvonalak, --dns változók)" || nok "hook: környezet-allowlist (útvonalak, --dns változók) ($OUT)"
 OUT=$(env BASH_ENV="$T/evil-env" ENV="$T/evil-env" script_type=check foreign_option_1='dhcp-option DNS 10.0.0.53' \
   "${OD_SELF[@]}" "$T" "$T/od-env.log" 2>&1)
 [ "$OUT" = "DNS 10.0.0.53" ] && ok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete" || nok "ovpn-dns: BASH_ENV mellett is csak a saját kimenete ($OUT)"
@@ -634,12 +640,12 @@ MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETW
 dns_ledger
 MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" dns-reconcile
 [ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ ! -e "$DNSDB/ledger" ] && ok "dns: dns-reconcile ugyanígy" || nok "dns: dns-reconcile ugyanígy"
-# Élő tulajdonos (futó openvpn, kész openvpn.log) DNS-e marad.
+# Root layer 15: a 14-es nyilvántartást élő tulajdonos (futó openvpn, kész openvpn.log) mellett is visszaállítja.
 dns_ledger; "$T/bin/openvpn" 30 & DP=$!
 mkdir -p "$DNSRUN/$DNSID"; echo openvpn >"$DNSRUN/$DNSID/kind"; echo "$DP" >"$DNSRUN/$DNSID/pid"; echo utun7 >"$DNSRUN/$DNSID/iface"
 echo "2026-10-17 00:00:00 Initialization Sequence Completed" >"$DNSRUN/$DNSID/openvpn.log"
 MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" dns-reconcile
-[ "$(cat "$NSD/srv")" = 10.8.0.1 ] && [ -f "$DNSDB/ledger" ] && ok "dns: futó kapcsolat DNS-e marad" || nok "dns: futó kapcsolat DNS-e marad"
+[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ ! -e "$DNSDB/ledger" ] && ok "dns: a 14-es nyilvántartás élő tulajdonossal is visszaáll" || nok "dns: a 14-es nyilvántartás élő tulajdonossal is visszaáll"
 kill "$DP" 2>/dev/null; wait "$DP" 2>/dev/null
 
 # M-2: túl hosszú DNS-lista (WireGuard `DNS =`, ~1040 db 253 bájtos tartomány, a nyilvántartás korlátja fölött).
@@ -650,13 +656,77 @@ for t in wg-quick bash wireguard-go; do printf '#!/bin/bash\nexit 0\n' >"$WGB/bi
 dns_orig() { rm -f "$DNSDB/ledger" "$DNSDB/ledger.bad" "$NSD/calls"; printf '192.168.1.1\n' >"$NSD/srv"; printf 'lan.example.com\n' >"$NSD/dom"; }
 wgd() { env MVPN_TEST_ALLOW_UP=1 MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$WGB" MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" \
   MVPN_DNS_BASE="$DNSDB" MVPN_NETWORKSETUP="$NSD/networksetup" "$SH" "$MVPN" "$@"; }
-dns_orig; WGOK=$(new_conn "${GOOD_WG/Address/DNS = 10.8.0.1, corp.example${NL}Address}")
-wgd up wireguard "$WGOK" < <(feed "$WGOK") >"$T/wgd.out" 2>&1
-[ "$(cat "$NSD/srv")" = 10.8.0.1 ] && [ "$(cat "$NSD/dom")" = corp.example ] && ok "dns M-2: wireguard DNS a korláton belül beáll (kontroll)" \
-  || { nok "dns M-2: wireguard DNS a korláton belül beáll (kontroll)"; cat "$T/wgd.out" "$DNSLOG/$WGOK.log"; }
-wgd down wireguard "$WGOK" </dev/null >/dev/null 2>&1
-[ "$(cat "$NSD/srv")" = 192.168.1.1 ] && [ "$(cat "$NSD/dom")" = lan.example.com ] && [ ! -e "$DNSDB/ledger" ] \
-  && ok "dns M-2: kontroll bontás után az eredeti DNS" || { nok "dns M-2: kontroll bontás után az eredeti DNS"; cat "$DNSLOG/$WGOK.log"; }
+# Root layer 15: DNS through the dynamic store, with the file-backed fake store (MVPN_DYNSTORE, one JSON file per
+# key) seeded like a Mac with one primary service (S1: DHCP DNS 192.168.1.1, domain lan, 192.168.1.20/24) and an
+# Ethernet service (S2); the probe's result comes from MVPN_DNS_PROBE, the routing table from a fake route.
+DYN="$T/dyn"; mkdir -p "$DYN"
+dkey() { printf '%s' "$1" | sed 's/%/%25/g; s/:/%3A/g; s#/#%2F#g'; }
+dset() { printf '%s\n' "$2" >"$DYN/$(dkey "$1")"; }
+dget() { cat "$DYN/$(dkey "$1")" 2>/dev/null; }
+dhas() { [ -e "$DYN/$(dkey "$1")" ]; }
+dyn_seed() {
+  rm -f "$DYN"/*
+  dset 'State:/Network/Global/IPv4' '{"PrimaryService":"S1"}'
+  dset 'Setup:/Network/Global/IPv4' '{"ServiceOrder":["S1","S2"]}'
+  dset 'State:/Network/Service/S1/DNS' '{"ServerAddresses":["192.168.1.1"],"DomainName":"lan"}'
+  dset 'State:/Network/Service/S1/IPv4' '{"Addresses":["192.168.1.20"],"SubnetMasks":["255.255.255.0"],"InterfaceName":"en0"}'
+}
+printf '#!/bin/bash\necho "   route to: $4"\necho "interface: en0"\n' >"$T/dynroute"; chmod 755 "$T/dynroute"
+dyn() { env MVPN_TEST_ALLOW_UP=1 MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$WGB" MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" \
+  MVPN_DNS_BASE="$DNSDB" MVPN_DYNSTORE="$DYN" MVPN_ROUTE="$T/dynroute" "$SH" "$MVPN" "$@"; }
+# feed_dns <id> <lines>: the frame with the connection's DNS lines (root layer 15) after the (empty) secrets.
+feed_dns() { feed "$1"; printf '%s' "$2"; }
+dyn_seed; WGOK=$(new_conn "${GOOD_WG/Address/DNS = 10.8.0.1, corp.example${NL}Address}")
+MVPN_DNS_PROBE=ok dyn up wireguard "$WGOK" < <(feed "$WGOK") >"$T/wgd.out" 2>&1
+S1=$(dget 'Setup:/Network/Service/S1/DNS'); S2=$(dget 'Setup:/Network/Service/S2/DNS')
+LOCAL=$(dget "State:/Network/Service/macvpn-$WGOK-local/DNS")
+case "$S1$S2" in *'"MacVPNOwner":"'"$WGOK"'"'*'"MacVPNOwner":"'"$WGOK"'"'*) true ;; *) false ;; esac \
+  && case "$S1" in *'"ServerAddresses":["10.8.0.1"]'*) true ;; *) false ;; esac \
+  && case "$LOCAL" in *'"lan","1.168.192.in-addr.arpa"'*) true ;; *) false ;; esac \
+  && case "$(dget 'State:/Network/MacVPN/DNS')" in *"$WGOK"*) true ;; *) false ;; esac \
+  && dyn status | grep -q "\"id\":\"$WGOK\".*\"dns\":\"vpn\"" \
+  && ok "dns 15: wireguard up: override minden szolgáltatáson, helyi bejegyzés, nyilvántartás, status dns=vpn" \
+  || { nok "dns 15: wireguard up: override, helyi bejegyzés, nyilvántartás, status"; cat "$T/wgd.out" "$DNSLOG/$WGOK.log"; ls "$DYN"; }
+# Two failed checks fall back (the overrides go back, the VPN's domains stay on its DNS), one good one returns.
+MVPN_DNS_PROBE=fail dyn dns-check "$WGOK" >/dev/null; OUT=$(MVPN_DNS_PROBE=fail dyn dns-check "$WGOK")
+MAIN=$(dget "State:/Network/Service/macvpn-$WGOK/DNS")
+[ "$OUT" = fallback ] && ! dhas 'Setup:/Network/Service/S1/DNS' && ! dhas 'Setup:/Network/Service/S2/DNS' \
+  && case "$MAIN" in *NoSearch*) false ;; *corp.example*) true ;; *) false ;; esac \
+  && dyn status | grep -q '"dns":"fallback"' \
+  && ok "dns 15: dns-check kétszer hibás → visszaesés (override vissza, a VPN tartományai a VPN DNS-én)" \
+  || { nok "dns 15: dns-check visszaesés ($OUT)"; cat "$DNSLOG/$WGOK.log"; }
+OUT=$(MVPN_DNS_PROBE=ok dyn dns-check "$WGOK")
+[ "$OUT" = vpn ] && dhas 'Setup:/Network/Service/S1/DNS' && grep -q "answers again" "$DNSLOG/$WGOK.log" \
+  && ok "dns 15: dns-check újra jó → a VPN DNS-e újra minden névre" || nok "dns 15: dns-check vissza ($OUT)"
+dyn down wireguard "$WGOK" </dev/null >/dev/null 2>&1
+LEFT=$(ls "$DYN" | grep -c 'macvpn\|MacVPN')
+[ "$LEFT" = 0 ] && ! dhas 'Setup:/Network/Service/S1/DNS' && ! dhas 'Setup:/Network/Service/S2/DNS' \
+  && ok "dns 15: bontás után minden macvpn kulcs és a nyilvántartás eltűnt, S1/S2 Setup: újra nincs" \
+  || { nok "dns 15: bontás utáni takarítás"; ls "$DYN"; }
+# Strict + failing probe: the overrides stay (DNS stays in the tunnel), status says failing.
+dyn_seed; WGS=$(new_conn "${GOOD_WG/Address/DNS = 10.8.0.1${NL}Address}")
+MVPN_DNS_PROBE=fail dyn up wireguard "$WGS" < <(feed_dns "$WGS" $'dns-mode=strict\n') >"$T/wgd.out" 2>&1
+dhas 'Setup:/Network/Service/S1/DNS' && ! dhas "State:/Network/Service/macvpn-$WGS-local/DNS" && dyn status | grep -q '"dns":"failing"' \
+  && ok "dns 15: Szigorú + hibás próba → az override marad, nincs helyi bejegyzés, dns=failing" \
+  || { nok "dns 15: Szigorú + hibás próba"; cat "$T/wgd.out" "$DNSLOG/$WGS.log"; }
+dyn down wireguard "$WGS" </dev/null >/dev/null 2>&1
+# Targeted on a split tunnel: no override, only the VPN's domains.
+dyn_seed; WGT=$(new_conn "${GOOD_WG/Address/DNS = 10.8.0.1, corp.example${NL}Address}")
+MVPN_DNS_PROBE=ok dyn up wireguard "$WGT" < <(feed_dns "$WGT" $'dns-mode=targeted\n') >"$T/wgd.out" 2>&1
+! dhas 'Setup:/Network/Service/S1/DNS' && dhas "State:/Network/Service/macvpn-$WGT/DNS" && dyn status | grep -q '"dns":"targeted"' \
+  && ok "dns 15: Célzott, osztott alagút → nincs override, csak a VPN tartományai" || { nok "dns 15: Célzott"; cat "$T/wgd.out" "$DNSLOG/$WGT.log"; }
+# A dead owner (its run directory gone): the next status cleans up.
+rm -rf "${DNSRUN:?}/$WGT"; dyn status >/dev/null
+[ "$(ls "$DYN" | grep -c 'macvpn\|MacVPN')" = 0 ] && ok "dns 15: halott tulajdonos kulcsait a status eltakarítja" || { nok "dns 15: halott tulajdonos"; ls "$DYN"; }
+# A bad DNS line refuses the whole frame.
+OUT=$(dyn up wireguard "$WGT" < <(feed_dns "$WGT" $'dns-mode=sometimes\n') 2>&1)
+case "$OUT" in *"Invalid input"*) ok "dns 15: hibás dns-* sor → Invalid input" ;; *) nok "dns 15: hibás dns-* sor ($OUT)" ;; esac
+# Without MVPN_DYNSTORE test mode changes no DNS.
+dyn_seed; WGN=$(new_conn "${GOOD_WG/Address/DNS = 10.8.0.1${NL}Address}")
+env MVPN_TEST_ALLOW_UP=1 MVPN_TEST_ALLOW_DOWN=1 MVPN_BREW="$WGB" MVPN_RUN_BASE="$DNSRUN" MVPN_LOG_BASE="$DNSLOG" MVPN_DNS_BASE="$DNSDB" \
+  "$SH" "$MVPN" up wireguard "$WGN" < <(feed "$WGN") >/dev/null 2>&1
+[ "$(ls "$DYN" | grep -c 'macvpn\|MacVPN')" = 0 ] && ok "dns 15: MVPN_DYNSTORE nélkül tesztmódban nincs DNS-változás" || nok "dns 15: MVPN_DYNSTORE nélkül"
+dyn down wireguard "$WGN" </dev/null >/dev/null 2>&1
 D253="a$(printf '.b%.0s' $(seq 126))"; HUGE="10.8.0.1"
 for i in $(seq 1040); do HUGE="$HUGE, $(printf 'd%04d' "$i")${D253:5}"; done
 dns_orig; WGBIG=$(new_conn "${GOOD_WG/Address/DNS = $HUGE${NL}Address}")
@@ -757,6 +827,7 @@ DESC="up: hiányzó bash 4 (wireguard) → hiba"; expect_fail upt MVPN_BREW="$WB
 OB="$T/ovpnfail"; mkdir -p "$OB/bin"
 cat >"$OB/bin/openvpn" <<'FAKE'
 #!/bin/bash
+[ "$1" = --version ] && { echo "OpenVPN 2.6.14 fake"; exit 1; }
 while [ $# -gt 0 ]; do case "$1" in --writepid) R=$(dirname "$2"); shift ;; esac; shift; done
 printf 'svc\t1.1.1.1\tEmpty\n' >"$R/dns-backup"
 exit 1
@@ -772,6 +843,7 @@ grep -q "^down $MVPN_RUN_BASE/$UID3\$" "$T/dns-restore.log" && ok "up openvpn hi
 SB2="$T/ovpnok"; mkdir -p "$SB2/bin"
 cat >"$SB2/bin/openvpn" <<'FAKE'
 #!/bin/bash
+[ "$1" = --version ] && { echo "OpenVPN 2.6.14 fake"; exit 1; }
 while [ $# -gt 0 ]; do case "$1" in --log-append) L="$2"; shift ;; esac; shift; done
 echo "Initialization Sequence Completed" >>"$L"
 exit 0
@@ -801,6 +873,7 @@ grep -q -- "--log-append $MVPN_RUN_BASE/$DID.dryrun.[A-Za-z0-9]*/openvpn.log --d
 OI="$T/ovpninject"; mkdir -p "$OI/bin"
 cat >"$OI/bin/openvpn" <<FAKE
 #!/bin/bash
+[ "\$1" = --version ] && { echo "OpenVPN 2.6.14 fake"; exit 1; }
 while [ \$# -gt 0 ]; do case "\$1" in --log-append) L="\$2"; shift ;; --writepid) P="\$2"; shift ;; esac; shift; done
 echo "\$L" >"$T/ovpn-logpath"
 "$T/bin/openvpn" 60 </dev/null >/dev/null 2>&1 &
@@ -1193,6 +1266,7 @@ while (defined(nextline())) { }
 PL
 cat >"$MB/bin/openvpn" <<FAKE
 #!/bin/bash
+[ "\$1" = --version ] && { echo "OpenVPN 2.6.14 fake"; exit 1; }
 printf '%s\n' "\$@" >"$T/mfa-argv"
 while [ \$# -gt 0 ]; do
   case "\$1" in

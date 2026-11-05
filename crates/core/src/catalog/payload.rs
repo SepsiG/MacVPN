@@ -9,11 +9,12 @@
 //! [`InvalidCatalog::Duplicate`].
 //!
 //! ```text
-//! { "version": 1,
+//! { "version": 1 | 2  (2 only when a connection carries "dns"; an app before it reports NewerVersion),
 //!   "folders": [ { "id", "parentId": uuid|null, "name", "color": name|null, "position" } ],
 //!   "connections": [ { "id", "name", "kind", "folderId": uuid|null, "color": name|null, "config": base64,
 //!                      "native": null | { "server", "account", "groupName", "sendAllTraffic" },
 //!                      "otp": { "enabled", "separator" }, "slot": uuid|null,
+//!                      ["dns": { "mode", "servers", "domains", "override" }  only when not the default],
 //!                      "secretRefs": { "psk"|"keypass": uuid } } ],
 //!   "credentialSlots": [ { "id", "name" } ],
 //!   "sharedSecrets": { uuid: base64 } }
@@ -24,6 +25,7 @@
 //! payload is refused on the first problem. Errors carry ids, never values. Risky OpenVPN directives are not an
 //! error: they are returned in [`CatalogFindings`] and each subscriber acknowledges them, never the catalog.
 
+use crate::dns_settings::{DnsMode, DnsSetting};
 use crate::exporter;
 use crate::mfa;
 use crate::models::{NativeSettings, OTPSeparator, OTPSetting, SecretField, VPNKind, parse_uuid, uuid_string};
@@ -38,8 +40,17 @@ use std::fmt;
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-/// The payload schema this build writes and reads.
+/// The payload schema this build writes when no connection carries DNS settings (every app since catalogs reads it).
 pub const PAYLOAD_VERSION: u32 = 1;
+/// The payload schema with the connections' `dns` settings: written only when one is set, so an app before them
+/// reports [`InvalidCatalog::NewerVersion`] ("update the app") instead of refusing the catalog as damaged. The
+/// newest this build reads.
+pub const PAYLOAD_VERSION_DNS: u32 = 2;
+
+/// The version a payload of `connections` is written with.
+pub fn payload_version(connections: &[CatalogConnection]) -> u32 {
+    if connections.iter().any(|c| !c.dns.is_default()) { PAYLOAD_VERSION_DNS } else { PAYLOAD_VERSION }
+}
 pub const MAX_CATALOG_CONNECTIONS: usize = 2000;
 pub const MAX_CATALOG_FOLDERS: usize = 1000;
 pub const MAX_CREDENTIAL_SLOTS: usize = 200;
@@ -84,6 +95,9 @@ pub struct CatalogConnection {
     /// L2TP/Cisco only; `account` always empty (it is per user).
     pub native: Option<NativeSettings>,
     pub otp: OTPSetting,
+    /// The publisher's DNS settings (maintainer decision O5: catalog-owned, like `otp`; macOS root layer 15).
+    /// Written only when not the default, so a catalog without them is byte-identical to before.
+    pub dns: DnsSetting,
     pub slot: Option<Uuid>,
     /// Only [`SecretField::Psk`] and [`SecretField::KeyPassword`], each naming a shared secret.
     pub secret_refs: BTreeMap<SecretField, Uuid>,
@@ -100,6 +114,7 @@ impl fmt::Debug for CatalogConnection {
             .field("config_bytes", &self.config.len())
             .field("native", &self.native.as_ref().map(|n| (&n.server, &n.group_name, n.send_all_traffic)))
             .field("otp", &self.otp)
+            .field("dns", &self.dns)
             .field("slot", &self.slot)
             .field("secret_refs", &self.secret_refs)
             .finish()
@@ -277,10 +292,10 @@ fn valid_native_field(s: &str) -> bool {
 /// The rules of the module docs, in order; the first problem refuses the whole payload.
 pub fn validate_payload(p: &CatalogPayload) -> Result<CatalogFindings, InvalidCatalog> {
     use InvalidCatalog as I;
-    if p.version > PAYLOAD_VERSION {
+    if p.version > PAYLOAD_VERSION_DNS {
         return Err(I::NewerVersion(p.version));
     }
-    if p.version == 0 {
+    if p.version == 0 || p.version < payload_version(&p.connections) {
         return Err(I::Malformed);
     }
     cap(p.connections.len(), MAX_CATALOG_CONNECTIONS, CatalogCollection::Connections)?;
@@ -481,6 +496,9 @@ pub fn encode_payload(p: &CatalogPayload) -> Result<Zeroizing<Vec<u8>>, InvalidC
                 }),
             );
             m.insert("otp".into(), c.otp.to_json());
+            if !c.dns.is_default() {
+                m.insert("dns".into(), c.dns.to_json());
+            }
             m.insert("slot".into(), opt(c.slot.as_ref(), uuid_value));
             m.insert(
                 "secretRefs".into(),
@@ -525,7 +543,7 @@ pub(crate) fn decode_unchecked(plaintext: &[u8]) -> Result<CatalogPayload, Inval
     let root = tree.0.as_object().ok_or(InvalidCatalog::Malformed)?;
     // The version first, so a newer payload is told apart from a damaged one.
     let version = root.get("version").and_then(Value::as_u64).ok_or(InvalidCatalog::Malformed)?;
-    if version > u64::from(PAYLOAD_VERSION) {
+    if version > u64::from(PAYLOAD_VERSION_DNS) {
         return Err(InvalidCatalog::NewerVersion(u32::try_from(version).unwrap_or(u32::MAX)));
     }
     // Two spellings of one shared-secret id would collapse into one map entry: a duplicate, not a choice.
@@ -606,7 +624,7 @@ fn decode_root(root: &Map<String, Value>) -> Option<CatalogPayload> {
         exact_keys(
             c,
             &["id", "name", "kind", "folderId", "color", "config", "native", "otp", "slot", "secretRefs"],
-            &[],
+            if version >= PAYLOAD_VERSION_DNS { &["dns"] } else { &[] },
         )?;
         let mut secret_refs = BTreeMap::new();
         for (field, id) in c["secretRefs"].as_object()? {
@@ -614,6 +632,15 @@ fn decode_root(root: &Map<String, Value>) -> Option<CatalogPayload> {
         }
         let otp = c["otp"].as_object()?;
         exact_keys(otp, &["enabled", "separator"], &[])?;
+        // Strict here (unlike `meta.json`): exactly the four keys, a known mode, valid lists.
+        let dns = match c.get("dns") {
+            None => DnsSetting::default(),
+            Some(v) => {
+                exact_keys(v.as_object()?, &["mode", "servers", "domains", "override"], &[])?;
+                let d = DnsSetting::from_json(v)?;
+                (DnsMode::from_raw(v["mode"].as_str()?).is_some() && d.validate().is_ok()).then_some(d)?
+            }
+        };
         connections.push(CatalogConnection {
             id: uuid_of(&c["id"])?,
             name: string_of(&c["name"])?,
@@ -623,6 +650,7 @@ fn decode_root(root: &Map<String, Value>) -> Option<CatalogPayload> {
             config: secret_of(&c["config"])?,
             native: nullable(&c["native"], native_of)?,
             otp: OTPSetting::new(otp["enabled"].as_bool()?, OTPSeparator::from_raw_value(otp["separator"].as_str()?)?),
+            dns,
             slot: nullable(&c["slot"], uuid_of)?,
             secret_refs,
         });

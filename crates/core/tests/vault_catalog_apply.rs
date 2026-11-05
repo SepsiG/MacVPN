@@ -55,6 +55,7 @@ fn connection(n: u128, name: &str) -> CatalogConnection {
         config: Zeroizing::new(OPENVPN.into()),
         native: None,
         otp: Default::default(),
+        dns: Default::default(),
         slot: None,
         secret_refs: BTreeMap::new(),
     }

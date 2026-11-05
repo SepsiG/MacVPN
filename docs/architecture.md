@@ -440,11 +440,17 @@ strongSwan's `traffic`. Through `sudo -n` each was a new `sudo` and `mvpn` proce
 written and bootstrapped by `platform-mac::root_installer`) whose socket launchd creates as
 `/var/run/macvpn-query.sock` (owner the installing user, group 0, mode 0600) and activates on demand; the daemon
 exits after 60 s idle. Per connection: `getpeereid` must be that user or root; one request line of at most 128 bytes
-within 2 s (`status`, `liveness <UUID>`, `traffic <UUID>`); the answer is `<exit code>\n<stdout>` from the same
-`answer()` functions the command line uses (status' DNS reconcile and log housekeeping included). The internal
+within 2 s (`status`, `liveness <UUID>`, `traffic <UUID>`, and from root layer 15 `dns-check <UUID>`); the answer is `<exit code>\n<stdout>` from the same
+`answer()` functions the command line uses (status' DNS reconcile and log housekeeping included). `dns-check` is the one request beyond what `status` already
+has (maintainer decision O4): it sends one DNS query (the probe) to the connection's VPN servers and may re-publish
+that connection's own DNS layout; the app sends it every 5 minutes while connected and 15 s after a network switch
+(see [macOS DNS manager](#macos-dns-manager-root-layer)). The internal
 subcommand is refused through sudo. The app (`platform-mac::mvpn_client::query_socket`) asks the socket first and
 falls back to `sudo -n` on any failure (an older root layer, the daemon not loaded, a timeout, a malformed answer);
-everything that changes state stays on sudo. `mvpn-mgmt` reads its management stream with a 2 s timeout unless it
+`dns-check` is the exception: the daemon answers it on its own thread (at most 4 at a time, so `status` and
+`liveness` are not held up by the probe), the app waits 20 s for it and goes through `sudo` only when the socket
+cannot be reached (a question taken but not answered is not repeated: the probe would run twice). Everything that
+changes state stays on sudo. `mvpn-mgmt` reads its management stream with a 2 s timeout unless it
 waits for the user (250 ms then: `Bridge::with_wait_hook`).
 
 ### helper
@@ -457,7 +463,8 @@ as `C:\Program Files\WinVPN\WinVPNService.exe` on Windows; root layer version in
 2.0.7: an IKEv2 client certificate in the `up` frame and the key password, see [IKEv2 client
 certificates](#ikev2-client-certificates-root-layer-12); 13 in 2.1.6: the read-only query daemon, see [The query
 daemon](#the-query-daemon-root-layer-13); 14 in 2.1.7: DNS through SystemConfiguration preferences in one commit
-instead of networksetup processes, see [macOS DNS manager](#macos-dns-manager-root-layer)).
+instead of networksetup processes; 15 in 2.1.8: DNS through the dynamic store with per-connection modes, the probe
+and `dns-check`, see [macOS DNS manager](#macos-dns-manager-root-layer)).
 
 - `src/shared/`: the logic every OS shares, with no `cfg`, no `unsafe` and no process or file I/O: the command
   line (`cli`), the framed stdin (`framing`), masking, the `respond` answer, the status JSON, the validation
@@ -1447,25 +1454,110 @@ Client credential audit G2/G4 (`docs/superpowers/reviews/2026-10-29-client-crede
 
 ### macOS DNS manager (root layer)
 
-`crates/helper/src/macos/dns.rs` owns every DNS change of OpenVPN and SSTP (through the `ovpn-dns` hook) and
-WireGuard (in-process; `wireguard::strip_dns` takes the `DNS =` lines out of the conf `wg-quick` sees). A
-persistent root-only ledger `/var/db/macvpn/dns/ledger` (directory 0700, file 0600 written through a temp file and
-rename, never through a symlink, strict line format, one `flock`) holds the true originals per network service
-(captured only by the first owner) and the owners (connection id + servers/domains, newest last). The newest owner's
-DNS is in effect; the last owner's leaving restores the originals and deletes the ledger. Every set and restore is
-read back, the services that did not take are set once more, and the result is logged. From root layer 14 the
-values are read and written in the SystemConfiguration preferences directly (`dns_sc.rs` over `sc_prefs.rs`): the
-DNS entity's `ServerAddresses` / `SearchDomains` of every service of a batch in one locked session, one commit and
-one apply (an empty list removes its key, other keys stay; the read-back opens a new session). The service list
-still comes from `networksetup -listallnetworkservices`; `networksetup` (`-setdnsservers/-setsearchdomains`,
-`-getdnsservers/-getsearchdomains`, as up to 13) remains the fallback for a whole batch the preferences cannot
-open, lock, commit or apply, and per service for a name not unique in the current set, a disabled service, and a
-service without an enabled DNS entity or with unexpected values. **Reconcile** (owners whose
-run directory is gone or whose engine is failed are dropped) runs at every `up`, `down`, `mvpn status` (non-blocking)
-and `mvpn dns-reconcile`, so a crash or a reboot while connected is repaired at the app's next status poll. strongSwan
-(charon's volatile dynamic-store DNS) and native VPNs are not touched. Test mode never runs the real `networksetup`
-(`MVPN_NETWORKSETUP`, `MVPN_DNS_BASE`). A DNS left by a root layer before this one is in no ledger: the user resets it
-once by hand (the user guide, 5.6).
+From root layer 15 `crates/helper/src/macos/dns.rs` puts the VPN's DNS into effect through the SystemConfiguration
+**dynamic store** (as Tunnelblick, Viscosity and OpenVPN 2.7's own `dns-updown` do), never through the persistent
+preferences. It owns every DNS change of OpenVPN and SSTP (through the `ovpn-dns` hook) and WireGuard (after
+`wg-quick up`; `wireguard::strip_dns` takes the `DNS =` lines out of the conf `wg-quick` sees). strongSwan (charon's
+own `osx-attr` dynamic-store DNS) and native VPNs are not touched. Linux and Windows store the per-connection
+settings and ignore them.
+
+**Modules.** `crates/core/src/dns_settings.rs`: the per-connection settings (`meta.json` `dns`, only when not the
+default; mode Automatic / Full / Targeted / Strict, own servers, own domains, override), their validation and the
+`up` frame lines. `crates/core/src/dns_wire.rs`: the probe's query and the strict answer parser.
+`crates/core/src/dns_zones.rs`: reverse zones of networks and domain overlap. In `crates/helper/src/macos/`:
+`dns_plan.rs` (pure: the mode decision and the entries, R3a of the plan), `dns_store.rs` (the value tree, the batch
+operations and the `Store` trait: `ScStore`, `MemStore`, and `FileStore` for test mode), `sc_store.rs` (thin
+`SCDynamicStoreCopyValue` / `CopyKeyList` / `SetMultiple` wrappers, one batch per change so IPMonitor recomputes
+once), `dns_probe.rs`, `dns_session.rs` (`<run>/dns-request`, `<run>/dns-session`), `dns.rs` (the manager) and
+`dns_legacy.rs` (root layer 14's manager, restore-only).
+
+**Entries.** `<id>` is the connection UUID (upper-case), `<sid>` a network service ID. Every value written carries
+`MacVPNOwner = "<id>"`, so drift and foreign changes are told apart from ours.
+
+| Key | Written | Value |
+|---|---|---|
+| `State:/Network/Service/macvpn-<id>/DNS` | every layout with VPN servers and search domains | VPN servers, `SupplementalMatchDomains` = VPN search domains, `SearchOrder` 100; `SupplementalMatchDomainsNoSearch = 1` in `Vpn` (the override carries the search list), absent in `Split` / `Fallback` (the domains are appended to the search list) |
+| `State:/Network/Service/macvpn-<id>-match/DNS` | resolve-only names exist | VPN servers, `SupplementalMatchDomains` = `resolve-domains`, own domains that are not search domains, reverse zones of the routed private networks; NoSearch, `SearchOrder` 101 |
+| `State:/Network/Service/macvpn-<id>-local/DNS` | `Vpn{local}` (Automatic, Full) | the primary service's original servers, `SupplementalMatchDomains` = its DHCP domain / search domains and its subnet's reverse zone, minus anything a VPN domain or zone covers (the VPN wins an overlap); NoSearch, `SearchOrder` 200 |
+| `Setup:/Network/Service/<sid>/DNS` (the override, **in the dynamic store only**) | `Vpn` layout of the newest `Vpn`-layout owner, for every `<sid>` in `Setup:/Network/Global/IPv4` `ServiceOrder` except VPN-like services (`utun*`, `ppp*`, `ipsec*`) | the service's original `Setup:` DNS dict (or `{}`) with `ServerAddresses` = VPN servers and `SearchDomains` = VPN search domains followed (with `local`) by the service's own original search domains |
+| `State:/Network/MacVPN/DNS` (the volatile ledger) | while any owner exists | `Version = 15`; `Owners` (oldest first), each `{Id, Layout, ServerAddresses, SearchDomains}`; `Originals` `{<sid>: {Present, Value}}`, captured with the first override and dropped with the last; `Skipped` (the VPN-like services left alone) |
+
+configd's IPMonitor merges a service's `State:` DNS (DHCP) with its `Setup:` DNS, `Setup:` winning per key, so the
+override in the dynamic store redirects the default resolver without touching the preferences, and a reboot clears
+it. Overriding every ordered service (not only the primary) keeps full DNS in effect through a Wi-Fi → Ethernet
+switch with no window. NXDOMAIN and timeouts from the chosen resolver are final on macOS (no fall-through), which is
+why the fallback takes the VPN's DNS out of the default role (no override, a supplemental `macvpn-<id>` entry only)
+rather than adding the original DNS after it. The original primary DNS is read from `Originals[primary]`, else from
+`State:/Network/Service/<primary>/DNS`, which we never write.
+
+**Modes.** `dns_plan::decide` maps (mode, tunnel, VPN servers present, probe) to a layout (the manager counts the consecutive failures): `Vpn{local}`, `Split`, `Fallback`
+or `None`. Automatic: `Vpn{local}`, `Fallback` after two failed checks in a row, back after one good one. Full:
+`Vpn{local}`, warns (`failing`). Targeted: `Split`; on a full tunnel it acts as Automatic. Strict: `Vpn` without
+`local`, never falls back, warns. The effective DNS merges the VPN-sent DNS with the request: the VPN's servers win
+unless there are none or `override` is set; own domains are always matched and become search domains only when the
+VPN sent none or with `override`. The VPN's DNS outside the limits (16 servers, 32 domains) is refused whole; own
+DNS still applies. `status` reports the state as a last `"dns"` key (`vpn|targeted|fallback|fallback-full|failing|
+none`), which the app turns into notices and the row hint.
+
+**Restore and stacking.** Restore puts back `Originals[sid].Value` (or removes the key when `Present` is 0) only where
+the current `Setup:` value still carries our marker; a value the system changed meanwhile is left and logged. The
+newest `Vpn`-layout owner holds the override; split entries of several connections coexist; when the owner in effect
+leaves, the next newest `Vpn` owner takes the override. **Reconcile** runs at every `up`, `down`, `mvpn status` and
+`mvpn dns-reconcile`: first the legacy restore (below), then the entries of dead owners (run directory gone or engine
+failed) are removed and their overrides restored, then drift is repaired (PreferencesMonitor republishing a `Setup:`
+key after a preferences change, a service newly in `ServiceOrder`). Without a ledger it reads one key and returns. A
+crash is therefore cleaned up at the app's next status poll (≤ 10 s with the app running). One `flock`
+(`/var/db/macvpn/dns/lock`) serializes both managers across processes.
+
+**Legacy root layer 14.** `dns_legacy.rs` keeps 14's persistent ledger path verbatim but restore-only (`acquire` is
+test-only): when `/var/db/macvpn/dns/ledger` exists, `dns::reconcile` runs it first, its owners are dead (the root
+installer disconnects every connection before replacing the binary), so the originals are written back to the
+preferences (`dns_sc.rs` over `sc_prefs.rs`, `networksetup` as the fallback), verified, and the ledger is removed. A
+`<run>/dns-backup` of a root layer before the ledger is still restored. The new code never creates that ledger.
+
+**The probe** (`dns_probe.rs`): one `A` query for `apple.com` (`dns_wire`) to each of at most the first 3 VPN
+servers, a `std::net::UdpSocket` `connect()`ed to `<server>:53`, 1.5 s per send, at most 2 sends, mismatched IDs
+ignored until the deadline; the first resolving server wins (`TC = 1` with `RCODE = 0` counts). The routing table
+decides the path, as for the resolver's own queries. Test mode never opens a socket: `MVPN_DNS_PROBE=ok|fail` is the
+result, without it the probe is not run.
+
+**When.** `acquire` (hook, WireGuard, SSTP) decides before the routes are in (tunnel unknown, counted as split for
+Targeted). `dns::after_connect`, called in `updown::up` after the kind's `up` returned (OpenVPN after
+`wait_connected`), detects the tunnel, probes and decides again: `route -n get -inet 1.0.0.1` and `-inet 129.0.0.1`
+(one in each `def1` half) both through the tunnel's interface (`<run>/iface`, or the `utun` behind WireGuard's
+name) means a full tunnel; IPv6 alone through it (a VPN that only blackholes IPv6 against leaks) does not. During the session the app sends
+`dns-check <id>` every 5 minutes when the mode probes (Automatic, Full, Strict) and the connection has VPN servers,
+and 15 s after a network switch, on the existing liveness tick and its gate (never asleep or offline). `dns-check`
+continues from `<run>/dns-session`, probes once and re-publishes on a layout change or when the ledger does not hold
+the decided layout (`dscacheutil -flushcache` only then); a failed publish keeps the previous session, so the next
+check retries. One check per connection at a time (`<run>/dns-check` lock) and at most one probe per 20 s; the
+decision is applied under the DNS lock only while the session still exists (the connection may go down during the
+probe). `down` retires the session (`dns-session.released`): the same connection's next DNS step (OpenVPN's restart
+without `persist-tun`) publishes again, keeping a failed probe's safe layout until a probe says OK. `status` /
+`dns-reconcile` also rebuild the `-local` entry from the current primary service after a network switch. It is a
+CLI subcommand and a query-daemon request (maintainer decision O4).
+
+**The `up` frame.** The app sends the connection's settings as optional `dns-mode=`, `dns-servers=`,
+`dns-domains=`, `dns-override=1` lines, only to root ≥ 15 (an older root answers `Invalid input`: the app then
+connects with the old behaviour and warns in the log and **System Status**). The helper re-validates them with the
+same rules and writes `<run>/dns-request` (0600); missing means the default. The decision is kept in
+`<run>/dns-session` (mode, tunnel, layout, probe, consecutive failures, warning, effective lists). Both are parsed
+strictly.
+
+**OpenVPN.** `--up` / `--down` stay the baseline on every version, so OpenVPN's own `dns-updown` never runs next to
+ours (it is skipped when an `--up` script is set and `--dns-updown` is not user-set; the validator forbids
+`dns-updown` in configs and it cannot be pushed). The hook also reads `DNS6` and `DOMAIN-SEARCH`. On OpenVPN ≥ 2.7
+`mvpn` additionally passes `--dns-updown` with the same hook (2.6 does not know the option and is not given it): at
+`script_type=dns-up` (before `--up`) the hook records the first compatible `--dns` server profile (plain transport,
+port 53, no DNSSEC) with its search domains and `resolve-domains` in `<run>/dns-updown`, from the environment or, when
+OpenVPN dropped privileges, from `dns_vars_file` parsed strictly (a regular file, at most 64 KiB, allowlisted
+`NAME=value` lines; never sourced); `--up` then applies it with the routes. `dns-down` does nothing; `--down`
+releases.
+
+Test mode never touches the real store: `MVPN_DYNSTORE=<dir>` is a `FileStore` (one JSON file per key) that
+`scripts/test-root.sh` seeds and reads; without it there is no store and nothing changes. `MVPN_NETWORKSETUP` and
+`MVPN_DNS_BASE` stay for the legacy path. A DNS left by a root layer before the 14 ledger is in no ledger: the user
+resets it once by hand (the user guide, 5.6).
 
 ### Log caps
 

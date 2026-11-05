@@ -1158,3 +1158,31 @@ fn native_services_show_their_address_and_the_time_they_were_seen_to_connect() {
     m.refresh();
     assert!(matches!(m.state(SVC), ConnectionState::Connected { ip: Some(ip), since: Some(_) } if ip == "10.0.0.5"));
 }
+
+#[test]
+fn connect_sends_the_dns_settings_of_the_kinds_the_dns_manager_handles() {
+    use macvpn_core::dns_settings::{DnsMode, DnsSetting};
+    let f = Fixture::new(HU);
+    f.helper.respond("status", Ok("[]"));
+    let m = f.manager();
+    for (kind, config, sent) in [
+        (VPNKind::Openvpn, "remote x\n", true),
+        (VPNKind::Wireguard, "[Interface]\n", true),
+        (VPNKind::Strongswan, "conn x\n", false),
+    ] {
+        let mut c = Connection::new("Iroda", kind);
+        c.dns = DnsSetting { mode: DnsMode::Strict, ..Default::default() };
+        f.store.save(&c, Some(config)).unwrap();
+        m.connect(&c, false);
+        let up = f.helper.calls().into_iter().find(|call| call.line == up_line(kind, &c.id));
+        let stdin = up.and_then(|u| u.stdin).unwrap_or_default();
+        assert_eq!(stdin.ends_with("dns-mode=strict\n"), sent, "{kind:?}: {stdin:?}");
+        m.disconnect(&c);
+    }
+    // The default sends nothing.
+    let c = Connection::new("Otthon", VPNKind::Openvpn);
+    f.store.save(&c, Some("remote x\n")).unwrap();
+    m.connect(&c, false);
+    let up = f.helper.calls().into_iter().find(|call| call.line == up_line(VPNKind::Openvpn, &c.id)).unwrap();
+    assert!(!up.stdin.unwrap_or_default().contains("dns-"));
+}

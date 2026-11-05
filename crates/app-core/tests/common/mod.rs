@@ -167,6 +167,26 @@ impl HelperClient for MockHelper {
         self.run_with(line, Some(secrets.stdin_payload().to_string()), Some(config.to_vec())).map(|_| ())
     }
 
+    /// The DNS lines (root layer 15) are recorded after the secret lines, as the frame carries them.
+    fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        dns: Option<&macvpn_core::dns_settings::DnsRequest>,
+    ) -> Result<(), String> {
+        let Some(dns) = dns else { return self.up(kind, id, config, secrets, debug, accept_risky) };
+        let mut line = up_line(kind, id);
+        if debug {
+            line.push_str(" --debug");
+        }
+        let stdin = format!("{}{}", secrets.stdin_payload().as_str(), dns.frame_lines());
+        self.run_with(line, Some(stdin), Some(config.to_vec())).map(|_| ())
+    }
+
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {
         self.run(down_line(kind, id), None).map(|_| ())
     }

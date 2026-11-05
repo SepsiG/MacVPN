@@ -44,6 +44,7 @@ fn payload() -> CatalogPayload {
             config: Zeroizing::new(CONFIG.into()),
             native: None,
             otp: OTPSetting::default(),
+            dns: Default::default(),
             slot: None,
             secret_refs: BTreeMap::new(),
         }],
@@ -436,8 +437,8 @@ fn with_plaintext(f: &Fixture, plaintext: &[u8]) -> Vec<u8> {
 #[test]
 fn the_payload_is_checked_last() {
     let f = fixture();
-    let newer = br#"{"version":2,"anything":"new"}"#;
-    assert_eq!(open(&with_plaintext(&f, newer), &f).err(), Some(CatalogError::NewerFormat(2)));
+    let newer = br#"{"version":3,"anything":"new"}"#;
+    assert_eq!(open(&with_plaintext(&f, newer), &f).err(), Some(CatalogError::NewerFormat(3)));
     let malformed = br#"{"version":1}"#;
     assert_eq!(open(&with_plaintext(&f, malformed), &f).err(), Some(CatalogError::Invalid(InvalidCatalog::Malformed)));
     let forbidden = br#"{"version":1,"folders":[],"connections":[{"id":"00000000-0000-4000-8000-0000000000C1","name":"x","kind":"openvpn","folderId":null,"color":null,"config":"c2NyaXB0LXNlY3VyaXR5IDIK","native":null,"otp":{"enabled":false,"separator":"none"},"slot":null,"secretRefs":{}}],"credentialSlots":[],"sharedSecrets":{}}"#;

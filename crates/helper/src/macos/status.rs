@@ -197,7 +197,9 @@ pub fn render(s: &Settings) -> String {
         let since = is_digits(&since).then_some(since);
         housekeep(s, &d, &id, &kind);
         let st = one(s, &d);
-        lines.push(StatusLine { id, kind, state: st.state, iface: st.iface, ip: st.ip, since });
+        // Root layer 15: the DNS state of the connection's session, when the DNS manager handled it.
+        let dns = crate::macos::dns_session::read_session(&d, s.test_mode).map(|x| x.state().raw());
+        lines.push(StatusLine { id, kind, state: st.state, iface: st.iface, ip: st.ip, since, dns });
     }
     status_json::render(&lines)
 }

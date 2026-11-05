@@ -254,6 +254,7 @@ impl Run<'_, '_> {
                 let mut connection = Connection::with_id(*local, c.name.clone(), c.kind, self.now);
                 connection.native = c.native.clone();
                 connection.otp = c.otp;
+                connection.dns = c.dns.clone();
                 let folder = self.folder_of(c)?;
                 let position = next_position(tx, &folder)?;
                 tx.execute(
@@ -292,6 +293,7 @@ impl Run<'_, '_> {
                 connection.native_service_id = old.native_service_id;
                 connection.native = c.native.clone();
                 connection.otp = c.otp;
+                connection.dns = c.dns.clone();
                 // The acknowledgement survives only a byte-identical config.
                 if stored_hash.as_deref() == Some(new_hash.as_str()) {
                     connection.acknowledged_risky_directives = old.acknowledged_risky_directives;
@@ -641,6 +643,7 @@ impl Vault {
             let mut copy = Connection::with_id(id, name.clone(), old.kind, Date::now());
             copy.native = old.native.clone();
             copy.otp = old.otp;
+            copy.dns = old.dns.clone();
             if old.kind.is_native() {
                 copy.native_service_name = Some(name.clone());
             }

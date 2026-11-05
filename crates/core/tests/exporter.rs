@@ -515,3 +515,14 @@ fn options_none_without_secrets() {
     assert_eq!(NativeKind::from_type_label("Cisco IPsec"), Some(NativeKind::CiscoIPSec));
     assert_eq!(NativeKind::from_type_label("WireGuard (app)"), None);
 }
+
+/// The export does not carry the DNS settings (as `otp`): the file is the config as it is.
+#[test]
+fn exporter_does_not_export_dns() {
+    let tmp = TempDir::new();
+    let store = ConnectionStore::new(tmp.path());
+    let mut c = Connection::new("Iroda", VPNKind::Openvpn);
+    c.dns.servers = vec!["10.0.0.53".into()];
+    store.save(&c, Some("remote x\n")).unwrap();
+    assert_eq!(exporter::export(&c, &store).unwrap(), b"remote x\n");
+}

@@ -62,6 +62,12 @@ impl Helper {
         MvpnClient::with_runners(&self.standard, Some(&self.up), Some(&self.quick), None)
             .with_query_socket(Some(Path::new(crate::mvpn_client::QUERY_SOCKET)))
     }
+
+    /// [`Helper::client`] knowing the installed root layer's version (read only where it matters: at connect and
+    /// for the DNS hint, never on the status poll).
+    fn versioned_client(&self) -> MvpnClient<'_> {
+        self.client().with_root_version(crate::mvpn_client::installed_root_version(|p| std::fs::read_to_string(p).ok()))
+    }
 }
 
 impl Default for Helper {
@@ -85,6 +91,34 @@ impl HelperClient for Helper {
         accept_risky: &[String],
     ) -> Result<(), String> {
         self.client().up(kind, id, config, secrets, debug, accept_risky).map_err(|e| e.to_string())
+    }
+
+    fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        dns: Option<&macvpn_core::dns_settings::DnsRequest>,
+    ) -> Result<(), String> {
+        self.versioned_client()
+            .up_with_dns(kind, id, config, secrets, debug, accept_risky, dns)
+            .map_err(|e| e.to_string())
+    }
+
+    fn dns_supported(&self) -> bool {
+        self.versioned_client().dns_supported()
+    }
+
+    fn dns_update_needed(&self) -> bool {
+        !self.dns_supported()
+    }
+
+    /// `mvpn dns-check <id>` (root layer 15), through the query daemon or `sudo -n`.
+    fn dns_check(&self, id: &Uuid) -> Option<macvpn_core::status::DnsState> {
+        self.client().dns_check(id)
     }
 
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {

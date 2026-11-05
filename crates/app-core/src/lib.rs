@@ -20,6 +20,7 @@ pub mod connections;
 pub mod control;
 pub mod credential_prompt;
 pub mod deps;
+pub mod dns_check;
 pub mod editor;
 pub mod failure_reason;
 pub mod folders;

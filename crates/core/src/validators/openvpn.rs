@@ -605,7 +605,7 @@ const SETENV_NAME_PATTERN: &str = "^[A-Za-z_][A-Za-z0-9_]*$";
 
 /// Exact (case-insensitive) names that could influence the root DNS hook, bash, the dynamic linker or the
 /// programs the hook calls; or that the hook reads itself.
-pub const SETENV_DENIED_NAMES: [&str; 36] = [
+pub const SETENV_DENIED_NAMES: [&str; 37] = [
     "BASH_ENV",
     "ENV",
     "PATH",
@@ -642,10 +642,25 @@ pub const SETENV_DENIED_NAMES: [&str; 36] = [
     "SCRIPT_TYPE",
     "DEV",
     "IFCONFIG_LOCAL",
+    "DNS_VARS_FILE",
 ];
-/// Prefixes, case-insensitive.
-pub const SETENV_DENIED_PREFIXES: [&str; 11] =
-    ["BASH_FUNC", "DYLD_", "LD_", "MALLOC_", "PYTHON", "PERL", "RUBY", "SSL_CERT_", "LC_", "FOREIGN_OPTION_", "SUDO_"];
+/// Prefixes, case-insensitive (`DNS_` and `ROUTE_`: OpenVPN 2.7's `--dns` variables and the routed networks the
+/// root layer 15 hook reads).
+pub const SETENV_DENIED_PREFIXES: [&str; 13] = [
+    "BASH_FUNC",
+    "DYLD_",
+    "LD_",
+    "MALLOC_",
+    "PYTHON",
+    "PERL",
+    "RUBY",
+    "SSL_CERT_",
+    "LC_",
+    "FOREIGN_OPTION_",
+    "SUDO_",
+    "DNS_",
+    "ROUTE_",
+];
 /// Prefixes, case-sensitive (macOS framework variables, e.g. `MallocStackLoggingDirectory`,
 /// `NSObjCMessageLoggingEnabled`).
 pub const SETENV_DENIED_CASE_SENSITIVE_PREFIXES: [&str; 5] = ["Malloc", "NS", "CF", "__CF", "OBJC_"];

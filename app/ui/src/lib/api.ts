@@ -2,6 +2,7 @@
 // capability file allows only these commands and listening to events.
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
+import type { Dns } from './manage/dnsFields';
 import type { CatalogBadge, SubscriptionView } from './catalog/catalogApi';
 import type { PlatformReply } from './l10n-core.ts';
 import type { TrafficMap } from './traffic.ts';
@@ -58,6 +59,8 @@ export type Row = RowState & {
   /// A certificate in the config expires within 30 days or has expired ("Certificate expires in 12 days"). Absent
   /// otherwise.
   certificateWarning?: string;
+  /// macOS root layer 15: the connection's DNS hint (fallback, failing, no DNS, an outdated root layer).
+  dnsNote?: string;
 };
 
 /// The administrator steps an error offers (WinVPN 2c; each runs after a UAC confirmation).
@@ -304,6 +307,8 @@ export interface TextFields {
   keyPassword: SecretInput;
   acknowledged: string[];
   otp: Otp;
+  /// OpenVPN / WireGuard: the DNS settings (macOS root layer 15). Absent for the other kinds.
+  dns?: Dns;
 }
 
 export interface NativeFields {
@@ -330,6 +335,8 @@ export interface SstpFields {
   caPem: string;
   password: SecretInput;
   otp: Otp;
+  /// The DNS settings (macOS root layer 15).
+  dns?: Dns;
 }
 
 export interface SystemFields {
@@ -384,6 +391,9 @@ export interface EditorView {
   /// The config text with its inline secrets masked: shown read-only while "Show secrets" is off. Never edited or
   /// sent back. Absent when there is nothing to mask.
   maskedText?: string;
+  /// OpenVPN / WireGuard / SSTP: the draft sends all traffic through the VPN (`true`), not (`false`), or the server
+  /// decides (absent). The DNS section hides Targeted when `true`.
+  dnsFullTunnel?: boolean;
   /// OpenVPN: show the "Private key password" field (the key or PKCS#12 needs one, or one is stored or typed).
   keyPasswordUsed: boolean;
   /// The config's certificates (OpenVPN, SSTP; IKEv2 from the swanctl folder). Absent when there are none.

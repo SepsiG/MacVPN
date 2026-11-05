@@ -158,7 +158,15 @@ impl DialState {
             DialState::Connected { ipv4, since } => ("connected", ipv4.clone(), Some(*since)),
             DialState::Failed { .. } => ("failed", None, None),
         };
-        Some(RootStatus { id, kind: kind.raw_value().to_string(), state: state.to_string(), iface: None, ip, since })
+        Some(RootStatus {
+            id,
+            kind: kind.raw_value().to_string(),
+            state: state.to_string(),
+            iface: None,
+            ip,
+            since,
+            dns: None,
+        })
     }
 
     /// `SystemVpn.status`: `Connecting`, `Connected`, `Disconnecting` or `Disconnected`.
