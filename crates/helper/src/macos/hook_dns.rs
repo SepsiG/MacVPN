@@ -297,21 +297,7 @@ fn run(env: &HookEnv, args: &[String]) {
     if !is_dir(&run) {
         return;
     }
-    let lang_file = run.join("lang");
-    let hu = is_file(&lang_file)
-        && !is_symlink(&lang_file)
-        && crate::macos::log::read_range(&lang_file, 0, 3).is_some_and(|d| {
-            let mut d = d;
-            while d.last() == Some(&b'\n') {
-                d.pop();
-            }
-            d == b"hu"
-        });
-    macvpn_core::l10n::AppLanguage::set_override(Some(if hu {
-        macvpn_core::l10n::AppLanguage::Hu
-    } else {
-        macvpn_core::l10n::AppLanguage::En
-    }));
+    macvpn_core::l10n::AppLanguage::set_override(Some(crate::macos::run_dir::language_of(&run)));
     let log = Log::at(log);
     match env.script_type.as_str() {
         "check-env" => {

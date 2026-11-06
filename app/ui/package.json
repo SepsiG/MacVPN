@@ -1,6 +1,6 @@
 {
   "name": "macvpn-ui",
-  "version": "2.1.11",
+  "version": "2.1.12",
   "private": true,
   "description": "MacVPN Tauri UI (Svelte + TypeScript + Vite)",
   "license": "MIT",
@@ -20,13 +20,13 @@
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "7.3.1",
-    "@tauri-apps/cli": "2.12.3",
+    "@tauri-apps/cli": "2.12.4",
     "@tsconfig/svelte": "5.0.8",
-    "@types/node": "26.6.4",
+    "@types/node": "26.6.5",
     "svelte": "5.57.2",
-    "svelte-check": "4.7.6",
+    "svelte-check": "4.7.7",
     "typescript": "6.0.3",
-    "vite": "8.3.4"
+    "vite": "8.3.5"
   },
   "allowScripts": {
     "fsevents": false

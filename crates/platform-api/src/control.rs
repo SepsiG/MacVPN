@@ -51,14 +51,22 @@ pub trait ControlStream: Read + Write + Send + Sync {
 pub enum Accepted {
     /// A client (a blocking stream); `peer` failed when its identity could not be read.
     Client { stream: Box<dyn ControlStream>, peer: io::Result<PeerIdentity> },
-    /// Nothing within the poll interval (the accept thread checks the stop flag).
+    /// Nothing within the poll interval, or the listener was woken (the accept thread checks the stop flag).
     Idle,
 }
 
+/// Ends the listener's waiting `accept`, and every later one, at once (from any thread): the server's stop.
+pub type ListenerWaker = Box<dyn Fn() + Send + Sync>;
+
 /// The bound endpoint's accepting side.
 pub trait ControlListener: Send {
-    /// Waits at most about `poll` for a client.
+    /// Waits for a client, at most about `poll`; returns [`Accepted::Idle`] at once after its [`waker`] ran. The
+    /// wait wakes nothing in between (the battery): no polling while no client comes.
+    ///
+    /// [`waker`]: ControlListener::waker
     fn accept(&self, poll: Duration) -> io::Result<Accepted>;
+    /// The waker the server's stop calls before it joins the accept thread.
+    fn waker(&self) -> io::Result<ListenerWaker>;
 }
 
 /// A bound control endpoint.

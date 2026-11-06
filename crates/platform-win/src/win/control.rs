@@ -3,7 +3,7 @@
 
 use macvpn_core::fsx::{self, FileOwner};
 use macvpn_platform_api::{
-    Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, PeerIdentity, PeerUser,
+    Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, ListenerWaker, PeerIdentity, PeerUser,
 };
 use macvpn_winsys::pipe::{self, Listener, NetworkLogons, PipeStream};
 use macvpn_winsys::sid::Sid;
@@ -98,6 +98,11 @@ impl ControlListener for PipeListener {
                 Accepted::Client { stream: Box::new(Stream(stream)), peer: peer.and_then(identity) }
             }
         })
+    }
+
+    fn waker(&self) -> io::Result<ListenerWaker> {
+        let waker = self.0.waker()?;
+        Ok(Box::new(move || waker.wake()))
     }
 }
 

@@ -28,7 +28,9 @@ pub mod traffic;
 pub mod ui;
 pub mod updates;
 
-pub use control::{Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, PeerIdentity, PeerUser};
+pub use control::{
+    Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, ListenerWaker, PeerIdentity, PeerUser,
+};
 #[cfg(debug_assertions)]
 pub use debug::{SmokeHooks, WindowShape};
 pub use error::PlatformError;

@@ -452,7 +452,8 @@ impl Manager {
             return;
         }
         for id in &dead {
-            log_for(id).step(&tr("the connection is no longer running: its DNS settings are released", &[]));
+            let log = log_for(id);
+            log.step(&log.localized(|| tr("the connection is no longer running: its DNS settings are released", &[])));
         }
         let newest_before = l.owners.last().map(|o| o.id.clone());
         l.owners.retain(|o| !dead.contains(&o.id));

@@ -269,10 +269,16 @@ pub fn owner_alive(s: &Settings, id: &str) -> bool {
         && crate::macos::status::one(s, &d).state != "failed"
 }
 
-/// The connection log of `id` for the reconcile's messages (only an existing regular file).
+/// The connection log of `id` for the reconcile's messages (only an existing regular file), in the language the
+/// connection was started in while its run directory is there.
 pub fn log_of(s: &Settings, id: &str) -> Log {
     let p = s.log_file(id);
-    if is_uuid(id) && is_file(&p) && !is_symlink(&p) { Log::at(p) } else { Log::none() }
+    if !(is_uuid(id) && is_file(&p) && !is_symlink(&p)) {
+        return Log::none();
+    }
+    let run = s.run_dir(id);
+    let language = (is_dir(&run) && !is_symlink(&run)).then(|| crate::macos::run_dir::language_of(&run));
+    Log::at(p).in_language(language)
 }
 
 /// Root layer 14's leftover ledger first (always restored: nothing of this layer keeps it, and an owner id alive
@@ -689,7 +695,8 @@ impl Manager {
         let dead: Vec<String> = l.owners.iter().filter(|o| !alive(&o.id)).map(|o| o.id.clone()).collect();
         let mut ops = Vec::new();
         for id in &dead {
-            log_for(id).step(&tr("the connection is no longer running: its DNS settings are released", &[]));
+            let log = log_for(id);
+            log.step(&log.localized(|| tr("the connection is no longer running: its DNS settings are released", &[])));
             ops.extend(self.store.keys(&own_pattern(id)).into_iter().map(Op::Remove));
         }
         l.owners.retain(|o| !dead.contains(&o.id));
@@ -1017,6 +1024,18 @@ pub mod tests {
         assert!(t.ours().is_empty());
         assert!(t.setup("S1").is_none() && t.setup("S2").is_none());
         assert!(t.store.get(LEDGER_KEY).is_none());
+    }
+
+    #[test]
+    fn reconcile_writes_the_release_in_the_connection_language() {
+        let t = T::new();
+        t.m.acquire(A, &t.run(A), &pushed(&["10.8.0.1"], &["corp.example"]), &t.log);
+        let log = t.log.clone().in_language(Some(macvpn_core::l10n::AppLanguage::Hu));
+        macvpn_core::l10n::with_language(macvpn_core::l10n::AppLanguage::En, || {
+            t.m.reconcile(&|_| false, &|_| log.clone(), true)
+        });
+        let text = t.log_text();
+        assert!(text.contains("a kapcsolat már nem fut: a DNS-beállításait felszabadítjuk"), "{text}");
     }
 
     #[test]

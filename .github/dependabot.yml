@@ -10,8 +10,15 @@ updates:
     directory: /app/ui
     schedule:
       interval: weekly
+    ignore:
+      # svelte-check accepts TypeScript 5 and 6 only (peerDependencies); revisit when it accepts 7.
+      - dependency-name: typescript
+        versions: [">=7"]
   # The Rust workspace (Cargo.lock).
   - package-ecosystem: cargo
     directory: /
     schedule:
       interval: weekly
+    ignore:
+      # Pinned to the glib that Tauri's gtk 0.18 uses (crates/platform-linux/Cargo.toml).
+      - dependency-name: glib

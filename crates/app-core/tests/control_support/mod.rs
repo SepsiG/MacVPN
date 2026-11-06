@@ -10,7 +10,8 @@
 use macvpn_app_core::ConnectionItem;
 use macvpn_app_core::control::{
     Accepted, BoundEndpoint, ControlHost, ControlLimits, ControlListener, ControlNotifier, ControlOptions,
-    ControlServer, ControlStream, ControlTransport, PairingAnswer, PairingRequest, PeerIdentity, PeerUser,
+    ControlServer, ControlStream, ControlTransport, ListenerWaker, PairingAnswer, PairingRequest, PeerIdentity,
+    PeerUser,
 };
 use macvpn_core::control::protocol::ErrorCode;
 use macvpn_core::models::{AuthWait, AuthWaitKind, Connection, ConnectionState, VPNKind, uuid_string};
@@ -241,12 +242,22 @@ impl ControlTransport for FakeTransport {
 }
 
 /// The non-blocking accept of both listeners, as the macOS transport does it.
+/// The test listeners' longest sleep per accept.
+const TEST_ACCEPT_STEP: Duration = Duration::from_millis(10);
+
+/// The test listeners' waker: they wake every [`TEST_ACCEPT_STEP`] anyway.
+fn no_waker() -> io::Result<ListenerWaker> {
+    Ok(Box::new(|| {}))
+}
+
 macro_rules! accept_with {
     ($self:ident, $poll:ident, $wrap:expr) => {{
         let stream = match $self.listener.accept() {
             Ok((stream, _)) => stream,
             Err(e) if e.kind() == ErrorKind::WouldBlock => {
-                std::thread::sleep($poll);
+                // The test listeners poll in short steps (their waker does nothing), so a stop never waits for
+                // the long production `accept_poll`.
+                std::thread::sleep($poll.min(TEST_ACCEPT_STEP));
                 return Ok(Accepted::Idle);
             }
             Err(e) => return Err(e),
@@ -427,6 +438,10 @@ impl ControlListener for UnixTestListener {
     fn accept(&self, poll: Duration) -> io::Result<Accepted> {
         accept_with!(self, poll, UnixTestStream)
     }
+
+    fn waker(&self) -> io::Result<ListenerWaker> {
+        no_waker()
+    }
 }
 
 pub struct LoopbackListener {
@@ -438,6 +453,10 @@ pub struct LoopbackListener {
 impl ControlListener for LoopbackListener {
     fn accept(&self, poll: Duration) -> io::Result<Accepted> {
         accept_with!(self, poll, LoopbackStream::new)
+    }
+
+    fn waker(&self) -> io::Result<ListenerWaker> {
+        no_waker()
     }
 }
 
@@ -503,6 +522,11 @@ impl ControlListener for PipeTestListener {
                 Accepted::Client { stream: Box::new(PipeWrap(stream)), peer: Ok(self.peer.identity(&self.user)) }
             }
         })
+    }
+
+    fn waker(&self) -> io::Result<ListenerWaker> {
+        let waker = self.listener.waker()?;
+        Ok(Box::new(move || waker.wake()))
     }
 }
 

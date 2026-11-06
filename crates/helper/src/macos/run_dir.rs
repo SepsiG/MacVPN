@@ -70,9 +70,36 @@ pub fn prepare(ctx: &mut Ctx, config: &[u8]) -> R {
     Ok(())
 }
 
+/// The language `run`'s connection was started in (its `lang` file: `hu`, otherwise English).
+pub fn language_of(run: &Path) -> macvpn_core::l10n::AppLanguage {
+    let f = run.join("lang");
+    let hu = crate::macos::paths::is_file(&f)
+        && !crate::macos::paths::is_symlink(&f)
+        && crate::macos::log::read_range(&f, 0, 3).is_some_and(|mut d| {
+            while d.last() == Some(&b'\n') {
+                d.pop();
+            }
+            d == b"hu"
+        });
+    if hu { macvpn_core::l10n::AppLanguage::Hu } else { macvpn_core::l10n::AppLanguage::En }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_language_comes_from_the_lang_file() {
+        use macvpn_core::l10n::AppLanguage;
+        let run = std::env::temp_dir().join(format!("mvpn-lang-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&run).unwrap();
+        assert_eq!(language_of(&run), AppLanguage::En, "no file: English");
+        for (text, want) in [("hu\n", AppLanguage::Hu), ("hu", AppLanguage::Hu), ("en\n", AppLanguage::En)] {
+            std::fs::write(run.join("lang"), text).unwrap();
+            assert_eq!(language_of(&run), want, "{text:?}");
+        }
+        fsx::remove_rf(&run);
+    }
     use crate::macos::paths::Settings;
     use crate::macos::testmode::TestEnv;
     use crate::shared::cli::Args;

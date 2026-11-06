@@ -17,6 +17,7 @@ pub use crate::macos::paths::LOG_MAX;
 use crate::shared::mask::{self, Masker};
 pub use crate::shared::ovpn_log::ovpn_done;
 use crate::shared::ovpn_log::{AUTH_NOT_FINAL, DONE, ECHO, is_blank, log_safe, mentions_secret};
+use macvpn_core::l10n::{AppLanguage, with_language};
 use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Path, PathBuf};
 
@@ -34,6 +35,9 @@ const DECISION_LINES: usize = 16;
 pub struct Log {
     path: Option<PathBuf>,
     max: u64,
+    /// The connection's language, for messages written outside its own run (`status`, `serve`); `None`: the
+    /// current one.
+    language: Option<AppLanguage>,
 }
 
 impl Default for Log {
@@ -44,7 +48,7 @@ impl Default for Log {
 
 impl Log {
     pub fn none() -> Log {
-        Log { path: None, max: LOG_MAX }
+        Log { path: None, max: LOG_MAX, language: None }
     }
 
     pub fn at(path: PathBuf) -> Log {
@@ -53,7 +57,21 @@ impl Log {
 
     /// A log rolled above `max` bytes (the test mode's `MVPN_LOG_MAX`).
     pub fn capped(path: PathBuf, max: u64) -> Log {
-        Log { path: Some(path), max: max.max(1) }
+        Log { path: Some(path), max: max.max(1), language: None }
+    }
+
+    /// This log with its messages in `language` ([`Log::localized`]).
+    pub fn in_language(mut self, language: Option<AppLanguage>) -> Log {
+        self.language = language;
+        self
+    }
+
+    /// `text` (a `tr` call) in this log's language.
+    pub fn localized(&self, text: impl FnOnce() -> String) -> String {
+        match self.language {
+            Some(l) => with_language(l, text),
+            None => text(),
+        }
     }
 
     pub fn path(&self) -> Option<&Path> {

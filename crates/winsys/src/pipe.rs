@@ -40,7 +40,8 @@ use windows_sys::Win32::System::Pipes::{
 };
 use windows_sys::Win32::System::Threading::{
     CreateEventW, GetCurrentThread, INFINITE, OpenProcess, OpenProcessToken, OpenThreadToken, PROCESS_NAME_WIN32,
-    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, WaitForSingleObject,
+    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW, SetEvent, WaitForMultipleObjects,
+    WaitForSingleObject,
 };
 
 const BUFFER: u32 = 64 * 1024;
@@ -335,6 +336,19 @@ pub struct Listener {
     name: Vec<u16>,
     descriptor: Box<Descriptor>,
     pending: Mutex<Option<Pending>>,
+    /// Set by [`ListenerWaker::wake`] and never reset: the waiting accept, and every later one, returns at once.
+    wake: Arc<OwnedHandle>,
+}
+
+/// Ends a [`Listener`]'s waiting accept, and every later one, from any thread (the control server's stop).
+#[derive(Debug, Clone)]
+pub struct ListenerWaker(Arc<OwnedHandle>);
+
+impl ListenerWaker {
+    pub fn wake(&self) {
+        // SAFETY: the event handle is alive (the Arc); setting a set event again is harmless.
+        unsafe { SetEvent(self.0.as_raw_handle()) };
+    }
 }
 
 impl std::fmt::Debug for Listener {
@@ -379,7 +393,12 @@ impl Listener {
                 _ => e,
             })?;
         let pending = Pending::start(first)?;
-        Ok(Listener { name: wide_name, descriptor, pending: Mutex::new(Some(pending)) })
+        Ok(Listener { name: wide_name, descriptor, pending: Mutex::new(Some(pending)), wake: Arc::new(event()?) })
+    }
+
+    /// The waker of this listener's accepts.
+    pub fn waker(&self) -> io::Result<ListenerWaker> {
+        Ok(ListenerWaker(self.wake.clone()))
     }
 
     /// The DACL of the instance waiting for a client, as (allow, SID string) in order (tests and the security
@@ -430,10 +449,13 @@ impl Listener {
         }
         let pending = slot.as_mut().expect("just filled");
         if !pending.connected {
-            // SAFETY: the event belongs to the pending operation and is alive.
-            match unsafe { WaitForSingleObject(pending.overlapped.hEvent, millis(poll)) } {
+            // The client's connect first: a client and the stop at once is served, then the stop is seen.
+            let events = [pending.overlapped.hEvent, self.wake.as_raw_handle()];
+            // SAFETY: both events are alive (the pending operation's and this listener's); the array's length is
+            // passed alongside.
+            match unsafe { WaitForMultipleObjects(events.len() as u32, events.as_ptr(), 0, millis(poll)) } {
                 WAIT_OBJECT_0 => {}
-                WAIT_TIMEOUT => return Ok(None),
+                w if w == WAIT_OBJECT_0 + 1 || w == WAIT_TIMEOUT => return Ok(None),
                 _ => return Err(io::Error::last_os_error()),
             }
             let pipe = pending.pipe.as_ref().expect("a pending instance has its pipe").as_raw_handle();
@@ -980,6 +1002,28 @@ mod tests {
         GetTokenInformation, SECURITY_IMPERSONATION_LEVEL, SecurityIdentification, TokenImpersonationLevel,
     };
 
+    /// The accept sleeps until a client or its waker: woken, it returns at once, and so does every later one.
+    #[test]
+    fn an_accept_without_a_client_sleeps_until_its_waker_runs() {
+        let listener =
+            Listener::bind_with(&format!(r"\\.\pipe\winsys-unit-wake-{}", std::process::id()), NetworkLogons::Allow)
+                .unwrap();
+        assert!(listener.accept(Duration::from_millis(20)).unwrap().is_none(), "the poll ends an idle accept");
+        let waker = listener.waker().unwrap();
+        let t = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(100));
+            waker.wake();
+        });
+        let start = Instant::now();
+        assert!(listener.accept(Duration::from_secs(30)).unwrap().is_none());
+        let waited = start.elapsed();
+        assert!(waited >= Duration::from_millis(90) && waited < Duration::from_secs(5), "{waited:?}");
+        t.join().unwrap();
+        let start = Instant::now();
+        assert!(listener.accept(Duration::from_secs(30)).unwrap().is_none());
+        assert!(start.elapsed() < Duration::from_secs(1), "woken stays woken");
+    }
+
     /// A client that opens the first instance and closes it before the connect starts makes `ConnectNamedPipe`
     /// fail with `ERROR_NO_DATA`; the instance is taken back and serves the next client (review I8).
     #[test]
@@ -990,7 +1034,12 @@ mod tests {
         let first = create_instance(&wide_name, &d, true).unwrap();
         drop(std::fs::OpenOptions::new().read(true).write(true).open(&name).expect("the instance is free"));
         let pending = Pending::start(first).expect("ERROR_NO_DATA is taken back");
-        let listener = Listener { name: wide_name, descriptor: d, pending: Mutex::new(Some(pending)) };
+        let listener = Listener {
+            name: wide_name,
+            descriptor: d,
+            pending: Mutex::new(Some(pending)),
+            wake: Arc::new(event().unwrap()),
+        };
         let client_name = name.clone();
         let client = std::thread::spawn(move || connect(&client_name, Duration::from_secs(5)).unwrap());
         let (mut server, _) = listener.accept(Duration::from_secs(5)).unwrap().expect("the next client");

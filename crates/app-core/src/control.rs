@@ -174,7 +174,7 @@ pub enum PairingAnswer {
 /// The transport seam (the endpoint, its client streams with the peer identity, the entropy): defined in
 /// `macvpn-platform-api` and re-exported here (their old home).
 pub use macvpn_platform_api::{
-    Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, PeerIdentity, PeerUser,
+    Accepted, BoundEndpoint, ControlListener, ControlStream, ControlTransport, ListenerWaker, PeerIdentity, PeerUser,
 };
 
 // MARK: - Options
@@ -198,7 +198,8 @@ pub struct ControlLimits {
     pub stop_timeout: Duration,
     /// The server's own limit on the pairing window (the window times out after 2 minutes itself).
     pub pairing_timeout: Duration,
-    /// How often the accept thread looks at the stop flag while no client connects.
+    /// The longest the accept thread sleeps without a client before it looks at the stop flag again; the stop
+    /// wakes it at once ([`ControlListener::waker`]), so this is only a safety net.
     pub accept_poll: Duration,
     /// At most this many `up`s waiting for their result per client connection.
     pub max_pending: usize,
@@ -215,7 +216,7 @@ impl Default for ControlLimits {
             write_timeout: Duration::from_secs(5),
             stop_timeout: Duration::from_secs(30),
             pairing_timeout: Duration::from_secs(120),
-            accept_poll: Duration::from_millis(100),
+            accept_poll: Duration::from_secs(60),
             max_pending: 16,
         }
     }
@@ -510,6 +511,8 @@ pub fn forget_keys_in_registry(dir: &Path, keys: &[String]) -> io::Result<()> {
 pub struct ControlServer {
     shared: Arc<Shared>,
     accept: Option<JoinHandle<()>>,
+    /// Ends the accept thread's wait at the stop.
+    wake_accept: ListenerWaker,
     endpoint: String,
     socket_file: Option<PathBuf>,
     guard: Option<Box<dyn Send + Sync>>,
@@ -536,9 +539,10 @@ impl ControlServer {
             signal: Condvar::new(),
             save_lock: Mutex::new(()),
         });
-        // The listener waits at most `accept_poll` per accept, so the accept thread can see the stop flag (a
-        // wake-up connect could fail).
+        // The listener sleeps until a client comes or the stop wakes it (`accept_poll` is only the longest wait
+        // between two looks at the stop flag).
         let listener = bound.listener;
+        let wake_accept = listener.waker()?;
         let accept_shared = shared.clone();
         let accept = thread::Builder::new()
             .name("macvpn-control-accept".into())
@@ -547,6 +551,7 @@ impl ControlServer {
         Ok(ControlServer {
             shared,
             accept: Some(accept),
+            wake_accept,
             endpoint: bound.display,
             socket_file: bound.socket_file,
             guard: Some(bound.guard),
@@ -654,6 +659,7 @@ impl ControlServer {
     pub fn stop(&mut self, mode: StopMode) {
         let Some(accept) = self.accept.take() else { return };
         self.shared.stopping.store(true, Ordering::SeqCst);
+        (self.wake_accept)();
         {
             let mut state = self.shared.lock();
             state.detached = mode == StopMode::Detach;
@@ -667,7 +673,7 @@ impl ControlServer {
                 session.close();
             }
         }
-        // The accept thread polls the stop flag.
+        // Woken above, the accept thread sees the stop flag.
         let _ = accept.join();
         if let Some(socket_file) = &self.socket_file {
             match fs::remove_file(socket_file) {
