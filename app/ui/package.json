@@ -1,6 +1,6 @@
 {
   "name": "macvpn-ui",
-  "version": "2.1.12",
+  "version": "2.1.13",
   "private": true,
   "description": "MacVPN Tauri UI (Svelte + TypeScript + Vite)",
   "license": "MIT",

@@ -77,6 +77,8 @@ pub struct AppState {
     pub tray_anchor: Mutex<Option<(PhysicalPosition<f64>, PhysicalSize<f64>)>>,
     /// When the popover was last hidden because it lost the focus (a click on the tray icon does that first).
     pub hidden_on_blur: Mutex<Option<Instant>>,
+    /// The failed connections the open popover showed: seen when it hides, so they are off from then on.
+    pub failures_shown: Mutex<Vec<String>>,
     /// The local control API: the setting, the server, the pairing broker.
     pub control: crate::control::ControlApp,
     /// The pairing windows shown.

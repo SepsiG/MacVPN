@@ -259,6 +259,7 @@ fn build_state(
         credential_tracker: Mutex::default(),
         tray_anchor: Mutex::new(None),
         hidden_on_blur: Mutex::new(None),
+        failures_shown: Mutex::new(Vec::new()),
         control: control::ControlApp::new(&support, storage.registry.clone(), support.join(VAULT_FILE)),
         vault: vault::VaultApp::new(storage.vault, storage.legacy, storage.entropy),
         pairing_windows: pairing::PairingWindows::default(),

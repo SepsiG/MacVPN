@@ -80,7 +80,10 @@ impl CRV1Challenge {
 /// not pass it on).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagementEvent {
-    Hold,
+    /// `>HOLD:Waiting for hold release:N`: OpenVPN holds before a (re)start. With a management hold it skips its
+    /// own restart pause and leaves it to the client: `N` is the seconds it would have waited (0 at the first
+    /// start; on a restart its `connect-retry` pause with backoff). A malformed `N` is 0.
+    Hold(u32),
     /// `>PASSWORD:Need 'Auth' username/password` (with an optional static challenge).
     NeedAuth(Option<ManagementStaticRequest>),
     /// A password the bridge does not give (e.g. 'Private Key', 'HTTP Proxy', user name only).
@@ -121,7 +124,8 @@ impl ManagementParser {
             return ManagementEvent::Ignored;
         }
         if swift_str::has_prefix(line, ">HOLD:") {
-            return ManagementEvent::Hold;
+            let seconds = line.rsplit(':').next().and_then(|n| n.trim().parse::<u32>().ok()).unwrap_or(0);
+            return ManagementEvent::Hold(seconds);
         }
         if swift_str::has_prefix(line, ">FATAL:") {
             return ManagementEvent::Fatal;

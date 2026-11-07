@@ -422,6 +422,9 @@ struct Inner {
     /// When a native service (managed or a system VPN) was seen to connect: only a connect this app saw (a service
     /// already up at the first refresh has no time).
     native_since: HashMap<String, Date>,
+    /// Failures the user has seen ([`ConnectionManager::acknowledge_failures`]): a failed or disconnected report
+    /// shows as `disconnected` until the next connect, so a seen failure does not come back at the next refresh.
+    seen_failures: HashSet<String>,
 }
 
 impl Inner {
@@ -479,6 +482,13 @@ impl Inner {
         current: ConnectionState,
         native_like: bool,
     ) -> ConnectionState {
+        if self.seen_failures.contains(key) {
+            if matches!(current, ConnectionState::Failed(_) | ConnectionState::Disconnected) {
+                return ConnectionState::Disconnected;
+            }
+            // Up again (started outside the app): a later failure is a new one.
+            self.seen_failures.remove(key);
+        }
         if previous.is_some_and(ConnectionState::is_connected)
             && matches!(current, ConnectionState::Failed(_) | ConnectionState::Disconnected)
         {
@@ -1049,6 +1059,31 @@ impl ConnectionManager {
 
     pub fn has_failure(&self) -> bool {
         self.read(|i| i.states.values().any(|s| matches!(s, ConnectionState::Failed(_))))
+    }
+
+    /// The keys whose state is a failure now (the menu notes them when it opens).
+    pub fn failed_keys(&self) -> Vec<String> {
+        self.read(|i| {
+            i.states.iter().filter(|(_, s)| matches!(s, ConnectionState::Failed(_))).map(|(k, _)| k.clone()).collect()
+        })
+    }
+
+    /// The user has seen these failures (the menu closed after showing them): each key still failed becomes
+    /// `disconnected`, and stays so until its next connect. The notice and the log keep the reason.
+    pub fn acknowledge_failures(&self, keys: &[String]) {
+        let seen: Vec<&String> = self
+            .read(|i| keys.iter().filter(|k| matches!(i.states.get(*k), Some(ConnectionState::Failed(_)))).collect());
+        if seen.is_empty() {
+            return;
+        }
+        self.mutate(|i| {
+            for key in seen {
+                if matches!(i.states.get(key), Some(ConnectionState::Failed(_))) {
+                    i.states.insert(key.clone(), ConnectionState::Disconnected);
+                    i.seen_failures.insert(key.clone());
+                }
+            }
+        });
     }
 
     pub fn snapshot(&self) -> ManagerSnapshot {
@@ -1730,6 +1765,7 @@ impl ConnectionManager {
             i.want_down.remove(&key);
             i.auth_cancelled.remove(&key);
             i.credentials_cancelled.remove(&key);
+            i.seen_failures.remove(&key);
             i.pending_saves.remove(&key);
             i.awaiting_success.insert(key.clone());
             i.set_op(&key, Some(Op::Connecting));
@@ -2042,6 +2078,7 @@ impl ConnectionManager {
         let token = self.mutate(|i| {
             i.want_down.remove(&key);
             i.auth_cancelled.remove(&key);
+            i.seen_failures.remove(&key);
             i.awaiting_success.insert(key.clone());
             i.set_op(&key, Some(Op::Connecting));
             i.states.insert(key.clone(), ConnectionState::Connecting);

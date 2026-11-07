@@ -268,6 +268,8 @@ enum Event {
     Read(String),
     /// Bytes were written to OpenVPN.
     Write(String),
+    /// A read timed out.
+    Timeout,
 }
 
 /// A scripted management stream (`None`: a read timeout; the end of the script is EOF) that records reads and
@@ -276,12 +278,20 @@ struct Timeline {
     steps: VecDeque<Option<&'static str>>,
     events: Arc<Mutex<Vec<Event>>>,
     max_write: usize,
+    /// How long a read timeout (`None`) takes: zero, unless a test needs time to pass.
+    timeout: Duration,
 }
 
 impl Timeline {
     fn new(steps: &[Option<&'static str>]) -> (Timeline, Arc<Mutex<Vec<Event>>>) {
         let events = Arc::new(Mutex::new(Vec::new()));
-        (Timeline { steps: steps.iter().copied().collect(), events: events.clone(), max_write: usize::MAX }, events)
+        let t = Timeline {
+            steps: steps.iter().copied().collect(),
+            events: events.clone(),
+            max_write: usize::MAX,
+            timeout: Duration::ZERO,
+        };
+        (t, events)
     }
 }
 
@@ -293,7 +303,11 @@ impl Read for Timeline {
                 self.events.lock().unwrap().push(Event::Read(chunk.into()));
                 Ok(chunk.len())
             }
-            Some(None) => Err(io::ErrorKind::WouldBlock.into()),
+            Some(None) => {
+                self.events.lock().unwrap().push(Event::Timeout);
+                std::thread::sleep(self.timeout);
+                Err(io::ErrorKind::WouldBlock.into())
+            }
             None => Ok(0),
         }
     }
@@ -326,7 +340,17 @@ const STATE_ON_OK: &str = "SUCCESS: real-time state notification set to ON\r\n";
 
 /// The bridge over the Windows engine's stream (StateWatch over OneCommandAtATime) on a scripted OpenVPN.
 fn bridge_over(steps: &[Option<&'static str>], creds: Option<(&str, &str)>) -> (Vec<Event>, Arc<BridgeState>) {
-    let (stream, events) = Timeline::new(steps);
+    bridge_over_timed(steps, creds, Duration::ZERO)
+}
+
+/// [`bridge_over`] whose read timeouts take `timeout` each.
+fn bridge_over_timed(
+    steps: &[Option<&'static str>],
+    creds: Option<(&str, &str)>,
+    timeout: Duration,
+) -> (Vec<Event>, Arc<BridgeState>) {
+    let (mut stream, events) = Timeline::new(steps);
+    stream.timeout = timeout;
     let state = Arc::new(BridgeState::new(Box::new(|_| {}), Box::new(|| {})));
     let creds = creds.map(|(u, p)| macvpn_core::management::ManagementCredentials {
         username: u.into(),
@@ -363,6 +387,28 @@ fn hold_release_waits_for_the_answer_to_state_on() {
     assert!(at(&events, &Event::Write("hold release\n".into())) > answered, "{events:?}");
     // Everything read ahead reached the bridge: it saw CONNECTED.
     assert_eq!(state.mgmt_status().as_deref(), Some("ok"));
+}
+
+/// A restart hold (`>HOLD:…:N`, N > 0) is OpenVPN's restart pause left to the bridge: it is released after N
+/// seconds, not at once (released at once, an unreachable network restarted OpenVPN hundreds of times a second).
+#[test]
+fn a_restart_hold_is_released_after_its_wait() {
+    const RELEASED: &str = "SUCCESS: hold release succeeded\r\n";
+    let mut steps = vec![
+        Some(">HOLD:Waiting for hold release:0\r\n"),
+        Some(STATE_ON_OK),
+        Some(RELEASED),
+        Some(">STATE:1700000000,RECONNECTING,network-unreachable,,,,,\r\n>HOLD:Waiting for hold release:1\r\n"),
+    ];
+    // 2 s of read timeouts, then the answer to the second release.
+    steps.extend([None; 20]);
+    steps.push(Some(RELEASED));
+    let (events, _) = bridge_over_timed(&steps, None, Duration::from_millis(100));
+    assert_eq!(writes(&events), ["state on\n", "hold release\n", "hold release\n"]);
+    // The second release went after about 1 s of read timeouts (10 × 100 ms), not at once.
+    let second = events.iter().rposition(|e| *e == Event::Write("hold release\n".into())).unwrap();
+    let waited = events[..second].iter().filter(|e| **e == Event::Timeout).count();
+    assert!((9..=20).contains(&waited), "{waited} timeouts before the release: {events:?}");
 }
 
 #[test]

@@ -138,6 +138,9 @@ pub trait BridgeFiles {
 
 /// How often the bridge calls [`BridgeFiles::housekeeping`].
 pub const HOUSEKEEPING_SECS: f64 = 30.0;
+/// The longest the bridge keeps OpenVPN's restart hold ([`ManagementEvent::Hold`]): OpenVPN's own pause grows
+/// to 300 s, but a short network loss must not keep the tunnel down that long after the network is back.
+pub const MAX_HOLD_WAIT_SECS: f64 = 15.0;
 
 /// The optional idle hook of the management stream ([`Bridge::with_wait_hook`]): called with `true` when the
 /// bridge starts waiting for the user's answer (a prompt or a deadline is pending: the app's answer file must be
@@ -167,6 +170,9 @@ pub struct Bridge<S: Read + Write, F: BridgeFiles> {
     was_connected: bool,
     /// OpenVPN restarts the tunnel itself (reported once per restart).
     reconnecting: bool,
+    /// When the pending restart hold is released: OpenVPN's restart pause, which it leaves to the management
+    /// client. Released at once, a network that is unreachable restarted it hundreds of times a second.
+    hold_until: Option<f64>,
     /// The stream's idle hook, and what it was last told.
     wait_hook: Option<WaitHook<S>>,
     told_waiting: Option<bool>,
@@ -203,6 +209,7 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             last_housekeeping: now(),
             was_connected: false,
             reconnecting: false,
+            hold_until: None,
             wait_hook: None,
             told_waiting: None,
         }
@@ -354,15 +361,23 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             .map(|c| (c.username.clone(), Zeroizing::new(c.password.clone()), c.packed))
     }
 
+    fn release_hold(&mut self) {
+        self.hold_until = None;
+        if self.send(&ManagementCommand::HoldRelease) {
+            self.log("hold released");
+        }
+    }
+
     fn handle_event(&mut self, event: ManagementEvent) {
         if self.finished {
             return;
         }
         match event {
-            ManagementEvent::Hold => {
-                if self.send(&ManagementCommand::HoldRelease) {
-                    self.log("hold released");
-                }
+            ManagementEvent::Hold(0) => self.release_hold(),
+            ManagementEvent::Hold(seconds) => {
+                let wait = f64::from(seconds).min(MAX_HOLD_WAIT_SECS);
+                self.hold_until = Some(now() + wait);
+                self.log(&format!("OpenVPN restarts in {wait:.0} s"));
             }
             ManagementEvent::NeedAuth(None) => {
                 if self.pending_crv1.is_some() {
@@ -597,6 +612,9 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             }
             if self.awaiting_user && self.deadline.is_some_and(|d| now() > d) {
                 self.finish("timed out waiting for authentication", false, true);
+            }
+            if !self.finished && self.hold_until.is_some_and(|t| now() >= t) {
+                self.release_hold();
             }
             let t = now();
             if !(0.0..HOUSEKEEPING_SECS).contains(&(t - self.last_housekeeping)) {

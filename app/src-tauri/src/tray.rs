@@ -31,11 +31,16 @@ pub fn menu_shown() -> bool {
     MENU_SHOWN.load(Ordering::SeqCst)
 }
 
-/// Hides the popover (every hide goes through here, so [`menu_shown`] stays true to the window).
+/// Hides the popover (every hide goes through here, so [`menu_shown`] stays true to the window). The failures it
+/// showed are seen: they are off from now on (the tray icon and the menu go back to plain off).
 pub fn hide_menu(app: &AppHandle) {
     MENU_SHOWN.store(false, Ordering::SeqCst);
     if let Some(window) = app.get_webview_window(MENU_WINDOW) {
         let _ = window.hide();
+    }
+    if let Some(state) = app.try_state::<Arc<AppState>>() {
+        let shown = std::mem::take(&mut *state.failures_shown.lock().unwrap_or_else(PoisonError::into_inner));
+        state.manager.acknowledge_failures(&shown);
     }
 }
 
@@ -485,6 +490,7 @@ pub(crate) fn show_menu_activated(app: &AppHandle, activation_token: Option<Stri
     MENU_SHOWN.store(true, Ordering::SeqCst);
     let _ = window.set_focus();
     if let Some(state) = state {
+        *state.failures_shown.lock().unwrap_or_else(PoisonError::into_inner) = state.manager.failed_keys();
         state.poller.wake();
         // The Swift menu's `onAppear { loginItem.refresh() }`.
         state.inner().clone().refresh_login_item();

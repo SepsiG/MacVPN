@@ -14,7 +14,10 @@ fn web(url: &str) -> ManagementEvent {
 
 #[test]
 fn hold_state_and_ignored_lines() {
-    assert_eq!(parse(">HOLD:Waiting for hold release:10"), ManagementEvent::Hold);
+    assert_eq!(parse(">HOLD:Waiting for hold release:10"), ManagementEvent::Hold(10));
+    assert_eq!(parse(">HOLD:Waiting for hold release:0"), ManagementEvent::Hold(0));
+    assert_eq!(parse(">HOLD:Waiting for hold release:x"), ManagementEvent::Hold(0));
+    assert_eq!(parse(">HOLD:Waiting for hold release"), ManagementEvent::Hold(0));
     assert_eq!(parse(">FATAL:Cannot open TUN/TAP dev"), ManagementEvent::Fatal);
     assert_eq!(parse(">STATE:1760000000,CONNECTED,SUCCESS,10.8.0.2,1.2.3.4,1194,,"), ManagementEvent::Connected);
     assert_eq!(parse(">STATE:1760000000,AUTH_PENDING,timeout 120,,,,,"), ManagementEvent::AuthPending(Some(120)));

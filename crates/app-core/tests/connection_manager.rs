@@ -199,6 +199,62 @@ fn drop_detection() {
     assert_eq!(events_of(&events), [dropped(&uuid_string(&c.id), "Iroda")]);
 }
 
+/// A drop the user has seen (the menu closed after showing it) is off: the root layer's `failed` report keeps it
+/// off, and only a new connection that drops again shows a failure.
+#[test]
+fn a_seen_drop_is_off_until_the_next_drop() {
+    let f = Fixture::new(HU);
+    let c = Connection::new("Iroda", VPNKind::Openvpn);
+    f.store.save(&c, Some("remote x\n")).unwrap();
+    let key = uuid_string(&c.id);
+    let m = f.manager();
+    f.helper.respond("status", Ok(&connected_json(&c)));
+    m.refresh();
+    f.helper.respond("status", Ok(&status_json(&c, "openvpn", "failed", None)));
+    m.refresh();
+    let seen = m.failed_keys();
+    assert_eq!(seen, std::slice::from_ref(&key));
+    assert!(m.has_failure());
+    m.acknowledge_failures(&seen);
+    assert_eq!(m.state(&key), ConnectionState::Disconnected);
+    assert!(!m.has_failure());
+    m.refresh();
+    assert_eq!(m.state(&key), ConnectionState::Disconnected, "the failed report stays off");
+    // Up again, then down again: a new failure.
+    f.helper.respond("status", Ok(&connected_json(&c)));
+    m.refresh();
+    f.helper.respond("status", Ok(&status_json(&c, "openvpn", "failed", None)));
+    m.refresh();
+    assert!(matches!(m.state(&key), ConnectionState::Failed(_)));
+}
+
+/// Only the failures the menu showed are acknowledged: one that came later stays.
+#[test]
+fn acknowledging_leaves_other_failures() {
+    let f = Fixture::new(HU);
+    let a = Connection::new("A", VPNKind::Openvpn);
+    let b = Connection::new("B", VPNKind::Openvpn);
+    f.store.save(&a, Some("remote x\n")).unwrap();
+    f.store.save(&b, Some("remote x\n")).unwrap();
+    let m = f.manager();
+    // One status array with both entries (each `status_json` is a one-element array).
+    let entry = |c: &Connection, state: &str| {
+        let one = status_json(c, "openvpn", state, None);
+        one[1..one.len() - 1].to_string()
+    };
+    let both = |sa: &str, sb: &str| format!("[{},{}]", entry(&a, sa), entry(&b, sb));
+    f.helper.respond("status", Ok(&both("connected", "connected")));
+    m.refresh();
+    f.helper.respond("status", Ok(&both("failed", "connected")));
+    m.refresh();
+    let seen = m.failed_keys();
+    f.helper.respond("status", Ok(&both("failed", "failed")));
+    m.refresh();
+    m.acknowledge_failures(&seen);
+    assert_eq!(m.state(&uuid_string(&a.id)), ConnectionState::Disconnected);
+    assert!(matches!(m.state(&uuid_string(&b.id)), ConnectionState::Failed(_)));
+}
+
 /// LinVPN (audit C1): stopped outside the app (GNOME's menu, `nmcli connection down`; the log's last own line is
 /// `NetworkManager: disconnected by the user`): off as after a disconnect in the app, no drop event (no notice,
 /// no reconnect), and the user-disconnect listeners hear it (the planner and the control API's leases).
