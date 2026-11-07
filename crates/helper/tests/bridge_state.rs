@@ -280,6 +280,15 @@ struct Timeline {
     max_write: usize,
     /// How long a read timeout (`None`) takes: zero, unless a test needs time to pass.
     timeout: Duration,
+    /// When each event of `events` happened (same order).
+    times: Arc<Mutex<Vec<Instant>>>,
+}
+
+impl Timeline {
+    fn record(&self, event: Event) {
+        self.events.lock().unwrap().push(event);
+        self.times.lock().unwrap().push(Instant::now());
+    }
 }
 
 impl Timeline {
@@ -290,6 +299,7 @@ impl Timeline {
             events: events.clone(),
             max_write: usize::MAX,
             timeout: Duration::ZERO,
+            times: Arc::new(Mutex::new(Vec::new())),
         };
         (t, events)
     }
@@ -300,11 +310,11 @@ impl Read for Timeline {
         match self.steps.pop_front() {
             Some(Some(chunk)) => {
                 buf[..chunk.len()].copy_from_slice(chunk.as_bytes());
-                self.events.lock().unwrap().push(Event::Read(chunk.into()));
+                self.record(Event::Read(chunk.into()));
                 Ok(chunk.len())
             }
             Some(None) => {
-                self.events.lock().unwrap().push(Event::Timeout);
+                self.record(Event::Timeout);
                 std::thread::sleep(self.timeout);
                 Err(io::ErrorKind::WouldBlock.into())
             }
@@ -316,7 +326,7 @@ impl Read for Timeline {
 impl Write for Timeline {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
         let n = buf.len().min(self.max_write);
-        self.events.lock().unwrap().push(Event::Write(String::from_utf8_lossy(&buf[..n]).into_owned()));
+        self.record(Event::Write(String::from_utf8_lossy(&buf[..n]).into_owned()));
         Ok(n)
     }
     fn flush(&mut self) -> io::Result<()> {
@@ -340,17 +350,19 @@ const STATE_ON_OK: &str = "SUCCESS: real-time state notification set to ON\r\n";
 
 /// The bridge over the Windows engine's stream (StateWatch over OneCommandAtATime) on a scripted OpenVPN.
 fn bridge_over(steps: &[Option<&'static str>], creds: Option<(&str, &str)>) -> (Vec<Event>, Arc<BridgeState>) {
-    bridge_over_timed(steps, creds, Duration::ZERO)
+    let (events, _, state) = bridge_over_timed(steps, creds, Duration::ZERO);
+    (events, state)
 }
 
-/// [`bridge_over`] whose read timeouts take `timeout` each.
+/// [`bridge_over`] whose read timeouts take `timeout` each; also when each event happened.
 fn bridge_over_timed(
     steps: &[Option<&'static str>],
     creds: Option<(&str, &str)>,
     timeout: Duration,
-) -> (Vec<Event>, Arc<BridgeState>) {
+) -> (Vec<Event>, Vec<Instant>, Arc<BridgeState>) {
     let (mut stream, events) = Timeline::new(steps);
     stream.timeout = timeout;
+    let times = stream.times.clone();
     let state = Arc::new(BridgeState::new(Box::new(|_| {}), Box::new(|| {})));
     let creds = creds.map(|(u, p)| macvpn_core::management::ManagementCredentials {
         username: u.into(),
@@ -362,7 +374,8 @@ fn bridge_over_timed(
     let args = BridgeArgs::in_process(ID, 420.0).unwrap();
     Bridge::new(args, stream, InProcessFiles::new(state.clone()), creds).run();
     let events = events.lock().unwrap().clone();
-    (events, state)
+    let times = times.lock().unwrap().clone();
+    (events, times, state)
 }
 
 /// CI's OpenVPN 2.7.8 (Windows Server 2025): the HOLD notice comes with the login, before `state on` is answered;
@@ -403,12 +416,14 @@ fn a_restart_hold_is_released_after_its_wait() {
     // 2 s of read timeouts, then the answer to the second release.
     steps.extend([None; 20]);
     steps.push(Some(RELEASED));
-    let (events, _) = bridge_over_timed(&steps, None, Duration::from_millis(100));
+    let (events, times, _) = bridge_over_timed(&steps, None, Duration::from_millis(100));
     assert_eq!(writes(&events), ["state on\n", "hold release\n", "hold release\n"]);
-    // The second release went after about 1 s of read timeouts (10 × 100 ms), not at once.
+    // The second release went about 1 s after the hold (a read timeout late at most), not at once.
+    let hold = events.iter().position(|e| matches!(e, Event::Read(r) if r.contains("release:1"))).unwrap();
     let second = events.iter().rposition(|e| *e == Event::Write("hold release\n".into())).unwrap();
-    let waited = events[..second].iter().filter(|e| **e == Event::Timeout).count();
-    assert!((9..=20).contains(&waited), "{waited} timeouts before the release: {events:?}");
+    let waited = times[second] - times[hold];
+    assert!(waited >= Duration::from_millis(950), "released after {waited:?}: {events:?}");
+    assert!(events[second..].contains(&Event::Timeout), "released before the timeouts ran out: {events:?}");
 }
 
 #[test]
