@@ -92,6 +92,9 @@ pub enum ManagementEvent {
     DynamicChallenge(CRV1Challenge),
     /// Any other authentication failure (a malformed CRV1 too): final.
     AuthFailed,
+    /// `>PASSWORD:Verification Failed: 'Auth' ['<reason>']`: final, with the server's own reason (`AUTH_FAILED,
+    /// <reason>`; e.g. a session the server ends after a few hours: "sign in again"), sanitized to one line.
+    AuthFailedWith(String),
     /// `SESSION:` (expired auth token: OpenVPN retries with the password) or `TEMP` (temporary server error): not
     /// final.
     AuthRetry,
@@ -182,7 +185,13 @@ impl ManagementParser {
             if swift_str::has_prefix(&inner, "SESSION:") || swift_str::has_prefix(&inner, "TEMP") {
                 return ManagementEvent::AuthRetry;
             }
-            return ManagementEvent::AuthFailed;
+            // A malformed CRV1 challenge is no reason to show.
+            let reason = if swift_str::has_prefix(&inner, "CRV1") { String::new() } else { AuthText::sanitize(&inner) };
+            return if reason.is_empty() {
+                ManagementEvent::AuthFailed
+            } else {
+                ManagementEvent::AuthFailedWith(reason)
+            };
         }
         if swift_str::has_prefix(s, "Verification Failed") {
             return ManagementEvent::AuthFailed;

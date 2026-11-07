@@ -102,6 +102,9 @@ pub fn event(state: &AppState, event: &ConnectionEvent) {
         return;
     }
     let notice = match event {
+        ConnectionEvent::Dropped { connection_id, name } if kind == FailureKind::SignInAgain => {
+            Notice::SignInAgain { key: connection_id.clone(), name: name.clone() }
+        }
         ConnectionEvent::Dropped { connection_id, name } => {
             let reason = connection_notices::reason_text(kind, None);
             Notice::Dropped { key: connection_id.clone(), name: name.clone(), reason }
@@ -182,6 +185,15 @@ fn clicked(app: &AppHandle, info: &BTreeMap<String, String>) {
     match notify::route_click(info, listed) {
         ClickAction::FocusPrompt(connection) => crate::prompts::focus(app, &state, &connection),
         ClickAction::FocusCredentials(connection) => crate::credentials::focus(app, &state, &connection),
+        // A new sign-in: the connect brings the sign-in (or code) prompt. Not while it is active already.
+        ClickAction::SignIn(connection) => {
+            if !state.manager.state(&connection).is_active() {
+                let report = state.setup.read().unwrap_or_else(PoisonError::into_inner).clone();
+                std::thread::spawn(move || {
+                    let _ = crate::control::connect_key(&state.manager, &report, &connection);
+                });
+            }
+        }
         ClickAction::ShowConnection { select, log_tab } => {
             if let (Some(id), true) = (&select, log_tab) {
                 state.connections.request_log_tab(id);

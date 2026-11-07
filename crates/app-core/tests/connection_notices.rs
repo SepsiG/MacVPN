@@ -6,7 +6,7 @@ use macvpn_app_core::connection_notices::{
 };
 use macvpn_app_core::failure_reason::FailureKind;
 use macvpn_app_core::manager::{ConnectionEvent, auth_timeout_reason};
-use macvpn_app_core::notify::{CONNECTION_KEY, for_event};
+use macvpn_app_core::notify::{CONNECTION_KEY, SIGN_IN_KEY, for_event};
 use macvpn_app_core::reconnect::Skip;
 use macvpn_core::l10n::{AppLanguage, with_language};
 use macvpn_core::models::ConnectionState;
@@ -407,4 +407,21 @@ mod dns {
             assert!(!c.body.chars().any(|ch| ch.is_ascii_digit()), "no address: {}", c.body);
         }
     }
+}
+
+/// The server ended the session: the drop title, a fixed text (never the server's own words: the lock screen), and
+/// a click that signs in again.
+#[test]
+fn a_session_the_server_ended_offers_a_new_sign_in() {
+    with_language(AppLanguage::Hu, || {
+        let n = content(&Notice::SignInAgain { key: "k".into(), name: "AV VPN".into() }, "u".into());
+        assert_eq!(
+            n.title,
+            content(&Notice::Dropped { key: "k".into(), name: "AV VPN".into(), reason: None }, "u".into()).title
+        );
+        assert_eq!(n.body, "A szerver befejezte a munkamenetet. Kattints az újra-bejelentkezéshez.");
+        assert_eq!(n.user_info, (SIGN_IN_KEY, "k".to_string()));
+        let generic = content(&Notice::SignInAgain { key: "k".into(), name: "".into() }, "u".into());
+        assert!(!generic.title.contains("AV VPN"));
+    });
 }

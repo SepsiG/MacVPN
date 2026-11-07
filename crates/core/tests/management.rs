@@ -73,7 +73,15 @@ fn password_requests() {
     }
     assert_eq!(parse(">PASSWORD:Verification Failed: 'Auth'"), ManagementEvent::AuthFailed);
     assert_eq!(parse(">PASSWORD:Verification Failed: 'Private Key'"), ManagementEvent::AuthFailed);
-    assert_eq!(parse(">PASSWORD:Verification Failed: 'Auth' ['denied by policy']"), ManagementEvent::AuthFailed);
+    assert_eq!(
+        parse(">PASSWORD:Verification Failed: 'Auth' ['denied by policy']"),
+        ManagementEvent::AuthFailedWith("denied by policy".into())
+    );
+    assert_eq!(
+        parse(">PASSWORD:Verification Failed: 'Auth' ['A VPN kapcsolat ideje lejárt\njelentkezzen be újra']"),
+        ManagementEvent::AuthFailedWith("A VPN kapcsolat ideje lejárt jelentkezzen be újra".into())
+    );
+    assert_eq!(parse(">PASSWORD:Verification Failed: 'Auth' ['  ']"), ManagementEvent::AuthFailed);
     // Expired auth token and temporary error: OpenVPN retries, not final.
     assert_eq!(parse(">PASSWORD:Verification Failed: 'Auth' ['SESSION: token expired']"), ManagementEvent::AuthRetry);
     assert_eq!(parse(">PASSWORD:Verification Failed: 'Auth' ['TEMP[backoff 30]:busy']"), ManagementEvent::AuthRetry);
@@ -123,11 +131,13 @@ fn crv1() {
         "CRV1:R:s\\t:Ym9i:t",
     ] {
         assert_eq!(CRV1Challenge::parse(bad), None, "{bad}");
-        assert_eq!(
-            parse(&format!(">PASSWORD:Verification Failed: 'Auth' ['{bad}']")),
-            ManagementEvent::AuthFailed,
-            "{bad}"
-        );
+        // A malformed challenge fails without a reason; text that is no challenge at all is the server's reason.
+        let want = if bad.starts_with("CRV1") {
+            ManagementEvent::AuthFailed
+        } else {
+            ManagementEvent::AuthFailedWith(bad.into())
+        };
+        assert_eq!(parse(&format!(">PASSWORD:Verification Failed: 'Auth' ['{bad}']")), want, "{bad}");
     }
 }
 

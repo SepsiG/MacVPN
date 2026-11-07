@@ -5,7 +5,7 @@
 
 use crate::failure_reason::{FailureKind, plain};
 use crate::manager::{auth_cancelled_reason, auth_timeout_reason, native_failure_reason, profile_outdated_reason};
-use crate::notify::{CONNECTION_KEY, NotificationContent};
+use crate::notify::{CONNECTION_KEY, NotificationContent, SIGN_IN_KEY};
 use crate::reconnect::Skip;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::ConnectionState;
@@ -41,6 +41,12 @@ pub enum Notice {
         key: String,
         name: String,
         reason: Option<String>,
+    },
+    /// The server ended the running session and asks for a new sign-in (`FailureKind::SignInAgain`): a click
+    /// connects again, which brings the sign-in (or code) prompt.
+    SignInAgain {
+        key: String,
+        name: String,
     },
     NotReconnected {
         key: String,
@@ -240,6 +246,7 @@ fn own_name(notice: &Notice) -> &str {
         | Notice::Reconnected { name, .. }
         | Notice::Dropped { name, .. }
         | Notice::Failed { name, .. }
+        | Notice::SignInAgain { name, .. }
         | Notice::NotReconnected { name, .. }
         | Notice::ReconnectFailed { name, .. }
         | Notice::DisconnectedNoNetwork { name, .. }
@@ -262,8 +269,8 @@ fn title(notice: &Notice, name: &str) -> String {
         (Notice::Connected { .. }, true) => l10n::tr("A VPN connection connected", &[]),
         (Notice::Reconnected { .. }, false) => l10n::tr("%@ reconnected", &n),
         (Notice::Reconnected { .. }, true) => l10n::tr("A VPN connection reconnected", &[]),
-        (Notice::Dropped { .. }, false) => l10n::tr("%@ disconnected", &n),
-        (Notice::Dropped { .. }, true) => l10n::tr("A VPN connection dropped", &[]),
+        (Notice::Dropped { .. } | Notice::SignInAgain { .. }, false) => l10n::tr("%@ disconnected", &n),
+        (Notice::Dropped { .. } | Notice::SignInAgain { .. }, true) => l10n::tr("A VPN connection dropped", &[]),
         (Notice::Failed { .. }, false) => l10n::tr("%@: connection failed", &n),
         (Notice::Failed { .. }, true) => l10n::tr("A VPN connection failed", &[]),
         (Notice::NotReconnected { .. }, false) => l10n::tr("%@ not reconnected", &n),
@@ -306,6 +313,15 @@ pub fn content_named(notice: &Notice, name: &str, unique: String) -> Notificatio
         }
         Notice::Failed { key, reason, .. } => {
             (key, reason.clone().unwrap_or_else(|| l10n::tr("Open MacVPN for details", &[])))
+        }
+        Notice::SignInAgain { key, .. } => {
+            let body = l10n::tr("The server ended the session. Click to sign in again.", &[]);
+            return NotificationContent {
+                id: unique,
+                title: title(notice, name),
+                body,
+                user_info: (SIGN_IN_KEY, key.clone()),
+            };
         }
         Notice::NotReconnected { key, why, .. } => (key, skip_text(why)),
         Notice::DisconnectedHere { key, why } => (key, disconnected_here_text(why)),

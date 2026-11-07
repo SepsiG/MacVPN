@@ -7,11 +7,12 @@ fn kind(lines: &[&str]) -> FailureKind {
     classify(&lines.iter().map(|l| l.to_string()).collect::<Vec<_>>())
 }
 
-const ALL: [FailureKind; 8] = [
+const ALL: [FailureKind; 9] = [
     FailureKind::ServerNotResponding,
     FailureKind::ServerUnreachable,
     FailureKind::NameNotResolved,
     FailureKind::AuthFailed,
+    FailureKind::SignInAgain,
     FailureKind::CertificateProblem,
     FailureKind::NetworkLost,
     FailureKind::StoppedByUser,
@@ -142,7 +143,13 @@ fn retry_is_pointless_for_credentials_certificates_and_a_users_stop() {
     assert!(!FailureKind::AuthFailed.worth_retrying());
     assert!(!FailureKind::CertificateProblem.worth_retrying());
     for k in ALL.into_iter().filter(|k| {
-        !matches!(k, FailureKind::AuthFailed | FailureKind::CertificateProblem | FailureKind::StoppedByUser)
+        !matches!(
+            k,
+            FailureKind::AuthFailed
+                | FailureKind::SignInAgain
+                | FailureKind::CertificateProblem
+                | FailureKind::StoppedByUser
+        )
     }) {
         assert!(k.worth_retrying(), "{k:?}");
     }
@@ -187,4 +194,26 @@ fn a_stop_outside_the_app_is_the_users() {
     );
     // NetworkManager's other ends keep their meaning.
     assert_eq!(kind(&["2026-10-30 10:00:05 NetworkManager: disconnected"]), FailureKind::Unknown);
+}
+
+/// The helper bridge's line when the server ended a running session (an expired sign-in): its own kind, never
+/// retried by itself, and it wins over the older `AUTH_FAILED` lines around it.
+#[test]
+fn a_session_the_server_ended_asks_for_a_new_sign_in() {
+    assert_eq!(macvpn_app_core::failure_reason::SIGN_IN_AGAIN, "the server ended the session: a new sign-in is needed");
+    let lines = [
+        "2026-11-06 22:50:00 AUTH: Received control message: AUTH_FAILED,session expired",
+        "[mgmt] the server says: session expired",
+        "[mgmt] the server ended the session: a new sign-in is needed",
+        "[mgmt] authentication failed",
+        "2026-11-06 22:50:16 Closing utun interface",
+    ];
+    assert_eq!(kind(&lines), FailureKind::SignInAgain);
+    assert!(!FailureKind::SignInAgain.worth_retrying());
+    with_language(AppLanguage::Hu, || {
+        assert_eq!(
+            plain(FailureKind::SignInAgain).as_deref(),
+            Some("A szerver befejezte a munkamenetet. Kattints az újra-bejelentkezéshez.")
+        );
+    });
 }

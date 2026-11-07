@@ -5146,6 +5146,10 @@
       "hu": "A szerver elutasította a bejelentkezést.",
       "scope": "app"
     },
+    "The server ended the session. Click to sign in again.": {
+      "hu": "A szerver befejezte a munkamenetet. Kattints az újra-bejelentkezéshez.",
+      "scope": "app"
+    },
     "The server stopped responding.": {
       "hu": "A szerver nem válaszol.",
       "scope": "app"

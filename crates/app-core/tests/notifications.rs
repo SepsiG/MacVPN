@@ -226,6 +226,16 @@ fn clicks_route_to_the_prompt_or_the_log() {
         ClickAction::ShowConnection { select: None, log_tab: false }
     );
     assert_eq!(route_click(&BTreeMap::new(), listed), ClickAction::ShowConnection { select: None, log_tab: false });
+    // A new sign-in connects a listed managed connection; anything else only opens the window.
+    assert_eq!(route_click(&info(SIGN_IN_KEY, "M"), listed), ClickAction::SignIn("M".into()));
+    assert_eq!(
+        route_click(&info(SIGN_IN_KEY, "S"), listed),
+        ClickAction::ShowConnection { select: Some("S".into()), log_tab: false }
+    );
+    assert_eq!(
+        route_click(&info(SIGN_IN_KEY, "gone"), listed),
+        ClickAction::ShowConnection { select: None, log_tab: false }
+    );
 }
 
 #[test]

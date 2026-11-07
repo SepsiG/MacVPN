@@ -182,6 +182,40 @@ fn stored_credentials_go_to_openvpn_and_never_to_the_log() {
     assert!(r.log.iter().all(|l| !l.contains("s3cret-pw")), "{:?}", r.log);
 }
 
+/// The server ends a running session with `AUTH_FAILED,<reason>` (a sign-in that expired after hours): the log
+/// gets the server's reason and the line the app offers a new sign-in for.
+#[test]
+fn a_session_the_server_ends_asks_for_a_new_sign_in() {
+    let r = run(
+        vec![
+            Step::Data(NEED_AUTH),
+            Step::Data(CONNECTED),
+            Step::Data(b">PASSWORD:Verification Failed: 'Auth' ['A VPN kapcsolat ideje lej\xc3\xa1rt']\r\n"),
+        ],
+        Some(("alice", "pw")),
+    );
+    let log = r.log.join("\n");
+    // The app's failure reasons match this exact line (`failure_reason::SIGN_IN_AGAIN`).
+    assert_eq!(
+        macvpn_helper::shared::bridge::SIGN_IN_AGAIN_LINE,
+        "the server ended the session: a new sign-in is needed"
+    );
+    assert!(log.contains("the server says: A VPN kapcsolat ideje lejárt"), "{log}");
+    assert!(log.contains(macvpn_helper::shared::bridge::SIGN_IN_AGAIN_LINE), "{log}");
+}
+
+/// A refused first sign-in is a plain failure: no "new sign-in" line.
+#[test]
+fn a_refused_first_sign_in_is_not_a_session_end() {
+    let r = run(
+        vec![Step::Data(NEED_AUTH), Step::Data(b">PASSWORD:Verification Failed: 'Auth' ['denied']\r\n")],
+        Some(("alice", "pw")),
+    );
+    let log = r.log.join("\n");
+    assert!(log.contains("the server says: denied"), "{log}");
+    assert!(!log.contains(macvpn_helper::shared::bridge::SIGN_IN_AGAIN_LINE), "{log}");
+}
+
 #[test]
 fn the_bridge_status_is_strict() {
     let state = BridgeState::new(Box::new(|_| {}), Box::new(|| {}));

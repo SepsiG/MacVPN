@@ -141,6 +141,9 @@ pub const HOUSEKEEPING_SECS: f64 = 30.0;
 /// The longest the bridge keeps OpenVPN's restart hold ([`ManagementEvent::Hold`]): OpenVPN's own pause grows
 /// to 300 s, but a short network loss must not keep the tunnel down that long after the network is back.
 pub const MAX_HOLD_WAIT_SECS: f64 = 15.0;
+/// The bridge's log line when the server ended a running session with an authentication failure (its sign-in
+/// expired): the app's failure reasons match it (`failure_reason::SIGN_IN_AGAIN`).
+pub const SIGN_IN_AGAIN_LINE: &str = "the server ended the session: a new sign-in is needed";
 
 /// The optional idle hook of the management stream ([`Bridge::with_wait_hook`]): called with `true` when the
 /// bridge starts waiting for the user's answer (a prompt or a deadline is pending: the app's answer file must be
@@ -361,6 +364,19 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
             .map(|c| (c.username.clone(), Zeroizing::new(c.password.clone()), c.packed))
     }
 
+    /// A final authentication failure. After the tunnel was up it is the server ending the session (a sign-in
+    /// that expired): [`SIGN_IN_AGAIN_LINE`] tells the app to offer a new sign-in. The server's reason goes to the
+    /// log (OpenVPN's own line is often hidden by `--mute`).
+    fn auth_failed(&mut self, reason: Option<&str>) {
+        if let Some(reason) = reason {
+            self.log(&format!("the server says: {reason}"));
+        }
+        if self.was_connected {
+            self.log(SIGN_IN_AGAIN_LINE);
+        }
+        self.finish("authentication failed", false, false);
+    }
+
     fn release_hold(&mut self) {
         self.hold_until = None;
         if self.send(&ManagementCommand::HoldRelease) {
@@ -439,7 +455,8 @@ impl<S: Read + Write, F: BridgeFiles> Bridge<S, F> {
                     self.log("dynamic challenge received (no response required)");
                 }
             }
-            ManagementEvent::AuthFailed => self.finish("authentication failed", false, false),
+            ManagementEvent::AuthFailed => self.auth_failed(None),
+            ManagementEvent::AuthFailedWith(reason) => self.auth_failed(Some(&reason)),
             ManagementEvent::AuthRetry => {
                 self.log("authentication will be retried (session expired or temporary failure)")
             }

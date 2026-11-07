@@ -10938,7 +10938,7 @@ esrap 2.4.0 (MIT)
 is-reference 3.0.3 (MIT)
 locate-character 3.0.0 (MIT)
 magic-string 1.4.3 (MIT)
-svelte 5.57.2 (MIT)
+svelte 5.57.3 (MIT)
 zimmerframe 1.1.5 (MIT)
 
 ----------------------------------------------------------------------------------------------------
@@ -11573,7 +11573,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  svelte 5.57.2 (LICENSE.md)
+  svelte 5.57.3 (LICENSE.md)
 ----------------------------------------------------------------------------------------------------
 
 Copyright (c) 2016-2025 [Svelte Contributors](https://github.com/sveltejs/svelte/graphs/contributors)

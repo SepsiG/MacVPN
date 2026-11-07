@@ -12,6 +12,9 @@ pub enum FailureKind {
     AuthFailed,
     CertificateProblem,
     NetworkLost,
+    /// The server ended a running session and asks for a new sign-in (an expired sign-in: the bridge's
+    /// [`SIGN_IN_AGAIN`] line). Not retried by itself: the user signs in again (with a new code).
+    SignInAgain,
     /// Stopped by the user outside the app (LinVPN: GNOME's menu, `nmcli connection down`): no failure, it is off
     /// as after a disconnect in the app ([`USER_STOP_LINE`]).
     StoppedByUser,
@@ -21,7 +24,13 @@ pub enum FailureKind {
 impl FailureKind {
     /// A reconnect can help (not for a refused password or certificate, nor after the user's own stop).
     pub fn worth_retrying(self) -> bool {
-        !matches!(self, FailureKind::AuthFailed | FailureKind::CertificateProblem | FailureKind::StoppedByUser)
+        !matches!(
+            self,
+            FailureKind::AuthFailed
+                | FailureKind::SignInAgain
+                | FailureKind::CertificateProblem
+                | FailureKind::StoppedByUser
+        )
     }
 }
 
@@ -48,7 +57,12 @@ fn journal_copy(line: &str) -> bool {
 }
 
 /// (pattern, category), matched as substrings. Order inside one line: the first pattern wins.
+/// The helper bridge's line when the server ended a running session with an authentication failure
+/// (`macvpn_helper::shared::bridge::SIGN_IN_AGAIN_LINE`, kept equal by a test).
+pub const SIGN_IN_AGAIN: &str = "the server ended the session: a new sign-in is needed";
+
 const PATTERNS: &[(&str, FailureKind)] = &[
+    (SIGN_IN_AGAIN, FailureKind::SignInAgain),
     ("AUTH_FAILED", FailureKind::AuthFailed),
     ("AUTHENTICATION_FAILED", FailureKind::AuthFailed),
     ("VERIFY ERROR", FailureKind::CertificateProblem),
@@ -100,6 +114,7 @@ pub fn plain(kind: FailureKind) -> Option<String> {
         FailureKind::ServerUnreachable => l10n::tr("The server could not be reached.", &[]),
         FailureKind::NameNotResolved => l10n::tr("The server’s name could not be resolved.", &[]),
         FailureKind::AuthFailed => l10n::tr("The server refused the sign-in.", &[]),
+        FailureKind::SignInAgain => l10n::tr("The server ended the session. Click to sign in again.", &[]),
         FailureKind::CertificateProblem => l10n::tr("A certificate was not accepted.", &[]),
         FailureKind::NetworkLost => l10n::tr("The network connection was lost.", &[]),
         FailureKind::StoppedByUser | FailureKind::Unknown => return None,

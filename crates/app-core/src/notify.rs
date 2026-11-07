@@ -19,6 +19,8 @@ pub const AUTH_PROMPT_KEY: &str = "authPrompt";
 pub const CREDENTIAL_PROMPT_KEY: &str = "credentialPrompt";
 /// A team catalog notice (updated, refused, team key changed): the catalog id.
 pub const CATALOG_KEY: &str = "teamCatalog";
+/// A connection the server ended and asks to sign in again: a click connects it.
+pub const SIGN_IN_KEY: &str = "signInAgain";
 
 /// One notification to post.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -107,6 +109,8 @@ pub enum ClickAction {
     FocusPrompt(String),
     /// The connection's open credential prompt comes forward (and gets the focus).
     FocusCredentials(String),
+    /// The managed connection connects again (the server asked for a new sign-in).
+    SignIn(String),
     /// The Connections window opens; `select`: the connection to select (a listed one only); `log_tab`: its
     /// detail switches to the Log tab (managed connections).
     ShowConnection { select: Option<String>, log_tab: bool },
@@ -120,6 +124,14 @@ pub fn route_click(user_info: &BTreeMap<String, String>, listed: impl Fn(&str) -
     }
     if let Some(key) = user_info.get(CREDENTIAL_PROMPT_KEY) {
         return ClickAction::FocusCredentials(key.clone());
+    }
+    // Only a managed connection still listed is connected; otherwise the window opens as for any notice.
+    if let Some(key) = user_info.get(SIGN_IN_KEY) {
+        return match listed(key) {
+            Some(true) => ClickAction::SignIn(key.clone()),
+            Some(false) => ClickAction::ShowConnection { select: Some(key.clone()), log_tab: false },
+            None => ClickAction::ShowConnection { select: None, log_tab: false },
+        };
     }
     match user_info.get(CONNECTION_KEY).and_then(|id| listed(id).map(|managed| (id, managed))) {
         Some((id, managed)) => ClickAction::ShowConnection { select: Some(id.clone()), log_tab: managed },
