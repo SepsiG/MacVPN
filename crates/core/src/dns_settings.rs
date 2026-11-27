@@ -1,10 +1,12 @@
-//! Per-connection DNS settings (macOS, root layer 15): the mode (Automatic, Strict, Full, Targeted) and the
-//! connection's own DNS servers and domains. Stored in `meta.json` under `dns` (only when not the default, so the
-//! file stays byte-identical for every connection that never touched it), and sent to the root layer as optional
-//! lines of the `up` frame (`dns-mode=…`, `dns-servers=…`, `dns-domains=…`, `dns-override=1`).
+//! Per-connection DNS settings (macOS from root layer 15, Windows and Linux from 2.1.15): the mode (Automatic,
+//! Strict, Full, Targeted) and the connection's own DNS servers and domains. Stored in `meta.json` under `dns` (only
+//! when not the default, so the file stays byte-identical for every connection that never touched it), and sent to
+//! the root layer (macOS) and the WinVPN Service (Windows) as optional lines of the `up` frame (`dns-mode=…`,
+//! `dns-servers=…`, `dns-domains=…`, `dns-override=1`); on Linux they become the NetworkManager profile's DNS keys
+//! (`nm_plan::dns`).
 //!
-//! Pure: the root helper re-validates every line with the same rules (`accept`), the app validates before saving
-//! (`validate`). Linux and Windows store and round-trip the field but never use it.
+//! Pure: the root helper and the WinVPN Service re-validate every line with the same rules (`accept`), the app
+//! validates before saving (`validate`).
 
 use crate::l10n::{self, Arg};
 use crate::models::VPNKind;

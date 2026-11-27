@@ -764,11 +764,12 @@ pub fn plan(input: &Input) -> Result<NmPlan, Unsupported> {
     if !r.dns6.is_empty() {
         ipv6.insert("dns-data".into(), NmValue::StrList(std::mem::take(&mut r.dns6)));
     }
-    let extras = dns::section_extras(full, &r.domains);
-    if let Some(priority) = extras.get("dns-priority") {
-        ipv6.insert("dns-priority".into(), priority.clone());
-    }
-    ipv4.extend(extras);
+    // `dns-search` goes on ipv4 only; ipv6 takes its own servers and the priority.
+    let dns = Some(&input.connection.dns);
+    dns::merge_into(&mut ipv4, dns::section_extras(full, &r.domains, dns, true));
+    let mut extras6 = dns::section_extras(full, &r.domains, dns, false);
+    extras6.remove("dns-search");
+    dns::merge_into(&mut ipv6, extras6);
 
     let mut warnings = Vec::new();
     if !r.ignored.is_empty() {

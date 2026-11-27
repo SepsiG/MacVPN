@@ -359,7 +359,7 @@ Előfeltétel: a kiadott `WinVPN-2.0.0-x64.msi`; egy rendszergazdai fiók, egy n
 
 ### Az admin teszthalmaz
 
-- [ ] (automatikus: CI `windows-admin` job, a telepített x64 MSI-vel; kézzel csak ha az a job nem volt zöld) Emelt Git Bashben a 2.0.0-s forrással: `cargo test --locked -p macvpn-helper --test service_admin --test wireguard_admin --test openvpn_installed --test openvpn_e2e -- --ignored --test-threads=1` és `cargo test --locked -p macvpn-winsys --test service_pipe --test cert_store_admin -- --ignored` → mind zöld (a `cert_store_admin` a teszt-CA-t a gép Root tárolójába teszi csak szerver- és klienshitelesítésre, majd eltávolítja)
+- [ ] (automatikus: CI `windows-admin` job, a telepített x64 MSI-vel; kézzel csak ha az a job nem volt zöld) Emelt Git Bashben a 2.0.0-s forrással: `cargo test --locked -p macvpn-helper --test service_admin --test wireguard_admin --test openvpn_installed --test openvpn_e2e -- --ignored --test-threads=1` és `cargo test --locked -p macvpn-winsys --test service_pipe --test cert_store_admin --test nrpt_admin -- --ignored` → mind zöld (a `cert_store_admin` a teszt-CA-t a gép Root tárolójába teszi csak szerver- és klienshitelesítésre, majd eltávolítja; az `nrpt_admin` NRPT-szabályokat ír, listáz és töröl egy eldobható `HKLM\SOFTWARE` kulcs alatt, és kéri a DNS-kliens házirendjének újraolvasását)
 
 ### OpenVPN telepítése és frissítése
 

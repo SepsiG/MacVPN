@@ -5,6 +5,7 @@ use crate::lin::nm::polkit::{self, Authorization};
 use crate::lin::nm::value::DbusSettings;
 use crate::pure::nm::state::{ActiveState, VpnState};
 use macvpn_core::l10n;
+use macvpn_core::netaddr::IpPrefix;
 use std::collections::{BTreeMap, HashMap};
 use std::sync::Arc;
 use zbus::blocking::{Connection, MessageIterator};
@@ -84,6 +85,26 @@ pub enum NmEvent {
     /// NM's primary connection, connectivity, state or device list, a device's state or an IP configuration changed
     /// (the network watcher, `lin::net::LinNetwork::watch`).
     NetworkChanged,
+}
+
+/// What an active VPN put into effect for DNS ([`NmClient::vpn_dns`]).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct VpnDns {
+    /// The name servers (IP literals).
+    pub servers: Vec<String>,
+    /// Its search domains.
+    pub domains: Vec<String>,
+    /// The routed networks (no default route).
+    pub routes: Vec<IpPrefix>,
+    /// NM's default connection (a full tunnel).
+    pub full: bool,
+}
+
+/// A non-VPN link with a default route ([`NmClient::default_links`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DefaultLink {
+    pub iface: String,
+    pub device_path: String,
 }
 
 pub struct NmClient {
@@ -184,6 +205,16 @@ fn strings_of(settings: &NmSettings, setting: &str, key: &str) -> Vec<String> {
         .and_then(|v| v.try_clone().ok())
         .and_then(|v| Vec::<String>::try_from(v).ok())
         .unwrap_or_default()
+}
+
+/// A section's `dns-priority` (0 when unset: NM's default).
+fn dns_priority_of(settings: &NmSettings, family: &str) -> i32 {
+    settings
+        .get(family)
+        .and_then(|s| s.get("dns-priority"))
+        .and_then(|v| v.try_clone().ok())
+        .and_then(|v| i32::try_from(v).ok())
+        .unwrap_or(0)
 }
 
 /// The `aa{sv}` value of a setting key or property as a list of dictionaries.
@@ -431,6 +462,123 @@ impl NmClient {
             });
         }
         Ok(out)
+    }
+
+    /// What an active VPN put into effect for DNS (`dns_runtime`): the name servers of its `Ip4Config` and
+    /// `Ip6Config`, their domains (`Domains`, and the plain `Searches`: a `~` entry is a match the plan wrote), the
+    /// routed networks (`RouteData`), and whether it is NM's default connection (`Default` / `Default6`: a full
+    /// tunnel). A property NM does not have is read as empty.
+    pub fn vpn_dns(&self, active_path: &str) -> Result<VpnDns, NmError> {
+        let mut out = VpnDns {
+            full: self.prop::<bool>(active_path, IF_ACTIVE, "Default").unwrap_or(false)
+                || self.prop::<bool>(active_path, IF_ACTIVE, "Default6").unwrap_or(false),
+            ..VpnDns::default()
+        };
+        for (config, iface) in [("Ip4Config", IF_IP4), ("Ip6Config", IF_IP6)] {
+            let Some(path) = self.config_of(active_path, config) else { continue };
+            if iface == IF_IP4 {
+                let data = self.prop::<OwnedValue>(&path, iface, "NameserverData").map(dict_list).unwrap_or_default();
+                out.servers.extend(data.iter().filter_map(|d| dict_string(d, "address")));
+            } else {
+                let raw = self.prop::<Vec<Vec<u8>>>(&path, iface, "Nameservers").unwrap_or_default();
+                out.servers.extend(
+                    raw.into_iter()
+                        .filter_map(|b| <[u8; 16]>::try_from(b).ok())
+                        .map(|b| std::net::Ipv6Addr::from(b).to_string()),
+                );
+            }
+            for key in ["Domains", "Searches"] {
+                let names = self.prop::<Vec<String>>(&path, iface, key).unwrap_or_default();
+                out.domains.extend(names.into_iter().filter(|d| !d.is_empty() && !d.starts_with('~')));
+            }
+            out.routes.extend(self.routes_of(&path, iface).into_iter().filter(|r| !r.is_default_route()));
+        }
+        Ok(out)
+    }
+
+    /// The `Ip4Config` / `Ip6Config` object of an active connection, `None` when it has none.
+    fn config_of(&self, active_path: &str, config: &str) -> Option<String> {
+        self.prop::<OwnedObjectPath>(active_path, IF_ACTIVE, config)
+            .ok()
+            .filter(|p| !is_no_object(p))
+            .map(|p| p.to_string())
+    }
+
+    /// The routes of an IP configuration (`RouteData`: `dest`, `prefix`).
+    fn routes_of(&self, config_path: &str, iface: &str) -> Vec<IpPrefix> {
+        let data = self.prop::<OwnedValue>(config_path, iface, "RouteData").map(dict_list).unwrap_or_default();
+        data.iter()
+            .filter_map(|d| {
+                let addr = dict_string(d, "dest")?.parse().ok()?;
+                let len = d.get("prefix").and_then(|v| v.try_clone().ok()).and_then(|v| u32::try_from(v).ok())?;
+                IpPrefix::new(addr, u8::try_from(len).ok()?)
+            })
+            .collect()
+    }
+
+    /// The active non-VPN connections other than `vpn_active_path` whose IP configuration holds a default route
+    /// (the links whose DNS answers every other name), with their device and interface.
+    pub fn default_links(&self, vpn_active_path: &str) -> Result<Vec<DefaultLink>, NmError> {
+        let paths: Vec<OwnedObjectPath> = self.prop(ROOT, NM, "ActiveConnections")?;
+        let mut out = Vec::new();
+        for path in paths.iter().map(|p| p.as_str()).filter(|p| *p != vpn_active_path) {
+            let tunnel = self.prop::<bool>(path, IF_ACTIVE, "Vpn").unwrap_or(true)
+                || self.prop::<String>(path, IF_ACTIVE, "Type").is_ok_and(|t| t == "wireguard");
+            if tunnel {
+                continue;
+            }
+            let default = [("Ip4Config", IF_IP4), ("Ip6Config", IF_IP6)].into_iter().any(|(config, iface)| {
+                self.config_of(path, config)
+                    .is_some_and(|c| self.routes_of(&c, iface).iter().any(IpPrefix::is_default_route))
+            });
+            if !default {
+                continue;
+            }
+            let Some(device) =
+                self.prop::<Vec<OwnedObjectPath>>(path, IF_ACTIVE, "Devices").ok().and_then(|d| d.into_iter().next())
+            else {
+                continue;
+            };
+            let Ok(iface) = self.prop::<String>(device.as_str(), IF_DEVICE, "IpInterface") else { continue };
+            if !iface.is_empty() {
+                out.push(DefaultLink { iface, device_path: device.to_string() });
+            }
+        }
+        Ok(out)
+    }
+
+    /// `GetDeviceByIpIface(iface)`; `None` when NM has no such device.
+    pub fn device_by_iface(&self, iface: &str) -> Option<String> {
+        let reply = self.call(ROOT, NM, "GetDeviceByIpIface", &(iface,)).ok()?;
+        reply.body().deserialize::<OwnedObjectPath>().ok().map(|p| p.to_string())
+    }
+
+    /// The device's applied `ipv4.dns-priority` and `ipv6.dns-priority` (`Device.GetAppliedConnection`; an unset
+    /// one is 0, NM's default).
+    pub fn applied_dns_priority(&self, device_path: &str) -> Result<(i32, i32), NmError> {
+        let (settings, _version) = self.applied(device_path)?;
+        Ok((dns_priority_of(&settings, "ipv4"), dns_priority_of(&settings, "ipv6")))
+    }
+
+    /// Changes the device's DNS priorities at runtime only (`GetAppliedConnection`, then `Reapply(connection,
+    /// version_id, 0)`): the saved profile is untouched and NM drops the change at the link's next activation. Needs
+    /// only `network-control` (allowed for the active desktop user). A family the applied connection lacks is left
+    /// out.
+    pub fn reapply_dns_priority(&self, device_path: &str, v4: i32, v6: i32) -> Result<(), NmError> {
+        let (mut settings, version) = self.applied(device_path)?;
+        for (family, priority) in [("ipv4", v4), ("ipv6", v6)] {
+            if let Some(section) = settings.get_mut(family) {
+                let value = OwnedValue::try_from(Value::from(priority)).map_err(|e| NmError::Failed(e.to_string()))?;
+                section.insert("dns-priority".into(), value);
+            }
+        }
+        self.call(device_path, IF_DEVICE, "Reapply", &(settings, version, 0u32))?;
+        Ok(())
+    }
+
+    fn applied(&self, device_path: &str) -> Result<(NmSettings, u64), NmError> {
+        let reply = self.call(device_path, IF_DEVICE, "GetAppliedConnection", &(0u32,))?;
+        reply.body().deserialize().map_err(nm_error)
     }
 
     /// Subscribes to NM's change signals; each subscription is read on its own thread until the guard drops.

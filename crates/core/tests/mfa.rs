@@ -298,3 +298,19 @@ fn respond_payload() {
     assert_eq!(AuthResponseKind::Crv1.stdin_payload(&"1".repeat(257)), None);
     assert_eq!(AuthResponseKind::ALL.map(AuthResponseKind::raw_value), ["crv1", "static", "webauth-ack", "cancel"]);
 }
+
+/// A prompt written for OpenVPN GUI: spaces, parentheses and a trailing colon in the text, the code hidden (`0`),
+/// and the default SCRV1 format (the password and the code each base64 encoded).
+#[test]
+fn static_challenge_from_an_openvpn_gui_config() {
+    let config =
+        "client\nremote vpn.example.com 1194\nauth-user-pass\nstatic-challenge \"Add meg a 2FA (TOTP) kodot:\" 0\n";
+    let challenge = static_challenge(config).unwrap();
+    assert_eq!(
+        challenge,
+        StaticChallenge { text: "Add meg a 2FA (TOTP) kodot:".into(), echo: false, format: ChallengeFormat::Scrv1 }
+    );
+    let s = apply_static_challenge(&challenge, "123456", &secrets("bob", "Jelszó!")).unwrap();
+    assert_eq!(s.password.as_deref(), Some("SCRV1:SmVsc3rDsyE=:MTIzNDU2"));
+    assert!(s.challenge_packed);
+}

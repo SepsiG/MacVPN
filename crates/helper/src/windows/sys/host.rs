@@ -3,10 +3,11 @@
 //! not in order), the install folder (`install_dir`: when others can change it, the service logs why and stops with
 //! an error), the pipe (`Endpoint::Service`: owner SYSTEM, the production DACL; a name taken by someone else is
 //! retried every 5 s), the recovery settings (`recovery`: restart after a failure; only logged when they cannot be
-//! set). Stop: every connection down, the run directories removed.
+//! set), the DNS manager (the stale NRPT rules of a crash or a reboot removed). Stop: every connection down, its DNS
+//! rules removed, the run directories removed.
 
 use super::service_log::ServiceLog;
-use super::{RealHost, data_dir, job, real_host, server, session};
+use super::{RealHost, data_dir, dns, job, real_host, server, session};
 use crate::windows::service::Service;
 use crate::windows::{install_dir, recovery};
 use macvpn_core::service_proto::PIPE_NAME;
@@ -131,8 +132,14 @@ unsafe extern "system" fn service_main(_argc: u32, _argv: *mut PWSTR) {
     }
     let _ = LOG.set(log.clone());
     set_recovery(&log);
-    let host = real_host(data.clone(), &log, None);
-    let service = Arc::new(Service::new(host));
+    let manager = data.is_ok().then(|| Arc::new(dns::manager()));
+    let service = Arc::new(Service::new(real_host(data.clone(), &log, None, manager)));
+    // The DNS rules a crash or a reboot left behind (no connection runs yet).
+    match service.reconcile_dns() {
+        Ok(0) => {}
+        Ok(n) => log.line(&format!("{n} stale DNS rules removed")),
+        Err(e) => log.line(&format!("the DNS rules cannot be checked: {e}")),
+    }
     let _ = SERVICE.set(service.clone());
     // Running (STOP accepted) before the pipe: a name taken by a squatter must not keep the SCM waiting.
     set_status(SERVICE_RUNNING, 0);

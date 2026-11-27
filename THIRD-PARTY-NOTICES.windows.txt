@@ -327,7 +327,6 @@ bit-vec 0.8.0 (Apache-2.0 OR MIT)
 bitflags 1.3.2 (MIT/Apache-2.0)
 bitflags 2.13.2 (MIT OR Apache-2.0)
 blake2 0.11.0 (MIT OR Apache-2.0)
-block-buffer 0.10.4 (MIT OR Apache-2.0)
 block-buffer 0.12.1 (MIT OR Apache-2.0)
 brotli 9.0.0 (BSD-3-Clause AND MIT)
 brotli-decompressor 6.0.1 (BSD-3-Clause/MIT)
@@ -349,12 +348,10 @@ cipher 0.5.2 (MIT OR Apache-2.0)
 cmov 0.5.4 (Apache-2.0 OR MIT)
 const-oid 0.10.2 (Apache-2.0 OR MIT)
 cookie 0.18.2 (MIT OR Apache-2.0)
-cpufeatures 0.2.17 (MIT OR Apache-2.0)
 cpufeatures 0.3.1 (MIT OR Apache-2.0)
 crc32fast 1.5.2 (MIT OR Apache-2.0)
 crossbeam-channel 0.5.17 (MIT OR Apache-2.0)
 crossbeam-utils 0.8.23 (MIT OR Apache-2.0)
-crypto-common 0.1.7 (MIT OR Apache-2.0)
 crypto-common 0.2.2 (MIT OR Apache-2.0)
 cssparser 0.37.0 (MPL-2.0)
 cssparser-macros 0.7.1 (MPL-2.0)
@@ -371,7 +368,6 @@ defmt-parser 1.1.0 (MIT OR Apache-2.0)
 deranged 0.5.9 (MIT OR Apache-2.0)
 derive_more 2.1.1 (MIT)
 derive_more-impl 2.1.1 (MIT)
-digest 0.10.7 (MIT OR Apache-2.0)
 digest 0.11.3 (MIT OR Apache-2.0)
 dirs 7.0.0 (MIT OR Apache-2.0)
 dirs-sys 0.5.0 (MIT OR Apache-2.0)
@@ -395,7 +391,6 @@ flate2 1.1.10 (MIT OR Apache-2.0)
 fnv 1.0.7 (Apache-2.0 / MIT)
 foldhash 0.2.0 (Zlib)
 form_urlencoded 1.2.2 (MIT OR Apache-2.0)
-generic-array 0.14.7 (MIT)
 getrandom 0.3.4 (MIT OR Apache-2.0)
 getrandom 0.4.3 (MIT OR Apache-2.0)
 glob 0.3.4 (MIT OR Apache-2.0)
@@ -461,7 +456,7 @@ phf_generator 0.13.1 (MIT)
 phf_macros 0.13.1 (MIT)
 phf_shared 0.13.1 (MIT)
 pin-project-lite 0.2.17 (Apache-2.0 OR MIT)
-plist 1.10.3 (MIT)
+plist 1.10.4 (MIT)
 png 0.18.1 (MIT OR Apache-2.0)
 poly1305 0.9.1 (Apache-2.0 OR MIT)
 potential_utf 0.1.6 (Unicode-3.0)
@@ -474,9 +469,9 @@ quote 1.0.47 (MIT OR Apache-2.0)
 raw-window-handle 0.6.2 (MIT OR Apache-2.0 OR Zlib)
 ref-cast 1.0.27 (MIT OR Apache-2.0)
 ref-cast-impl 1.0.27 (MIT OR Apache-2.0)
-regex 1.13.1 (MIT OR Apache-2.0)
-regex-automata 0.4.18 (MIT OR Apache-2.0)
-regex-syntax 0.8.11 (MIT OR Apache-2.0)
+regex 1.13.2 (MIT OR Apache-2.0)
+regex-automata 0.4.19 (MIT OR Apache-2.0)
+regex-syntax 0.8.12 (MIT OR Apache-2.0)
 rusqlite 0.40.2 (MIT)
 rustc-hash 2.1.3 (Apache-2.0 OR MIT)
 same-file 1.0.6 (Unlicense/MIT)
@@ -500,7 +495,6 @@ serde_with_macros 3.24.0 (MIT OR Apache-2.0)
 serialize-to-javascript 0.1.2 (MIT OR Apache-2.0)
 serialize-to-javascript-impl 0.1.2 (MIT OR Apache-2.0)
 servo_arc 0.4.3 (MIT OR Apache-2.0)
-sha2 0.10.9 (MIT OR Apache-2.0)
 sha2 0.11.1 (MIT OR Apache-2.0)
 shlex 2.0.1 (MIT OR Apache-2.0)
 signature 3.0.0 (Apache-2.0 OR MIT)
@@ -517,12 +511,12 @@ syn 2.0.119 (MIT OR Apache-2.0)
 syn 3.0.9 (MIT OR Apache-2.0)
 synstructure 0.14.0 (MIT)
 tao 0.37.1 (Apache-2.0)
-tauri 2.12.5 (Apache-2.0 OR MIT)
-tauri-codegen 2.7.4 (Apache-2.0 OR MIT)
-tauri-macros 2.7.4 (Apache-2.0 OR MIT)
-tauri-runtime 2.12.2 (Apache-2.0 OR MIT)
-tauri-runtime-wry 2.12.3 (Apache-2.0 OR MIT)
-tauri-utils 2.10.2 (Apache-2.0 OR MIT)
+tauri 2.12.6 (Apache-2.0 OR MIT)
+tauri-codegen 2.7.6 (Apache-2.0 OR MIT)
+tauri-macros 2.7.6 (Apache-2.0 OR MIT)
+tauri-runtime 2.12.4 (Apache-2.0 OR MIT)
+tauri-runtime-wry 2.12.5 (Apache-2.0 OR MIT)
+tauri-utils 2.10.4 (Apache-2.0 OR MIT)
 tendril 0.5.1 (MIT OR Apache-2.0)
 thiserror 2.0.21 (MIT OR Apache-2.0)
 thiserror-impl 2.0.21 (MIT OR Apache-2.0)
@@ -578,7 +572,7 @@ yoke 0.8.3 (Unicode-3.0)
 yoke-derive 0.8.4 (Unicode-3.0)
 zerofrom 0.1.8 (Unicode-3.0)
 zerofrom-derive 0.1.8 (Unicode-3.0)
-zeroize 1.9.1 (Apache-2.0 OR MIT)
+zeroize 1.9.2 (Apache-2.0 OR MIT)
 zerotrie 0.2.5 (Unicode-3.0)
 zerovec 0.11.8 (Unicode-3.0)
 zerovec-derive 0.11.6 (Unicode-3.0)
@@ -876,24 +870,19 @@ DEALINGS IN THE SOFTWARE.
   argon2 0.6.0 (LICENSE-APACHE)
   base64ct 1.8.3 (LICENSE-APACHE)
   blake2 0.11.0 (LICENSE-APACHE)
-  block-buffer 0.10.4 (LICENSE-APACHE)
   block-buffer 0.12.1 (LICENSE-APACHE)
   chacha20 0.10.2 (LICENSE-APACHE)
   chacha20poly1305 0.11.0 (LICENSE-APACHE)
   cipher 0.5.2 (LICENSE-APACHE)
   const-oid 0.10.2 (LICENSE-APACHE)
-  cpufeatures 0.2.17 (LICENSE-APACHE)
   cpufeatures 0.3.1 (LICENSE-APACHE)
-  crypto-common 0.1.7 (LICENSE-APACHE)
   crypto-common 0.2.2 (LICENSE-APACHE)
-  digest 0.10.7 (LICENSE-APACHE)
   digest 0.11.3 (LICENSE-APACHE)
   hybrid-array 0.4.15 (LICENSE-APACHE)
   inout 0.2.4 (LICENSE-APACHE)
   password-hash 0.6.1 (LICENSE-APACHE)
   phc 0.6.1 (LICENSE-APACHE)
   poly1305 0.9.1 (LICENSE-APACHE)
-  sha2 0.10.9 (LICENSE-APACHE)
   sha2 0.11.1 (LICENSE-APACHE)
   signature 3.0.0 (LICENSE-APACHE)
   universal-hash 0.6.1 (LICENSE-APACHE)
@@ -1478,9 +1467,9 @@ DEALINGS IN THE SOFTWARE.
   parking_lot_core 0.9.12 (LICENSE-APACHE)
   percent-encoding 2.3.2 (LICENSE-APACHE)
   png 0.18.1 (LICENSE-APACHE)
-  regex 1.13.1 (LICENSE-APACHE)
-  regex-automata 0.4.18 (LICENSE-APACHE)
-  regex-syntax 0.8.11 (LICENSE-APACHE)
+  regex 1.13.2 (LICENSE-APACHE)
+  regex-automata 0.4.19 (LICENSE-APACHE)
+  regex-syntax 0.8.12 (LICENSE-APACHE)
   scopeguard 1.2.0 (LICENSE-APACHE)
   serde_with 3.24.0 (LICENSE-APACHE)
   serde_with_macros 3.24.0 (LICENSE-APACHE)
@@ -2007,9 +1996,9 @@ DEALINGS IN THE SOFTWARE.
   glob 0.3.4 (LICENSE-MIT)
   log 0.4.34 (LICENSE-MIT)
   num-traits 0.2.19 (LICENSE-MIT)
-  regex 1.13.1 (LICENSE-MIT)
-  regex-automata 0.4.18 (LICENSE-MIT)
-  regex-syntax 0.8.11 (LICENSE-MIT)
+  regex 1.13.2 (LICENSE-MIT)
+  regex-automata 0.4.19 (LICENSE-MIT)
+  regex-syntax 0.8.12 (LICENSE-MIT)
 ----------------------------------------------------------------------------------------------------
 
 Copyright (c) 2014 The Rust Project Developers
@@ -2045,36 +2034,6 @@ DEALINGS IN THE SOFTWARE.
 Copyright (c) 2017-2026 The RustCrypto Project Developers
 Copyright (c) 2017 Artyom Pavlov
 Copyright (c) 2015-2016 The blake2-rfc Developers, Cesar Barros
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-----------------------------------------------------------------------------------------------------
-  block-buffer 0.10.4 (LICENSE-MIT)
-----------------------------------------------------------------------------------------------------
-
-Copyright (c) 2018-2019 The RustCrypto Project Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -2680,7 +2639,7 @@ DEALINGS IN THE SOFTWARE.
   siphasher 1.0.4 (LICENSE-APACHE)
   tinyvec 1.13.3 (LICENSE-APACHE.md)
   utf8_iter 1.0.4 (LICENSE-APACHE)
-  zeroize 1.9.1 (LICENSE-APACHE)
+  zeroize 1.9.2 (LICENSE-APACHE)
 ----------------------------------------------------------------------------------------------------
 
                                  Apache License
@@ -3160,36 +3119,6 @@ limitations under the License.
 
 Copyright (c) 2017 Sergio Benitez
 Copyright (c) 2014 Alex Crichton
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-----------------------------------------------------------------------------------------------------
-  cpufeatures 0.2.17 (LICENSE-MIT)
-----------------------------------------------------------------------------------------------------
-
-Copyright (c) 2020-2025 The RustCrypto Project Developers
 
 Permission is hereby granted, free of charge, to any
 person obtaining a copy of this software and associated
@@ -4081,36 +4010,6 @@ distributed under the License is distributed on an "AS IS" BASIS,
 WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
-
-----------------------------------------------------------------------------------------------------
-  crypto-common 0.1.7 (LICENSE-MIT)
-----------------------------------------------------------------------------------------------------
-
-Copyright (c) 2021 RustCrypto Developers
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
   crypto-common 0.2.2 (LICENSE-MIT)
@@ -5123,36 +5022,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  digest 0.10.7 (LICENSE-MIT)
-----------------------------------------------------------------------------------------------------
-
-Copyright (c) 2017 Artyom Pavlov
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-----------------------------------------------------------------------------------------------------
   digest 0.11.3 (LICENSE-MIT)
 ----------------------------------------------------------------------------------------------------
 
@@ -5958,12 +5827,12 @@ SOFTWARE.
   num-conv 0.2.2 (LICENSE-Apache)
   pin-project-lite 0.2.17 (LICENSE-APACHE)
   raw-window-handle 0.6.2 (LICENSE-APACHE.md)
-  tauri 2.12.5 (LICENSE-APACHE-2.0)
-  tauri-codegen 2.7.4 (LICENSE-APACHE-2.0)
-  tauri-macros 2.7.4 (LICENSE-APACHE-2.0)
-  tauri-runtime 2.12.2 (LICENSE-APACHE-2.0)
-  tauri-runtime-wry 2.12.3 (LICENSE-APACHE-2.0)
-  tauri-utils 2.10.2 (LICENSE-APACHE-2.0)
+  tauri 2.12.6 (LICENSE-APACHE-2.0)
+  tauri-codegen 2.7.6 (LICENSE-APACHE-2.0)
+  tauri-macros 2.7.6 (LICENSE-APACHE-2.0)
+  tauri-runtime 2.12.4 (LICENSE-APACHE-2.0)
+  tauri-runtime-wry 2.12.5 (LICENSE-APACHE-2.0)
+  tauri-utils 2.10.4 (LICENSE-APACHE-2.0)
   time 0.3.55 (LICENSE-Apache)
   time-core 0.1.9 (LICENSE-Apache)
   time-macros 0.2.32 (LICENSE-Apache)
@@ -6290,32 +6159,6 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
 IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
-
-----------------------------------------------------------------------------------------------------
-  generic-array 0.14.7 (LICENSE)
-----------------------------------------------------------------------------------------------------
-
-The MIT License (MIT)
-
-Copyright (c) 2015 Bartłomiej Kamiński
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
   getrandom 0.3.4 (LICENSE-APACHE)
@@ -8520,7 +8363,7 @@ IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
 CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  plist 1.10.3 (LICENCE)
+  plist 1.10.4 (LICENCE)
 ----------------------------------------------------------------------------------------------------
 
 Copyright (c) 2015 Edward Barnard
@@ -9312,38 +9155,6 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  sha2 0.10.9 (LICENSE-MIT)
-----------------------------------------------------------------------------------------------------
-
-Copyright (c) 2006-2009 Graydon Hoare
-Copyright (c) 2009-2013 Mozilla Foundation
-Copyright (c) 2016 Artyom Pavlov
-
-Permission is hereby granted, free of charge, to any
-person obtaining a copy of this software and associated
-documentation files (the "Software"), to deal in the
-Software without restriction, including without
-limitation the rights to use, copy, modify, merge,
-publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software
-is furnished to do so, subject to the following
-conditions:
-
-The above copyright notice and this permission notice
-shall be included in all copies or substantial portions
-of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF
-ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED
-TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A
-PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT
-SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
-CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
-OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR
-IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-----------------------------------------------------------------------------------------------------
   sha2 0.11.1 (LICENSE-MIT)
 ----------------------------------------------------------------------------------------------------
 
@@ -9898,12 +9709,12 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/tao.git
 Creator: Person: Daniel Thompson-Yvetot
 
 ----------------------------------------------------------------------------------------------------
-  tauri 2.12.5 (LICENSE-MIT)
-  tauri-codegen 2.7.4 (LICENSE-MIT)
-  tauri-macros 2.7.4 (LICENSE-MIT)
-  tauri-runtime 2.12.2 (LICENSE-MIT)
-  tauri-runtime-wry 2.12.3 (LICENSE-MIT)
-  tauri-utils 2.10.2 (LICENSE-MIT)
+  tauri 2.12.6 (LICENSE-MIT)
+  tauri-codegen 2.7.6 (LICENSE-MIT)
+  tauri-macros 2.7.6 (LICENSE-MIT)
+  tauri-runtime 2.12.4 (LICENSE-MIT)
+  tauri-runtime-wry 2.12.5 (LICENSE-MIT)
+  tauri-utils 2.10.4 (LICENSE-MIT)
 ----------------------------------------------------------------------------------------------------
 
 MIT License
@@ -11079,7 +10890,7 @@ PackageDownloadLocation: git+ssh://github.com/tauri-apps/wry.git
 Creator: Person: Daniel Thompson-Yvetot
 
 ----------------------------------------------------------------------------------------------------
-  zeroize 1.9.1 (LICENSE-MIT)
+  zeroize 1.9.2 (LICENSE-MIT)
 ----------------------------------------------------------------------------------------------------
 
 Copyright (c) 2018-2026 The RustCrypto Project Developers
@@ -11150,7 +10961,7 @@ JavaScript packages (the app’s web view)
 @jridgewell/sourcemap-codec 1.6.0 (MIT)
 @jridgewell/trace-mapping 0.3.31 (MIT)
 @sveltejs/acorn-typescript 1.0.13 (MIT)
-@tauri-apps/api 2.12.4 (Apache-2.0 OR MIT)
+@tauri-apps/api 2.12.5 (Apache-2.0 OR MIT)
 @types/estree 1.0.9 (MIT)
 acorn 8.19.0 (MIT)
 aria-query 5.3.1 (Apache-2.0)
@@ -11158,11 +10969,11 @@ axobject-query 4.1.0 (Apache-2.0)
 clsx 2.1.1 (MIT)
 devalue 5.9.4 (MIT)
 esm-env 1.2.2 (MIT)
-esrap 2.4.0 (MIT)
+esrap 2.4.2 (MIT)
 is-reference 3.0.3 (MIT)
 locate-character 3.0.0 (MIT)
 magic-string 1.4.3 (MIT)
-svelte 5.57.3 (MIT)
+svelte 5.58.0 (MIT)
 zimmerframe 1.1.5 (MIT)
 
 ----------------------------------------------------------------------------------------------------
@@ -11244,7 +11055,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  @tauri-apps/api 2.12.4 (LICENSE-APACHE-2.0)
+  @tauri-apps/api 2.12.5 (LICENSE-APACHE-2.0)
 ----------------------------------------------------------------------------------------------------
 
                                  Apache License
@@ -11425,7 +11236,7 @@ SOFTWARE.
    END OF TERMS AND CONDITIONS
 
 ----------------------------------------------------------------------------------------------------
-  @tauri-apps/api 2.12.4 (LICENSE-MIT)
+  @tauri-apps/api 2.12.5 (LICENSE-MIT)
 ----------------------------------------------------------------------------------------------------
 
 MIT License
@@ -11449,31 +11260,6 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-----------------------------------------------------------------------------------------------------
-  @tauri-apps/api 2.12.4 (LICENSE.spdx)
-----------------------------------------------------------------------------------------------------
-
-SPDXVersion: SPDX-2.1
-DataLicense: CC0-1.0
-PackageName: tauri
-DataFormat: SPDXRef-1
-PackageSupplier: Organization: The Tauri Programme in the Commons Conservancy
-PackageHomePage: https://tauri.app
-PackageLicenseDeclared: Apache-2.0
-PackageLicenseDeclared: MIT
-PackageCopyrightText: 2019-2025, The Tauri Programme in the Commons Conservancy
-PackageSummary: <text>Tauri is a rust project that enables developers to make secure
-and small desktop applications using a web frontend.
-                </text>
-PackageComment: <text>The package includes the following libraries; see
-Relationship information.
-                </text>
-Created: 2019-05-20T09:00:00Z
-PackageDownloadLocation: git://github.com/tauri-apps/tauri
-PackageDownloadLocation: git+https://github.com/tauri-apps/tauri.git
-PackageDownloadLocation: git+ssh://github.com/tauri-apps/tauri.git
-Creator: Person: Daniel Thompson-Yvetot
 
 ----------------------------------------------------------------------------------------------------
   @types/estree 1.0.9 (LICENSE)
@@ -11773,7 +11559,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  esrap 2.4.0 (LICENSE)
+  esrap 2.4.2 (LICENSE)
 ----------------------------------------------------------------------------------------------------
 
 Copyright (c) 2023-2025 [these people](https://github.com/sveltejs/esrap/graphs/contributors)
@@ -11797,7 +11583,7 @@ The above copyright notice and this permission notice shall be included in all c
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
-  svelte 5.57.3 (LICENSE.md)
+  svelte 5.58.0 (LICENSE.md)
 ----------------------------------------------------------------------------------------------------
 
 Copyright (c) 2016-2025 [Svelte Contributors](https://github.com/sveltejs/svelte/graphs/contributors)

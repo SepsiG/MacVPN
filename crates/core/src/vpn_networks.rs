@@ -2,6 +2,7 @@
 //! reachable here?": from the stored config (OpenVPN, WireGuard) and from OpenVPN's PUSH_REPLY in the connection's
 //! log. Default routes are left out (a full tunnel overlaps every network). Other kinds give nothing.
 
+use crate::dns_policy::push_reply::server_address;
 use crate::models::VPNKind;
 use crate::netaddr::IpPrefix;
 use std::net::{IpAddr, Ipv4Addr};
@@ -74,10 +75,7 @@ impl VpnNetworks {
             ["route-ipv6", prefix, ..] => self.add_prefix(IpPrefix::parse(prefix)),
             ["dhcp-option", "DNS" | "DNS6", ip, ..] => self.add_dns(ip.parse().ok()),
             ["dns", "server", _, "address", ip, ..] => {
-                // `dns server <n> address <ip>[:port]` (OpenVPN 2.6); IPv6 may be bracketed.
-                let ip = ip.trim_start_matches('[').split(']').next().unwrap_or(ip);
-                let ip = if ip.matches(':').count() == 1 { ip.split(':').next().unwrap_or(ip) } else { ip };
-                self.add_dns(ip.parse().ok());
+                self.add_dns(server_address(ip).parse().ok());
             }
             _ => {}
         }

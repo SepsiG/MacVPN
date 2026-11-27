@@ -351,7 +351,7 @@ pub fn plan(input: &Input) -> Result<NmPlan, Unsupported> {
     settings
         .insert("connection".into(), super::connection_section(input.connection, input.uid, input.user, "vpn", None));
     settings.insert("vpn".into(), super::vpn_section(SERVICE_STRONGSWAN, None, data));
-    let mut ipv4 = dns::section_extras(full, &[]);
+    let mut ipv4 = dns::section_extras(full, &[], None, true);
     ipv4.insert("method".into(), NmValue::Str("auto".into()));
     ipv4.insert("never-default".into(), NmValue::Bool(!full));
     settings.insert("ipv4".into(), ipv4);

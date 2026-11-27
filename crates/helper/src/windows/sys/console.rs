@@ -129,14 +129,14 @@ pub fn main(args: &[String]) -> i32 {
             (Box::new(FakeEngine::default()), Box::new(FakeEngine::default()));
         Some((a, b))
     } else if let (true, Ok(d)) = (o.fake_openvpn, &data) {
-        let (_, wireguard) = super::engines(d, &log);
+        let (_, wireguard) = super::engines(d, &log, None);
         let openvpn: Box<dyn Engine> =
             Box::new(OpenVpnEngine::with_detector(d.clone(), log.clone(), Box::new(fake_ready)));
         Some((openvpn, wireguard))
     } else {
         None
     };
-    let service = Arc::new(Service::new(real_host(data.clone(), &log, fake)));
+    let service = Arc::new(Service::new(real_host(data.clone(), &log, fake, None)));
     let listener = match Listener::bind_endpoint(&o.pipe, Endpoint::ServiceForTests) {
         Ok(l) => l,
         Err(e) => {

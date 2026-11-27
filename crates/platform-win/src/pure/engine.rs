@@ -1,4 +1,5 @@
-//! System Status and availability on Windows from the WinVPN Service's `engine` answer (pure).
+//! System Status and availability on Windows from the WinVPN Service's `engine` answer, and the app's side of the
+//! service's DNS requests (pure).
 //!
 //! Fail closed: the engine-missing state when the service is absent, unreachable (not provably the service), of
 //! another version or degraded; otherwise the three rows, where a row is green only on facts that say so (a fact
@@ -8,8 +9,15 @@ use crate::pure::cisco;
 use crate::pure::openvpn_install::Upgrade;
 use crate::pure::texts;
 use crate::pure::wireguard_update::Offer;
-use macvpn_core::service_proto::{EngineFacts, SERVICE_VERSION, Version};
+use macvpn_core::dns_policy::Tunnel;
+use macvpn_core::dns_settings::{DnsRequest, full_tunnel_hint};
+use macvpn_core::helper_args;
+use macvpn_core::models::{Secrets, VPNKind};
+use macvpn_core::service_proto::{DNS_SERVICE_VERSION, DnsApply, EngineFacts, SERVICE_VERSION, Version};
+use macvpn_core::status::DnsState;
+use macvpn_core::validators::SSTPConfig;
 use macvpn_platform_api::{EngineReport, EngineRow, PackageIndexUpdate, SetupReport};
+use zeroize::Zeroizing;
 
 /// The engine one click of System Status' engine buttons runs (`SystemSetup::install_tools`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -175,4 +183,52 @@ pub fn clear_log_answer(code: i32, message: &str) -> Result<(), String> {
         _ if !message.trim().is_empty() => Err(message.trim().to_string()),
         _ => Err(macvpn_core::l10n::tr("mvpn error (exit code: %d)", &[macvpn_core::l10n::Arg::Int(i64::from(code))])),
     }
+}
+
+// MARK: - DNS (service version 2)
+
+/// The body of `up` for the service: the frame (config and secrets), then the connection's DNS lines. Without
+/// settings the default request (Automatic) is sent: on Windows the default mode is applied too.
+pub fn service_up_body(config: &[u8], secrets: &Secrets, dns: Option<&DnsRequest>) -> Zeroizing<Vec<u8>> {
+    let default = DnsRequest::default();
+    helper_args::up_stdin_with_dns(config, secrets, Some(dns.unwrap_or(&default)))
+}
+
+/// `version`'s answer is a service that applies the DNS settings ([`DNS_SERVICE_VERSION`] or newer).
+pub fn takes_dns(code: i32, stdout: &[u8]) -> bool {
+    code == 0
+        && std::str::from_utf8(stdout)
+            .ok()
+            .and_then(|s| s.trim_end_matches('\n').parse::<u32>().ok())
+            .is_some_and(|v| v >= DNS_SERVICE_VERSION)
+}
+
+/// The answer of `dns-check` or `dns-apply`: the state (`None`: exit not 0, or not a state) and the log lines the
+/// service sent back on stderr (an SSTP connection's, for the app's own log).
+pub fn dns_answer(code: i32, stdout: &[u8], stderr: &[u8]) -> (Option<DnsState>, Vec<String>) {
+    let state =
+        (code == 0).then(|| DnsState::from_raw(String::from_utf8_lossy(stdout).trim_end_matches('\n'))).flatten();
+    (state, log_lines(stderr))
+}
+
+/// The log lines a DNS request's answer carries on stderr (empty lines left out).
+pub fn log_lines(stderr: &[u8]) -> Vec<String> {
+    String::from_utf8_lossy(stderr).lines().filter(|l| !l.is_empty()).map(str::to_string).collect()
+}
+
+/// SSTP's `dns-apply`: the connection's DNS settings (the default when it has none), the RAS adapter and the tunnel
+/// of its config ("send all traffic"). With "Use the server's DNS" off (`peer_dns=no`) the server's DNS never
+/// applies: the connection's own servers are used instead of it, and without any there is nothing to apply
+/// (`None`), as on macOS, where pppd then hands over no DNS at all.
+pub fn sstp_dns_apply(config: &[u8], dns: Option<&DnsRequest>, luid: u64) -> Option<DnsApply> {
+    let text = std::str::from_utf8(config).unwrap_or_default();
+    let full = full_tunnel_hint(VPNKind::Sstp, text).unwrap_or(true);
+    let mut request = dns.cloned().unwrap_or_default();
+    if !SSTPConfig::parse(text).peer_dns {
+        if request.servers.is_empty() {
+            return None;
+        }
+        request.override_vpn = true;
+    }
+    Some(DnsApply { request, luid, tunnel: if full { Tunnel::Full } else { Tunnel::Split } })
 }

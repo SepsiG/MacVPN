@@ -22,12 +22,14 @@ use super::ras_paths::{RasLog, RasPaths};
 use super::service_client::ServiceClient;
 use super::system;
 use super::system_vpns::SystemVpns;
+use crate::pure::engine;
 use crate::pure::ras_connect as rc;
 use crate::pure::ras_errors::ErrorContext;
 use crate::pure::ras_log::{self, LogMasker};
 use crate::pure::ras_state::{self, DialEvent, DialState, rascs};
 use crate::pure::ras_sweep;
 use crate::pure::texts;
+use macvpn_core::dns_settings::DnsRequest;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::log::{FileLogSource, LogSource};
 use macvpn_core::mfa::AuthResponseKind;
@@ -35,10 +37,11 @@ use macvpn_core::models::{Connection, Secrets, VPNKind};
 use macvpn_core::native::NativeKind;
 use macvpn_core::ras::policy::{DhGroup, EspCipher, EspIntegrity, IkeCipher, IkeIntegrity};
 use macvpn_core::ras::{Auth, DefaultRoute, RasEntryPlan, Strategy, WindowsPolicy, names};
-use macvpn_core::status::RootStatus;
+use macvpn_core::status::{DnsState, RootStatus};
 use macvpn_platform_api::{HelperClient, NativeController, NativeProfile, NativeProfiles, NativeSupport, SystemVpn};
 use macvpn_winsys::ras as wras;
 use std::collections::{HashMap, HashSet};
+use std::net::IpAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, channel};
@@ -97,6 +100,8 @@ struct Slot {
     log: Arc<RasLog>,
     masker: Arc<LogMasker>,
     attempt: u64,
+    /// SSTP: the DNS state the WinVPN Service last answered (`dns-apply`, `dns-check`); `status` reports it.
+    dns: Option<DnsState>,
 }
 
 impl Slot {
@@ -187,8 +192,34 @@ impl RasEngine {
         slots
             .iter()
             .filter(|(_, s)| rc::is_helper_kind(s.kind))
-            .filter_map(|(id, s)| s.dial.state().root_status(*id, s.kind))
+            .filter_map(|(id, s)| {
+                let mut status = s.dial.state().root_status(*id, s.kind)?;
+                if status.state == "connected" {
+                    status.dns = s.dns;
+                }
+                Some(status)
+            })
             .collect()
+    }
+
+    /// The WinVPN Service's DNS log lines into the connection's log and, when given, its DNS state (SSTP).
+    pub(crate) fn note_dns(&self, id: &Uuid, state: Option<DnsState>, lines: &[String]) {
+        let Ok(inner) = self.inner() else { return };
+        if let Some(slot) = inner.lock().get_mut(id) {
+            if state.is_some() {
+                slot.dns = state;
+            }
+            slot.log.lines(lines);
+        }
+    }
+
+    /// The connection's DNS was released (SSTP after its hang-up): the lines into its log, no state.
+    pub(crate) fn drop_dns(&self, id: &Uuid, lines: &[String]) {
+        let Ok(inner) = self.inner() else { return };
+        if let Some(slot) = inner.lock().get_mut(id) {
+            slot.dns = None;
+            slot.log.lines(lines);
+        }
     }
 
     /// Live traffic of the connection's RAS connection while it is connected (IKEv2, SSTP and L2TP dialled here).
@@ -345,6 +376,7 @@ impl Inner {
             log,
             masker,
             attempt,
+            dns: None,
         };
         slot.apply(DialEvent::Started);
         let previous = self.lock().insert(*id, slot);
@@ -596,6 +628,7 @@ impl Inner {
             log: Arc::new(RasLog::append_to(self.paths.log(&id))),
             masker: Arc::new(LogMasker::default()),
             attempt: ATTEMPTS.fetch_add(1, Ordering::SeqCst),
+            dns: None,
         };
         self.lock().insert(id, slot);
     }
@@ -888,10 +921,37 @@ impl NativeSupport for RasEngine {
 }
 
 /// The app's `HelperClient` on Windows: IKEv2 and SSTP go to the [`RasEngine`] (in this process), OpenVPN and
-/// WireGuard to the WinVPN Service. A missing service does not hide the RAS connections' states.
+/// WireGuard to the WinVPN Service. A missing service does not hide the RAS connections' states. Every connection's
+/// DNS is the service's: SSTP's is applied through `dns-apply` once RAS has connected it.
 pub(crate) struct RasHelper {
     pub(crate) service: ServiceClient,
     pub(crate) ras: Arc<RasEngine>,
+}
+
+impl RasHelper {
+    /// SSTP, once RAS reports it connected: the service applies the connection's DNS settings to the RAS adapter,
+    /// found by the tunnel's address (`RasGetProjectionInfoEx`, then the adapter holding it). Never fails the
+    /// connect: why it could not be applied goes into the connection's log.
+    fn apply_sstp_dns(&self, id: &Uuid, config: &[u8], dns: Option<&DnsRequest>) {
+        let luid = self
+            .ras
+            .address_of(id)
+            .and_then(|a| a.parse::<IpAddr>().ok())
+            .and_then(|ip| macvpn_winsys::net::luid_of_address(ip).ok().flatten());
+        let applied = match luid.map(|luid| engine::sstp_dns_apply(config, dns, luid)) {
+            Some(Some(apply)) => self.service.dns_apply(id, &apply),
+            // "Use the server's DNS" off and no own servers: the RAS adapter's metric keeps DNS on the local network.
+            Some(None) => return,
+            None => Err(l10n::tr("the VPN adapter was not found", &[])),
+        };
+        match applied {
+            Ok((state, lines)) => self.ras.note_dns(id, state, &lines),
+            Err(e) => {
+                let line = l10n::tr("The DNS settings could not be applied: %@", &[Arg::Str(&e)]);
+                self.ras.note_dns(id, None, &[rc::error_line(&line)]);
+            }
+        }
+    }
 }
 
 impl HelperClient for RasHelper {
@@ -907,6 +967,7 @@ impl HelperClient for RasHelper {
         }
     }
 
+    /// [`Self::up_with_dns`] with the default DNS settings.
     fn up(
         &self,
         kind: VPNKind,
@@ -916,15 +977,53 @@ impl HelperClient for RasHelper {
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), String> {
-        if rc::is_helper_kind(kind) {
-            self.ras.up(kind, id, config, secrets, debug)
-        } else {
-            self.service.up(kind, id, config, secrets, debug, accept_risky)
-        }
+        self.up_with_dns(kind, id, config, secrets, debug, accept_risky, None)
     }
 
+    /// IKEv2 and SSTP through RAS (SSTP's DNS then through the service's `dns-apply`), OpenVPN and WireGuard
+    /// through the service (the DNS settings in the `up` body).
+    fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        dns: Option<&DnsRequest>,
+    ) -> Result<(), String> {
+        if !rc::is_helper_kind(kind) {
+            return self.service.up_with_dns(kind, id, config, secrets, debug, accept_risky, dns);
+        }
+        self.ras.up(kind, id, config, secrets, debug)?;
+        if kind == VPNKind::Sstp {
+            self.apply_sstp_dns(id, config, dns);
+        }
+        Ok(())
+    }
+
+    /// SSTP: after the hang-up the service removes its DNS rules.
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {
-        if rc::is_helper_kind(kind) { self.ras.down(id) } else { self.service.down(kind, id) }
+        if !rc::is_helper_kind(kind) {
+            return self.service.down(kind, id);
+        }
+        self.ras.down(id)?;
+        if kind == VPNKind::Sstp {
+            let lines = self.service.dns_release(id);
+            self.ras.drop_dns(id, &lines);
+        }
+        Ok(())
+    }
+
+    fn dns_supported(&self) -> bool {
+        self.service.dns_supported()
+    }
+
+    /// Every kind's DNS is the service's (SSTP's lines and state are kept with its dial).
+    fn dns_check(&self, id: &Uuid) -> Option<DnsState> {
+        let (state, lines) = self.service.dns_check_lines(id);
+        self.ras.note_dns(id, state, &lines);
+        state
     }
 
     fn respond(&self, id: &Uuid, kind: AuthResponseKind, response: &str) -> Result<(), String> {

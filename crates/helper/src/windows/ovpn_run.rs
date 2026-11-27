@@ -9,6 +9,7 @@ use crate::shared::l10n::tr;
 use crate::shared::mask::{self, Masker};
 use crate::shared::ovpn_log;
 use crate::windows::ovpn_args::Driver;
+use macvpn_core::dns_policy::push_reply::Push;
 
 /// The macOS root layer's limits: 30 s to connect, at most 420 s more while waiting for authentication.
 pub const UP_TIMEOUT_SECS: u64 = 30;
@@ -23,6 +24,12 @@ pub struct Output {
     /// OpenVPN could not bind its management port (`socket.c` `socket_bind` with the prefix `MANAGEMENT`): another
     /// socket took it after the service chose it. The engine starts it again on another port.
     pub mgmt_bind_failed: bool,
+    /// The server's latest push (its `PUSH_REPLY` lines, merged while `push-continuation 2` says more follow; a new
+    /// push replaces it: a restart, or another remote after a failed attempt): the DNS manager's input.
+    pub push: Option<Push>,
+    /// How often the connection completed ("Initialization Sequence Completed"): the first is `up`'s, each later
+    /// one a restart of OpenVPN inside the same process (`ping-restart`, `SIGUSR1`).
+    pub connects: u32,
     last: Vec<u8>,
 }
 
@@ -35,6 +42,8 @@ impl Output {
             auth_failed: false,
             dco_incompatible: false,
             mgmt_bind_failed: false,
+            push: None,
+            connects: 0,
             last: Vec::new(),
         }
     }
@@ -48,10 +57,22 @@ impl Output {
             return None;
         }
         // The predicates of macOS over one line (they skip `ECHO:` lines themselves).
-        self.done |= ovpn_log::ovpn_done(line);
+        if ovpn_log::ovpn_done(line) {
+            self.done = true;
+            self.connects = self.connects.saturating_add(1);
+        }
         self.auth_failed |= ovpn_log::ovpn_auth_failed(line);
         self.dco_incompatible |= ovpn_log::dco_incompatible(line);
         self.mgmt_bind_failed |= mgmt_bind_failed(line);
+        // Only OpenVPN's own line (an `ECHO:` or a management line never has the mark).
+        if mask::find(line, PUSH_LINE).is_some()
+            && let Some(more) = Push::from_line(&String::from_utf8_lossy(line))
+        {
+            match &mut self.push {
+                Some(p) if p.continues => p.merge(more),
+                _ => self.push = Some(more),
+            }
+        }
         let last = ovpn_log::ovpn_last_line(line);
         if !last.is_empty() {
             self.last = self.masker.line(&last);
@@ -64,6 +85,9 @@ impl Output {
         String::from_utf8_lossy(&self.last).into_owned()
     }
 }
+
+/// The line OpenVPN prints for the server's push (verb 3).
+const PUSH_LINE: &[u8] = b"PUSH: Received control message: 'PUSH_REPLY,";
 
 /// `MANAGEMENT: Socket bind failed on local address [AF_INET]127.0.0.1:<port>: …` (not an `ECHO:` line).
 fn mgmt_bind_failed(line: &[u8]) -> bool {
@@ -227,6 +251,31 @@ mod tests {
         assert!(!o.mgmt_bind_failed);
         o.line(b"2026-10-22 10:00:00 MANAGEMENT: Socket bind failed on local address [AF_INET]127.0.0.1:40000: Permission denied (WSAEACCES) (errno=10013)");
         assert!(o.mgmt_bind_failed);
+    }
+
+    #[test]
+    fn the_latest_push_and_every_connect_are_kept_for_the_dns() {
+        let mut o = Output::new(Masker::default());
+        o.line(b"2026-11-27 10:00:00 SENT CONTROL [server]: 'PUSH_REQUEST' (status=1)");
+        assert_eq!(o.push, None);
+        // A failed attempt's push on the first remote is replaced by the next one's.
+        o.line(b"2026-11-27 09:59:00 PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 192.0.2.53'");
+        o.line(b"2026-11-27 10:00:01 PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 10.99.0.53,redirect-gateway def1,push-continuation 2'");
+        o.line(b"2026-11-27 10:00:01 PUSH: Received control message: 'PUSH_REPLY,dhcp-option DOMAIN lab.test,ifconfig 10.8.0.6 255.255.255.0,push-continuation 1'\r");
+        o.line(b"2026-11-27 10:00:02 Initialization Sequence Completed");
+        assert_eq!(o.connects, 1);
+        let p = o.push.clone().unwrap();
+        assert_eq!(p.dns.servers, ["10.99.0.53"]);
+        assert_eq!(p.dns.search, ["lab.test"]);
+        assert!(p.redirect_gateway);
+        assert_eq!(p.local, Some("10.8.0.6".parse().unwrap()));
+        // A restart inside the process: its push replaces the old one, its completion counts.
+        o.line(b"2026-11-27 11:00:01 PUSH: Received control message: 'PUSH_REPLY,dhcp-option DNS 10.0.0.1'");
+        o.line(b"2026-11-27 11:00:02 Initialization Sequence Completed");
+        assert_eq!(o.connects, 2);
+        let p = o.push.unwrap();
+        assert_eq!(p.dns.servers, ["10.0.0.1"]);
+        assert!(!p.redirect_gateway);
     }
 
     #[test]

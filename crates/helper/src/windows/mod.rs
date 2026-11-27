@@ -3,6 +3,7 @@
 //! server and the engines.
 
 pub mod diagnostics;
+pub mod dns;
 pub mod install_dir;
 pub mod logs;
 pub mod ras_logoff;

@@ -15,23 +15,25 @@
 use crate::lin::nm::agent::{Agent, Expect};
 use crate::lin::nm::client::{NmClient, WatchGuard};
 use crate::lin::nm::connlog::{ConnLog, Pump};
+use crate::lin::nm::dns_runtime::DnsRuntime;
 use crate::lin::nm::engine::{Engine, RunView};
 use crate::lin::nm::files::RuntimeFiles;
 use crate::lin::nm::sysfs;
 use crate::lin::nm::xfrmd_client;
 use crate::pure::nm::state::VpnState;
 use macvpn_core::date::Date;
+use macvpn_core::dns_settings::{DnsRequest, DnsSetting};
 use macvpn_core::fsx::FileOwner;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::liveness::Liveness;
 use macvpn_core::mfa::{AuthResponseKind, MFAError, is_valid_code};
 use macvpn_core::models::{Connection, Secrets, VPNKind};
 use macvpn_core::nm_plan::Caps;
-use macvpn_core::status::RootStatus;
+use macvpn_core::status::{DnsState, RootStatus};
 use macvpn_core::xfrmd::Target;
 use macvpn_platform_api::{CounterWidth, HelperClient, HelperTunnel, TrafficReading, traffic};
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError, RwLock};
 use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
@@ -66,10 +68,13 @@ pub struct HelperState {
     /// The adoption of the connections an earlier process left up ran (`Engine::adopt`); held while it runs, so
     /// no start, stop or status comes in between.
     pub(crate) adopted: Mutex<bool>,
+    /// The connections' DNS sessions and Automatic's fallback (shared with the watcher's DNS threads).
+    pub(crate) dns: Arc<DnsRuntime>,
 }
 
-impl Default for HelperState {
-    fn default() -> HelperState {
+impl HelperState {
+    /// The state of an engine whose data folder is `data` (the DNS ledger's folder).
+    pub fn new(data: &Path) -> HelperState {
         HelperState {
             client: OnceLock::new(),
             agent: OnceLock::new(),
@@ -82,6 +87,7 @@ impl Default for HelperState {
             caps: Mutex::new(None),
             logd_socket: RwLock::new(None),
             adopted: Mutex::new(false),
+            dns: Arc::new(DnsRuntime::new(data)),
         }
     }
 }
@@ -91,6 +97,43 @@ pub struct Runs {
     pub by_id: HashMap<Uuid, Run>,
     /// `VpnStateChanged` of an active path no run has yet: `(path, state, reason)`.
     pub orphans: VecDeque<(String, VpnState, u32)>,
+    /// Runs that ended since the DNS work was last taken ([`Runs::take_dns_work`]): their DNS is released.
+    pub dns_ended: Vec<(Uuid, String)>,
+}
+
+/// DNS work found under the runs' lock and done after it (`engine::start_dns`).
+#[derive(Debug, Clone, PartialEq)]
+pub enum DnsWork {
+    /// The run is up (first time or after a reconnect): its session is (re)built.
+    Connected { id: Uuid, active_path: String, request: DnsRequest },
+    /// The activation at `active_path` ended: its session goes and the links come back.
+    Ended { id: Uuid, active_path: String },
+}
+
+impl Runs {
+    /// The DNS work pending: the runs connected since (with a DNS request) and the ended ones.
+    pub(crate) fn take_dns_work(&mut self) -> Vec<DnsWork> {
+        let mut work: Vec<DnsWork> =
+            self.dns_ended.drain(..).map(|(id, active_path)| DnsWork::Ended { id, active_path }).collect();
+        for (id, run) in self.by_id.iter_mut().filter(|(_, r)| r.dns_pending) {
+            run.dns_pending = false;
+            if let Some(request) = &run.dns {
+                work.push(DnsWork::Connected {
+                    id: *id,
+                    active_path: run.active_path.clone(),
+                    request: request.clone(),
+                });
+            }
+        }
+        work
+    }
+
+    /// The run ended: its DNS is released with the next DNS work.
+    pub(crate) fn dns_ended(&mut self, id: Uuid, active_path: &str) {
+        if !self.dns_ended.iter().any(|(i, p)| *i == id && p == active_path) {
+            self.dns_ended.push((id, active_path.to_string()));
+        }
+    }
 }
 
 /// One activation LinVPN started (or adopted from an earlier process). Dropping it removes its runtime files, makes
@@ -121,6 +164,11 @@ pub struct Run {
     /// Adopted without the connection's secrets: its journal lines are masked only once app-core hands them over
     /// ([`HelperClient::set_log_secrets`]).
     pub log_secrets_missing: bool,
+    /// The connection's DNS request (OpenVPN, WireGuard, SSTP started by this process); `None`: LinVPN leaves its
+    /// DNS to the profile alone.
+    pub dns: Option<DnsRequest>,
+    /// "Connected" was logged and the DNS session is not (re)built yet.
+    pub dns_pending: bool,
 }
 
 fn unix_secs() -> u64 {
@@ -141,6 +189,7 @@ impl Run {
                 None => self.log.line(&l10n::tr("Connected (IPv4 address not known yet)", &[])),
             }
             self.ip_unlogged = self.ip.is_none();
+            self.dns_pending = self.dns.is_some();
         } else if self.ip_unlogged
             && let Some(ip) = self.ip.clone()
         {
@@ -171,6 +220,15 @@ impl Run {
             reconnecting_since: self.reconnecting_since,
             keepalive: self.keepalive,
         }
+    }
+}
+
+/// Writes a DNS line into the log of `id`'s run while it has not ended: the end's reason stays the last line
+/// (app-core reads the user's stop from it, `failure_reason::stopped_by_user`).
+pub(crate) fn log_to(runs: &Mutex<Runs>, id: &Uuid, line: &str) {
+    let runs = runs.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(run) = runs.by_id.get(id).filter(|r| !r.ended) {
+        run.log.line(line);
     }
 }
 
@@ -282,7 +340,7 @@ impl HelperClient for Engine {
                 iface: r.iface,
                 ip: r.ip,
                 since: Some(r.since),
-                dns: None,
+                dns: self.helper.dns.state(&r.id),
             })
             .collect())
     }
@@ -296,6 +354,19 @@ impl HelperClient for Engine {
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), String> {
+        self.up_with_dns(kind, id, config, secrets, debug, accept_risky, None)
+    }
+
+    fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        dns: Option<&DnsRequest>,
+    ) -> Result<(), String> {
         if !is_helper_kind(kind) {
             return Err(l10n::tr("This kind of connection is not started this way on Linux.", &[]));
         }
@@ -305,7 +376,25 @@ impl HelperClient for Engine {
         acknowledged.sort();
         acknowledged.dedup();
         connection.acknowledged_risky_directives = acknowledged;
+        if let Some(d) = dns {
+            connection.dns = DnsSetting {
+                mode: d.mode,
+                servers: d.servers.clone(),
+                domains: d.domains.clone(),
+                override_vpn: d.override_vpn,
+            };
+        }
         self.activate(*id, &connection, config, secrets, debug)
+    }
+
+    fn dns_supported(&self) -> bool {
+        true
+    }
+
+    fn dns_check(&self, id: &Uuid) -> Option<DnsState> {
+        let client = self.helper.client.get()?;
+        let runs = self.helper.runs.clone();
+        self.helper.dns.check(client, id, &|line| log_to(&runs, id, line))
     }
 
     fn down(&self, _kind: VPNKind, id: &Uuid) -> Result<(), String> {

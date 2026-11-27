@@ -59,7 +59,7 @@ export type Row = RowState & {
   /// A certificate in the config expires within 30 days or has expired ("Certificate expires in 12 days"). Absent
   /// otherwise.
   certificateWarning?: string;
-  /// macOS root layer 15: the connection's DNS hint (fallback, failing, no DNS, an outdated root layer).
+  /// The connection's DNS hint (fallback, failing, no DNS; on macOS also an outdated root layer).
   dnsNote?: string;
 };
 
@@ -307,7 +307,7 @@ export interface TextFields {
   keyPassword: SecretInput;
   acknowledged: string[];
   otp: Otp;
-  /// OpenVPN / WireGuard: the DNS settings (macOS root layer 15). Absent for the other kinds.
+  /// OpenVPN / WireGuard: the DNS settings (all OSes). Absent for the other kinds.
   dns?: Dns;
 }
 
@@ -335,7 +335,7 @@ export interface SstpFields {
   caPem: string;
   password: SecretInput;
   otp: Otp;
-  /// The DNS settings (macOS root layer 15).
+  /// The DNS settings (all OSes).
   dns?: Dns;
 }
 

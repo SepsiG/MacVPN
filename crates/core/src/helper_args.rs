@@ -30,8 +30,9 @@ pub fn up_stdin(config: &[u8], secrets: &Secrets) -> Zeroizing<Vec<u8>> {
     up_stdin_with_dns(config, secrets, None)
 }
 
-/// [`up_stdin`] followed by the connection's DNS lines (root layer 15, macOS only: an older root layer refuses
-/// them, so the caller sends a request only to root layer 15 or newer). `None`: byte-identical to [`up_stdin`].
+/// [`up_stdin`] followed by the connection's DNS lines (macOS root layer 15: an older root layer refuses them, so the
+/// caller sends a request only to root layer 15 or newer; the WinVPN Service applies them since its version 2).
+/// `None`: byte-identical to [`up_stdin`].
 pub fn up_stdin_with_dns(config: &[u8], secrets: &Secrets, dns: Option<&DnsRequest>) -> Zeroizing<Vec<u8>> {
     let lines = secrets.stdin_payload();
     let dns = dns.map(DnsRequest::frame_lines).unwrap_or_default();

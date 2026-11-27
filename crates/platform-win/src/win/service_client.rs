@@ -4,16 +4,17 @@
 //! byte is sent, so a squatter of the name never receives a config or a secret); debug test builds may trust a pipe
 //! of this user (the service's console mode). The service answers in the app's language (`--lang`).
 
-use crate::pure::engine::Reach;
+use crate::pure::engine::{self, Reach};
 use crate::pure::texts;
 use crate::pure::wireguard_update::{self as wu, Offer};
+use macvpn_core::dns_settings::DnsRequest;
 use macvpn_core::helper_args;
 use macvpn_core::l10n::{self, AppLanguage, Arg};
 use macvpn_core::log::{LogIdentity, LogRead, LogSource};
 use macvpn_core::mfa::{AuthResponseKind, AuthUIState, MFAError};
 use macvpn_core::models::{Secrets, VPNKind, uuid_string};
-use macvpn_core::service_proto::{self as proto, EngineFacts, LogSlice, PIPE_NAME, ProtoError, Response};
-use macvpn_core::status::{RootStatus, parse_status};
+use macvpn_core::service_proto::{self as proto, DnsApply, EngineFacts, LogSlice, PIPE_NAME, ProtoError, Response};
+use macvpn_core::status::{DnsState, RootStatus, parse_status};
 use macvpn_platform_api::{AuthStateReader, HelperClient};
 use macvpn_winsys::pipe::{self, PipeStream, ServerTrust};
 use std::io::ErrorKind;
@@ -122,6 +123,35 @@ impl ServiceClient {
         )
     }
 
+    /// `dns-check <id>` with the log lines the service sent back (an SSTP connection's). No answer: nothing.
+    pub(crate) fn dns_check_lines(&self, id: &Uuid) -> (Option<DnsState>, Vec<String>) {
+        let id = uuid_string(id);
+        match self.exchange(&[proto::DNS_CHECK, &id], b"", QUICK_TIMEOUT) {
+            Ok(r) => engine::dns_answer(r.code, &r.stdout, &r.stderr),
+            Err(_) => (None, Vec::new()),
+        }
+    }
+
+    /// `dns-apply <id>` (SSTP, once RAS reports it connected): the state and the log lines; `Err`: the service's
+    /// reason, or why it could not be asked.
+    pub(crate) fn dns_apply(&self, id: &Uuid, apply: &DnsApply) -> Result<(Option<DnsState>, Vec<String>), String> {
+        let id = uuid_string(id);
+        let r = self.exchange(&[proto::DNS_APPLY, &id], apply.encode().as_bytes(), QUICK_TIMEOUT);
+        let r = r.map_err(NoAnswer::message)?;
+        let answer = engine::dns_answer(r.code, &r.stdout, &r.stderr);
+        check(r).map(|_| answer)
+    }
+
+    /// `dns-release <id>` (SSTP, after its hang-up): the log lines; nothing on any failure (the service also releases
+    /// it when it sees the RAS adapter gone, at logoff and at its stop).
+    pub(crate) fn dns_release(&self, id: &Uuid) -> Vec<String> {
+        let id = uuid_string(id);
+        match self.exchange(&[proto::DNS_RELEASE, &id], b"", QUICK_TIMEOUT) {
+            Ok(r) if r.code == 0 => engine::log_lines(&r.stderr),
+            _ => Vec::new(),
+        }
+    }
+
     /// The service's `engine` answer: no pipe = `Absent`; no trusted answer, or facts that cannot be read =
     /// `Unreachable` with the reason (another version: the "missing or from another version" text).
     pub(crate) fn reach(&self) -> Reach {
@@ -158,8 +188,7 @@ impl HelperClient for ServiceClient {
         parse_status(&String::from_utf8_lossy(&out)).map_err(|e| e.to_string())
     }
 
-    /// The config and the secrets go only in the body (the root layer 8 frame, one zeroized buffer), never in an
-    /// argument, and only to a pipe that passed the owner check.
+    /// [`Self::up_with_dns`] with the default DNS settings.
     fn up(
         &self,
         kind: VPNKind,
@@ -169,10 +198,36 @@ impl HelperClient for ServiceClient {
         debug: bool,
         accept_risky: &[String],
     ) -> Result<(), String> {
+        self.up_with_dns(kind, id, config, secrets, debug, accept_risky, None)
+    }
+
+    /// The config and the secrets go only in the body (the root layer 8 frame, one zeroized buffer), never in an
+    /// argument, and only to a pipe that passed the owner check. The DNS lines follow the secrets (the default
+    /// request when the connection has none: the service applies the default mode too).
+    fn up_with_dns(
+        &self,
+        kind: VPNKind,
+        id: &Uuid,
+        config: &[u8],
+        secrets: &Secrets,
+        debug: bool,
+        accept_risky: &[String],
+        dns: Option<&DnsRequest>,
+    ) -> Result<(), String> {
         let args = helper_args::up_arguments(kind, id, debug, accept_risky);
         let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-        let body = helper_args::up_stdin(config, secrets);
+        let body = engine::service_up_body(config, secrets, dns);
         self.call(&refs, &body, UP_TIMEOUT).map(|_| ())
+    }
+
+    /// The service answers `version` with [`proto::DNS_SERVICE_VERSION`] or newer.
+    fn dns_supported(&self) -> bool {
+        self.exchange(&["version"], b"", QUICK_TIMEOUT).is_ok_and(|r| engine::takes_dns(r.code, &r.stdout))
+    }
+
+    /// `dns-check <id>`: the service probes the connection's DNS again (at most once in 20 s).
+    fn dns_check(&self, id: &Uuid) -> Option<DnsState> {
+        self.dns_check_lines(id).0
     }
 
     fn down(&self, kind: VPNKind, id: &Uuid) -> Result<(), String> {

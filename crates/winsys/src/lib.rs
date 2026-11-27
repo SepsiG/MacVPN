@@ -2,7 +2,7 @@
 //! SIDs, security descriptors (the private and shared DACLs), what an open handle says about its file (owner, DACL
 //! shape, 128-bit id, link count, reparse tag), the system CSPRNG and named pipes (the peer's identity, exact
 //! timeouts, clean shutdown), a named mutex with a private DACL, a service's recovery settings, an MSI package's
-//! properties ([`msi`]), the machine's user profiles ([`profiles`]) and the Remote Access Service (VPN phonebook entries, dialling, the RAS credential store:
+//! properties ([`msi`]), local NRPT rules ([`nrpt`]), the machine's user profiles ([`profiles`]) and the Remote Access Service (VPN phonebook entries, dialling, the RAS credential store:
 //! [`ras`]).
 //!
 //! Its own crate because core may not contain `unsafe` and cannot depend on `macvpn-platform-win` (which depends on
@@ -21,6 +21,7 @@ pub mod known;
 pub mod msi;
 pub mod mutex;
 pub mod net;
+pub mod nrpt;
 pub mod pipe;
 pub mod profiles;
 pub mod random;

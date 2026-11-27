@@ -236,7 +236,7 @@ Hozd létre az **Új → SSTP** menüponttal, vagy importálj egy `.sstp` fájlt
 - **Rendszer CA:** a szerver tanúsítványát a rendszer CA-tanúsítványai (`/etc/ssl/certs`) ellenőrzik. Az oda telepített céges CA-ban (`/usr/local/share/ca-certificates`, majd `sudo update-ca-certificates`) a LinVPN is megbízik.
 - **Saját CA fájl** (**PEM fájl kiválasztása…**): a CA a kapcsolat configjában marad, és a kapcsolat idejére a privát futási mappádba íródik.
 - **Nincs ellenőrzés:** megengedett, mint macOS-en, ezzel a figyelmeztetéssel: **Ellenőrzés nélkül a LinVPN nem vizsgálja a szerver tanúsítványát.** Csak tesztelésre használd.
-- **A szerver DNS-ének használata** kikapcsolva: a NetworkManager figyelmen kívül hagyja a szerver által küldött DNS-szervereket.
+- **A szerver DNS-ének használata** kikapcsolva: a NetworkManager figyelmen kívül hagyja a szerver által küldött DNS-szervereket. A **DNS** részben megadott saját szervereid ilyenkor is érvényesek, a választott módban.
 - **Minden forgalom a VPN-en keresztül** kikapcsolva: a VPN-cím osztályának hálózata a VPN-en át megy, mint macOS-en és Windowson (lásd [3.4](#34-l2tpipsec-és-cisco-ipsec)).
 
 ### 3.7 „Linuxon nem támogatott”
@@ -295,9 +295,23 @@ A szabályok a MacVPN-éi (lásd [a MacVPN útmutatóját](user-guide.hu.md#55-a
 
 Linuxon a LinVPN-nek nincs saját DNS-kezelője: a VPN DNS-ét a NetworkManager és a systemd-resolved állítja be, amíg a kapcsolat él, és bontáskor (összeomlás után is) visszaállítja a tiédet.
 
-- **Osztott alagút:** a VPN DNS-szerverei csak a VPN saját tartományaira válaszolnak (például `corp.example`); minden más név a szokásos DNS-edhez megy.
-- **Minden forgalom a VPN-en:** minden nevet a VPN DNS-szerverei oldanak fel.
-- A `resolvectl status` megmutatja, melyik interfész melyik DNS-t használja.
+A 2.1.15-től az OpenVPN-, WireGuard- és SSTP-kapcsolatoknak ugyanazok a DNS-beállításai vannak, mint a MacVPN-ben: a kapcsolat szerkesztőjében van egy **DNS** rész a móddal, a **Saját DNS-szerverek**, a **Saját tartományok** és az **Ezeket használd a VPN DNS-e helyett** beállítással. A módok, a helyi nevek és a saját DNS úgy működnek, ahogy [a MacVPN útmutatójának 5.6-os része](user-guide.hu.md#56-dns-kapcsolat-közben) leírja; röviden:
+
+- **Automatikus (ajánlott, alapértelmezett):** minden név a VPN DNS-éhez megy, amíg az működik. A LinVPN a kapcsolat felépülésekor, majd kapcsolat közben nagyjából 5 percenként megkérdezi a VPN DNS-étől az `apple.com` címét. Két egymás utáni sikertelen ellenőrzés után visszalép (csak a VPN tartományai használják a VPN DNS-ét, minden más név a hálózatod DNS-éhez megy), egy sikeres után visszatér. Mindkét váltásról értesítést kapsz: **A VPN DNS-e nem oldja fel az internetes neveket; most csak a VPN tartományai használják.** és **A VPN DNS-e újra működik; minden név azt használja.**
+- **Teljes:** minden név mindig a VPN DNS-éhez megy; a sikertelen ellenőrzés csak figyelmeztet (**A VPN DNS-e nem válaszol.**).
+- **Célzott:** csak a VPN tartományai használják a VPN DNS-ét (osztott alagútnál; ha minden forgalom a VPN-en megy, Automatikusként működik).
+- **Szigorú:** a DNS soha nem hagyja el az alagutat; nincs visszalépés és nincs helyi kivétel.
+- Automatikus és Teljes módban a hálózatod saját nevei (például `nas.lan` vagy a router neve) kapcsolat közben is működnek.
+
+**Hogyan lép életbe.** A LinVPN csatlakozás előtt beírja a módot a kapcsolat NetworkManager-profiljába:
+
+- **Automatikus és Teljes:** a VPN minden nevet átvesz (`~.`) 50-es DNS-prioritással, a Wi-Fi vagy Ethernet kapcsolatod pedig megtartja a saját tartományait.
+- **Szigorú:** minden nevet, a helyi hálózat tartományait is, −50-es prioritással.
+- **Célzott:** csak a VPN tartományait (`~corp.example`).
+- A **saját szerverek** a VPN szerverei mellé kerülnek; az **Ezeket használd a VPN DNS-e helyett** beállítással a VPN által küldött szervereket figyelmen kívül hagyja (annál az IP-verziónál, amelyhez vannak saját szerverek). A **saját tartományok** mindig a VPN DNS-éhez mennek.
+- **Az Automatikus mód visszalépése:** a NetworkManager futó VPN DNS-ét nem tudja módosítani, ezért a LinVPN helyette a Wi-Fi és Ethernet kapcsolataid DNS-prioritását csökkenti 40-re, csak a visszalépés idejére és mentés nélkül. Ezek visszaveszik az összes többi nevet, a VPN megtartja a saját tartományait. Az eredeti prioritás visszaáll, amikor a VPN DNS-e újra működik, bontáskor és a LinVPN következő indulásakor. Ha egy összeomlás után ebből valami megmarad, az ártalmatlan: a NetworkManager eldobja, amikor az a Wi-Fi vagy Ethernet újra csatlakozik.
+- **Az L2TP/IPsec, az IKEv2 és a Cisco IPsec** szerkesztőjében nincs DNS rész, ezeknél a régi szabály marad: osztott alagútnál a VPN DNS-szerverei csak a VPN saját tartományaira válaszolnak (például `corp.example`), ha minden forgalom a VPN-en megy, minden nevet ők oldanak fel.
+- A `resolvectl status` megmutatja, melyik interfész melyik DNS-t használja (a **DNS Domain** sorában a `~.` minden nevet jelent).
 
 ### 5.6 Kilépés, kijelentkezés és alvás
 

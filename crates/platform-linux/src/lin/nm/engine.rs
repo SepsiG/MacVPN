@@ -14,8 +14,9 @@
 use crate::lin::nm::agent::{Agent, Answer, Rules};
 use crate::lin::nm::client::{NmClient, NmError, NmEvent};
 use crate::lin::nm::connlog::{self, ConnLog, Masker};
+use crate::lin::nm::dns_runtime::DnsRuntime;
 use crate::lin::nm::files::{RunRecord, RuntimeFiles};
-use crate::lin::nm::helper_impl::{CounterSource, HelperState, IfaceSource, Run, Runs};
+use crate::lin::nm::helper_impl::{self, CounterSource, DnsWork, HelperState, IfaceSource, Run, Runs};
 use crate::lin::nm::logd_client;
 use crate::lin::nm::native_impl::NativeState;
 use crate::lin::nm::polkit::{self, Authorization};
@@ -26,6 +27,7 @@ use crate::pure::nm::iface::is_charon_nm_xfrm;
 use crate::pure::nm::state::{self, VpnState};
 use crate::pure::texts;
 use macvpn_core::client_cert::ClientCert;
+use macvpn_core::dns_settings::DnsRequest;
 use macvpn_core::l10n::{self, Arg};
 use macvpn_core::models::{Connection, SecretField, Secrets, VPNKind};
 use macvpn_core::nm_plan::{
@@ -34,7 +36,7 @@ use macvpn_core::nm_plan::{
 };
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::{Arc, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 use zbus::zvariant::{OwnedValue, Value};
@@ -269,16 +271,8 @@ impl Engine {
         runtime: Option<PathBuf>,
         data: PathBuf,
     ) -> Arc<Engine> {
-        Arc::new(Engine {
-            bus,
-            sandbox,
-            user,
-            uid,
-            runtime,
-            data,
-            helper: HelperState::default(),
-            native: NativeState::default(),
-        })
+        let helper = HelperState::new(&data);
+        Arc::new(Engine { bus, sandbox, user, uid, runtime, data, helper, native: NativeState::default() })
     }
 
     fn lock_runs(&self) -> MutexGuard<'_, Runs> {
@@ -486,6 +480,8 @@ impl Engine {
             log,
             pump: Some(pump),
             log_secrets_missing: false,
+            dns: dns_request(connection),
+            dns_pending: false,
         };
         let mut runs = self.lock_runs();
         let path = run.active_path.clone();
@@ -497,6 +493,9 @@ impl Engine {
         for (s, reason) in early {
             apply_vpn_state(&mut runs, &path, s, reason, None);
         }
+        let work = runs.take_dns_work();
+        drop(runs);
+        start_dns(client.bus(), &self.helper.runs, &self.helper.dns, work);
         Ok(())
     }
 
@@ -513,6 +512,13 @@ impl Engine {
             return;
         }
         *done = true;
+        // The physical links an earlier process's fallback left lowered (a crash) come back first, whatever this
+        // process may run: only NM is needed, and only when a ledger is left.
+        if self.helper.dns.has_leftovers()
+            && let Ok(client) = self.nm_client()
+        {
+            self.helper.dns.restore_leftovers(client);
+        }
         if self.sandbox {
             return;
         }
@@ -556,6 +562,9 @@ impl Engine {
                 pump: Some(pump),
                 // The secrets are in the vault: app-core hands them over once it is unlocked.
                 log_secrets_missing: true,
+                // The DNS request is not known here: the profile's keys alone apply.
+                dns: None,
+                dns_pending: false,
             };
             self.lock_runs().by_id.insert(record.id, run);
             adopted = true;
@@ -574,11 +583,16 @@ impl Engine {
             return;
         }
         let runs = self.helper.runs.clone();
+        let dns = self.helper.dns.clone();
+        let bus = client.bus().clone();
         let lookup = NmClient::new(client.bus().clone());
         let on = move |event: NmEvent| {
             if let NmEvent::ActiveState { active_path, state, reason } = &event {
-                let mut runs = runs.lock().unwrap_or_else(PoisonError::into_inner);
-                apply_active_state(&mut runs, active_path, *state, *reason);
+                let mut locked = runs.lock().unwrap_or_else(PoisonError::into_inner);
+                apply_active_state(&mut locked, active_path, *state, *reason);
+                let work = locked.take_dns_work();
+                drop(locked);
+                start_dns(&bus, &runs, &dns, work);
                 return;
             }
             let NmEvent::VpnState { active_path, state, reason } = event else { return };
@@ -588,8 +602,11 @@ impl Engine {
             } else {
                 None
             };
-            let mut runs = runs.lock().unwrap_or_else(PoisonError::into_inner);
-            apply_vpn_state(&mut runs, &active_path, state, reason, ip);
+            let mut locked = runs.lock().unwrap_or_else(PoisonError::into_inner);
+            apply_vpn_state(&mut locked, &active_path, state, reason, ip);
+            let work = locked.take_dns_work();
+            drop(locked);
+            start_dns(&bus, &runs, &dns, work);
         };
         if let Ok(guard) = client.watch(Box::new(on)) {
             *watch = Some(guard);
@@ -615,6 +632,11 @@ impl Engine {
                 self.lock_runs().by_id.insert(*id, run);
                 return Err(m);
             }
+        }
+        if run.dns.is_some()
+            && let Some(client) = self.helper.client.get()
+        {
+            self.helper.dns.release(client, id, &run.active_path, &|line| run.log.line(line));
         }
         run.log.line(state::STOPPED_LINE);
         drop(run);
@@ -668,8 +690,13 @@ impl Engine {
             }
         }
         for id in drop_ids {
-            runs.by_id.remove(&id);
+            if let Some(run) = runs.by_id.remove(&id).filter(|r| r.dns.is_some()) {
+                runs.dns_ended(id, &run.active_path);
+            }
         }
+        let work = runs.take_dns_work();
+        drop(runs);
+        start_dns(client.bus(), &self.helper.runs, &self.helper.dns, work);
         Ok(views)
     }
 
@@ -715,6 +742,44 @@ impl Engine {
     }
 }
 
+/// The DNS request of a connection whose DNS LinVPN handles (OpenVPN, WireGuard, SSTP; the plan wrote its mode).
+fn dns_request(connection: &Connection) -> Option<DnsRequest> {
+    let d = &connection.dns;
+    matches!(connection.kind, VPNKind::Openvpn | VPNKind::Wireguard | VPNKind::Sstp).then(|| DnsRequest {
+        mode: d.mode,
+        servers: d.servers.clone(),
+        domains: d.domains.clone(),
+        override_vpn: d.override_vpn,
+    })
+}
+
+/// Does the DNS work found under the runs' lock on a thread of its own: the probe can take seconds, and neither NM's
+/// signals nor `status` wait for it. The runtime serializes the work of all threads.
+fn start_dns(bus: &zbus::blocking::Connection, runs: &Arc<Mutex<Runs>>, dns: &Arc<DnsRuntime>, work: Vec<DnsWork>) {
+    if work.is_empty() {
+        return;
+    }
+    let (client, runs, dns) = (NmClient::new(bus.clone()), runs.clone(), dns.clone());
+    // Without a thread the session is simply not built: the profile's keys still apply. The thread is detached.
+    let _ = std::thread::Builder::new().name("linvpn-dns".into()).spawn(move || {
+        for item in work {
+            match item {
+                DnsWork::Connected { id, active_path, request } => {
+                    let still_running = || {
+                        let runs = runs.lock().unwrap_or_else(PoisonError::into_inner);
+                        runs.by_id.get(&id).is_some_and(|r| r.active_path == active_path && !r.ended)
+                    };
+                    let log = |line: &str| helper_impl::log_to(&runs, &id, line);
+                    dns.connected(&client, id, &active_path, &request, &log, &still_running);
+                }
+                DnsWork::Ended { id, active_path } => {
+                    dns.release(&client, &id, &active_path, &|line| helper_impl::log_to(&runs, &id, line))
+                }
+            }
+        }
+    });
+}
+
 /// NM's `NM_ACTIVE_CONNECTION_STATE_DEACTIVATED`.
 const ACTIVE_DEACTIVATED: u32 = 4;
 
@@ -736,8 +801,12 @@ fn apply_active_state(runs: &mut Runs, path: &str, state: u32, reason: u32) {
         run.log.line(state::reason_line(reason));
         run.ended = true;
     }
+    let has_dns = run.dns.is_some();
     if run.gone_since.is_some() {
         runs.by_id.remove(&id);
+    }
+    if has_dns {
+        runs.dns_ended(id, path);
     }
 }
 
@@ -766,8 +835,12 @@ fn apply_vpn_state(runs: &mut Runs, path: &str, state: VpnState, reason: u32, ip
                 run.log.line(state::reason_line(reason));
                 run.ended = true;
             }
+            let has_dns = run.dns.is_some();
             if run.gone_since.is_some() {
                 runs.by_id.remove(&id);
+            }
+            if has_dns {
+                runs.dns_ended(id, path);
             }
         }
         VpnState::Prepare | VpnState::NeedAuth | VpnState::Connect | VpnState::IpConfigGet | VpnState::Unknown => {

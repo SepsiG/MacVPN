@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The connection's DNS settings (macOS root layer 15): the mode and the own DNS servers and domains. Shown by the
+  // The connection's DNS settings (macOS, Windows and Linux): the mode and the own DNS servers and domains. Shown by the
   // editors only where `visible` says so (see dnsFields.ts).
   import { tr } from '../l10n.svelte';
   import { type Dns, joinList, modes, overrideProblem, splitList, targetedNote } from './dnsFields';

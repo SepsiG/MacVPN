@@ -236,7 +236,7 @@ Create it with **New → SSTP**, or import an `.sstp` file. The form is the same
 - **System CA:** the server's certificate is checked against the system's CA certificates (`/etc/ssl/certs`). A company CA installed there (`/usr/local/share/ca-certificates` and `sudo update-ca-certificates`) is trusted.
 - **Custom CA file** (**Choose PEM File…**): the CA is kept in the connection's config and written for the duration of the connection into your private run folder.
 - **No verification:** allowed, as on macOS, with the warning **Without verification the server's certificate is not checked.** Use it only for testing.
-- **Use the server's DNS** turned off: NetworkManager ignores the DNS servers the server sends.
+- **Use the server's DNS** turned off: NetworkManager ignores the DNS servers the server sends. Your own servers from the **DNS** section still apply, in the chosen mode.
 - **Send all traffic over VPN** turned off: the network of your VPN address's class goes through the VPN, as on macOS and Windows (see [3.4](#34-l2tpipsec-and-cisco-ipsec)).
 
 ### 3.7 "Not supported on Linux"
@@ -295,9 +295,23 @@ The rules are those of MacVPN (see [the MacVPN guide](user-guide.en.md#55-reconn
 
 LinVPN has no DNS manager of its own on Linux: NetworkManager and systemd-resolved set the VPN's DNS while it is up and restore yours when it goes down, also after a crash.
 
-- **Split tunnel:** the VPN's DNS servers answer only for the VPN's own domains (for example `corp.example`); every other name goes to your normal DNS.
-- **All traffic over the VPN:** every name is resolved by the VPN's DNS servers.
-- `resolvectl status` shows which DNS each interface uses.
+From 2.1.15 OpenVPN, WireGuard and SSTP connections have the same DNS settings as in MacVPN: the connection's editor has a **DNS** section with the mode, **Own DNS servers**, **Own domains** and **Use these instead of the VPN's DNS**. The modes, the local names and the own DNS work as described in [the MacVPN guide, 5.6](user-guide.en.md#56-dns-while-connected); in short:
+
+- **Automatic (recommended, the default):** every name goes to the VPN's DNS while it works. LinVPN asks the VPN's DNS for `apple.com` when the connection comes up and about every 5 minutes while connected. Two failed checks in a row fall back (only the VPN's domains use the VPN's DNS, every other name goes to your network's DNS), one good check returns. Both changes are notified: **The VPN's DNS does not resolve internet names; only the VPN's domains use it now.** and **The VPN's DNS works again; every name uses it.**
+- **Full:** every name always goes to the VPN's DNS; a failed check only warns (**The VPN's DNS does not answer.**).
+- **Targeted:** only the VPN's domains use the VPN's DNS (on a split tunnel; with all traffic over the VPN it works like Automatic).
+- **Strict:** DNS never leaves the tunnel, with no fallback and no local exception.
+- In Automatic and Full your network's own names (for example `nas.lan` or the router's name) keep working while connected.
+
+**How it is applied.** LinVPN writes the mode into the connection's NetworkManager profile before connecting:
+
+- **Automatic and Full:** the VPN takes every name (`~.`) at DNS priority 50, while your Wi-Fi or Ethernet keeps its own domains.
+- **Strict:** every name, the local network's domains too, at priority −50.
+- **Targeted:** only the VPN's domains (`~corp.example`).
+- **Own servers** are added to the VPN's; with **Use these instead of the VPN's DNS** the servers the VPN sends are ignored (for the IP version you have own servers for). **Own domains** always go to the VPN's DNS.
+- **Automatic's fallback:** NetworkManager cannot change a running VPN's DNS, so LinVPN lowers the DNS priority of your Wi-Fi and Ethernet connections to 40 instead, only while the fallback lasts and without saving it. They take every other name back; the VPN keeps its domains. The original priority comes back when the VPN's DNS works again, when you disconnect, and at LinVPN's next start. If something is left over after a crash, it is harmless: NetworkManager drops it when that Wi-Fi or Ethernet connects again.
+- **L2TP/IPsec, IKEv2 and Cisco IPsec** have no DNS section and keep the plain rule: on a split tunnel the VPN's DNS answers only for the VPN's own domains (for example `corp.example`), with all traffic over the VPN it resolves every name.
+- `resolvectl status` shows which DNS each interface uses (in its **DNS Domain** line `~.` means every name).
 
 ### 5.6 Quitting, signing out and sleep
 

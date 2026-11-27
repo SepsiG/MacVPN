@@ -173,6 +173,7 @@ mod tests {
             logs: Box::new(NoLogs),
             problem: None,
             facts: facts_fn(None),
+            dns: None,
         };
         let service = Service::new(host);
         let up = |sid: &str, id: &str| {

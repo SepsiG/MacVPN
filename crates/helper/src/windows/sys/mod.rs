@@ -6,6 +6,7 @@ mod console;
 mod data_dir;
 mod detect;
 mod diag;
+mod dns;
 #[cfg(debug_assertions)]
 mod fake_openvpn;
 mod fetch;
@@ -22,6 +23,7 @@ mod wgdll;
 mod wireguard;
 
 use crate::shared::mask::Masker;
+use crate::windows::dns::Manager;
 use crate::windows::logs::FileLogStore;
 use crate::windows::service::{Engine, EngineState, Host, LogSink, LogStore, UpRequest};
 use macvpn_core::models::VPNKind;
@@ -90,6 +92,8 @@ pub(crate) struct RealHost {
     pub logs: Box<dyn LogStore>,
     pub problem: Option<String>,
     pub facts: Box<dyn Fn() -> (OpenVpnFacts, WireGuardFacts) + Send + Sync>,
+    /// The DNS manager: the service's only (the console and a degraded service leave DNS to the engines).
+    pub dns: Option<Arc<Manager>>,
 }
 
 impl Host for RealHost {
@@ -110,6 +114,9 @@ impl Host for RealHost {
     fn problem(&self) -> Option<String> {
         self.problem.clone()
     }
+    fn dns(&self) -> Option<&Manager> {
+        self.dns.as_deref()
+    }
     fn snapshot(&self, server: Option<&str>) -> Option<crate::windows::diagnostics::Snapshot> {
         Some(diag::snapshot(server))
     }
@@ -123,17 +130,19 @@ impl Host for RealHost {
 }
 
 /// The host over the data directory's outcome: with a safe directory its engines and logs; without one (`problem`)
-/// unavailable engines with the reason and no logs. `fake`: the console's fake engines instead of `engines`.
+/// unavailable engines with the reason and no logs. `fake`: the console's fake engines instead of `engines`. `dns`:
+/// the DNS manager (the service's only; a degraded service gets none).
 pub(crate) fn real_host(
     data: Result<Arc<data_dir::DataDir>, String>,
     log: &service_log::ServiceLog,
     fake: Option<(Box<dyn Engine>, Box<dyn Engine>)>,
+    dns: Option<Arc<Manager>>,
 ) -> RealHost {
     match data {
         Ok(d) => {
-            let (openvpn, wireguard) = fake.unwrap_or_else(|| engines(&d, log));
+            let (openvpn, wireguard) = fake.unwrap_or_else(|| engines(&d, log, dns.clone()));
             let logs = Box::new(FileLogStore::new(d.logs.clone()));
-            RealHost { openvpn, wireguard, logs, problem: None, facts: facts_fn(Some(d)) }
+            RealHost { openvpn, wireguard, logs, problem: None, facts: facts_fn(Some(d)), dns }
         }
         Err(problem) => RealHost {
             openvpn: Box::new(Unavailable(problem.clone())),
@@ -141,17 +150,20 @@ pub(crate) fn real_host(
             logs: Box::new(NoLogs),
             problem: Some(problem),
             facts: facts_fn(None),
+            dns: None,
         },
     }
 }
 
-/// The two engines over a ready data directory (Tasks 13 and 14 each replace their `Unavailable` line).
+/// The two engines over a ready data directory (Tasks 13 and 14 each replace their `Unavailable` line); OpenVPN's
+/// with the DNS manager (its restarts and its own exit).
 pub(crate) fn engines(
     data: &Arc<data_dir::DataDir>,
     log: &service_log::ServiceLog,
+    dns: Option<Arc<Manager>>,
 ) -> (Box<dyn Engine>, Box<dyn Engine>) {
     let wireguard = wireguard::WireGuardEngine::new(Some(data.clone()), log, fetcher());
-    (Box::new(openvpn::OpenVpnEngine::new(data.clone(), log.clone())), Box::new(wireguard))
+    (Box::new(openvpn::OpenVpnEngine::new(data.clone(), log.clone(), dns)), Box::new(wireguard))
 }
 
 /// How the service downloads engine updates: System32's curl; the console never goes online (its fixtures or

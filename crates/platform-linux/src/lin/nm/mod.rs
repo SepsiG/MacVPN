@@ -3,12 +3,14 @@
 //! (AuthStateReader; 21), `native_impl` (NativeController + NativeProfiles: L2TP, Cisco, system VPNs; 22),
 //! `support_impl` (NativeSupport; 22). The building blocks: `client` (NM D-Bus; 13), `value` (plan → zvariant;
 //! 13), `polkit` (13), `agent` (secret agent; 14), `sysfs` + `files` (15), `plugins` + `packagekit` (17),
-//! `logd_client` + `connlog` (19), `plan_store` + `system_vpns` (22), `xfrmd_client` (IKEv2 traffic).
+//! `logd_client` + `connlog` (19), `plan_store` + `system_vpns` (22), `xfrmd_client` (IKEv2 traffic), `dns_runtime`
+//! (the DNS probe, `dns-check` and Automatic's fallback through the physical links).
 
 pub mod agent;
 pub mod auth;
 pub mod client;
 pub mod connlog;
+pub mod dns_runtime;
 pub mod engine;
 pub mod files;
 pub mod helper_impl;

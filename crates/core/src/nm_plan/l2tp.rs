@@ -88,7 +88,7 @@ pub(super) fn assemble(
     settings.insert("connection".into(), super::connection_section(c, input.uid, input.user, "vpn", None));
     settings.insert("vpn".into(), super::vpn_section(service, Some(&native.account), data));
     for family in ["ipv4", "ipv6"] {
-        let mut s = super::dns::section_extras(full, &[]);
+        let mut s = super::dns::section_extras(full, &[], None, true);
         s.insert("method".into(), NmValue::Str("auto".into()));
         s.insert("never-default".into(), NmValue::Bool(!full));
         settings.insert(family.into(), s);

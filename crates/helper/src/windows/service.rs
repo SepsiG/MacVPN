@@ -7,6 +7,10 @@
 //! connection whose `down` failed stays owned (it may still run; only its owner can retry). The state is bounded:
 //! [`MAX_PER_USER`] / [`MAX_TOTAL`] connections, [`MAX_LOGS_PER_USER`] / [`MAX_LOGS_TOTAL`] past logs (the oldest
 //! of a connection that is not running is deleted first).
+//!
+//! DNS (service version 2): with a DNS manager ([`Host::dns`]) a connection's DNS settings (the `dns-*` lines of
+//! `up`) are applied after connect and released at `down`; `dns-check` probes again; SSTP, dialled by the app, gets
+//! its DNS through `dns-apply` and `dns-release`, owned by the SID that applied it (see `windows::dns`).
 
 use crate::shared::framing::{self, Secrets};
 use crate::shared::l10n::tr;
@@ -14,13 +18,15 @@ use crate::shared::mask::Masker;
 use crate::shared::status_json::{self, StatusLine};
 use crate::shared::{cli, respond, validate};
 use crate::windows::diagnostics::{self, PeerStatus, Snapshot};
+use crate::windows::dns::{self, Connect, Lines, Manager, VpnDns};
 use macvpn_core::l10n::with_language;
 use macvpn_core::liveness::{LIVENESS, Liveness};
 use macvpn_core::models::VPNKind;
 use macvpn_core::service_proto::{
-    CLEAR_LOG, EngineFacts, EngineUpdate, LogSlice, Request, Response, SERVICE_VERSION, UPDATE_BUSY, WIREGUARD_CHECK,
-    WIREGUARD_UPDATE,
+    CLEAR_LOG, DNS_APPLY, DNS_CHECK, DNS_RELEASE, DnsApply, EngineFacts, EngineUpdate, LogSlice, Request, Response,
+    SERVICE_VERSION, UPDATE_BUSY, WIREGUARD_CHECK, WIREGUARD_UPDATE,
 };
+use macvpn_core::status::DnsState;
 use macvpn_core::traffic::{ByteCount, TRAFFIC};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -139,6 +145,11 @@ pub trait Engine: Send + Sync {
     fn peer_status(&self, _id: &str) -> Option<(String, Vec<PeerStatus>)> {
         None
     }
+    /// The running connection's DNS as the engine knows it after connect (the DNS manager's input). `None`: not
+    /// running, or an engine without DNS.
+    fn dns_facts(&self, _id: &str) -> Option<VpnDns> {
+        None
+    }
 }
 
 /// The service's environment: the engines, the facts, the logs, and whether it may connect at all.
@@ -159,7 +170,12 @@ pub trait Host: Send + Sync {
         let iso = macvpn_core::date::Date::from_time_interval_since_1970(self.now() as f64).iso8601();
         iso.trim_end_matches('Z').replacen('T', " ", 1)
     }
-    /// Unix seconds (the peer status' "latest handshake … ago").
+    /// The DNS manager (the connections' DNS modes as NRPT rules). `None` (the default): the service leaves DNS to
+    /// the engines, and the DNS requests change nothing.
+    fn dns(&self) -> Option<&Manager> {
+        None
+    }
+    /// Unix seconds (the peer status' "latest handshake … ago", the DNS probe's time).
     fn now(&self) -> u64 {
         std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs())
     }
@@ -219,6 +235,26 @@ fn not_available() -> Response {
     Response::fail(1, &tr("Not available on this system yet", &[]))
 }
 
+/// What `status` reports of a connection: the engine's `connected` / `connecting`; `connecting` while its `up`
+/// runs; otherwise `failed`.
+fn run_state(st: Option<&EngineState>, up_running: bool) -> &'static str {
+    match st.map(|s| s.state) {
+        Some(s @ ("connected" | "connecting")) => s,
+        None if up_running => "connecting",
+        _ => "failed",
+    }
+}
+
+/// A DNS request's answer: the state (or exit 1 with no output); on stderr the log lines of a connection whose log
+/// the service does not keep (SSTP: the app writes them into its own log).
+fn dns_answer(state: Option<DnsState>, lines: &Lines) -> Response {
+    let stderr = lines.text().into_bytes();
+    match state {
+        Some(st) => Response { code: 0, stdout: format!("{}\n", st.raw()).into_bytes(), stderr },
+        None => Response { code: 1, stdout: Vec::new(), stderr },
+    }
+}
+
 /// The kind of a request (`openvpn|wireguard|strongswan|sstp`), or the usage error.
 fn kind_of(raw: &str) -> Result<VPNKind, Response> {
     VPNKind::from_raw_value(raw).filter(|_| cli::is_kind(raw)).ok_or_else(usage)
@@ -276,6 +312,10 @@ impl<H: Host> Service<H> {
             "log" => self.log(caller, &a.kind, &a.id),
             CLEAR_LOG => self.clear_log(caller, &a.kind),
             LIVENESS => self.liveness(caller, &a.kind),
+            // `dns-check <id>`, `dns-apply <id>`, `dns-release <id>`: the id is the CLI's second positional.
+            DNS_CHECK => self.dns_check(caller, &a.kind),
+            DNS_APPLY => self.dns_apply(caller, &a.kind, body),
+            DNS_RELEASE => self.dns_release(caller, &a.kind),
             TRAFFIC => self.traffic(caller, &a.kind),
             // Engine updates: nothing of the request but the command is used (the service decides what to fetch).
             WIREGUARD_CHECK if a.kind.is_empty() => self.wireguard_check(),
@@ -317,6 +357,12 @@ impl<H: Host> Service<H> {
     }
 
     fn status(&self, caller: &Caller) -> String {
+        // An SSTP connection's DNS ends with its RAS adapter, also when the app did not see it go; a release that
+        // failed is tried again (the status poll).
+        if let Some(m) = self.host.dns() {
+            m.release_gone(&caller.sid, self.host.now(), &Lines::default());
+            m.retry(&Lines::default());
+        }
         let mut mine: Vec<(String, VPNKind)> =
             lock(&self.owned).iter().filter(|(_, o)| o.sid == caller.sid).map(|(id, o)| (id.clone(), o.kind)).collect();
         mine.sort_by(|a, b| a.0.cmp(&b.0));
@@ -326,20 +372,21 @@ impl<H: Host> Service<H> {
             .into_iter()
             .map(|(id, kind)| {
                 let st = self.host.engine(kind).and_then(|e| e.state(&id));
-                let state = match st.as_ref().map(|s| s.state) {
-                    Some(s @ ("connected" | "connecting")) => s,
-                    None if connecting.contains(&id) => "connecting",
-                    _ => "failed",
-                };
+                let state = run_state(st.as_ref(), connecting.contains(&id));
+                if state == "failed" {
+                    // Ended on its own (the server ended it, a crash): its DNS must not outlive it.
+                    self.release_dns(&id);
+                }
                 let iface = st.as_ref().map(|s| s.iface.clone()).filter(|v| is_iface(v)).unwrap_or_default();
                 let ip = st.as_ref().map(|s| s.ip.clone()).filter(|v| is_ip(v)).unwrap_or_default();
+                let dns = (state == "connected").then(|| self.host.dns().and_then(|m| m.state(&id))).flatten();
                 StatusLine {
                     kind: kind.raw_value().to_string(),
                     state,
                     iface,
                     ip,
                     since: st.and_then(|s| s.since).map(|n| n.to_string()),
-                    dns: None,
+                    dns: dns.map(DnsState::raw),
                     id,
                 }
             })
@@ -363,6 +410,10 @@ impl<H: Host> Service<H> {
             return Response::fail(2, &tr("Invalid --accept-risky value", &[]));
         }
         let id = a.id.to_ascii_uppercase();
+        // An ID whose DNS another SID applied (`dns-apply`) is never taken over.
+        if self.host.dns().and_then(|m| m.owner(&id)).flatten().is_some() {
+            return invalid_id();
+        }
         let (config, secrets) = match framing::parse_framed(body, true) {
             Ok(x) => x,
             Err(e) => return Response::fail(1, &e.message()),
@@ -434,6 +485,7 @@ impl<H: Host> Service<H> {
                 }
                 return Response::fail(1, &tr("Cannot close the previous connection", &[]));
             }
+            self.release_dns(id);
         }
         let sink: Arc<dyn LogSink> = Arc::from(self.host.logs().open(id, secrets.masker()));
         // Debug mode: the diagnostics before and after, as macOS' `snapshot` (G-6); never without `--debug`.
@@ -442,6 +494,9 @@ impl<H: Host> Service<H> {
             self.write_snapshot(&*sink, &tr("before", &[]), server.as_deref());
         }
         let result = engine.up(&UpRequest { id, config, secrets, debug, log: &sink });
+        if result.is_ok() && self.is_current(id, epoch) {
+            self.dns_after_connect(id, kind, engine, config, secrets, &sink);
+        }
         if debug && result.is_ok() {
             if let Some((adapter, peers)) = engine.peer_status(id) {
                 for line in diagnostics::peer_lines(&adapter, &peers, self.host.now()) {
@@ -457,6 +512,7 @@ impl<H: Host> Service<H> {
             Ok(()) => {
                 // A `down` (or the owner's logoff) took it while it was connecting: it must not run unowned.
                 drop(owned);
+                self.release_dns(id);
                 if let Err(m) = engine.down(id) {
                     lock(&self.owned).entry(id.to_string()).or_insert(Owned { sid: caller.sid.clone(), kind, epoch });
                     return Response::fail(1, &m);
@@ -470,6 +526,148 @@ impl<H: Host> Service<H> {
                 Response::fail(1, &message)
             }
         }
+    }
+
+    /// `up`'s epoch still owns `id` (no `down` took it meanwhile).
+    fn is_current(&self, id: &str, epoch: u64) -> bool {
+        lock(&self.owned).get(id).is_some_and(|o| o.epoch == epoch)
+    }
+
+    /// After connect (OpenVPN, WireGuard): the connection's DNS request applied by the DNS manager, logged into its
+    /// log. Never fails `up`: a broken VPN DNS only changes the layout.
+    fn dns_after_connect(
+        &self,
+        id: &str,
+        kind: VPNKind,
+        engine: &dyn Engine,
+        config: &[u8],
+        secrets: &Secrets,
+        sink: &Arc<dyn LogSink>,
+    ) {
+        let Some(m) = self.host.dns() else { return };
+        if !matches!(kind, VPNKind::Openvpn | VPNKind::Wireguard) {
+            return;
+        }
+        let vpn = engine.dns_facts(id).unwrap_or_default();
+        let tunnel = dns::tunnel_of(kind, std::str::from_utf8(config).unwrap_or_default(), vpn.pushed_full_tunnel);
+        let c = Connect {
+            id,
+            request: &secrets.dns,
+            vpn,
+            tunnel,
+            owner: None,
+            log: Some(sink.clone()),
+            admit: &|| true,
+            language: None,
+        };
+        m.after_connect(c, self.host.now(), &Lines::default());
+    }
+
+    /// The DNS rules of `id`, a connection of the service's engines, go (it is down, replaced or ended).
+    fn release_dns(&self, id: &str) {
+        if let Some(m) = self.host.dns() {
+            m.release(id, None, &Lines::default());
+        }
+    }
+
+    /// The canonical ID if `raw` is a UUID whose DNS `caller` may check or release, with what holds it: a
+    /// connection of theirs (`Ok(kind)`), or one whose DNS they applied (`Err(())`, `dns-apply`). Anyone else's
+    /// answers as an unknown ID.
+    fn own_dns(&self, caller: &Caller, raw: &str) -> Option<(String, Result<VPNKind, ()>)> {
+        if !cli::is_uuid(raw) {
+            return None;
+        }
+        let id = raw.to_ascii_uppercase();
+        let owned = lock(&self.owned).get(&id).map(|o| (o.sid == caller.sid, o.kind));
+        match owned {
+            Some((true, kind)) => Some((id, Ok(kind))),
+            Some((false, _)) => None,
+            None => {
+                let applied = self.host.dns().and_then(|m| m.owner(&id)).flatten().is_some_and(|o| o == caller.sid);
+                applied.then_some((id, Err(())))
+            }
+        }
+    }
+
+    /// `dns-check <id>`: the probe again (`dns::Manager::check`). A connection of the engines that no longer runs
+    /// has its DNS released instead (no state).
+    fn dns_check(&self, caller: &Caller, raw: &str) -> Response {
+        let Some((id, holder)) = self.own_dns(caller, raw) else { return invalid_id() };
+        let Some(m) = self.host.dns() else { return dns_answer(None, &Lines::default()) };
+        let lines = Lines::default();
+        if let Ok(kind) = holder {
+            let st = self.host.engine(kind).and_then(|e| e.state(&id));
+            if run_state(st.as_ref(), lock(&self.busy).contains_key(&id)) == "failed" {
+                self.release_dns(&id);
+                return dns_answer(None, &lines);
+            }
+        }
+        dns_answer(m.check(&id, self.host.now(), &lines), &lines)
+    }
+
+    /// `dns-apply <id>` (SSTP, dialled by the app): the request in the body applied to the named RAS adapter. The
+    /// ID must not be a connection of the service's engines (checked again under the DNS manager's lock, right
+    /// before the session is recorded), nor a DNS session another SID applied; the caller's sessions count against
+    /// the connection limits.
+    ///
+    /// Residual risk: the adapter must be a RAS (PPP) adapter that is up, but Windows names no per-user owner for a
+    /// RAS adapter the service could check, so a user could name another user's RAS adapter. Its effect is limited
+    /// to rules under the caller's own ID (released at the caller's logoff, or when that adapter goes) and to
+    /// clearing that adapter's own DNS in the Split and Fallback layouts.
+    fn dns_apply(&self, caller: &Caller, raw: &str, body: &[u8]) -> Response {
+        let Some(m) = self.host.dns() else { return not_available() };
+        if !cli::is_uuid(raw) {
+            return invalid_id();
+        }
+        let id = raw.to_ascii_uppercase();
+        let mine = match m.owner(&id) {
+            Some(Some(o)) if o == caller.sid => true,
+            Some(_) => return invalid_id(),
+            None => false,
+        };
+        if lock(&self.owned).contains_key(&id) {
+            return invalid_id();
+        }
+        let (of_caller, all) = m.counts(&caller.sid);
+        if !mine && (of_caller >= MAX_PER_USER || all >= MAX_TOTAL) {
+            return Response::fail(1, &tr("Too many connections", &[]));
+        }
+        let Some(apply) = DnsApply::parse(body).filter(|a| m.is_ras_adapter(a.luid)) else {
+            return Response::fail(1, &framing::FrameError::Invalid.message());
+        };
+        let vpn = VpnDns { pushed: None, pushed_full_tunnel: false, luid: Some(apply.luid), run: None };
+        let c = Connect {
+            id: &id,
+            request: &apply.request,
+            vpn,
+            tunnel: apply.tunnel,
+            owner: Some(&caller.sid),
+            log: None,
+            admit: &|| !lock(&self.owned).contains_key(&id),
+            language: None,
+        };
+        let lines = Lines::default();
+        match m.after_connect(c, self.host.now(), &lines) {
+            Some(state) => dns_answer(Some(state), &lines),
+            None => invalid_id(),
+        }
+    }
+
+    /// `dns-release <id>`: the connection's DNS rules go (SSTP after its hang-up). Exit 0 also when it had none.
+    fn dns_release(&self, caller: &Caller, raw: &str) -> Response {
+        let Some((id, holder)) = self.own_dns(caller, raw) else { return invalid_id() };
+        let lines = Lines::default();
+        if let Some(m) = self.host.dns() {
+            m.release(&id, holder.err().map(|()| caller.sid.as_str()), &lines);
+        }
+        Response { code: 0, stdout: Vec::new(), stderr: lines.text().into_bytes() }
+    }
+
+    /// Service start: the DNS rules of connections that no longer run (a crash, a reboot) go. How many went.
+    pub fn reconcile_dns(&self) -> Result<usize, String> {
+        let Some(m) = self.host.dns() else { return Ok(0) };
+        let running: HashSet<String> = lock(&self.owned).keys().cloned().collect();
+        m.reconcile(&|id| running.contains(id), &Lines::default())
     }
 
     /// The diagnostics block (debug mode only: the caller checks).
@@ -513,6 +711,7 @@ impl<H: Host> Service<H> {
         match engine.down(&id) {
             Ok(()) => {
                 self.forget(&id, &caller.sid);
+                self.release_dns(&id);
                 Response::ok(Vec::new())
             }
             Err(m) => Response::fail(1, &m),
@@ -613,14 +812,21 @@ impl<H: Host> Service<H> {
         for (id, kind) in ids {
             if self.host.engine(kind).is_some_and(|e| e.down(&id).is_ok()) {
                 self.forget(&id, sid);
+                self.release_dns(&id);
             }
+        }
+        if let Some(m) = self.host.dns() {
+            m.release_owned_by(sid, &Lines::default());
         }
     }
 
-    /// The service stops: every connection goes down.
+    /// The service stops: every connection goes down, and every DNS rule of the service goes.
     pub fn shutdown(&self) {
         for sid in self.owners() {
             self.drop_user(&sid);
+        }
+        if let Some(m) = self.host.dns() {
+            m.release_all(&Lines::default());
         }
     }
 

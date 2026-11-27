@@ -284,7 +284,7 @@ Létrehozás: **Új → SSTP**, vagy importálj egy `.sstp` fájlt. Űrlapja van
 - **Saját CA fájl** (**PEM fájl kiválasztása…**): a CA-ban a Windowsnak is meg kell bíznia, mert a Windows SSTP-kliense csak a számítógép tárolóját használja. Az űrlap alatti **A CA megbízhatóvá tétele a Windowsban…** ezt egyszer elvégzi, egy rendszergazda megerősítésével (lásd [3.7](#37-rendszergazdai-lépések-a-natív-vpn-ekhez)); utána az űrlapon ez áll: **A Windows megbízik benne**. Addig a csatlakozás ezzel bukik el: **A szerver hitelesítésszolgáltatójában (CA) a Windows nem bízik meg. Használd a szerkesztőben „A CA megbízhatóvá tétele a Windowsban…” lehetőséget.**
 - A **Nincs ellenőrzés** Windowson nem választható (tiltva látszik): **A Windows mindig ellenőrzi az SSTP-szerver tanúsítványát. Válaszd a Rendszer CA vagy a Saját CA fájl lehetőséget.** A `cert=insecure` beállítású importált kapcsolat ezzel az okkal szürke.
 - A Windows azt is ellenőrzi, hogy a szerver tanúsítványát nem vonták-e vissza: a szerver visszavonási listájának (CRL) elérhetőnek kell lennie.
-- **A szerver DNS-ének használata** kikapcsolva Windowson a lehetőségekhez mérten működik: a WinVPN alacsony prioritást ad a VPN-adapternek, így előbb a saját hálózatod DNS-szerverei kapják a kérdést.
+- **A szerver DNS-ének használata** kikapcsolva: a WinVPN sosem teszi érvénybe a szerver DNS-ét. Ha a **DNS** részben (lásd [5.6](#56-dns-kapcsolat-közben)) saját szervereket adsz meg, azok lépnek a helyére, a választott módban; ha nincs ilyen, a VPN-adapter alacsony prioritást kap, így a saját hálózatod DNS-szerverei válaszolnak.
 - `DOMAIN\user` helyett `user@domain` formát használj: a felhasználónévben nem lehet fordított perjel, szóköz és idézőjel. A jelszóban nem lehet idézőjel (`"`), fordított perjel (`\`) és vezérlőkarakter.
 - A szervernek MS-CHAPv2-t kell elfogadnia.
 
@@ -469,10 +469,22 @@ Példa: az „Office VPN” az irodai 10.20.30.0/24 hálózatot vezeti a VPN-be.
 
 ### 5.6 DNS kapcsolat közben
 
-- **A WireGuard** a `DNS =` szervereit csak a saját adapterén állítja be; az adapter a beállításaival együtt megszűnik a kapcsolat végén, egy összeomláskor is. A hálózati beállításaid közül más nem változik.
-- **Az OpenVPN** a szerver által küldött DNS-t a saját adapterén alkalmazza (TAP-Windows6-nál annak DHCP-jén át, DCO-nál egy beállítással, amelyet az OpenVPN bontáskor töröl). Az OpenVPN `dns` direktíváját (a Windows névfeloldási házirendjét) Windowson nem használja: az a szerver, amely csak így küld DNS-t, DCO-s kapcsolatnál nem ad DNS-t. Kérd meg a szerver rendszergazdáját, hogy `dhcp-option DNS`-t is küldjön.
-- **L2TP/IPsec, IKEv2, SSTP és a rendszer VPN-ek:** a szerver DNS-ét maga a Windows alkalmazza a VPN-adapteren (az SSTP kikapcsolt **A szerver DNS-ének használata** beállításáról lásd [3.6](#36-sstp)).
-- Így a régebbi MacVPN-verziókkal ellentétben egy összeomlás vagy újraindítás után semmit nem kell kézzel visszaállítani.
+A 2.1.15-től az OpenVPN-, WireGuard- és SSTP-kapcsolatoknak ugyanazok a DNS-beállításai vannak, mint a MacVPN-ben: a kapcsolat szerkesztőjében van egy **DNS** rész a móddal, a **Saját DNS-szerverek**, a **Saját tartományok** és az **Ezeket használd a VPN DNS-e helyett** beállítással. A módok, a helyi nevek és a saját DNS úgy működnek, ahogy [a MacVPN útmutatójának 5.6-os része](user-guide.hu.md#56-dns-kapcsolat-közben) leírja; röviden:
+
+- **Automatikus (ajánlott, alapértelmezett):** minden név a VPN DNS-éhez megy, amíg az működik. A WinVPN a kapcsolat felépülésekor, majd kapcsolat közben nagyjából 5 percenként megkérdezi a VPN DNS-étől az `apple.com` címét. Két egymás utáni sikertelen ellenőrzés után visszalép (csak a VPN tartományai használják a VPN DNS-ét, minden más név a hálózatod DNS-éhez megy), egy sikeres után visszatér. Mindkét váltásról értesítést kapsz: **A VPN DNS-e nem oldja fel az internetes neveket; most csak a VPN tartományai használják.** és **A VPN DNS-e újra működik; minden név azt használja.**
+- **Teljes:** minden név mindig a VPN DNS-éhez megy; a sikertelen ellenőrzés csak figyelmeztet (**A VPN DNS-e nem válaszol.**).
+- **Célzott:** csak a VPN tartományai (az általa küldött keresési tartományok, az OpenVPN `dns … resolve-domains` beállítása, a saját tartományaid, az alagútba vezetett hálózatok fordított zónái) használják a VPN DNS-ét.
+- **Szigorú:** a DNS soha nem hagyja el az alagutat; nincs visszalépés és nincs helyi kivétel.
+- Automatikus és Teljes módban a hálózatod saját nevei (például `nas.lan` vagy a router neve) kapcsolat közben is működnek.
+
+**Hogyan lép életbe.** A WinVPN szolgáltatás a döntést a Windows **névfeloldási házirend-táblájába** (Name Resolution Policy Table, NRPT) írja helyi szabályokként (`WinVPN-<id>-<n>` a `HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig` alatt); ugyanezt a módszert használja az OpenVPN saját Windows-szolgáltatása és a Windows VPN-kliense is. A hálózati beállításaid nem változnak.
+
+- **Automatikus és Teljes:** egy szabály minden nevet a VPN DNS-éhez küld, a hálózatod saját tartománya pedig a hálózatod DNS-én marad. **Szigorú:** csak a minden névre vonatkozó szabály.
+- **Célzott és a visszalépés:** szabály csak a VPN tartományaira; a VPN-adapter saját DNS-ét közben a WinVPN kiüríti, hogy a Windows ne kérdezze azt is minden más névről.
+- **Amit a VPN küldött:** az OpenVPN által küldött DNS (`dhcp-option DNS`, `DOMAIN`, `DOMAIN-SEARCH`, és az OpenVPN 2.6+ `dns` direktívája), a WireGuard `DNS =` sora, és az a DNS, amelyet az SSTP szervere az adapternek ad. Az SSTP-t a Windows VPN-kliense tárcsázza; a WinVPN a kapcsolat felépülése után megkéri a WinVPN szolgáltatást, hogy alkalmazza a DNS-ét.
+- **Takarítás:** a szabályok bontáskor, az OpenVPN magától leállásakor, összeomlás vagy újraindítás után pedig a WinVPN szolgáltatás indulásakor törlődnek. Semmit nem kell kézzel visszaállítani.
+- **Az L2TP/IPsec, az IKEv2 és a rendszer VPN-ek** szerkesztőjében nincs DNS rész: a szerver DNS-ét maga a Windows alkalmazza a VPN-adapteren.
+- A WinVPN szolgáltatás az alkalmazással együtt frissül (az MSI tartalmazza). PowerShellben a `Get-DnsClientNrptPolicy -Effective` mutatja az érvényes szabályokat.
 
 ### 5.7 Kilépés, kijelentkezés és alvó állapot
 

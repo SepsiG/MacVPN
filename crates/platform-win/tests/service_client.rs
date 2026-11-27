@@ -86,6 +86,24 @@ fn the_client_connects_reads_status_and_the_log_through_the_service() {
     assert!(client.helper().log_source(&other).unwrap().read(0, 1024).is_none());
 }
 
+/// Service version 2: the DNS settings go with `up` (the frame takes them), `version` says the service applies them,
+/// and `dns-check` of a connection without a DNS session (the console runs no DNS manager) is no state, never an
+/// error.
+#[test]
+fn the_dns_settings_reach_the_service() {
+    use macvpn_core::dns_settings::{DnsMode, DnsRequest};
+    let c = Console::start();
+    let client = macvpn_platform_win::service_client_for_tests(&c.pipe);
+    assert!(client.helper().dns_supported());
+    let id = uuid::Uuid::new_v4();
+    let dns = DnsRequest { mode: DnsMode::Targeted, domains: vec!["corp.example".into()], ..DnsRequest::default() };
+    client.helper().up_with_dns(VPNKind::Wireguard, &id, WG, &Secrets::default(), false, &[], Some(&dns)).unwrap();
+    client.helper().up_with_dns(VPNKind::Wireguard, &id, WG, &Secrets::default(), false, &[], None).unwrap();
+    assert_eq!(client.helper().dns_check(&id), None);
+    client.helper().down(VPNKind::Wireguard, &id).unwrap();
+    assert_eq!(client.helper().dns_check(&id), None);
+}
+
 /// "Clear Log…" through the service while the connection is up: the log starts over (a new generation) with the
 /// service's note and its local time; an unknown ID is the service's refusal, never a cleared log.
 #[test]

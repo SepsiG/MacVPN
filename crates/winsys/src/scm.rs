@@ -5,7 +5,8 @@
 //! The service sets its own recovery instead (2b plan, Task 15, fix2).
 //!
 //! Also: another service's start type and state, and disabling and stopping one (OpenVPN's Interactive Service
-//! after an OpenVPN install WinVPN made: 2b plan, Task 17, decision 4).
+//! after an OpenVPN install WinVPN made: 2b plan, Task 17, decision 4), and telling a running service that its
+//! parameters changed ([`param_change`]).
 
 use crate::util::{check, wide};
 use std::ffi::OsStr;
@@ -16,8 +17,9 @@ use windows_sys::Win32::System::Services::{
     ChangeServiceConfig2W, ChangeServiceConfigW, CloseServiceHandle, ControlService, OpenSCManagerW, OpenServiceW,
     QUERY_SERVICE_CONFIGW, QueryServiceConfigW, QueryServiceStatus, SC_ACTION, SC_ACTION_NONE, SC_ACTION_RESTART,
     SC_HANDLE, SC_MANAGER_CONNECT, SERVICE_CHANGE_CONFIG, SERVICE_CONFIG_FAILURE_ACTIONS,
-    SERVICE_CONFIG_FAILURE_ACTIONS_FLAG, SERVICE_CONTROL_STOP, SERVICE_FAILURE_ACTIONS_FLAG, SERVICE_FAILURE_ACTIONSW,
-    SERVICE_NO_CHANGE, SERVICE_QUERY_CONFIG, SERVICE_QUERY_STATUS, SERVICE_START, SERVICE_STATUS, SERVICE_STOP,
+    SERVICE_CONFIG_FAILURE_ACTIONS_FLAG, SERVICE_CONTROL_PARAMCHANGE, SERVICE_CONTROL_STOP,
+    SERVICE_FAILURE_ACTIONS_FLAG, SERVICE_FAILURE_ACTIONSW, SERVICE_NO_CHANGE, SERVICE_PAUSE_CONTINUE,
+    SERVICE_QUERY_CONFIG, SERVICE_QUERY_STATUS, SERVICE_START, SERVICE_STATUS, SERVICE_STOP,
 };
 
 /// `dwStartType` of a disabled service (`SERVICE_DISABLED`).
@@ -121,8 +123,8 @@ fn open_service(name: &str, access: u32) -> io::Result<(ScHandle, ScHandle)> {
     Ok((scm, service))
 }
 
-fn status(service: &ScHandle) -> io::Result<u32> {
-    let mut st = SERVICE_STATUS {
+fn empty_status() -> SERVICE_STATUS {
+    SERVICE_STATUS {
         dwServiceType: 0,
         dwCurrentState: 0,
         dwControlsAccepted: 0,
@@ -130,7 +132,11 @@ fn status(service: &ScHandle) -> io::Result<u32> {
         dwServiceSpecificExitCode: 0,
         dwCheckPoint: 0,
         dwWaitHint: 0,
-    };
+    }
+}
+
+fn status(service: &ScHandle) -> io::Result<u32> {
+    let mut st = empty_status();
     // SAFETY: a valid service handle with SERVICE_QUERY_STATUS; `st` is a plain out struct.
     check(unsafe { QueryServiceStatus(service.0, &mut st) })?;
     Ok(st.dwCurrentState)
@@ -187,15 +193,7 @@ pub fn disable_and_stop(name: &str, timeout: Duration) -> io::Result<ServiceStat
         )
     })?;
     if status(&service)? != STATE_STOPPED {
-        let mut st = SERVICE_STATUS {
-            dwServiceType: 0,
-            dwCurrentState: 0,
-            dwControlsAccepted: 0,
-            dwWin32ExitCode: 0,
-            dwServiceSpecificExitCode: 0,
-            dwCheckPoint: 0,
-            dwWaitHint: 0,
-        };
+        let mut st = empty_status();
         // SAFETY: a valid service handle with SERVICE_STOP; `st` is a plain out struct.
         if unsafe { ControlService(service.0, SERVICE_CONTROL_STOP, &mut st) } == 0 {
             let e = io::Error::last_os_error();
@@ -209,4 +207,14 @@ pub fn disable_and_stop(name: &str, timeout: Duration) -> io::Result<ServiceStat
         }
     }
     Ok(ServiceState { start_type: start_type(&service)?, current_state: status(&service)? })
+}
+
+/// Tells the running service `name` that its parameters changed (`SERVICE_CONTROL_PARAMCHANGE`; the DNS client,
+/// `Dnscache`, re-reads its policy on it). Needs the right to pause and continue the service (LocalSystem has it
+/// for `Dnscache`).
+pub fn param_change(name: &str) -> io::Result<()> {
+    let (_scm, service) = open_service(name, SERVICE_PAUSE_CONTINUE)?;
+    let mut st = empty_status();
+    // SAFETY: a valid service handle with SERVICE_PAUSE_CONTINUE; `st` is a plain out struct.
+    check(unsafe { ControlService(service.0, SERVICE_CONTROL_PARAMCHANGE, &mut st) })
 }

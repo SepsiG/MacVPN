@@ -156,7 +156,7 @@ mod tempdir {
 fn version_and_engine_answer_anyone() {
     let (s, _d) = service();
     let r = s.handle(&alice(), &req(&["version"], b""));
-    assert_eq!((r.code, r.stdout.as_slice()), (0, &b"1\n"[..]));
+    assert_eq!((r.code, r.stdout), (0, format!("{SERVICE_VERSION}\n").into_bytes()));
     let r = s.handle(&bob(), &req(&["engine"], b""));
     assert_eq!(EngineFacts::parse(&r.stdout).unwrap().wireguard.dll_version.as_deref(), Some("1.1.0"));
 }

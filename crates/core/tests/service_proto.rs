@@ -166,3 +166,44 @@ fn engine_updates_round_trip_with_plain_versions_only() {
     assert!(proto::is_valid_arg(proto::WIREGUARD_CHECK) && proto::is_valid_arg(proto::WIREGUARD_UPDATE));
     assert_eq!(proto::UPDATE_BUSY, 3);
 }
+
+#[test]
+fn a_dns_apply_body_round_trips_and_is_strict() {
+    use macvpn_core::dns_policy::Tunnel;
+    use macvpn_core::dns_settings::{DnsMode, DnsRequest};
+    use proto::DnsApply;
+    let request = DnsRequest {
+        mode: DnsMode::Targeted,
+        servers: vec!["10.0.0.53".into()],
+        domains: vec!["corp.example".into()],
+        override_vpn: false,
+    };
+    let a = DnsApply { request: request.clone(), luid: 1_689_399_632_478_208, tunnel: Tunnel::Split };
+    let body = a.encode();
+    assert_eq!(
+        body,
+        "dns-mode=targeted\ndns-servers=10.0.0.53\ndns-domains=corp.example\nluid=1689399632478208\ntunnel=split\n"
+    );
+    assert_eq!(DnsApply::parse(body.as_bytes()), Some(a));
+    let full = DnsApply { request: DnsRequest::default(), luid: 7, tunnel: Tunnel::Full };
+    assert_eq!(DnsApply::parse(full.encode().as_bytes()), Some(full));
+    for bad in [
+        &b"dns-mode=automatic\ntunnel=split\n"[..],
+        b"dns-mode=automatic\nluid=7\n",
+        b"dns-mode=automatic\nluid=7\nluid=7\ntunnel=split\n",
+        b"dns-mode=automatic\nluid=-7\ntunnel=split\n",
+        b"dns-mode=automatic\nluid=+7\ntunnel=split\n",
+        b"dns-mode=automatic\nluid=7\ntunnel=unknown\n",
+        b"dns-mode=sometimes\nluid=7\ntunnel=split\n",
+        b"dns-mode=automatic\nluid=7\ntunnel=split\nother=1\n",
+        b"\xff\n",
+    ] {
+        assert_eq!(DnsApply::parse(bad), None, "{}", String::from_utf8_lossy(bad));
+    }
+}
+
+#[test]
+fn the_dns_requests_came_with_service_version_2() {
+    assert_eq!((proto::SERVICE_VERSION, proto::DNS_SERVICE_VERSION), (2, 2));
+    assert_eq!([proto::DNS_CHECK, proto::DNS_APPLY, proto::DNS_RELEASE], ["dns-check", "dns-apply", "dns-release"]);
+}

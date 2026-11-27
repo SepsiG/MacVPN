@@ -506,7 +506,8 @@ pub fn ipv4_routes() -> io::Result<Vec<RawRoute>> {
     Ok(out)
 }
 
-/// What the diagnostics read of one adapter (`GetAdaptersAddresses` with its DNS servers).
+/// What the diagnostics and the service's DNS manager read of one adapter (`GetAdaptersAddresses` with its DNS servers
+/// and suffix).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AdapterDiag {
     pub luid: u64,
@@ -516,6 +517,8 @@ pub struct AdapterDiag {
     /// (address, on-link prefix length) of each unicast address.
     pub unicast: Vec<(IpAddr, u8)>,
     pub dns: Vec<IpAddr>,
+    /// The connection-specific DNS suffix (empty: none).
+    pub suffix: String,
     pub ipv4_metric: u32,
 }
 
@@ -548,6 +551,8 @@ pub fn adapters_with_dns() -> io::Result<Vec<AdapterDiag>> {
             // SAFETY: `a` is an entry of `buf` (above).
             unicast: unsafe { unicast_of(a) },
             dns,
+            // SAFETY: the system's NUL-terminated string inside `buf` (or null).
+            suffix: unsafe { from_wide(a.DnsSuffix) },
             ipv4_metric: a.Ipv4Metric,
         });
         p = a.Next;

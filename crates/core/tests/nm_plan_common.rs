@@ -46,12 +46,12 @@ fn the_connection_section_is_private_volatile_and_never_autoconnects() {
 
 #[test]
 fn split_tunnels_keep_dns_for_their_domains_and_full_tunnels_take_all() {
-    let split = nm_plan::dns::section_extras(false, &["corp.example.com".into()]);
+    let split = nm_plan::dns::section_extras(false, &["corp.example.com".into()], None, true);
     assert_eq!(split.get("dns-search"), Some(&NmValue::StrList(vec!["~corp.example.com".into()])));
-    assert_eq!(split.get("dns-priority"), Some(&NmValue::I32(nm_plan::dns::SPLIT_PRIORITY)));
-    let full = nm_plan::dns::section_extras(true, &["corp.example.com".into()]);
+    assert_eq!(split.get("dns-priority"), Some(&NmValue::I32(nm_plan::dns::DEFAULT_PRIORITY)));
+    let full = nm_plan::dns::section_extras(true, &["corp.example.com".into()], None, true);
     assert_eq!(full.get("dns-search"), Some(&NmValue::StrList(vec!["corp.example.com".into(), "~.".into()])));
-    assert_eq!(full.get("dns-priority"), Some(&NmValue::I32(nm_plan::dns::FULL_PRIORITY)));
+    assert_eq!(full.get("dns-priority"), Some(&NmValue::I32(nm_plan::dns::STRICT_PRIORITY)));
 }
 
 #[test]

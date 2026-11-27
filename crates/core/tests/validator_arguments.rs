@@ -189,6 +189,7 @@ fn quoted_text_arguments() {
         "pull-filter ignore \"route-ipv6\"",
         "pull-filter reject \"dhcp-option DNS\"",
         "static-challenge \"Enter Google Authenticator Code\" 1",
+        "static-challenge \"Add meg a 2FA (TOTP) kodot:\" 0",
         "dhcp-option DNS 1.1.1.1",
         "dhcp-option DOMAIN corp.example",
         "remote-cert-tls server",

@@ -24,10 +24,12 @@ use super::service_log::ServiceLog;
 use super::wgdll::{self, ADAPTER_STATE_DOWN, ADAPTER_STATE_UP, AdapterHandle, Trust, WgDll};
 use crate::shared::l10n::tr;
 use crate::windows::diagnostics::PeerStatus;
+use crate::windows::dns::VpnDns;
 use crate::windows::service::{self, Engine, EngineState, UpRequest, UpdateRefusal};
 use crate::windows::wg_plan::{self, Endpoint, Plan};
 use crate::windows::wg_update::{self, CheckCache, Listed, NtVersion};
 use crate::windows::{wg_nt, wg_pins};
+use macvpn_core::dns_policy::Pushed;
 use macvpn_core::service_proto::{EngineUpdate, WireGuardFacts};
 use std::collections::HashMap;
 use std::io::{self, Read};
@@ -307,6 +309,8 @@ struct Run {
     name: String,
     since: u64,
     address: Option<IpAddr>,
+    /// The config's DNS and AllowedIPs (the DNS manager's input).
+    dns: Pushed,
 }
 
 pub(crate) struct WireGuardEngine {
@@ -602,7 +606,8 @@ impl Engine for WireGuardEngine {
         adapter.set_state(ADAPTER_STATE_UP).map_err(|e| step("state", e))?;
         req.log.line("up");
         let address = plan.addresses.first().map(|a| a.addr());
-        self.runs().insert(req.id.to_string(), Run { adapter, name, since: unix_now(), address });
+        let dns = crate::windows::dns::wireguard_pushed(&plan);
+        self.runs().insert(req.id.to_string(), Run { adapter, name, since: unix_now(), address, dns });
         Ok(())
     }
 
@@ -622,6 +627,15 @@ impl Engine for WireGuardEngine {
             ip: r.address.map(|a| a.to_string()).unwrap_or_default(),
             since: Some(r.since),
         })
+    }
+
+    /// The config's DNS (as the adapter has it) and the adapter.
+    fn dns_facts(&self, id: &str) -> Option<VpnDns> {
+        let runs = self.runs();
+        let run = runs.get(id)?;
+        // SAFETY: plain value of a union of a u64 and its bit fields.
+        let luid = unsafe { run.adapter.luid().Value };
+        Some(VpnDns { pushed: Some(run.dns.clone()), pushed_full_tunnel: false, luid: Some(luid), run: None })
     }
 
     /// Asks the official listing (at most once a minute; answers are reused) whether a version above every one the

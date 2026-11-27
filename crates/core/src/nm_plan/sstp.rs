@@ -16,6 +16,7 @@
 //! (`classful_route_section`).
 
 use super::{Input, NmPlan, NmValue, RuntimeFile, SERVICE_SSTP, SecretItem, SecretKey, SecretValue, Unsupported, dns};
+use crate::dns_settings::DnsSetting;
 use crate::l10n;
 use crate::models::SecretField;
 use crate::validators::sstp::DEFAULT_PORT;
@@ -68,8 +69,17 @@ pub fn plan(input: &Input) -> Result<NmPlan, Unsupported> {
         .insert("connection".into(), super::connection_section(input.connection, input.uid, input.user, "vpn", None));
     settings.insert("vpn".into(), super::vpn_section(SERVICE_SSTP, Some(&c.user), data));
     let full = c.route_all;
-    let mut ipv4 = if c.peer_dns { dns::section_extras(full, &[]) } else { BTreeMap::new() };
-    let mut ipv6 = BTreeMap::new();
+    // "Use the server's DNS" off: the server's DNS never applies; the connection's own servers do, as "use these
+    // instead" (as on macOS and Windows). Without own servers the tunnel carries no DNS.
+    let own_only = (!c.peer_dns && !input.connection.dns.servers.is_empty())
+        .then(|| DnsSetting { override_vpn: true, ..input.connection.dns.clone() });
+    let dns = if c.peer_dns { Some(&input.connection.dns) } else { own_only.as_ref() };
+    let (mut ipv4, mut ipv6) = match dns {
+        Some(d) => (dns::section_extras(full, &[], Some(d), true), dns::section_extras(full, &[], Some(d), false)),
+        None => (BTreeMap::new(), BTreeMap::new()),
+    };
+    // `dns-search` goes on ipv4 only, as before.
+    ipv6.remove("dns-search");
     for section in [&mut ipv4, &mut ipv6] {
         section.insert("method".into(), NmValue::Str("auto".into()));
         section.insert("never-default".into(), NmValue::Bool(!full));

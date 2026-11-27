@@ -124,8 +124,10 @@ pub fn plan(input: &Input) -> Result<NmPlan, Unsupported> {
     }
 
     let mut warnings = Vec::new();
-    let ipv4 = ip_section(p.v4, p.dns4, full, &p.domains, &mut warnings);
-    let ipv6 = ip_section(p.v6, p.dns6, full, &p.domains, &mut warnings);
+    let dns4 = dns::section_extras(full, &p.domains, Some(&c.dns), true);
+    let dns6 = dns::section_extras(full, &p.domains, Some(&c.dns), false);
+    let ipv4 = ip_section(p.v4, p.dns4, full, dns4, &mut warnings);
+    let ipv6 = ip_section(p.v6, p.dns6, full, dns6, &mut warnings);
 
     let mut settings = Settings::new();
     settings.insert("connection".into(), connection_section(c, input.uid, input.user, "wireguard", Some(&iface)));
@@ -147,12 +149,13 @@ pub fn plan(input: &Input) -> Result<NmPlan, Unsupported> {
 }
 
 /// `ipv4` / `ipv6`: `manual` with the addresses of that family, else `disabled` (and that family's DNS servers
-/// dropped with a warning: NM has no link to send them over). DNS search domains go to every enabled family.
+/// dropped with a warning: NM has no link to send them over). `dns_keys`: the family's DNS keys
+/// ([`dns::section_extras`]), merged into every enabled family.
 fn ip_section(
     addresses: Vec<NmAddress>,
     servers: Vec<String>,
     full: bool,
-    domains: &[String],
+    dns_keys: BTreeMap<String, NmValue>,
     warnings: &mut Vec<String>,
 ) -> BTreeMap<String, NmValue> {
     let mut s = BTreeMap::new();
@@ -172,7 +175,7 @@ fn ip_section(
     if !servers.is_empty() {
         s.insert("dns-data".into(), NmValue::StrList(servers));
     }
-    s.extend(dns::section_extras(full, domains));
+    dns::merge_into(&mut s, dns_keys);
     s
 }
 

@@ -277,3 +277,34 @@ fn an_invalid_sstp_config_is_the_validators_error() {
     let e = plan(VPNKind::Sstp, "server=vpn.example.com\n", &caps()).unwrap_err();
     assert!(e.invalid_config);
 }
+
+/// "Use the server's DNS" off: the server's DNS is ignored, but the connection's own servers still apply, in its DNS
+/// mode (as on Windows and macOS); without own servers the tunnel carries no DNS at all.
+#[test]
+fn sstp_without_the_servers_dns_still_uses_its_own() {
+    use macvpn_core::dns_settings::{DnsMode, DnsSetting};
+    let t = "server=vpn.example.com\nuser=alice\ncert=insecure\nroute_all=yes\npeer_dns=no\n";
+    let caps = caps();
+    let mut c = Connection::new("SSTP", VPNKind::Sstp);
+    c.dns = DnsSetting { mode: DnsMode::Automatic, servers: vec!["10.0.0.53".into()], ..DnsSetting::default() };
+    let input = |c| Input {
+        connection: c,
+        config: t.as_bytes(),
+        user: "linvpn-dev",
+        uid: 1001,
+        runtime_dir: Path::new("/r/u"),
+        caps: &caps,
+        client_cert: ImportedCert::None,
+    };
+    let p = nm_plan::plan(&input(&c)).unwrap();
+    assert_eq!(p.settings["ipv4"]["ignore-auto-dns"], NmValue::Bool(true));
+    assert_eq!(p.settings["ipv6"]["ignore-auto-dns"], NmValue::Bool(true));
+    assert_eq!(p.settings["ipv4"]["dns-data"], NmValue::StrList(vec!["10.0.0.53".into()]));
+    assert_eq!(p.settings["ipv4"]["dns-search"], NmValue::StrList(vec!["~.".into()]));
+
+    let bare = Connection::new("SSTP", VPNKind::Sstp);
+    let p = nm_plan::plan(&input(&bare)).unwrap();
+    assert!(!p.settings["ipv4"].contains_key("dns-data"));
+    assert!(!p.settings["ipv4"].contains_key("dns-search"));
+    assert_eq!(p.settings["ipv4"]["ignore-auto-dns"], NmValue::Bool(true));
+}

@@ -7730,56 +7730,78 @@
       "hu": "a DNS nem módosítható: %@",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "the local network's names stay on its DNS: %@": {
       "hu": "a helyi hálózat nevei a saját DNS-én maradnak: %@",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows"
       ]
     },
     "full tunnel: the Targeted mode acts as Automatic": {
       "hu": "teljes alagút: a Célzott mód Automatikusként működik",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "the VPN sent no DNS; internal names will not resolve": {
       "hu": "a VPN nem küldött DNS-t; a belső nevek nem oldódnak fel",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "the VPN's DNS does not resolve internet names (%@): only the VPN's domains use it now": {
       "hu": "a VPN DNS-e nem oldja fel az internetes neveket (%@): most csak a VPN tartományai használják",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "Strict DNS: the VPN's DNS does not answer (%@); DNS stays in the tunnel": {
       "hu": "Szigorú DNS: a VPN DNS-e nem válaszol (%@); a DNS az alagútban marad",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "the VPN's DNS does not answer (%@); it stays in effect": {
       "hu": "a VPN DNS-e nem válaszol (%@); érvényben marad",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "the VPN's DNS answers again: it is in effect for every name": {
       "hu": "a VPN DNS-e újra válaszol: minden névre érvényes",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
+      ]
+    },
+    "the VPN's DNS is in effect (%@ servers, %@ domains)": {
+      "hu": "a VPN DNS-e érvényes (%@ szerver, %@ tartomány)",
+      "scope": "platform",
+      "only": [
+        "linux"
       ]
     },
     "the VPN's DNS is in effect (%@ servers, %@ domains), verified": {
@@ -7800,28 +7822,70 @@
       "hu": "Célzott DNS: egy tartomány sem használja a VPN DNS-ét (a VPN nem küldött, és nincs megadva)",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "only the VPN's domains use the VPN's DNS (%@ servers, %@ domains)": {
       "hu": "csak a VPN tartományai használják a VPN DNS-ét (%@ szerver, %@ tartomány)",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "DNS mode: %@": {
       "hu": "DNS-mód: %@",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows",
+        "linux"
       ]
     },
     "the original DNS is back": {
       "hu": "az eredeti DNS visszaállt",
       "scope": "mvpn",
       "only": [
-        "macos"
+        "macos",
+        "windows"
+      ]
+    },
+    "the VPN's DNS is in effect for every name (%@ servers, %@ domains)": {
+      "hu": "a VPN DNS-e minden névre érvényes (%@ szerver, %@ tartomány)",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "the VPN adapter's own DNS could not be cleared (%@)": {
+      "hu": "a VPN-adapter saját DNS-e nem törölhető (%@)",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "Windows applies the DNS rules at its next policy refresh (%@)": {
+      "hu": "a Windows a következő házirend-frissítéskor alkalmazza a DNS-szabályokat (%@)",
+      "scope": "mvpn",
+      "only": [
+        "windows"
+      ]
+    },
+    "The DNS settings could not be applied: %@": {
+      "hu": "A DNS-beállítások nem alkalmazhatók: %@",
+      "scope": "platform",
+      "only": [
+        "windows"
+      ]
+    },
+    "the VPN adapter was not found": {
+      "hu": "a VPN-adapter nem található",
+      "scope": "platform",
+      "only": [
+        "windows"
       ]
     },
     "the DNS step of OpenVPN cannot be prepared; the pushed DNS options are used": {

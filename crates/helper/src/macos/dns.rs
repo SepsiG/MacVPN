@@ -20,7 +20,7 @@
 //! - **Modes and the probe.** `acquire` (the hook / WireGuard / SSTP) decides without knowing the tunnel;
 //!   `after_connect` (once the routes are in) detects the tunnel, probes the VPN's DNS (`dns_probe`) and decides
 //!   again; `check` (`dns-check`, the app about every 5 minutes) probes again: two failed checks in a row fall
-//!   back (Automatic), one good one returns. The decision is `dns_plan::decide`; the session is
+//!   back (Automatic), one good one returns. The decision is `macvpn_core::dns_policy::decide`; the session is
 //!   `<run>/dns-session` (`dns_session`).
 //!
 //! One `flock` (`dns_legacy::lock_dir`, `/var/db/macvpn/dns/lock`) serializes every change across processes.
@@ -38,6 +38,7 @@ use crate::macos::log::Log;
 use crate::macos::paths::{Settings, is_dir, is_file, is_symlink};
 use crate::shared::cli::is_uuid;
 use crate::shared::l10n::tr;
+use macvpn_core::dns_policy::next_probe;
 use macvpn_core::dns_settings::{DnsMode, is_dns_domain, is_dns_server};
 use macvpn_core::status::DnsState;
 use std::path::{Path, PathBuf};
@@ -48,8 +49,6 @@ const LEDGER_VERSION: i64 = 15;
 const GLOBAL_IPV4: &str = "State:/Network/Global/IPv4";
 const SETUP_IPV4: &str = "Setup:/Network/Global/IPv4";
 const GLOBAL_DNS: &str = "State:/Network/Global/DNS";
-/// Consecutive failed `dns-check`s before the Automatic mode falls back (each check already sends twice).
-pub const FAILS_TO_FALL_BACK: u32 = 2;
 /// At most this many network services are handled (a Mac lists about ten).
 const MAX_SERVICES: usize = 64;
 /// At most this many owners are kept in the ledger.
@@ -624,16 +623,10 @@ impl Manager {
         let prev = dns_session::read_session(run, self.test_mode)?;
         let (p, detail) = crate::macos::dns_probe::probe(s, &prev.eff.servers);
         lock.stamp(crate::macos::exec::now());
-        let (probe, fails) = match p {
-            Probe::NotRun => return Some(prev.state()),
-            Probe::Ok => (Probe::Ok, 0),
-            Probe::Failed => {
-                let fails = prev.fails.saturating_add(1);
-                // A single failure keeps the current layout (no flapping); the second one decides.
-                let keep = if prev.probe == Probe::Failed { Probe::Failed } else { Probe::Ok };
-                (if fails >= FAILS_TO_FALL_BACK { Probe::Failed } else { keep }, fails)
-            }
-        };
+        if p == Probe::NotRun {
+            return Some(prev.state());
+        }
+        let (probe, fails) = next_probe(prev.probe, prev.fails, p);
         let d = plan::decide(prev.mode, prev.tunnel, has.0, has.1, probe);
         let e = prev.eff.clone();
         self.apply_decision(id, run, prev.mode, prev.tunnel, (probe, &detail), fails, d, e, Some(&prev), true, log)

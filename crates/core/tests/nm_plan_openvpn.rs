@@ -120,7 +120,7 @@ fn routes_and_dns_from_the_profile_go_to_ipv4() {
     assert_eq!((r[1].dest.as_str(), r[1].next_hop.as_deref()), ("10.99.21.0", None));
     assert_eq!(p.settings["ipv4"]["route-metric"], NmValue::I64(77));
     assert_eq!(p.settings["ipv4"]["dns-data"], NmValue::StrList(vec!["10.99.0.53".into()]));
-    assert_eq!(p.settings["ipv4"]["dns-search"], NmValue::StrList(vec!["~lab.test".into()]));
+    assert_eq!(p.settings["ipv4"]["dns-search"], NmValue::StrList(vec!["lab.test".into(), "~.".into()]));
 }
 
 #[test]
@@ -136,14 +136,17 @@ fn ipv6_routes_gateways_metrics_and_the_2_6_dns_option() {
     assert_eq!((r6[0].dest.as_str(), r6[0].prefix), ("2001:db8::", 32));
     assert_eq!(p.settings["ipv4"]["dns-data"], NmValue::StrList(vec!["10.99.0.53".into()]));
     assert_eq!(p.settings["ipv6"]["dns-data"], NmValue::StrList(vec!["2001:db8::53".into(), "2001:db8::54".into()]));
-    assert_eq!(p.settings["ipv4"]["dns-search"], NmValue::StrList(vec!["~corp.example.com".into()]));
+    // Automatic (the default) takes every name, also on a split tunnel.
+    assert_eq!(p.settings["ipv4"]["dns-search"], NmValue::StrList(vec!["corp.example.com".into(), "~.".into()]));
+    assert_eq!(p.settings["ipv6"]["dns-priority"], NmValue::I32(nm_plan::dns::DEFAULT_PRIORITY));
+    assert!(!p.settings["ipv6"].contains_key("dns-search"));
 }
 
 #[test]
 fn a_full_tunnel_takes_every_dns_query() {
     let p = plan(&base("redirect-gateway def1\ndhcp-option DOMAIN corp.example.com\n"), &caps27()).unwrap();
     assert_eq!(p.settings["ipv4"]["dns-search"], NmValue::StrList(vec!["corp.example.com".into(), "~.".into()]));
-    assert_eq!(p.settings["ipv4"]["dns-priority"], NmValue::I32(nm_plan::dns::FULL_PRIORITY));
+    assert_eq!(p.settings["ipv4"]["dns-priority"], NmValue::I32(nm_plan::dns::DEFAULT_PRIORITY));
 }
 
 #[test]

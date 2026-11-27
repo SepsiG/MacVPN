@@ -12,6 +12,8 @@
 //! bytes of `[A-Za-z0-9,._=-]`, 1–16 of them (the first is the command); the body is at most [`BODY_MAX`] bytes (refused before it is
 //! read), each output at most [`OUTPUT_MAX`]. Platform-independent: no I/O but the given reader and writer.
 
+use crate::dns_policy::Tunnel;
+use crate::dns_settings::DnsRequest;
 use serde::{Deserialize, Serialize};
 use std::io::{self, Read, Write};
 use zeroize::Zeroizing;
@@ -19,7 +21,10 @@ use zeroize::Zeroizing;
 /// The service's endpoint.
 pub const PIPE_NAME: &str = r"\\.\pipe\WinVPN";
 /// The protocol and service version: the app requires exactly this one (the MSI installs both together).
-pub const SERVICE_VERSION: u32 = 1;
+pub const SERVICE_VERSION: u32 = 2;
+/// The first service version that applies the connections' DNS settings ([`DNS_CHECK`], [`DNS_APPLY`],
+/// [`DNS_RELEASE`], the `dns-*` lines of `up` and the `dns` key of `status`).
+pub const DNS_SERVICE_VERSION: u32 = 2;
 pub const MAGIC: &[u8] = b"winvpn 1\n";
 pub const ARG_MAX: usize = 4096;
 pub const MAX_ARGS: usize = 16;
@@ -246,6 +251,60 @@ pub struct WireGuardFacts {
 /// a new [`SERVICE_VERSION`]: an older service answers it with its usage error (exit 2), which the app shows as "update
 /// WinVPN".
 pub const CLEAR_LOG: &str = "clear-log";
+
+// MARK: - DNS (service version 2)
+
+/// `dns-check <id>`: probes the caller's connection's DNS again (at most once in 20 s) and answers its state
+/// (`DnsState::raw` and a line end; exit 1 with no output when the connection has no DNS session). Log lines of a
+/// connection whose log the service does not keep (SSTP) come back on stderr.
+pub const DNS_CHECK: &str = "dns-check";
+/// `dns-apply <id>` (SSTP, dialled by the app): applies the request in the body ([`DnsApply`]) to the RAS
+/// adapter; answers as [`DNS_CHECK`]. The connection then belongs to the caller's SID.
+pub const DNS_APPLY: &str = "dns-apply";
+/// `dns-release <id>`: removes the caller's connection's DNS rules (SSTP after its hang-up).
+pub const DNS_RELEASE: &str = "dns-release";
+
+/// The body of [`DNS_APPLY`]: the connection's DNS request (its frame lines), the RAS adapter's LUID and the
+/// tunnel, as `key=value` lines.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsApply {
+    pub request: DnsRequest,
+    /// The RAS (PPP) adapter's interface LUID.
+    pub luid: u64,
+    /// `Full` or `Split` (the connection's "send all traffic").
+    pub tunnel: Tunnel,
+}
+
+impl DnsApply {
+    /// The request's frame lines, then `luid=<n>` and `tunnel=full|split`.
+    pub fn encode(&self) -> String {
+        format!("{}luid={}\ntunnel={}\n", self.request.frame_lines(), self.luid, self.tunnel.raw())
+    }
+
+    /// Strict: UTF-8 lines, `luid` (decimal digits) and `tunnel` (`full` or `split`) exactly once each, every other
+    /// line a valid DNS frame line ([`DnsRequest::from_frame_lines`]).
+    pub fn parse(body: &[u8]) -> Option<DnsApply> {
+        let text = std::str::from_utf8(body).ok()?;
+        let (mut luid, mut tunnel, mut rest) = (None, None, String::new());
+        for line in text.lines() {
+            if let Some(v) = line.strip_prefix("luid=") {
+                let n = v.parse::<u64>().ok().filter(|_| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))?;
+                if luid.replace(n).is_some() {
+                    return None;
+                }
+            } else if let Some(v) = line.strip_prefix("tunnel=") {
+                let t = Tunnel::from_raw(v).filter(|t| *t != Tunnel::Unknown)?;
+                if tunnel.replace(t).is_some() {
+                    return None;
+                }
+            } else {
+                rest.push_str(line);
+                rest.push('\n');
+            }
+        }
+        Some(DnsApply { request: DnsRequest::from_frame_lines(&rest)?, luid: luid?, tunnel: tunnel? })
+    }
+}
 
 // MARK: - engine updates (2b plan, "As built (fix4)")
 

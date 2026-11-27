@@ -11,6 +11,7 @@
 
 use crate::macos::dns_plan::{Effective, Layout, Probe, Tunnel, Warn};
 use crate::macos::fsx;
+use macvpn_core::dns_policy::state_of;
 use macvpn_core::dns_settings::{DnsMode, DnsRequest, is_dns_domain, is_dns_server};
 use macvpn_core::status::DnsState;
 use std::os::unix::fs::MetadataExt;
@@ -56,7 +57,7 @@ pub struct Session {
     pub tunnel: Tunnel,
     pub layout: Layout,
     pub probe: Probe,
-    /// Consecutive failed probes (2 fall back, see `dns::check`).
+    /// Consecutive failed probes (2 fall back, see `macvpn_core::dns_policy::next_probe`).
     pub fails: u32,
     pub warn: Option<Warn>,
     pub eff: Effective,
@@ -67,14 +68,7 @@ pub struct Session {
 impl Session {
     /// The state `status` and `dns-check` report.
     pub fn state(&self) -> DnsState {
-        match (self.layout, self.warn) {
-            (Layout::None, _) => DnsState::None,
-            (Layout::Split, _) => DnsState::Targeted,
-            (Layout::Fallback, Some(Warn::Fallback { full_tunnel: true })) => DnsState::FallbackFullTunnel,
-            (Layout::Fallback, _) => DnsState::Fallback,
-            (Layout::Vpn { .. }, Some(Warn::Failing)) => DnsState::Failing,
-            (Layout::Vpn { .. }, _) => DnsState::Vpn,
-        }
+        state_of(self.layout, self.warn)
     }
 
     pub fn render(&self) -> String {

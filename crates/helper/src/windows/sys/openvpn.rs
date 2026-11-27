@@ -17,17 +17,21 @@ use crate::shared::bridge::{Bridge, BridgeArgs};
 use crate::shared::l10n::tr;
 use crate::shared::mask::{MAX_LINE, Masker};
 use crate::windows::bridge_state::{BridgeState, ByteCounter, InProcessFiles, OneCommandAtATime, StateWatch};
+use crate::windows::dns::{self, Connect, Lines, Manager, VpnDns};
 use crate::windows::ovpn_args::{self, Driver};
 use crate::windows::ovpn_run::{self, Failure, Output, Snapshot, Verdict, Wait};
 use crate::windows::service::{Engine, EngineState, LogSink, UpRequest};
+use macvpn_core::dns_settings::{DnsRequest, full_tunnel_hint};
+use macvpn_core::l10n::AppLanguage;
 use macvpn_core::management::ManagementCredentials;
+use macvpn_core::models::VPNKind;
 use std::collections::HashMap;
 use std::io::Write;
-use std::net::{Ipv4Addr, TcpListener, TcpStream};
+use std::net::{IpAddr, Ipv4Addr, TcpListener, TcpStream};
 use std::os::windows::process::CommandExt;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use zeroize::{Zeroize, Zeroizing};
@@ -48,6 +52,9 @@ const TICK: Duration = Duration::from_millis(200);
 const MGMT_PORTS: std::ops::RangeInclusive<u16> = 30000..=48999;
 /// How many times `openvpn.exe` is started again on another management port.
 const PORT_RETRIES: usize = 2;
+
+/// The next run's generation.
+static GENERATIONS: AtomicU64 = AtomicU64::new(1);
 
 /// Finds the `openvpn.exe` to run (production: [`super::detect::ready`]).
 pub type Detector = Box<dyn Fn() -> Result<Ready, String> + Send + Sync>;
@@ -110,8 +117,22 @@ impl Proc {
     }
 }
 
+/// What a run needs for its DNS beyond `up`: applying it again after a restart, releasing it when the process ends.
+struct RunDns {
+    manager: Arc<Manager>,
+    request: DnsRequest,
+    /// The config's own routing choice (`None`: the server's push decides).
+    config_full_tunnel: Option<bool>,
+    /// The language of `up`'s request: a restart's DNS lines use it too.
+    language: AppLanguage,
+}
+
 /// One attempt of one connection.
 struct Run {
+    /// The canonical connection ID.
+    id: String,
+    /// This run among all runs of the engine ([`GENERATIONS`]): its end releases only the DNS it applied.
+    generation: u64,
     proc: Arc<Proc>,
     /// `down` took it: the readers stop writing to its log.
     closed: Arc<AtomicBool>,
@@ -123,6 +144,8 @@ struct Run {
     /// OpenVPN's latest `>BYTECOUNT` (received, sent) of this process.
     bytes: Arc<Mutex<Option<(u64, u64)>>>,
     since: u64,
+    /// `None`: the service runs no DNS manager (the console).
+    dns: Option<RunDns>,
 }
 
 impl Run {
@@ -150,16 +173,18 @@ pub struct OpenVpnEngine {
     log: ServiceLog,
     detect: Detector,
     runs: Mutex<HashMap<String, Arc<Run>>>,
+    /// The service's DNS manager: a run's DNS follows its restarts and ends with its process.
+    dns: Option<Arc<Manager>>,
 }
 
 impl OpenVpnEngine {
-    pub fn new(data: Arc<DataDir>, log: ServiceLog) -> OpenVpnEngine {
-        OpenVpnEngine::with_detector(data, log, Box::new(super::detect::ready))
+    pub fn new(data: Arc<DataDir>, log: ServiceLog, dns: Option<Arc<Manager>>) -> OpenVpnEngine {
+        OpenVpnEngine { dns, ..OpenVpnEngine::with_detector(data, log, Box::new(super::detect::ready)) }
     }
 
-    /// With another detector (the debug console's fake `openvpn.exe`).
+    /// With another detector (the debug console's fake `openvpn.exe`), without a DNS manager.
     pub fn with_detector(data: Arc<DataDir>, log: ServiceLog, detect: Detector) -> OpenVpnEngine {
-        OpenVpnEngine { data, log, detect, runs: Mutex::default() }
+        OpenVpnEngine { data, log, detect, runs: Mutex::default(), dns: None }
     }
 
     fn run_of(&self, id: &str) -> Option<Arc<Run>> {
@@ -257,7 +282,15 @@ impl OpenVpnEngine {
                 let _ = stopper.stop();
             }),
         ));
+        let dns = self.dns.clone().map(|manager| RunDns {
+            manager,
+            request: req.secrets.dns.clone(),
+            config_full_tunnel: full_tunnel_hint(VPNKind::Openvpn, std::str::from_utf8(req.config).unwrap_or_default()),
+            language: AppLanguage::current(),
+        });
         let run = Arc::new(Run {
+            id: id.to_string(),
+            generation: GENERATIONS.fetch_add(1, Ordering::SeqCst),
             proc: proc.clone(),
             closed: Arc::new(AtomicBool::new(false)),
             out: Arc::new(Mutex::new(Output::new(req.secrets.masker()))),
@@ -266,11 +299,12 @@ impl OpenVpnEngine {
             ip: Arc::new(Mutex::new(None)),
             bytes: Arc::new(Mutex::new(None)),
             since: unix_now(),
+            dns,
         });
         // Registered before anything waits: a `down` from now on stops this attempt.
         lock(&self.runs).insert(id.to_string(), run.clone());
         for pipe in [stdout.map(|s| Box::new(s) as Box<dyn std::io::Read + Send>), stderr.map(|s| Box::new(s) as _)] {
-            spawn_reader(pipe, &run, sink.clone());
+            spawn_reader(pipe, &run, sink.clone(), self.log.clone());
         }
         let deadline = Instant::now() + MGMT_CONNECT;
         let gone = || proc.exited();
@@ -414,24 +448,93 @@ fn start(exe: &Path, argv: &[std::ffi::OsString], dir: &Path) -> std::io::Result
 }
 
 /// One output pipe: every line judged by [`Output`] and, if it may, written to the connection log (until `down`).
-fn spawn_reader(pipe: Option<Box<dyn std::io::Read + Send>>, run: &Arc<Run>, sink: Arc<dyn LogSink>) {
-    let (out, closed, done) = (run.out.clone(), run.closed.clone(), run.readers_done.clone());
+fn spawn_reader(pipe: Option<Box<dyn std::io::Read + Send>>, run: &Arc<Run>, sink: Arc<dyn LogSink>, log: ServiceLog) {
+    let run = run.clone();
     std::thread::spawn(move || {
         if let Some(pipe) = pipe {
             // No masking here (the sink masks); only the line splitting with its length cap.
             Masker::default().stream_lines(pipe, MAX_LINE, |line| {
                 let line = line.strip_suffix(b"\n").unwrap_or(line);
-                let logged = lock(&out).line(line);
+                let (logged, restarted) = {
+                    let mut out = lock(&run.out);
+                    let before = out.connects;
+                    let logged = out.line(line);
+                    (logged, out.connects > before && before > 0)
+                };
+                let open = !run.closed.load(Ordering::SeqCst);
                 if let Some(l) = logged
-                    && !closed.load(Ordering::SeqCst)
+                    && open
                 {
                     sink.line(&String::from_utf8_lossy(&l));
+                }
+                if restarted && open {
+                    reapply_dns(&run, &sink, &log);
                 }
                 true
             });
         }
-        done.fetch_add(1, Ordering::SeqCst);
+        // The second reader to reach the end: the process has ended.
+        if run.readers_done.fetch_add(1, Ordering::SeqCst) == 1 {
+            release_ended(&run, &*sink);
+        }
     });
+}
+
+/// The run's push (DNS, `redirect-gateway`) and its tunnel adapter, found by the tunnel's address (the management
+/// interface's, else the push's `ifconfig`).
+fn dns_facts_of(run: &Run, log: &ServiceLog) -> VpnDns {
+    let push = lock(&run.out).push.clone();
+    let pushed_local = push.as_ref().and_then(|p| p.local);
+    let address = lock(&run.ip).as_deref().and_then(|ip| ip.parse::<IpAddr>().ok()).or(pushed_local);
+    let luid = address.and_then(|ip| match macvpn_winsys::net::luid_of_address(ip) {
+        Ok(luid) => luid,
+        Err(e) => {
+            log.line(&format!("openvpn {}: the tunnel adapter not found: {:?}", run.id, e.kind()));
+            None
+        }
+    });
+    let pushed_full_tunnel = push.as_ref().is_some_and(|p| p.redirect_gateway);
+    VpnDns { pushed: push.map(|p| p.dns), pushed_full_tunnel, luid, run: Some(run.generation) }
+}
+
+/// OpenVPN restarted itself inside the process and completed again (`ping-restart`, `SIGUSR1`): its DNS is applied
+/// again from the new push, on a thread of its own (the probe may take seconds; the output must keep flowing).
+/// Recorded only while the run is still the connection's.
+fn reapply_dns(run: &Arc<Run>, sink: &Arc<dyn LogSink>, log: &ServiceLog) {
+    if run.dns.is_none() {
+        return;
+    }
+    let (run, sink, log) = (run.clone(), sink.clone(), log.clone());
+    std::thread::spawn(move || {
+        let Some(d) = &run.dns else { return };
+        let vpn = dns_facts_of(&run, &log);
+        let tunnel = dns::tunnel_from(d.config_full_tunnel, vpn.pushed_full_tunnel);
+        let admit = || !run.closed.load(Ordering::SeqCst);
+        let c = Connect {
+            id: &run.id,
+            request: &d.request,
+            vpn,
+            tunnel,
+            owner: None,
+            log: Some(sink),
+            admit: &admit,
+            language: Some(d.language),
+        };
+        d.manager.after_connect(c, unix_now(), &Lines::default());
+    });
+}
+
+/// `openvpn.exe` ended on its own after it had connected (the server ended the session, `ping-exit`, a crash): its
+/// DNS rules go at once (only those this run applied, never a newer `up`'s), so a dead tunnel's DNS never holds
+/// the names. A `down` (which closes the run first)
+/// releases it itself.
+fn release_ended(run: &Run, sink: &dyn LogSink) {
+    if let Some(d) = &run.dns
+        && !run.closed.load(Ordering::SeqCst)
+        && lock(&run.out).done
+    {
+        d.manager.release_run(&run.id, run.generation, sink);
+    }
 }
 
 /// The stored user name and password for the bridge (zeroed by the bridge when it ends); `None` without either.
@@ -526,6 +629,13 @@ impl Engine for OpenVpnEngine {
         }
         let (rx, tx) = (*lock(&run.bytes))?;
         Some(macvpn_core::traffic::ByteCount { rx, tx, run: run.since })
+    }
+
+    /// The server's push (DNS, `redirect-gateway`) and the tunnel adapter, found by the tunnel's address (the
+    /// management interface's, else the push's `ifconfig`).
+    fn dns_facts(&self, id: &str) -> Option<VpnDns> {
+        let run = self.run_of(id)?;
+        Some(dns_facts_of(&run, &self.log))
     }
 
     fn respond(&self, id: &str, body: &[u8]) -> Result<(), String> {

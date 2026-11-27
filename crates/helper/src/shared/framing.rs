@@ -15,7 +15,7 @@
 //! dns-mode=<m>\n           root layer 15: the connection's DNS settings (`macvpn_core::dns_settings::DnsRequest`):
 //! dns-servers=<a,b>\n       mode automatic|strict|full|targeted, own servers (IP literals), own domains
 //! dns-domains=<a,b>\n       (lower-case), dns-override=0|1 (only with servers). Not secret, not masked; an
-//! dns-override=1\n          invalid line or an invalid whole refuses the frame. WinVPN's service ignores them.
+//! dns-override=1\n          invalid line or an invalid whole refuses the frame. WinVPN's service 2 applies them too.
 //! ```
 //!
 //! Errors (see [`FrameError::message`]): no `config` header at the start → `Config not provided`; a malformed

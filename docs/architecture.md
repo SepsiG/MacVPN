@@ -497,9 +497,10 @@ The Windows counterpart of the root layer (spec 4.1; [the 2b plan](superpowers/p
   refuses the console's markers in the shipped exe. At every start the service sets its own recovery actions
   (`winsys::scm::set_recovery`: restart after 5 s and 30 s, reset after a day; Windows Installer's own table cannot,
   error 1939).
-- **The protocol** (`macvpn_core::service_proto`, `SERVICE_VERSION` 1): one request per pipe connection, the
+- **The protocol** (`macvpn_core::service_proto`, `SERVICE_VERSION` 2 from 2.1.15, for the DNS requests): one request per pipe connection, the
   argument list of `mvpn` (`up|down <kind> <id> [--debug] [--accept-risky …] [--lang en|hu]`, `respond`, `status`,
-  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `liveness <id>`, `traffic <id>`, `wireguard-check`, `wireguard-update`) plus the framed
+  `version`, `engine`, `auth-state <id>`, `log <id> <offset>`, `clear-log <id>`, `liveness <id>`, `traffic <id>`, `wireguard-check`, `wireguard-update`,
+  `dns-check <id>`, `dns-apply <id>`, `dns-release <id>`; see [Windows and Linux DNS](#windows-and-linux-dns)) plus the framed
   stdin body of root layer 8 (`core::helper_args::up_stdin`, shared with macOS' `MvpnClient`), zeroized after use;
   the answer is an exit code with stdout/stderr. A whole request has a 5 s deadline; one in-flight request per SID.
 - **The pipe:** `\\.\pipe\WinVPN`, owner SYSTEM, a protected DACL (NETWORK denied, INTERACTIVE gets
@@ -1163,10 +1164,14 @@ route or prefix option. So:
   ones), then `InstallPackages` with `ONLY_TRUSTED`. PackageKit itself asks polkit
   (`org.freedesktop.packagekit.package-install`), so the password prompt is the system's; LinVPN never runs
   `pkexec` or `apt` for plugins.
-- **DNS** (`nm_plan::dns`): no DNS manager. NM and systemd-resolved apply and restore it. A split tunnel uses the
-  connection's DNS only for its domains (routing-only `~domain` entries); a full tunnel takes every query (`~.`) with
-  a negative `dns-priority`. Pushed DNS (OpenVPN's `dhcp-option`, PPP, IKEv2's configuration payload) is applied by
-  NM itself; SSTP's `peer_dns = no` → `ignore-auto-dns`.
+- **DNS** (`nm_plan::dns`, `lin/nm/dns_runtime.rs`): no DNS manager of its own. The connection's DNS mode is written
+  into the profile and NM and systemd-resolved apply and restore it: Automatic and Full `~.` at `dns-priority` 50 (the
+  physical link keeps its own domains), Strict `~.` at −50, Targeted only `~domain` (split tunnels); own servers in
+  `dns`, "use instead" = `ignore-auto-dns` on the family that has own servers. Kinds without the setting (L2TP,
+  Cisco, IKEv2) keep the plain rule: a split tunnel only its domains, a full tunnel `~.` at a negative priority.
+  Pushed DNS (OpenVPN's `dhcp-option`, PPP, IKEv2's configuration payload) is applied by NM itself; SSTP's
+  `peer_dns = no` → `ignore-auto-dns`. Automatic's fallback is a runtime change, see
+  [Windows and Linux DNS](#windows-and-linux-dns).
 - **Tested where:** `nm_plan`, `logd`, `openvpn_routing`, the Linux tier, `pure::nm` and `pure::net` on every OS;
   the NM client, the agent, the engine, the system VPNs, PackageKit, sysfs and logd against fakes on a private bus
   (`dbus-run-session`) on the VM and in CI; the smoke run's NetworkManager rows (`scripts/smoke/nm.js`) over the
@@ -1458,8 +1463,8 @@ From root layer 15 `crates/helper/src/macos/dns.rs` puts the VPN's DNS into effe
 **dynamic store** (as Tunnelblick, Viscosity and OpenVPN 2.7's own `dns-updown` do), never through the persistent
 preferences. It owns every DNS change of OpenVPN and SSTP (through the `ovpn-dns` hook) and WireGuard (after
 `wg-quick up`; `wireguard::strip_dns` takes the `DNS =` lines out of the conf `wg-quick` sees). strongSwan (charon's
-own `osx-attr` dynamic-store DNS) and native VPNs are not touched. Linux and Windows store the per-connection
-settings and ignore them.
+own `osx-attr` dynamic-store DNS) and native VPNs are not touched. Windows and Linux apply the same settings their
+own way (from 2.1.15, see [Windows and Linux DNS](#windows-and-linux-dns)).
 
 **Modules.** `crates/core/src/dns_settings.rs`: the per-connection settings (`meta.json` `dns`, only when not the
 default; mode Automatic / Full / Targeted / Strict, own servers, own domains, override), their validation and the
@@ -1558,6 +1563,32 @@ Test mode never touches the real store: `MVPN_DYNSTORE=<dir>` is a `FileStore` (
 `scripts/test-root.sh` seeds and reads; without it there is no store and nothing changes. `MVPN_NETWORKSETUP` and
 `MVPN_DNS_BASE` stay for the legacy path. A DNS left by a root layer before the 14 ledger is in no ledger: the user
 resets it once by hand (the user guide, 5.6).
+
+### Windows and Linux DNS
+
+From 2.1.15 (spec `2026-11-27-dns-windows-linux-design.md`) the per-connection settings work in WinVPN and LinVPN
+too, for OpenVPN, WireGuard and SSTP. The mode logic is shared: `macvpn_core::dns_policy` (`decide`, `effective`,
+`next_probe`, the `apple.com` probe; moved out of the macOS helper, which made root layer 20). The app's 5-minute
+`dns-check` loop drives all three OSes; two failed probes in a row make Automatic fall back, one success returns.
+
+- **Windows** (`crates/helper/src/windows/dns.rs`, `winsys::nrpt`, `dns_policy::nrpt`): the WinVPN Service writes
+  local NRPT rules under `HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig\WinVPN-<id>-<n>`,
+  then flushes the resolver cache and makes the DNS client re-read the policy. Vpn layout (Automatic, Full): `.` →
+  the VPN's servers, the physical network's own domains → its own servers; Strict: `.` only; Targeted and the
+  fallback: the VPN's domains and reverse zones only, and the VPN adapter's own DNS is cleared while active (OpenVPN
+  and RAS restore it on stop). The VPN-sent DNS comes from OpenVPN's `PUSH_REPLY` line (`dns_policy::push_reply`),
+  WireGuard's plan, else the adapter (`GetAdaptersAddresses`). OpenVPN and WireGuard are applied in the service's
+  `up`; SSTP (dialled by RAS in the app) through `dns-apply` once RAS reports it connected. Rules go at `down`, when
+  OpenVPN exits on its own, at `dns-release` (SSTP's hang-up), and at service start for every connection that no
+  longer runs (`reconcile`). Rewrites write over the same keys first, then delete the surplus. The registry is
+  behind a trait (a fake in tests); the real NRPT is not exercised in CI.
+- **Linux** (`nm_plan::dns`, `lin/nm/dns_runtime.rs`): the mode is in the profile (see [PackageKit, System Status and DNS](#packagekit-system-status-and-dns)); the app
+  probes as the user (plain UDP). NM cannot re-apply a plugin VPN's DNS at runtime, so Automatic's fallback lowers
+  every physical (non-VPN, default-route) link's `dns-priority` to 40 with `Device.Reapply` (runtime only, never
+  saved): below the VPN's 50 they take the default DNS role back, while the VPN keeps its `~domain`s. The original
+  priorities are recorded first in `<data>/dns-fallback.json` and restored on recovery, at disconnect and at app
+  start (only while the link still has 40). A leftover is harmless: NM drops a runtime priority at the link's next
+  activation. D-Bus is read only at connect, at a `dns-check` that changes the layout, and at disconnect.
 
 ### Log caps
 

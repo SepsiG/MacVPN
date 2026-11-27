@@ -1,4 +1,4 @@
-// node --test: the editor's DNS section (macOS root layer 15): where it is shown, the modes, the override rule and
+// node --test: the editor's DNS section: where it is shown, the modes, the override rule and
 // the list parsing. The backend validates again on save.
 import { test } from "node:test";
 import assert from "node:assert/strict";
@@ -22,18 +22,20 @@ const dns = (d: Partial<Dns> = {}): Dns => ({
   ...d,
 });
 
-test("visible only on macOS for openvpn/wireguard/sstp", () => {
-  for (const kind of ["openvpn", "wireguard", "sstp"]) {
-    assert.equal(visible("macos", kind, dns()), true, kind);
-    assert.equal(visible("linux", kind, dns()), false, kind);
-    assert.equal(visible("windows", kind, dns()), false, kind);
+test("visible on every OS for openvpn/wireguard/sstp", () => {
+  for (const os of ["macos", "linux", "windows"] as const) {
+    for (const kind of ["openvpn", "wireguard", "sstp"]) {
+      assert.equal(visible(os, kind, dns()), true, `${os} ${kind}`);
+    }
+    for (const kind of ["strongswan", "l2tp", "ikev2"]) {
+      assert.equal(visible(os, kind, dns()), false, `${os} ${kind}`);
+    }
+    assert.equal(
+      visible(os, "openvpn", undefined),
+      false,
+      "no DNS fields from the backend",
+    );
   }
-  assert.equal(visible("macos", "strongswan", dns()), false);
-  assert.equal(
-    visible("macos", "openvpn", undefined),
-    false,
-    "no DNS fields from the backend",
-  );
 });
 
 test("targeted hidden when full_tunnel_hint is true", () => {

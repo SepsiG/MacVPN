@@ -1,7 +1,7 @@
-// The connection's DNS settings in the editor (macOS root layer 15): the mode (Automatic, Full, Targeted, Strict),
-// the connection's own DNS servers and domains, and "Use these instead of the VPN's DNS". Only on macOS and only for
-// the kinds the root layer's DNS manager handles (OpenVPN, WireGuard, SSTP); elsewhere the stored values travel back
-// unchanged. The backend validates again on save (`DnsFields::setting`).
+// The connection's DNS settings in the editor: the mode (Automatic, Full, Targeted, Strict), the connection's own
+// DNS servers and domains, and "Use these instead of the VPN's DNS". On every OS, for the kinds whose DNS the app
+// manages (OpenVPN, WireGuard, SSTP): macOS through the root layer, Windows through the WinVPN Service (NRPT), Linux
+// through the NetworkManager profile. For other kinds the stored values travel back unchanged. The backend validates again on save (`DnsFields::setting`).
 import type { Os } from "../l10n-core";
 import type { Tr } from "./ras";
 
@@ -14,13 +14,13 @@ export interface Dns {
   overrideVpn: boolean;
 }
 
-/// The section is shown on macOS for OpenVPN, WireGuard and SSTP.
-export function visible(os: Os, kind: string, dns: Dns | undefined): boolean {
-  return (
-    os === "macos" &&
-    dns !== undefined &&
-    ["openvpn", "wireguard", "sstp"].includes(kind)
-  );
+/// The section is shown on every OS for OpenVPN, WireGuard and SSTP. `os` is kept for the callers' signature.
+export function visible(
+  _os: Os,
+  kind: string,
+  dns: Dns | undefined,
+): boolean {
+  return dns !== undefined && ["openvpn", "wireguard", "sstp"].includes(kind);
 }
 
 /// The modes in the control's order, each with its one-line explanation. Targeted is left out when the config

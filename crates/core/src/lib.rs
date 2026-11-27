@@ -15,6 +15,7 @@ pub mod control;
 pub mod credentials;
 pub mod date;
 pub mod deb_update;
+pub mod dns_policy;
 pub mod dns_settings;
 pub mod dns_wire;
 pub mod dns_zones;
@@ -53,6 +54,7 @@ pub mod validators;
 #[cfg(feature = "vault")]
 pub mod vault;
 pub mod vpn_networks;
+pub mod win_adapters;
 pub mod wireguard_keys;
 pub mod x509;
 pub mod xfrmd;

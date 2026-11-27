@@ -1,6 +1,7 @@
 //! Which adapter is the physical network (pure; the Win32 reads are `macvpn_winsys::net`, composed by `win::net`).
 
 use macvpn_core::netaddr::IpPrefix;
+use macvpn_core::win_adapters::is_virtual;
 use std::net::IpAddr;
 
 /// What `macvpn_winsys::net::adapters` reads of one adapter.
@@ -20,14 +21,9 @@ pub struct Adapter {
     pub guid: [u8; 16],
 }
 
-/// PPP, loopback, proprietary virtual (WireGuard, OpenVPN DCO, Wintun), tunnel.
-const VIRTUAL_TYPES: &[u32] = &[23, 24, 53, 131];
-/// VPN adapters that present themselves as Ethernet (TAP-Windows) or might.
-const VPN_DESCRIPTIONS: &[&str] = &["TAP-Windows", "OpenVPN Data Channel Offload", "WireGuard", "Wintun"];
-
-/// Up, and neither a virtual interface type nor a known VPN adapter.
+/// Up, and neither a virtual interface type nor a known VPN adapter (`macvpn_core::win_adapters`).
 pub fn is_physical(a: &Adapter) -> bool {
-    a.up && !VIRTUAL_TYPES.contains(&a.if_type) && !VPN_DESCRIPTIONS.iter().any(|d| a.description.contains(d))
+    a.up && !is_virtual(a.if_type, &a.description)
 }
 
 /// The physical adapter with the best default route through a real next hop (an on-link default route, `0.0.0.0`

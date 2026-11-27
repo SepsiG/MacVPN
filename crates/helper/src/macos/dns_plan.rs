@@ -1,6 +1,7 @@
-//! The DNS mode decision and the dynamic-store entries it leads to (root layer 15). Pure: the manager (`dns`)
-//! gathers the facts (the VPN-sent DNS, the connection's request, the tunnel, the probe, the network services) and
-//! applies the operations returned here; nothing here reads or writes the store.
+//! The dynamic-store entries a DNS mode decision leads to (root layer 15; the decision itself is shared with WinVPN
+//! and LinVPN in `macvpn_core::dns_policy` since root layer 20). Pure: the manager (`dns`) gathers the facts (the
+//! VPN-sent DNS, the connection's request, the tunnel, the probe, the network services) and applies the operations
+//! returned here; nothing here reads or writes the store.
 //!
 //! **Layouts.** `Vpn` puts the VPN's DNS in the default role: every ordered network service's `Setup:` DNS is
 //! overridden **in the dynamic store** (never in the persistent preferences) with the VPN's servers, which configd
@@ -23,7 +24,9 @@
 //! takes the VPN's DNS out of the default role instead of adding the original DNS "after" it.
 
 use crate::macos::dns_store::{Dict, Op, Value, list_of, strings};
-use macvpn_core::dns_settings::{DnsMode, DnsRequest, MAX_DOMAINS, MAX_SERVERS};
+use macvpn_core::dns_policy::dedup;
+pub use macvpn_core::dns_policy::{Decision, Effective, Layout, Probe, Pushed, Tunnel, Warn, decide, effective};
+use macvpn_core::dns_settings::{MAX_DOMAINS, MAX_SERVERS};
 use macvpn_core::dns_zones::{MAX_ZONES, covered_by, is_private, reverse_zones};
 use macvpn_core::netaddr::IpPrefix;
 use std::net::{IpAddr, Ipv4Addr};
@@ -44,194 +47,6 @@ pub fn entry_key(id: &str, suffix: &str) -> String {
 /// A network service's `Setup:` DNS key (the override).
 pub fn setup_key(sid: &str) -> String {
     format!("Setup:/Network/Service/{sid}/DNS")
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Tunnel {
-    Full,
-    Split,
-    /// Before the routes are in (the hook): counts as split for Targeted, irrelevant otherwise.
-    Unknown,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Probe {
-    NotRun,
-    Ok,
-    Failed,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Layout {
-    None,
-    /// The VPN's DNS in the default role; `local`: the local network's own names stay on its DNS.
-    Vpn {
-        local: bool,
-    },
-    /// Targeted: only the VPN's domains on the VPN's DNS.
-    Split,
-    /// Automatic after failed probes: as `Split`, every other name on the network's original DNS.
-    Fallback,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Warn {
-    NoDns,
-    Fallback { full_tunnel: bool },
-    Failing,
-    TargetedOnFullTunnel,
-    TargetedNoDomains,
-}
-
-/// `raw()` / `from_raw()` over a fixed list of values (the `<run>/dns-session` file's words).
-macro_rules! raw_enum {
-    ($t:ty, [$($v:expr),+ $(,)?], $raw:expr) => {
-        impl $t {
-            pub fn raw(self) -> &'static str {
-                let f: fn($t) -> &'static str = $raw;
-                f(self)
-            }
-            pub fn from_raw(s: &str) -> Option<Self> {
-                [$($v),+].into_iter().find(|v| v.raw() == s)
-            }
-        }
-    };
-}
-
-raw_enum!(Tunnel, [Tunnel::Full, Tunnel::Split, Tunnel::Unknown], |t| match t {
-    Tunnel::Full => "full",
-    Tunnel::Split => "split",
-    Tunnel::Unknown => "unknown",
-});
-raw_enum!(Probe, [Probe::NotRun, Probe::Ok, Probe::Failed], |p| match p {
-    Probe::NotRun => "not-run",
-    Probe::Ok => "ok",
-    Probe::Failed => "failed",
-});
-raw_enum!(
-    Layout,
-    [Layout::None, Layout::Vpn { local: true }, Layout::Vpn { local: false }, Layout::Split, Layout::Fallback],
-    |l| match l {
-        Layout::None => "none",
-        Layout::Vpn { local: true } => "vpn-local",
-        Layout::Vpn { local: false } => "vpn",
-        Layout::Split => "split",
-        Layout::Fallback => "fallback",
-    }
-);
-raw_enum!(
-    Warn,
-    [
-        Warn::NoDns,
-        Warn::Fallback { full_tunnel: false },
-        Warn::Fallback { full_tunnel: true },
-        Warn::Failing,
-        Warn::TargetedOnFullTunnel,
-        Warn::TargetedNoDomains,
-    ],
-    |w| match w {
-        Warn::NoDns => "no-dns",
-        Warn::Fallback { full_tunnel: false } => "fallback",
-        Warn::Fallback { full_tunnel: true } => "fallback-full",
-        Warn::Failing => "failing",
-        Warn::TargetedOnFullTunnel => "targeted-full",
-        Warn::TargetedNoDomains => "targeted-no-domains",
-    }
-);
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Decision {
-    pub layout: Layout,
-    pub warn: Option<Warn>,
-    /// The session is probed again later (`dns-check`).
-    pub probes: bool,
-}
-
-/// The whole mode logic. `Tunnel::Unknown` (before the routes are in, i.e. in the hook) counts as split for
-/// Targeted and is otherwise irrelevant; the after-connect pass decides again with the real tunnel.
-pub fn decide(mode: DnsMode, tunnel: Tunnel, has_servers: bool, has_match: bool, probe: Probe) -> Decision {
-    use {DnsMode::*, Layout::*};
-    if !has_servers {
-        return Decision { layout: None, warn: Some(Warn::NoDns), probes: false };
-    }
-    let full = tunnel == Tunnel::Full;
-    let (mode, note) = match mode {
-        Targeted if full => (Automatic, Some(Warn::TargetedOnFullTunnel)),
-        m => (m, Option::None),
-    };
-    let d = |layout, warn: Option<Warn>, probes| Decision { layout, warn: warn.or(note), probes };
-    match (mode, probe) {
-        (Targeted, _) => d(Split, (!has_match).then_some(Warn::TargetedNoDomains), false),
-        (Automatic, Probe::Failed) => d(Fallback, Some(Warn::Fallback { full_tunnel: full }), true),
-        (Automatic, _) => d(Vpn { local: true }, Option::None, true),
-        (Full, Probe::Failed) => d(Vpn { local: true }, Some(Warn::Failing), true),
-        (Full, _) => d(Vpn { local: true }, Option::None, true),
-        (Strict, Probe::Failed) => d(Vpn { local: false }, Some(Warn::Failing), true),
-        (Strict, _) => d(Vpn { local: false }, Option::None, true),
-    }
-}
-
-/// What the VPN sent: OpenVPN's pushed options (or `--dns`), WireGuard's `DNS =`, pppd's peer DNS; and the routed
-/// networks (for the reverse zones).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Pushed {
-    pub servers: Vec<String>,
-    pub search: Vec<String>,
-    /// OpenVPN 2.7 `dns server … resolve-domains`: match-only.
-    pub resolve: Vec<String>,
-    pub routes: Vec<IpPrefix>,
-}
-
-/// The DNS a connection puts into effect: the VPN-sent DNS merged with the connection's own request.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Effective {
-    pub servers: Vec<String>,
-    /// Search domains, also matched.
-    pub search: Vec<String>,
-    /// Match-only domains (never searched).
-    pub resolve: Vec<String>,
-    /// Reverse zones of the routed private networks (match-only).
-    pub zones: Vec<String>,
-}
-
-impl Effective {
-    /// Any name the VPN's DNS is asked for in a split layout (reverse zones do not make Targeted useful alone).
-    pub fn has_match(&self) -> bool {
-        !self.search.is_empty() || !self.resolve.is_empty()
-    }
-
-    /// Every match domain and zone of the VPN (the overlap rule's "VPN side").
-    fn all_matches(&self) -> Vec<String> {
-        self.search.iter().chain(&self.resolve).chain(&self.zones).cloned().collect()
-    }
-}
-
-/// Order-keeping, case-insensitive dedup, at most `cap` items.
-fn dedup(items: impl IntoIterator<Item = String>, cap: usize) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for i in items {
-        if out.len() < cap && !out.iter().any(|o| o.eq_ignore_ascii_case(&i)) {
-            out.push(i);
-        }
-    }
-    out
-}
-
-/// VPN-sent DNS merged with the connection's request:
-/// - the VPN's servers win, unless there are none or `override` is set (then the own servers);
-/// - own domains are always matched; they become search domains only when the VPN sent none or with `override`,
-///   otherwise they are match-only;
-/// - the private routed networks give the reverse zones.
-pub fn effective(p: &Pushed, req: &DnsRequest) -> Effective {
-    let servers = if req.override_vpn || p.servers.is_empty() { &req.servers } else { &p.servers };
-    let own_search = (req.override_vpn || p.search.is_empty()) && !req.domains.is_empty();
-    let search = dedup(if own_search { req.domains.clone() } else { p.search.clone() }, MAX_DOMAINS);
-    let resolve = dedup(
-        p.resolve.iter().chain(&req.domains).filter(|d| !search.iter().any(|s| s.eq_ignore_ascii_case(d))).cloned(),
-        MAX_ZONES,
-    );
-    let zones = dedup(p.routes.iter().filter(|r| is_private(r)).flat_map(reverse_zones), MAX_ZONES);
-    Effective { servers: dedup(servers.iter().cloned(), MAX_SERVERS), search, resolve, zones }
 }
 
 /// A network service's `Setup:` DNS before MacVPN (from the volatile ledger).
@@ -432,6 +247,7 @@ pub fn restore_ops(originals: &[Original], current: &dyn Fn(&str) -> Option<Dict
 #[cfg(test)]
 mod tests {
     use super::*;
+    use macvpn_core::dns_settings::DnsRequest;
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()
@@ -461,124 +277,6 @@ mod tests {
     }
 
     const ID: &str = "11111111-2222-3333-4444-555555555555";
-
-    #[test]
-    fn no_servers_is_none_with_hint() {
-        for m in DnsMode::ALL {
-            for t in [Tunnel::Full, Tunnel::Split, Tunnel::Unknown] {
-                let d = decide(m, t, false, true, Probe::Ok);
-                assert_eq!(d, Decision { layout: Layout::None, warn: Some(Warn::NoDns), probes: false });
-            }
-        }
-    }
-
-    #[test]
-    fn automatic_ok_or_not_yet_is_vpn_with_local() {
-        for p in [Probe::Ok, Probe::NotRun] {
-            for t in [Tunnel::Full, Tunnel::Split] {
-                let d = decide(DnsMode::Automatic, t, true, false, p);
-                assert_eq!(d, Decision { layout: Layout::Vpn { local: true }, warn: None, probes: true });
-            }
-        }
-    }
-
-    #[test]
-    fn automatic_failed_is_fallback_on_split_and_full() {
-        let d = decide(DnsMode::Automatic, Tunnel::Split, true, true, Probe::Failed);
-        assert_eq!(d.layout, Layout::Fallback);
-        assert_eq!(d.warn, Some(Warn::Fallback { full_tunnel: false }));
-        assert!(d.probes, "recovery needs the probe");
-        let d = decide(DnsMode::Automatic, Tunnel::Full, true, true, Probe::Failed);
-        assert_eq!(d.layout, Layout::Fallback);
-        assert_eq!(d.warn, Some(Warn::Fallback { full_tunnel: true }));
-    }
-
-    #[test]
-    fn strict_never_falls_back() {
-        let d = decide(DnsMode::Strict, Tunnel::Full, true, true, Probe::Failed);
-        assert_eq!(d, Decision { layout: Layout::Vpn { local: false }, warn: Some(Warn::Failing), probes: true });
-        assert_eq!(decide(DnsMode::Strict, Tunnel::Split, true, true, Probe::Ok).layout, Layout::Vpn { local: false });
-    }
-
-    #[test]
-    fn full_failed_keeps_vpn_with_local_and_warns() {
-        let d = decide(DnsMode::Full, Tunnel::Split, true, true, Probe::Failed);
-        assert_eq!(d, Decision { layout: Layout::Vpn { local: true }, warn: Some(Warn::Failing), probes: true });
-    }
-
-    #[test]
-    fn targeted_split_is_split_and_needs_no_probe() {
-        for t in [Tunnel::Split, Tunnel::Unknown] {
-            let d = decide(DnsMode::Targeted, t, true, true, Probe::NotRun);
-            assert_eq!(d, Decision { layout: Layout::Split, warn: None, probes: false });
-        }
-    }
-
-    #[test]
-    fn targeted_on_full_tunnel_acts_as_automatic() {
-        let d = decide(DnsMode::Targeted, Tunnel::Full, true, true, Probe::Ok);
-        assert_eq!(
-            d,
-            Decision { layout: Layout::Vpn { local: true }, warn: Some(Warn::TargetedOnFullTunnel), probes: true }
-        );
-        let d = decide(DnsMode::Targeted, Tunnel::Full, true, true, Probe::Failed);
-        assert_eq!(d.layout, Layout::Fallback);
-        assert_eq!(d.warn, Some(Warn::Fallback { full_tunnel: true }), "the notice wins over the log hint");
-    }
-
-    #[test]
-    fn targeted_without_domains_warns() {
-        let d = decide(DnsMode::Targeted, Tunnel::Split, true, false, Probe::NotRun);
-        assert_eq!(d.layout, Layout::Split);
-        assert_eq!(d.warn, Some(Warn::TargetedNoDomains));
-    }
-
-    #[test]
-    fn raw_values_round_trip() {
-        for l in
-            [Layout::None, Layout::Vpn { local: true }, Layout::Vpn { local: false }, Layout::Split, Layout::Fallback]
-        {
-            assert_eq!(Layout::from_raw(l.raw()), Some(l));
-        }
-        for w in [Warn::NoDns, Warn::Fallback { full_tunnel: true }, Warn::Failing, Warn::TargetedNoDomains] {
-            assert_eq!(Warn::from_raw(w.raw()), Some(w));
-        }
-        assert_eq!(Tunnel::from_raw("full"), Some(Tunnel::Full));
-        assert_eq!(Probe::from_raw("failed"), Some(Probe::Failed));
-        assert_eq!(Probe::from_raw("x"), None);
-    }
-
-    #[test]
-    fn effective_dns_merge() {
-        let pushed = Pushed {
-            servers: s(&["10.8.0.1"]),
-            search: s(&["corp.example"]),
-            resolve: s(&["svc.example"]),
-            routes: vec![IpPrefix::parse("10.1.0.0/16").unwrap(), IpPrefix::parse("8.8.8.0/24").unwrap()],
-        };
-        let own = DnsRequest { servers: s(&["10.0.0.53"]), domains: s(&["portal.example"]), ..Default::default() };
-        let e = effective(&pushed, &own);
-        assert_eq!(e.servers, ["10.8.0.1"], "the VPN's servers win");
-        assert_eq!(e.search, ["corp.example"]);
-        assert_eq!(e.resolve, ["svc.example", "portal.example"], "own domains are always matched");
-        assert_eq!(e.zones, ["1.10.in-addr.arpa"], "only private routes");
-
-        let none = Pushed::default();
-        let e = effective(&none, &own);
-        assert_eq!(e.servers, ["10.0.0.53"], "own servers when the VPN sent none");
-        assert_eq!(e.search, ["portal.example"], "own domains searched when the VPN sent none");
-        assert!(e.resolve.is_empty());
-
-        let over = DnsRequest { override_vpn: true, ..own.clone() };
-        let e = effective(&pushed, &over);
-        assert_eq!(e.servers, ["10.0.0.53"]);
-        assert_eq!(e.search, ["portal.example"]);
-        assert_eq!(e.resolve, ["svc.example"]);
-        assert!(e.has_match());
-        assert!(
-            !effective(&Pushed { servers: s(&["10.8.0.1"]), ..Default::default() }, &DnsRequest::default()).has_match()
-        );
-    }
 
     fn home() -> Primary {
         Primary {

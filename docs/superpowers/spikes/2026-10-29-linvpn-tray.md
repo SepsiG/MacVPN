@@ -26,7 +26,7 @@ the panel there.
   45–50). GTK 3.24.52, WebKitGTK 4.1 2.52.6, libayatana-appindicator3 0.5.94.
 - User: non-admin `linvpn-dev`, logged in on seat0; everything ran in that session from SSH. Nothing installed system
   wide, no sudo. Build: Rust 1.99.1, Tauri 2.12.5, tray-icon 0.25.1, ksni 0.3.7, gtk 0.18 (`Cargo.lock` committed).
-- Spike code: `spikes/linvpn-tray/`
+- Spike code: `spikes/linvpn-tray/`, removed after the port shipped; it is in the git history (last at commit 669241a).
   - `tauri-panel/` — one Tauri 2 app, switches by environment: `TRAY=tauri|ksni`, `MENU=0|1`,
     `PLACE=none|move|overlay`, `HINT=none|utility|dock|popup|dropdown|splash`, `TOKEN=0|1`, `SHOW_AT_START`,
     `HIDE_ON_BLUR`. Every tray and window event is logged to stderr with a millisecond timestamp.

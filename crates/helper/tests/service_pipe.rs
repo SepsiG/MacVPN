@@ -18,7 +18,7 @@ const WG: &str = "[Interface]\nPrivateKey = bWFjdnBuLXRlc3QtcHJpdmF0ZS1rZXktMzJi
 fn the_console_answers_the_protocol() {
     let c = Console::start(true);
     let v = c.call(&["version"], b"");
-    assert_eq!((v.code, v.stdout.as_slice()), (0, &b"1\n"[..]));
+    assert_eq!((v.code, String::from_utf8_lossy(&v.stdout).into_owned()), (0, format!("{}\n", proto::SERVICE_VERSION)));
     let up = c.call(&["up", "wireguard", ID, "--lang", "en"], &framed(WG));
     assert_eq!(up.code, 0, "{}", String::from_utf8_lossy(&up.stderr));
     let st = String::from_utf8(c.call(&["status"], b"").stdout).unwrap();

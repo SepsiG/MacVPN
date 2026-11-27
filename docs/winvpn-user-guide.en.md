@@ -284,7 +284,7 @@ Create it with **New → SSTP**, or import an `.sstp` file. It has a form: **Nam
 - **Custom CA file** (**Choose PEM File…**): the CA must also be trusted by Windows, because the Windows SSTP client only uses the computer's trust store. Under the form, **Trust This CA in Windows…** does it once, with an administrator's confirmation (see [3.7](#37-administrator-steps-for-native-vpns)); afterwards the form says **Trusted by Windows**. Until then connecting fails with **The server’s CA is not trusted by Windows. Use Trust This CA in Windows… in the editor.**
 - **No verification** cannot be chosen on Windows (it is shown disabled): **Windows always checks the SSTP server's certificate. Choose System CA or Custom CA file.** An imported connection with `cert=insecure` is greyed with that reason.
 - Windows also checks that the server's certificate was not revoked: the server's revocation list must be reachable.
-- **Use the server's DNS** turned off is best effort on Windows: WinVPN gives the VPN adapter a low priority, so your own network's DNS servers are asked first.
+- **Use the server's DNS** turned off: WinVPN never puts the server's DNS into effect. If the **DNS** section (see [5.6](#56-dns-while-connected)) names your own servers, those are used instead, in the chosen mode; without them the VPN adapter gets a low priority, so your own network's DNS servers answer.
 - Use `user@domain` instead of `DOMAIN\user`: backslashes, spaces and quotes are not allowed in the user name. The password must not contain quotation marks (`"`), backslashes (`\`) or control characters.
 - The server must accept MS-CHAPv2.
 
@@ -469,10 +469,22 @@ Example: "Office VPN" routes the office network 10.20.30.0/24. Brought up at hom
 
 ### 5.6 DNS while connected
 
-- **WireGuard** sets its `DNS =` servers only on its own adapter; the adapter and its settings go away when the connection ends, also when something crashes. Nothing else of your network settings changes.
-- **OpenVPN** applies the DNS the server pushes to its own adapter (TAP-Windows6 through its DHCP, DCO with a setting OpenVPN removes when it disconnects). OpenVPN's `dns` directive (Windows' name resolution policy) is not used on Windows: a server that pushes DNS only that way gives no DNS on a DCO connection. Ask the server's administrator to push `dhcp-option DNS` too.
-- **L2TP/IPsec, IKEv2, SSTP and system VPNs:** Windows applies the server's DNS to the VPN adapter itself (SSTP's **Use the server's DNS** off: see [3.6](#36-sstp)).
-- So unlike older MacVPN versions, nothing has to be reset by hand after a crash or a restart.
+From 2.1.15 OpenVPN, WireGuard and SSTP connections have the same DNS settings as in MacVPN: the connection's editor has a **DNS** section with the mode, **Own DNS servers**, **Own domains** and **Use these instead of the VPN's DNS**. The modes, the local names and the own DNS work as described in [the MacVPN guide, 5.6](user-guide.en.md#56-dns-while-connected); in short:
+
+- **Automatic (recommended, the default):** every name goes to the VPN's DNS while it works. WinVPN asks the VPN's DNS for `apple.com` when the connection comes up and about every 5 minutes while connected. Two failed checks in a row fall back (only the VPN's domains use the VPN's DNS, every other name goes to your network's DNS), one good check returns. Both changes are notified: **The VPN's DNS does not resolve internet names; only the VPN's domains use it now.** and **The VPN's DNS works again; every name uses it.**
+- **Full:** every name always goes to the VPN's DNS; a failed check only warns (**The VPN's DNS does not answer.**).
+- **Targeted:** only the VPN's domains (the search domains it sends, OpenVPN's `dns … resolve-domains`, your own domains, the reverse zones of the networks routed into the tunnel) use the VPN's DNS.
+- **Strict:** DNS never leaves the tunnel, with no fallback and no local exception.
+- In Automatic and Full your network's own names (for example `nas.lan` or the router's name) keep working while connected.
+
+**How it is applied.** The WinVPN Service puts the decision into Windows' **Name Resolution Policy Table** (NRPT) as local rules (`WinVPN-<id>-<n>` under `HKLM\SYSTEM\CurrentControlSet\Services\Dnscache\Parameters\DnsPolicyConfig`), the same mechanism OpenVPN's own Windows service and Windows' VPN client use. Nothing in your network settings is changed.
+
+- **Automatic and Full:** one rule sends every name to the VPN's DNS, and your network's own domain stays on your network's DNS. **Strict:** only the rule for every name.
+- **Targeted and the fallback:** rules only for the VPN's domains; the VPN adapter's own DNS is cleared meanwhile, so Windows does not also ask it for every other name.
+- **What the VPN sent:** OpenVPN's pushed DNS (`dhcp-option DNS`, `DOMAIN`, `DOMAIN-SEARCH`, and OpenVPN 2.6+'s `dns` directive), WireGuard's `DNS =` line, and the DNS SSTP's server gives the adapter. For SSTP, dialled by the Windows VPN client, WinVPN asks the WinVPN Service to apply its DNS right after the connection is up.
+- **Cleanup:** the rules go when you disconnect, when OpenVPN stops on its own, and, after a crash or a restart, when the WinVPN Service starts. Nothing has to be reset by hand.
+- **L2TP/IPsec, IKEv2 and system VPNs** have no DNS section: Windows applies the server's DNS to the VPN adapter itself.
+- The WinVPN Service is updated together with the app (it ships in the MSI). `Get-DnsClientNrptPolicy -Effective` in PowerShell shows the rules in effect.
 
 ### 5.7 Quitting, signing out and sleep
 

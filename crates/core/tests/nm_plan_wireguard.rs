@@ -49,7 +49,7 @@ fn a_split_tunnel_becomes_a_private_wireguard_connection_without_secrets_in_sett
     assert_eq!(ipv4["method"], NmValue::Str("manual".into()));
     assert_eq!(ipv4["never-default"], NmValue::Bool(true));
     assert_eq!(ipv4["dns-data"], NmValue::StrList(vec!["10.99.0.53".into()]));
-    assert_eq!(ipv4["dns-search"], NmValue::StrList(vec!["~lab.test".into()]));
+    assert_eq!(ipv4["dns-search"], NmValue::StrList(vec!["lab.test".into(), "~.".into()]));
     let shown = format!("{:?}", p.settings);
     assert!(!shown.contains(KEY_A) && !shown.contains(PSK), "no secret in settings");
     // The secrets: the private key and the peer's PSK, as literals the agent answers.
@@ -63,7 +63,7 @@ fn a_split_tunnel_becomes_a_private_wireguard_connection_without_secrets_in_sett
 fn allowed_ips_with_the_default_route_make_a_full_tunnel_with_all_dns() {
     let p = plan(&conf("", "0.0.0.0/0, ::/0"), &Caps::default()).unwrap();
     assert_eq!(p.settings["ipv4"]["never-default"], NmValue::Bool(false));
-    assert_eq!(p.settings["ipv4"]["dns-priority"], NmValue::I32(nm_plan::dns::FULL_PRIORITY));
+    assert_eq!(p.settings["ipv4"]["dns-priority"], NmValue::I32(nm_plan::dns::DEFAULT_PRIORITY));
 }
 
 #[test]
